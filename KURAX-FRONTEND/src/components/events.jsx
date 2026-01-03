@@ -49,7 +49,7 @@ export default function EventsPage() {
           {events.map((event) => (
             <div
               key={event.id}
-              className="bg-zinc-900 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent hover:border-primary/20 group"
+              className="bg-zinc-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group hover:border-yellow-400/50"
             >
               {/* Event Image */}
               <div className="relative h-56 overflow-hidden">
@@ -90,7 +90,7 @@ export default function EventsPage() {
                 </div>
 
                 {/* CTA Button */}
-                <button className="w-full bg-yellow-400 text-black hover:bg-yellow-300 border-2 border-yellow-400 px-4 py-2 rounded-full text-sm font-semibold transition-all">
+                <button className="w-full bg-yellow-400 text-black hover:bg-yellow-300 border-2 border-yellow-400 px-4 py-2 rounded-none text-sm font-semibold transition-all">
                   Book Now
                 </button>
 
