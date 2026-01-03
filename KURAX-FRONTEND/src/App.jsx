@@ -7,10 +7,10 @@ import Home from "./pages/Home.jsx";
 function App() {
   return (
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<CustomerDashboard />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/menus" element={<MenuPage />} />
-        <Route path="/home" element={<CustomerDashboard/>} />
+        <Route path="/home" element={<Home />} />
         {/* Add more routes like /menus, /reservations */}
       </Routes>
     
