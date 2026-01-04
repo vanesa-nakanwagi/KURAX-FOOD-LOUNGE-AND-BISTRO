@@ -18,7 +18,7 @@ export default function TopSection({ searchPlaceholder }) {
         </div>
 
         {/* Search */}
-        <div className="w-full md:w-1/2 relative">
+        <div className="w-full sm:w-3/4 md:w-1/3 relative">
           <input
             type="text"
             placeholder={searchPlaceholder}

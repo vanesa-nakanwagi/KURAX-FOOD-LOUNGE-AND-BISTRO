@@ -30,7 +30,7 @@ export default function FeaturedCards() {
         {cards.map((c, idx) => (
           <div
             key={idx}
-            className="bg-zinc-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300 border-2 border-transparent hover:border-yellow-500"
+            className="bg-zinc-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300 border-2 border-transparent"
           >
             <img src={c.img} alt={c.title} className="w-full h-48 object-cover" />
             <div className="p-4">
@@ -38,7 +38,7 @@ export default function FeaturedCards() {
               <p className="text-gray-400 text-sm my-2">{c.desc}</p>
               <div className="flex justify-between items-center">
                 <span className="font-bold text-yellow-500">{c.price}</span>
-                <button className="px-3 py-1 bg-yellow-500 text-black rounded hover:bg-yellow-400 transition text-sm">
+                <button className="px-3 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 transition text-sm">
                   Order Now
                 </button>
               </div>
