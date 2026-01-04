@@ -108,7 +108,7 @@ export default function EventsPage() {
           and behind-the-scenes content from Kurax Food Lounge & Bistro
         </p>
 
-        <div className="flex justify-center gap-4">
+        <div className="flex justify-center gap-2">
           <SocialButton color="from-purple-500 to-pink-500" label="Instagram" />
           <SocialButton color="from-blue-500 to-cyan-500" label="X (Twitter)" />
           <SocialButton color="from-blue-600 to-blue-800" label="Facebook" />
