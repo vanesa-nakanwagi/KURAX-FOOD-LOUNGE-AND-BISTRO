@@ -1,17 +1,17 @@
-import Navbar from '../components/Navbar';
-import Hero from '../components/Hero';
-import About from "../components/about";
-import Footer from "../components/footer";
+import TopSection from "../components/topSection";
+import HeroSection from "../components/HeroSection";
+import FeaturedCards from "../components/FeaturedCards";
+import EventsSection from "../components/EventsSection";
+import Footer from "../components/footerHome";
 
-
-export default function Home() {
+export default function HomePage() {
   return (
-    <>
-      <Navbar />
-      <Hero />
-      <About />
+    <div className="bg-black font-[Outfit]">
+      <TopSection searchPlaceholder="Search menu items..." />
+      <HeroSection />
+      <FeaturedCards />
+      <EventsSection />
       <Footer />
-      {/* Other page sections like About, Menu, etc. go here */}
-    </>
+    </div>
   );
 }

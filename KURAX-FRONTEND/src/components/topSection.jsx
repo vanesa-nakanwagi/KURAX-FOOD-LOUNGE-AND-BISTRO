@@ -1,17 +1,16 @@
-import { Search, MapPin, Heart, ShoppingCart } from "lucide-react";
+import { Search, ShoppingCart } from "lucide-react";
 import { Link } from "react-router-dom";
 import logo from "../assets/images/logo.jpeg";
 
 export default function TopSection({ searchPlaceholder }) {
   return (
-    <header className="border-b border-yellow-500/20">
-      {/* Top Header: Logo + Search + Icons */}
+    <header className="border-b border-yellow-500/20 sticky top-0 z-50 bg-black">
       <div className="flex flex-col md:flex-row items-center md:justify-between px-4 md:px-8 py-4 gap-4 md:gap-0">
         {/* Logo */}
         <div className="flex items-center gap-3 flex-shrink-0">
           <img src={logo} alt="Kurax Logo" className="w-12 h-12 rounded-full object-cover" />
           <div>
-            <h1 className="text-lg md:text-xl font-semibold">KURAX FOOD LOUNGE & BISTRO</h1>
+            <h1 className="text-lg md:text-xl font-semibold text-white">KURAX FOOD LOUNGE & BISTRO</h1>
             <p className="text-sm md:text-base text-yellow-400">
               Luxury dining, signature drinks & rooftop vibes
             </p>
@@ -30,12 +29,10 @@ export default function TopSection({ searchPlaceholder }) {
           </button>
         </div>
 
-        {/* Icons */}
+        {/* Cart Icon */}
         <div className="flex items-center gap-4 md:gap-6">
-          <MapPin />
-          <Heart />
           <div className="relative">
-            <ShoppingCart />
+            <ShoppingCart className="text-white" />
             <span className="absolute -top-2 -right-2 bg-yellow-500 text-black text-xs w-5 h-5 flex items-center justify-center rounded-full">
               0
             </span>
@@ -44,7 +41,7 @@ export default function TopSection({ searchPlaceholder }) {
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-wrap justify-center gap-6 md:gap-10 py-4 text-sm md:text-base">
+      <nav className="flex justify-center gap-6 py-4 text-sm md:text-base text-white">
         <Link to="/" className="hover:text-yellow-400">Home</Link>
         <Link to="/menus" className="hover:text-yellow-400">Menus</Link>
         <Link to="/events" className="hover:text-yellow-400">Events</Link>

@@ -1,20 +1,16 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import CustomerDashboard from "./pages/CustomerDashboard.jsx";
-import EventsPage from "./components/events"; 
-import MenuPage from "./components/menuPage.jsx";
-import Home from "./pages/Home.jsx";
+import HomePage from "./pages/Home.jsx";
+import MenuPage from "./components/menuPage";
+import EventsPage from "./components/events";
+import ReservationsPage from "./components/Reservations";
+import { Routes, Route } from "react-router-dom"; // no BrowserRouter here
 
-function App() {
+export default function App() {
   return (
-      <Routes>
-        <Route path="/" element={<CustomerDashboard />} />
-        <Route path="/events" element={<EventsPage />} />
-        <Route path="/menus" element={<MenuPage />} />
-        <Route path="/home" element={<Home />} />
-        {/* Add more routes like /menus, /reservations */}
-      </Routes>
-    
+    <Routes>
+      <Route path="/" element={<HomePage />} />          {/* Home */}
+      <Route path="/menus" element={<MenuPage />} />    {/* Menu */}
+      <Route path="/events" element={<EventsPage />} /> {/* Events */}
+      <Route path="/reservations" element={<ReservationsPage />} /> {/* Reservations */}
+    </Routes>
   );
 }
-
-export default App;
