@@ -35,7 +35,7 @@ export default function ReservationsPage() {
         </p>
 
         <form 
-          className="max-w-lg mx-auto bg-gray-900 rounded-lg p-6 shadow-lg"
+          className="max-w-lg mx-auto bg-gray-900 rounded-none p-6 shadow-lg"
           onSubmit={handleSubmit}
         >
           <label className="block mb-4">
@@ -115,7 +115,7 @@ export default function ReservationsPage() {
 
           <button 
             type="submit" 
-            className="w-full py-3 bg-yellow-500 text-black font-semibold rounded-lg hover:bg-yellow-400 transition"
+            className="w-full py-3 bg-yellow-500 text-black font-semibold rounded-none hover:bg-yellow-400 transition"
           >
             Reserve Now
           </button>
