@@ -3,6 +3,7 @@ import HeroSection from "../components/HeroSection";
 import FeaturedCards from "../components/FeaturedCards";
 import EventsSection from "../components/EventsSection";
 import Footer from "../components/footerHome";
+import OrderNowPage from "../components/orderPage"
 
 export default function HomePage() {
   return (
@@ -12,6 +13,7 @@ export default function HomePage() {
       <FeaturedCards />
       <EventsSection />
       <Footer />
+      <OrderNowPage/>
     </div>
   );
 }

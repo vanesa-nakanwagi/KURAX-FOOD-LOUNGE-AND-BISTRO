@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import TopSection from "../components/topSection.jsx";
 import SocialButton from "../components/socialButton.jsx";
-
+import { useNavigate } from "react-router-dom";
 // Sample menu items
 const menuItems = [
   { id: 1, category: "Starters", name: "Bruschetta", description: "Grilled bread with tomato and basil", price: "UGX 15,000", image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=800&q=80" },
@@ -17,7 +17,7 @@ const categories = ["Starters", "Main Courses", "Drinks & Cocktails"];
 
 export default function MenuPage() {
   const [selectedCategory, setSelectedCategory] = useState("Starters");
-
+  const navigate = useNavigate();
   const scrollRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -93,7 +93,7 @@ export default function MenuPage() {
               onClick={() => scroll("left")}
               disabled={!canScrollLeft}
               className={`absolute left-2 md:left-4 top-1/2 -translate-y-1/2 z-20
-              text-3xl md:text-4xl font-bold
+              text-5xl md:text-4xl font-bold
                transition
            ${
             canScrollLeft
@@ -132,9 +132,14 @@ export default function MenuPage() {
                   <span className="text-yellow-500 font-bold">
                     {item.price}
                   </span>
-                  <button className="px-3 py-1 bg-yellow-500 text-black hover:bg-yellow-400 transition text-sm">
-                    Order Now
-                  </button>
+                   <button
+                   onClick={() => navigate(`/order/${item.id}`)}
+                   className="px-3 py-1 bg-yellow-500 text-black rounded hover:bg-yellow-400 transition text-sm"
+                   >
+                Order Now
+             </button>
+
+
                 </div>
               </div>
             </div>
@@ -146,7 +151,7 @@ export default function MenuPage() {
   onClick={() => scroll("right")}
   disabled={!canScrollRight}
   className={`absolute right-2 md:right-4 top-1/2 -translate-y-1/2 z-20
-    text-3xl md:text-4xl font-bold
+    text-5xl md:text-4xl font-bold
     transition
     ${
       canScrollRight
