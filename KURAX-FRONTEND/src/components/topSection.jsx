@@ -28,16 +28,6 @@ export default function TopSection({ searchPlaceholder }) {
             <Search size={18} className="text-black" />
           </button>
         </div>
-
-        {/* Cart Icon */}
-        <div className="flex items-center gap-4 md:gap-6">
-          <div className="relative">
-            <ShoppingCart className="text-white" />
-            <span className="absolute -top-2 -right-2 bg-yellow-500 text-black text-xs w-5 h-5 flex items-center justify-center rounded-full">
-              0
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* Nav */}
