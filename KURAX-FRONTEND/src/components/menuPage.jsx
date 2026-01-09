@@ -2,9 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import SocialButton from "../components/common/socialButton.jsx";
 import CartModal from "../components/cart/CartModal.jsx";
 import TopSection from "../components/topSection.jsx";
-import FeaturedCards from "../components/FeaturedCards.jsx"; // adjust path as needed
-
-
 
 // Sample menu items
 const menuItems = [
@@ -28,10 +25,10 @@ const menuItems = [
   { id: 18, category: "Drinks & Cocktails", name: "Espresso Martini", description: "Coffee flavored cocktail", price: 28000, image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03" },
   { id: 19, category: "Starters", name: "Bruschetta", description: "Grilled bread with tomato and basil", price: 15000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=800&q=80" },
   { id: 20, category: "Main Courses", name: "Grilled Salmon", description: "Salmon fillet with lemon butter sauce", price: 65000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
-  { id: 9, category: "Starters", name: "Caesar Salad", description: "Crispy romaine with creamy dressing", price: 30000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
-  { id: 10, category: "Drinks & Cocktails", name: "Mojito", description: "Fresh mint and lime cocktail", price: 25000, image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03" },
-  { id: 11, category: "Main Courses", name: "Beef Steak", description: "Grilled to perfection with herbs", price: 70000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
-  { id: 12, category: "Drinks & Cocktails", name: "Espresso Martini", description: "Coffee flavored cocktail", price: 28000, image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03" },
+  { id: 21, category: "Starters", name: "Caesar Salad", description: "Crispy romaine with creamy dressing", price: 30000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
+  { id: 22, category: "Drinks & Cocktails", name: "Mojito", description: "Fresh mint and lime cocktail", price: 25000, image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03" },
+  { id: 23, category: "Main Courses", name: "Beef Steak", description: "Grilled to perfection with herbs", price: 70000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
+  { id: 24, category: "Drinks & Cocktails", name: "Espresso Martini", description: "Coffee flavored cocktail", price: 28000, image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03" },
 
 ];
 
@@ -83,20 +80,26 @@ export default function MenuPage() {
     el.scrollBy({ left: direction === "left" ? -cardWidth : cardWidth, behavior: "smooth" });
   };
 
-  const handleAddToCart = (dish) => {
-    const existing = cart.find(item => item.id === dish.id);
-    if (existing) {
-      setCart(cart.map(item =>
-        item.id === dish.id
-          ? { ...item, quantity: dish.quantity, instructions: dish.instructions }
-          : item
-      ));
-    } else {
-      setCart([...cart, { ...dish }]);
-    }
-    setActiveDish(null);
-    setIsCartOpen(true);
-  };
+ const handleAddToCart = (dish) => {
+  const existing = cart.find(item => item.id === dish.id);
+  if (existing) {
+    setCart(cart.map(item =>
+      item.id === dish.id
+        ? { ...item, quantity: dish.quantity, instructions: dish.instructions }
+        : item
+    ));
+  } else {
+    setCart([...cart, { ...dish }]);
+  }
+
+  // First set the active dish to the item
+  setActiveDish({ ...dish });
+
+  // Then open the modal
+  setIsCartOpen(true);   
+};
+
+
 
   const handleRemoveFromCart = (id) => setCart(cart.filter(item => item.id !== id));
 
@@ -118,9 +121,10 @@ export default function MenuPage() {
   <div className="bg-black text-white font-[Outfit] min-h-screen">
   
   <div className="sticky top-0 z-50 bg-black">
+
   {/* TopSection */}
   <TopSection searchPlaceholder="Search menu items..." />
-
+  
   {/* Categories */}
   <div className="flex justify-center gap-4 py-6 border-b border-white/10">
     {categories.map(cat => (
@@ -152,7 +156,7 @@ export default function MenuPage() {
   {filteredItems.map(item => (
     <div
       key={item.id}
-      className="bg-zinc-900 border border-zinc-800 hover:border-yellow-500 transition rounded overflow-hidden"
+      className="bg-zinc-900 border border-zinc-800 hover:border-yellow-500 transition rounded-none overflow-hidden"
     >
       <img
         src={item.image}
@@ -167,11 +171,11 @@ export default function MenuPage() {
             UGX {item.price.toLocaleString()}
           </span>
           <button
-            onClick={() => setActiveDish({ ...item, quantity: 1, instructions: "" })}
-            className="px-3 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 transition text-sm"
-          >
-            Order
-          </button>
+                    onClick={() => handleAddToCart({ ...item, quantity: 1, instructions: "" })}
+                    className="px-6 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 transition text-sm"
+                    >
+                        Order
+            </button>
         </div>
       </div>
     </div>
@@ -198,6 +202,7 @@ export default function MenuPage() {
           setCheckoutStep={setCheckoutStep}
           customerDetails={customerDetails}
           setCustomerDetails={setCustomerDetails}
+          onClose={() => setIsCartOpen(false)} 
         />
       )}
 

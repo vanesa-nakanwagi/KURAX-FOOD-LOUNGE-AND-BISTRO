@@ -42,7 +42,7 @@ export default function CheckoutForm({
         name="firstName"
         value={customerDetails.firstName}
         onChange={handleChange}
-        className="bg-zinc-800 p-3 rounded"
+        className="bg-zinc-800 p-3 rounded-none border border-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500"
         placeholder="First Name"
       />
       <input
@@ -115,7 +115,7 @@ export default function CheckoutForm({
         onClick={handlePayment}
         disabled={loading || !customerDetails.mobileMoneyNumber}
         className={`py-3 rounded font-semibold ${
-          loading ? "bg-yellow-500 cursor-not-allowed" : "bg-green-500 hover:bg-green-600"
+          loading ? "bg-yellow-500 cursor-not-allowed" : "bg-yellow-500 hover:bg-yellow-600"
         }`}
       >
         {loading ? "Processing..." : `Pay UGX ${totalAmount.toLocaleString()}`}
@@ -123,7 +123,7 @@ export default function CheckoutForm({
 
       {/* Status Message */}
       {status && (
-        <p className={`mt-2 text-sm ${status.includes("successful") ? "text-green-400" : "text-red-400"}`}>
+        <p className={`mt-2 text-sm ${status.includes("successful") ? "text-yellow-400" : "text-red-400"}`}>
           {status}
         </p>
       )}

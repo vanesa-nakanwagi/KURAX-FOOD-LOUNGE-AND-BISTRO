@@ -1,5 +1,5 @@
 export default function CartModal({
-  isOpen,
+  isCartOpen,
   onClose,
   activeDish,
   setActiveDish,
@@ -11,11 +11,11 @@ export default function CartModal({
   checkoutStep,
   setCheckoutStep,
 }) {
-  if (!isOpen) return null;
+  if (!isCartOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/70 flex justify-center items-start pt-12 z-50 overflow-y-auto">
-      <div className="bg-zinc-900 w-full max-w-3xl rounded-lg p-6 relative">
+      <div className="bg-zinc-900 w-full max-w-3xl rounded-none p-6 relative">
 
         {/* Close Button */}
         <button
@@ -39,7 +39,7 @@ export default function CartModal({
                   <img
                     src={activeDish.image}
                     alt={activeDish.name}
-                    className="w-full md:w-1/3 h-48 object-cover rounded"
+                    className="w-full md:w-1/3 h-48 object-cover rounded-none"
                   />
 
                   <div className="flex-1 flex flex-col gap-2">
@@ -59,7 +59,7 @@ export default function CartModal({
                             quantity: Math.max(activeDish.quantity - 1, 1),
                           })
                         }
-                        className="px-2 py-1 bg-zinc-700 rounded"
+                        className="px-2 py-1 bg-zinc-700 rounded-none"
                       >
                         -
                       </button>
@@ -73,7 +73,7 @@ export default function CartModal({
                             quantity: activeDish.quantity + 1,
                           })
                         }
-                        className="px-2 py-1 bg-zinc-700 rounded"
+                        className="px-2 py-1 bg-zinc-700 rounded-none"
                       >
                         +
                       </button>
@@ -81,7 +81,7 @@ export default function CartModal({
 
                     <textarea
                       rows={3}
-                      className="bg-zinc-800 p-3 rounded"
+                      className="bg-zinc-800 p-3 rounded-none"
                       placeholder="Special instructions..."
                       value={activeDish.instructions}
                       onChange={(e) =>
@@ -93,7 +93,11 @@ export default function CartModal({
                     />
 
                     <button
-                      onClick={() => handleAddToCart(activeDish)}
+                      onClick={() => {
+                   handleAddToCart(activeDish);
+                  setActiveDish(null);
+                    }}
+
                       className="bg-yellow-500 text-black py-2 rounded font-semibold"
                     >
                       Add to Cart
@@ -173,40 +177,42 @@ export default function CartModal({
         )}
 
         {/* ================= STEP 2: CHECKOUT ================= */}
+
         {checkoutStep === 2 && (
+          
           <div className="flex flex-col gap-4">
             <h2 className="text-2xl font-serif text-yellow-500">
               Checkout Details
             </h2>
 
-            <input className="bg-zinc-800 p-3 rounded" placeholder="First Name" />
-            <input className="bg-zinc-800 p-3 rounded" placeholder="Last Name" />
-            <input className="bg-zinc-800 p-3 rounded" placeholder="Email" />
+            <input  className="bg-zinc-800 p-3 rounded-none" placeholder="First Name" />
+            <input className="bg-zinc-800 p-3 rounded-none" placeholder="Last Name" />
+            <input className="bg-zinc-800 p-3 rounded-none" placeholder="Email" />
 
-            <select className="bg-zinc-800 p-3 rounded">
+            <select className="bg-zinc-800 p-3 rounded-none">
               <option>Home Delivery</option>
               <option>Store Pickup</option>
             </select>
 
-            <input className="bg-zinc-800 p-3 rounded" placeholder="City / Town" />
+            <input className="bg-zinc-800 p-3 rounded-none" placeholder="City / Town" />
             <textarea
-              className="bg-zinc-800 p-3 rounded"
+              className="bg-zinc-800 p-3 rounded-none"
               rows={3}
               placeholder="Exact location"
             />
 
-            <select className="bg-zinc-800 p-3 rounded">
+            <select className="bg-zinc-800 p-3 rounded-none">
               <option>AIRTEL</option>
               <option>MTN</option>
               <option>LYCAMOBILE</option>
             </select>
 
             <input
-              className="bg-zinc-800 p-3 rounded"
+              className="bg-zinc-800 p-3 rounded-none"
               placeholder="Mobile Money Number"
             />
 
-            <button className="bg-green-500 py-3 rounded font-semibold">
+            <button className="bg-yellow-500 py-3 rounded-none font-semibold">
               Pay UGX {totalAmount.toLocaleString()}
             </button>
 
