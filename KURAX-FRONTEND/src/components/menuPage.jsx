@@ -137,7 +137,8 @@ export default function MenuPage() {
 
 
         {/* Menu Grid — responsive 2-column layout */}
-<section className="px-4 md:px-16 grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6">
+<section className="px-4 md:px-16 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4 md:gap-6">
+
   {filteredItems.map(item => (
     <div
       key={item.id}
