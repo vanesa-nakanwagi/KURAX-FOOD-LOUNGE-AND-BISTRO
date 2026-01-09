@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import SocialButton from "../components/common/socialButton.jsx";
 import CartModal from "../components/cart/CartModal.jsx";
+import TopSection from "../components/topSection.jsx";
+
+
+
 
 // Sample menu items
 const menuItems = [
@@ -109,25 +113,30 @@ export default function MenuPage() {
   const totalAmount = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
   return (
-    <div className="bg-black text-white font-[Outfit] min-h-screen">
       
 
-     <div className="sticky top-0 bg-black z-30 flex justify-center gap-4 py-3 border-b border-white/10">
-  {categories.map(cat => (
-    <button
-      key={cat}
-      onClick={() => setSelectedCategory(cat)}
-      className={`relative font-semibold px-3 py-1 text-sm sm:text-base transition ${
-        selectedCategory === cat ? "text-yellow-500" : "text-white"
-      }`}
-    >
-      {cat}
-      {selectedCategory === cat && (
-        <span className="absolute left-0 -bottom-1 w-full h-[2px] bg-yellow-500" />
-      )}
-    </button>
-  ))}
-</div>
+    <div className="bg-black text-white font-[Outfit] min-h-screen">
+  
+  {/* Top Section with search bar */}
+  <TopSection searchPlaceholder="Search menu items..." />
+
+  {/* Sticky Categories */}
+  <div className="sticky top-0 bg-black z-30 flex justify-center gap-4 py-3 border-b border-white/10">
+    {categories.map(cat => (
+      <button
+        key={cat}
+        onClick={() => setSelectedCategory(cat)}
+        className={`relative font-semibold px-3 py-1 text-sm sm:text-base transition ${
+          selectedCategory === cat ? "text-yellow-500" : "text-white"
+        }`}
+      >
+        {cat}
+        {selectedCategory === cat && (
+          <span className="absolute left-0 -bottom-1 w-full h-[2px] bg-yellow-500" />
+        )}
+      </button>
+    ))}
+  </div>
 
 
       {/* Menu Slider */}
