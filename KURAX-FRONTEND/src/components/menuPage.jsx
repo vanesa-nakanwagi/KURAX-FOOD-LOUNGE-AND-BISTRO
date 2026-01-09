@@ -112,23 +112,23 @@ export default function MenuPage() {
     <div className="bg-black text-white font-[Outfit] min-h-screen">
       
 
-      {/* Categories */}
-      <div className="sticky top-16 z-30 bg-black flex justify-center gap-6 py-4 border-b border-zinc-800">
-        {categories.map(cat => (
-          <button
-            key={cat}
-            onClick={() => setSelectedCategory(cat)}
-            className={`relative font-semibold px-4 py-2 transition ${
-              selectedCategory === cat ? "text-yellow-500" : "text-white"
-            }`}
-          >
-            {cat}
-            {selectedCategory === cat && (
-              <span className="absolute left-0 -bottom-1 w-full h-[2px] bg-yellow-500" />
-            )}
-          </button>
-        ))}
-      </div>
+     <div className="sticky top-0 bg-black z-30 flex justify-center gap-4 py-3 border-b border-white/10">
+  {categories.map(cat => (
+    <button
+      key={cat}
+      onClick={() => setSelectedCategory(cat)}
+      className={`relative font-semibold px-3 py-1 text-sm sm:text-base transition ${
+        selectedCategory === cat ? "text-yellow-500" : "text-white"
+      }`}
+    >
+      {cat}
+      {selectedCategory === cat && (
+        <span className="absolute left-0 -bottom-1 w-full h-[2px] bg-yellow-500" />
+      )}
+    </button>
+  ))}
+</div>
+
 
       {/* Menu Slider */}
       <section className="relative px-4 md:px-16">
