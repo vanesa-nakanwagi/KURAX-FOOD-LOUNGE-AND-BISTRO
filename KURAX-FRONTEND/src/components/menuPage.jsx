@@ -137,7 +137,7 @@ export default function MenuPage() {
 
 
         {/* Menu Grid — responsive 2-column layout */}
-<section className="px-4 md:px-16 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+<section className="px-4 md:px-16 grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6">
   {filteredItems.map(item => (
     <div
       key={item.id}
@@ -146,7 +146,7 @@ export default function MenuPage() {
       <img
         src={item.image}
         alt={item.name}
-        className="w-full h-32 sm:h-36 md:h-40 object-cover"
+        className="w-full h-28 sm:h-32 md:h-40 object-cover"
       />
       <div className="p-2 sm:p-3">
         <h3 className="text-sm sm:text-base font-semibold mb-1">{item.name}</h3>
