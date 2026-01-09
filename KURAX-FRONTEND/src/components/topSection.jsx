@@ -38,5 +38,5 @@ export default function TopSection({ searchPlaceholder }) {
         <Link to="/reservations" className="hover:text-yellow-400">Reservations</Link>
       </nav>
     </header>
-  );
+  );z
 }

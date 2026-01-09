@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import SocialButton from "../components/common/socialButton.jsx";
 import CartModal from "../components/cart/CartModal.jsx";
 import TopSection from "../components/topSection.jsx";
-
+import FeaturedCards from "../components/FeaturedCards.jsx"; // adjust path as needed
 
 
 
@@ -122,7 +122,7 @@ export default function MenuPage() {
   <TopSection searchPlaceholder="Search menu items..." />
 
   {/* Categories */}
-  <div className="flex justify-center gap-4 py-3 border-b border-white/10">
+  <div className="flex justify-center gap-4 py-6 border-b border-white/10">
     {categories.map(cat => (
       <button
         key={cat}
@@ -139,8 +139,6 @@ export default function MenuPage() {
     ))}
   </div>
 </div>
-
-
 
       {/* Menu Slider */}
       <section className="relative px-4 md:px-16">
@@ -170,7 +168,7 @@ export default function MenuPage() {
           </span>
           <button
             onClick={() => setActiveDish({ ...item, quantity: 1, instructions: "" })}
-            className="px-2 py-1 bg-yellow-500 text-black rounded hover:bg-yellow-400 text-xs sm:text-sm"
+            className="px-3 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 transition text-sm"
           >
             Order
           </button>
