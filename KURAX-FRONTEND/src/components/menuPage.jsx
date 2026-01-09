@@ -121,7 +121,7 @@ export default function MenuPage() {
   <TopSection searchPlaceholder="Search menu items..." />
 
   {/* Sticky Categories */}
-  <div className="sticky z-40 bg-black flex justify-center gap-4 py-3 border-b border-white/10" style={{ top: "120px" }}>
+  <div className="sticky z-50 bg-black flex justify-center gap-4 py-3 border-b border-white/10" style={{ top: "128px" }}>
     {categories.map(cat => (
       <button
         key={cat}
