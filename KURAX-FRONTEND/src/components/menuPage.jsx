@@ -115,13 +115,14 @@ export default function MenuPage() {
   return (
       
 
-    <div className="bg-black text-white font-[Outfit] min-h-screen">
+  <div className="bg-black text-white font-[Outfit] min-h-screen">
   
-  {/* Top Section with search bar */}
+  <div className="sticky top-0 z-50 bg-black">
+  {/* TopSection */}
   <TopSection searchPlaceholder="Search menu items..." />
 
-  {/* Sticky Categories */}
-  <div className="sticky z-50 bg-black flex justify-center gap-4 py-3 border-b border-white/10" style={{ top: "128px" }}>
+  {/* Categories */}
+  <div className="flex justify-center gap-4 py-3 border-b border-white/10">
     {categories.map(cat => (
       <button
         key={cat}
@@ -137,6 +138,8 @@ export default function MenuPage() {
       </button>
     ))}
   </div>
+</div>
+
 
 
       {/* Menu Slider */}
