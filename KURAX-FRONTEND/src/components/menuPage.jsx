@@ -146,7 +146,7 @@ export default function MenuPage() {
       <img
         src={item.image}
         alt={item.name}
-        className="w-full h-36 sm:h-40 md:h-48 object-cover"
+        className="w-full h-28 sm:h-32 md:h-40 object-cover"
       />
       <div className="p-3 sm:p-4">
         <h3 className="text-md sm:text-lg font-semibold mb-1">{item.name}</h3>
