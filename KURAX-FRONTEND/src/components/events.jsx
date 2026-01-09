@@ -1,6 +1,6 @@
 import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react"
 import TopSection from "./topSection.jsx"
-import SocialButton from "./socialButton.jsx"
+import SocialButton from "./common/socialButton.jsx"
 import { events } from "../data/events.jsx"
 import terrace from "../assets/images/terrace.jpg"
 
