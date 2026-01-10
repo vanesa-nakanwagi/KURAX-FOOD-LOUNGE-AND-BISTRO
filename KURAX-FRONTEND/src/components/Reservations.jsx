@@ -128,43 +128,43 @@ export default function ReservationsPage() {
           </div>
 
           {/* Date & Time */}
-          <div className="flex gap-2 mb-4">
-            <div className="flex-1">
-              <input
-                type="date"
-                name="date"
-                value={formData.date}
-                onChange={handleChange}
-                className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-              />
-              {errors.date && <p className="text-red-500 text-sm mt-1">{errors.date}</p>}
-            </div>
-            <div className="flex-1">
-              <input
-                type="time"
-                name="time"
-                value={formData.time}
-                onChange={handleChange}
-                className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-              />
-              {errors.time && <p className="text-red-500 text-sm mt-1">{errors.time}</p>}
-            </div>
-          </div>
+<div className="flex flex-col sm:flex-row gap-2 mb-4">
+  <div className="flex-1">
+    <input
+      type="date"
+      name="date"
+      value={formData.date}
+      onChange={handleChange}
+      className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 appearance-auto"
+    />
+    {errors.date && <p className="text-red-500 text-sm mt-1">{errors.date}</p>}
+  </div>
+  <div className="flex-1 mt-2 sm:mt-0">
+    <input
+      type="time"
+      name="time"
+      value={formData.time}
+      onChange={handleChange}
+      className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 appearance-auto"
+    />
+    {errors.time && <p className="text-red-500 text-sm mt-1">{errors.time}</p>}
+  </div>
+</div>
 
-          {/* Number of Guests */}
-          <div className="mb-4">
-            <input
-              type="number"
-              name="guests"
-              min="1"
-              max="20"
-              value={formData.guests}
-              onChange={handleChange}
-              placeholder="Number of Guests"
-              className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-            />
-            {errors.guests && <p className="text-red-500 text-sm mt-1">{errors.guests}</p>}
-          </div>
+{/* Number of Guests */}
+<div className="mb-4">
+  <input
+    type="number"
+    name="guests"
+    min="1"
+    max="20"
+    value={formData.guests}
+    onChange={handleChange}
+    placeholder="Number of Guests"
+    className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 appearance-auto"
+  />
+  {errors.guests && <p className="text-red-500 text-sm mt-1">{errors.guests}</p>}
+</div>
 
           {/* Special Instructions */}
           <div className="mb-4">
