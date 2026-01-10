@@ -17,17 +17,20 @@ export default function TopSection({ searchPlaceholder }) {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="w-full sm:w-3/4 md:w-1/3 relative">
-          <input
-            type="text"
-            placeholder={searchPlaceholder}
-            className="w-full rounded-full bg-white text-black px-5 py-2 pr-12 focus:outline-none"
-          />
-          <button className="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-yellow-500 flex items-center justify-center">
-            <Search size={18} className="text-black" />
-          </button>
-        </div>
+        <div className="w-full sm:w-3/4 md:w-1/3 relative flex items-center">
+  <input
+    type="text"
+    placeholder={searchPlaceholder}
+    className="w-full rounded-full bg-white text-black px-5 py-2 pr-20 focus:outline-none"
+  />
+  <button className="absolute right-10 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center">
+    <Search size={15} className="text-black" />
+  </button>
+  <button className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center">
+    <ShoppingCart size={15} className="text-black" />
+  </button>
+</div>
+
       </div>
 
       {/* Nav */}
