@@ -1,14 +1,24 @@
+import { useState } from "react";
 import TopSection from "./topSection.jsx";
 import SocialButton from "./common/socialButton.jsx";
 import terrace from "../assets/images/terrace.jpg";
 
-// EventCard Component
+// Components
 import EventCard from "../components/events/EventCard.jsx";
+import BookingModal from "../components/events/BookingModal.jsx";
 
 // Import your events data
 import { events } from "../data/events.jsx";
 
 export default function EventsPage() {
+  const [showModal, setShowModal] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+
+  const handleBook = (event) => {
+    setSelectedEvent(event);
+    setShowModal(true);
+  };
+
   return (
     <div className="bg-black text-white font-[Outfit]">
       {/* ================= HEADER ================= */}
@@ -17,14 +27,9 @@ export default function EventsPage() {
       {/* ================= HERO ================= */}
       <section className="relative h-[60vh] min-h-[500px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
-          <img
-            src={terrace}
-            alt="Kurax Events"
-            className="w-full h-full object-cover"
-          />
+          <img src={terrace} alt="Kurax Events" className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-black/60" />
         </div>
-
         <div className="relative z-10 text-center max-w-4xl mx-auto px-6">
           <h1 className="font-serif text-5xl md:text-7xl font-bold text-white mb-6 text-balance">
             Unforgettable
@@ -39,7 +44,6 @@ export default function EventsPage() {
 
       {/* ================= EVENTS GRID ================= */}
       <section className="py-16 px-6 max-w-7xl mx-auto">
-        {/* Section Header */}
         <div className="text-center mb-12">
           <h2 className="text-4xl font-serif font-bold mb-4">Upcoming Events</h2>
           <p className="text-gray-400 text-lg max-w-2xl mx-auto">
@@ -50,7 +54,7 @@ export default function EventsPage() {
         {/* Event Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {events.map((event) => (
-            <EventCard key={event.id} event={event} />
+            <EventCard key={event.id} event={event} onBook={() => handleBook(event)} />
           ))}
         </div>
       </section>
@@ -70,6 +74,15 @@ export default function EventsPage() {
           <SocialButton color="from-gray-800 to-black" label="TikTok" />
         </div>
       </section>
+
+      {/* ================= BOOKING MODAL ================= */}
+      {showModal && (
+        <BookingModal
+          show={showModal}
+          onClose={() => setShowModal(false)}
+          eventTitle={selectedEvent.title}
+        />
+      )}
     </div>
   );
 }

@@ -1,3 +1,6 @@
+import { useState } from "react";
+import CheckoutForm from "../checkout/CheckoutForm.jsx"; // your checkout form
+
 export default function CartModal({
   isCartOpen,
   onClose,
@@ -12,6 +15,18 @@ export default function CartModal({
   setCheckoutStep,
 }) {
   if (!isCartOpen) return null;
+
+  // State for checkout form
+  const [customerDetails, setCustomerDetails] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    deliveryType: "Home",
+    city: "",
+    locationDesc: "",
+    paymentProvider: "",
+    mobileMoneyNumber: "",
+  });
 
   return (
     <div className="fixed inset-0 bg-black/70 flex justify-center items-start pt-12 z-50 overflow-y-auto">
@@ -43,10 +58,7 @@ export default function CartModal({
                   />
 
                   <div className="flex-1 flex flex-col gap-2">
-                    <h3 className="font-semibold text-lg">
-                      {activeDish.name}
-                    </h3>
-
+                    <h3 className="font-semibold text-lg">{activeDish.name}</h3>
                     <span className="text-yellow-500 font-bold">
                       UGX {activeDish.price.toLocaleString()}
                     </span>
@@ -63,9 +75,7 @@ export default function CartModal({
                       >
                         -
                       </button>
-
                       <span>{activeDish.quantity}</span>
-
                       <button
                         onClick={() =>
                           setActiveDish({
@@ -94,10 +104,9 @@ export default function CartModal({
 
                     <button
                       onClick={() => {
-                   handleAddToCart(activeDish);
-                  setActiveDish(null);
-                    }}
-
+                        handleAddToCart(activeDish);
+                        setActiveDish(null);
+                      }}
                       className="bg-yellow-500 text-black py-2 rounded font-semibold"
                     >
                       Add to Cart
@@ -116,7 +125,7 @@ export default function CartModal({
               <p className="text-gray-400">Your cart is empty.</p>
             ) : (
               <div className="flex flex-col gap-4">
-                {cart.map(item => (
+                {cart.map((item) => (
                   <div
                     key={item.id}
                     className="flex items-center gap-3 bg-zinc-800 p-3 rounded"
@@ -177,52 +186,13 @@ export default function CartModal({
         )}
 
         {/* ================= STEP 2: CHECKOUT ================= */}
-
         {checkoutStep === 2 && (
-          
-          <div className="flex flex-col gap-4">
-            <h2 className="text-2xl font-serif text-yellow-500">
-              Checkout Details
-            </h2>
-
-            <input  className="bg-zinc-800 p-3 rounded-none" placeholder="First Name" />
-            <input className="bg-zinc-800 p-3 rounded-none" placeholder="Last Name" />
-            <input className="bg-zinc-800 p-3 rounded-none" placeholder="Email" />
-
-            <select className="bg-zinc-800 p-3 rounded-none">
-              <option>Home Delivery</option>
-              <option>Store Pickup</option>
-            </select>
-
-            <input className="bg-zinc-800 p-3 rounded-none" placeholder="City / Town" />
-            <textarea
-              className="bg-zinc-800 p-3 rounded-none"
-              rows={3}
-              placeholder="Exact location"
-            />
-
-            <select className="bg-zinc-800 p-3 rounded-none">
-              <option>AIRTEL</option>
-              <option>MTN</option>
-              <option>LYCAMOBILE</option>
-            </select>
-
-            <input
-              className="bg-zinc-800 p-3 rounded-none"
-              placeholder="Mobile Money Number"
-            />
-
-            <button className="bg-yellow-500 py-3 rounded-none font-semibold">
-              Pay UGX {totalAmount.toLocaleString()}
-            </button>
-
-            <button
-              onClick={() => setCheckoutStep(1)}
-              className="text-sm text-gray-400"
-            >
-              ← Back to Cart
-            </button>
-          </div>
+          <CheckoutForm
+            customerDetails={customerDetails}
+            setCustomerDetails={setCustomerDetails}
+            totalAmount={totalAmount}
+            onBack={() => setCheckoutStep(1)}
+          />
         )}
       </div>
     </div>

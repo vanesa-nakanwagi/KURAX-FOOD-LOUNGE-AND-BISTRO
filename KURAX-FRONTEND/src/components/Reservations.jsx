@@ -9,17 +9,67 @@ export default function ReservationsPage() {
     phone: "",
     date: "",
     time: "",
-    guests: 1
+    guests: 1,
+    instructions: ""
   });
 
+  const [errors, setErrors] = useState({});
+
   const handleChange = (e) => {
-    setFormData({...formData, [e.target.name]: e.target.value });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const validate = () => {
+    const newErrors = {};
+
+    // Name
+    if (!formData.name.trim()) newErrors.name = "Name is required";
+
+    // Email
+    if (!formData.email.trim()) {
+      newErrors.email = "Email is required";
+    } else if (!/^\S+@\S+\.\S+$/.test(formData.email)) {
+      newErrors.email = "Invalid email address";
+    }
+
+    // Phone
+    if (!formData.phone.trim()) {
+      newErrors.phone = "Phone number is required";
+    } else if (!/^\d{9,15}$/.test(formData.phone)) {
+      newErrors.phone = "Enter a valid phone number (9-15 digits)";
+    }
+
+    // Date & Time
+    if (!formData.date) newErrors.date = "Date is required";
+    if (!formData.time) newErrors.time = "Time is required";
+
+    // Guests
+    if (!formData.guests || formData.guests < 1 || formData.guests > 20) {
+      newErrors.guests = "Guests must be between 1 and 20";
+    }
+
+    return newErrors;
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const validationErrors = validate();
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
+
     alert(`Reservation submitted!\n${JSON.stringify(formData, null, 2)}`);
-    // TODO: connect to backend or API
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      date: "",
+      time: "",
+      guests: 1,
+      instructions: ""
+    });
+    setErrors({});
   };
 
   return (
@@ -35,86 +85,101 @@ export default function ReservationsPage() {
         </p>
 
         <form 
-          className="max-w-lg mx-auto bg-gray-900 rounded-none p-6 shadow-lg"
+          className="max-w-lg mx-auto bg-zinc-900 p-6 rounded-none shadow-lg"
           onSubmit={handleSubmit}
         >
-          <label className="block mb-4">
-            <span className="text-gray-300">Full Name</span>
-            <input 
-              type="text" 
-              name="name" 
-              value={formData.name} 
-              onChange={handleChange} 
-              required
-              className="w-full mt-1 p-2 rounded bg-gray-800 text-white focus:outline-none"
+          {/* Full Name */}
+          <div className="mb-4">
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              placeholder="Full Name"
+              className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
             />
-          </label>
-
-          <label className="block mb-4">
-            <span className="text-gray-300">Email</span>
-            <input 
-              type="email" 
-              name="email" 
-              value={formData.email} 
-              onChange={handleChange} 
-              required
-              className="w-full mt-1 p-2 rounded bg-gray-800 text-white focus:outline-none"
-            />
-          </label>
-
-          <label className="block mb-4">
-            <span className="text-gray-300">Phone</span>
-            <input 
-              type="tel" 
-              name="phone" 
-              value={formData.phone} 
-              onChange={handleChange} 
-              required
-              className="w-full mt-1 p-2 rounded bg-gray-800 text-white focus:outline-none"
-            />
-          </label>
-
-          <div className="flex flex-col sm:flex-row gap-4 mb-4">
-            <label className="flex-1">
-              <span className="text-gray-300">Date</span>
-              <input 
-                type="date" 
-                name="date" 
-                value={formData.date} 
-                onChange={handleChange} 
-                required
-                className="w-full mt-1 p-2 rounded bg-gray-800 text-white focus:outline-none"
-              />
-            </label>
-            <label className="flex-1">
-              <span className="text-gray-300">Time</span>
-              <input 
-                type="time" 
-                name="time" 
-                value={formData.time} 
-                onChange={handleChange} 
-                required
-                className="w-full mt-1 p-2 rounded bg-gray-800 text-white focus:outline-none"
-              />
-            </label>
+            {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
           </div>
 
-          <label className="block mb-6">
-            <span className="text-gray-300">Number of Guests</span>
-            <input 
-              type="number" 
-              name="guests" 
-              min="1" 
-              max="20" 
-              value={formData.guests} 
-              onChange={handleChange} 
-              required
-              className="w-full mt-1 p-2 rounded bg-gray-800 text-white focus:outline-none"
+          {/* Email */}
+          <div className="mb-4">
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="Email"
+              className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
             />
-          </label>
+            {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+          </div>
 
-          <button 
-            type="submit" 
+          {/* Phone */}
+          <div className="mb-4">
+            <input
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              placeholder="Phone Number"
+              className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+            />
+            {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
+          </div>
+
+          {/* Date & Time */}
+          <div className="flex gap-2 mb-4">
+            <div className="flex-1">
+              <input
+                type="date"
+                name="date"
+                value={formData.date}
+                onChange={handleChange}
+                className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              />
+              {errors.date && <p className="text-red-500 text-sm mt-1">{errors.date}</p>}
+            </div>
+            <div className="flex-1">
+              <input
+                type="time"
+                name="time"
+                value={formData.time}
+                onChange={handleChange}
+                className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              />
+              {errors.time && <p className="text-red-500 text-sm mt-1">{errors.time}</p>}
+            </div>
+          </div>
+
+          {/* Number of Guests */}
+          <div className="mb-4">
+            <input
+              type="number"
+              name="guests"
+              min="1"
+              max="20"
+              value={formData.guests}
+              onChange={handleChange}
+              placeholder="Number of Guests"
+              className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+            />
+            {errors.guests && <p className="text-red-500 text-sm mt-1">{errors.guests}</p>}
+          </div>
+
+          {/* Special Instructions */}
+          <div className="mb-4">
+            <textarea
+              name="instructions"
+              placeholder="Any special requests or notes..."
+              value={formData.instructions}
+              onChange={handleChange}
+              rows={4}
+              className="w-full px-4 py-3 rounded-none bg-zinc-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none"
+            />
+          </div>
+
+          <button
+            type="submit"
             className="w-full py-3 bg-yellow-500 text-black font-semibold rounded-none hover:bg-yellow-400 transition"
           >
             Reserve Now
