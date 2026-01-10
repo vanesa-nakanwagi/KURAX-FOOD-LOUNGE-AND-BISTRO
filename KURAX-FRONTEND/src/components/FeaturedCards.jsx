@@ -1,3 +1,5 @@
+import { useNavigate } from "react-router-dom";
+
 const cards = [
   {
     title: "Appetizers",
@@ -20,6 +22,24 @@ const cards = [
 ];
 
 export default function FeaturedCards() {
+
+
+   const navigate = useNavigate();
+
+  const handleOrder = (card) => {
+    navigate("/menus", {
+      state: {
+        preselectedItem: {
+          name: card.title,
+          price: Number(card.price.replace(/\D/g, "")),
+          image: card.img,
+          quantity: 1,
+          instructions: "",
+        },
+      },
+    });
+
+  };
   return (
     <section className="px-4 md:px-16 py-8">
       <h3 className="text-2xl md:text-3xl font-serif mb-6 text-yellow-500 text-center">
@@ -38,7 +58,7 @@ export default function FeaturedCards() {
               <p className="text-gray-400 text-sm my-2">{c.desc}</p>
               <div className="flex justify-between items-center">
                 <span className="font-bold text-yellow-500">{c.price}</span>
-                <button className="px-3 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 transition text-sm">
+                <button onClick={() => handleOrder(c)} className="px-3 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 transition text-sm">
                   Order Now
                 </button>
               </div>

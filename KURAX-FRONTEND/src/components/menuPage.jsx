@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import SocialButton from "../components/common/socialButton.jsx";
 import CartModal from "../components/cart/CartModal.jsx";
 import TopSection from "../components/topSection.jsx";
+import { useLocation } from "react-router-dom";
 
 // Sample menu items
 const menuItems = [
@@ -34,7 +35,18 @@ const menuItems = [
 
 const categories = ["Starters", "Main Courses", "Drinks & Cocktails"];
 
+
 export default function MenuPage() {
+
+  const location = useLocation();
+
+useEffect(() => {
+  if (location.state?.preselectedItem) {
+    setActiveDish(location.state.preselectedItem);
+    setIsCartOpen(true);
+  }
+}, [location.state]);
+
   const [checkoutStep, setCheckoutStep] = useState(1);
   const [customerDetails, setCustomerDetails] = useState({
     firstName: "",

@@ -1,15 +1,18 @@
-import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react"
-import TopSection from "./topSection.jsx"
-import SocialButton from "./common/socialButton.jsx"
-import { events } from "../data/events.jsx"
-import terrace from "../assets/images/terrace.jpg"
+import TopSection from "./topSection.jsx";
+import SocialButton from "./common/socialButton.jsx";
+import terrace from "../assets/images/terrace.jpg";
 
+// EventCard Component
+import EventCard from "../components/events/EventCard.jsx";
+
+// Import your events data
+import { events } from "../data/events.jsx";
 
 export default function EventsPage() {
   return (
     <div className="bg-black text-white font-[Outfit]">
       {/* ================= HEADER ================= */}
-    <TopSection searchPlaceholder="Search events..." />
+      <TopSection searchPlaceholder="Search events..." />
 
       {/* ================= HERO ================= */}
       <section className="relative h-[60vh] min-h-[500px] flex items-center justify-center overflow-hidden">
@@ -26,7 +29,7 @@ export default function EventsPage() {
           <h1 className="font-serif text-5xl md:text-7xl font-bold text-white mb-6 text-balance">
             Unforgettable
             <br />
-            <span className=" text-yellow-400">Experiences</span>
+            <span className="text-yellow-400">Experiences</span>
           </h1>
           <p className="text-xl md:text-2xl text-white/90 mb-8 text-pretty">
             Live music, themed dinners, and exclusive events on our rooftop terrace
@@ -44,58 +47,10 @@ export default function EventsPage() {
           </p>
         </div>
 
-        {/* Events Cards */}
+        {/* Event Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {events.map((event) => (
-            <div
-              key={event.id}
-              className="bg-zinc-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group hover:border-yellow-400/50"
-            >
-              {/* Event Image */}
-              <div className="relative h-56 overflow-hidden">
-                <img
-                  src={event.image || "/placeholder.svg"}
-                  alt={event.title}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                />
-                <div className="absolute top-4 left-4">
-                  <div className="bg-yellow-400 text-black px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1">
-                  <event.icon className="w-4 h-4" />
-                     {event.category}
-                  </div>
-                </div>
-              </div>
-
-              {/* Event Details */}
-              <div className="p-6">
-               <h3 className="font-serif text-2xl font-bold mb-3 group-hover:text-white-400 transition-colors">
-                  {event.title}
-               </h3>
-                <p className="text-gray-400 mb-4 leading-relaxed">{event.description}</p>
-
-                {/* Event Meta */}
-                <div className="space-y-2 mb-4 text-sm text-gray-300">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-yellow-400" />
-                    <span>{event.date}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-yellow-400" />
-                    <span>{event.time}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-yellow-400" />
-                    <span>{event.location}</span>
-                  </div>
-                </div>
-
-                {/* CTA Button */}
-                <button className="w-full bg-yellow-400 text-black hover:bg-yellow-300 border-2 border-yellow-400 px-4 py-2 rounded-none text-sm font-semibold transition-all">
-                  Book Now
-                </button>
-
-              </div>
-            </div>
+            <EventCard key={event.id} event={event} />
           ))}
         </div>
       </section>
@@ -116,5 +71,5 @@ export default function EventsPage() {
         </div>
       </section>
     </div>
-  )
+  );
 }
