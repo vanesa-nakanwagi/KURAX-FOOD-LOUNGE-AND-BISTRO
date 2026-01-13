@@ -1,13 +1,17 @@
-export default function SocialButton({ color, label, link }) {
+export default function SocialButton({ color, label, link, icon }) {
   return (
-    <a
-      href={link}
-      target="_blank"
-      rel="noopener noreferrer"
-    >
+    <a href={link} target="_blank" rel="noopener noreferrer">
       <button
-        className={`bg-gradient-to-r ${color} px-2 py-2 rounded-full text-sm`}
+        className={`
+          flex items-center gap-2
+          bg-gradient-to-r ${color}
+          px-5 py-3
+          rounded-full
+          text-sm font-medium text-white
+          hover:scale-105 transition
+        `}
       >
+        {icon}
         {label}
       </button>
     </a>

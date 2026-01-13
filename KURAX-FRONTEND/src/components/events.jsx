@@ -76,7 +76,7 @@ export default function EventsPage() {
         
           <SocialButton
             color="from-blue-500 to-cyan-500"
-            label="X"
+            label="Twitter"
             link="https://x.com/kuraxfoodlounge?t=zSh1NNW0EPSeRwzyoOqinQ&s=09"
           />
         
