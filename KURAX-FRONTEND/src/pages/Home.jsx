@@ -63,11 +63,31 @@ export default function HomePage() {
               </p>
       
               <div className="flex justify-center gap-2">
-                <SocialButton color="from-purple-500 to-pink-500" label="Instagram" />
-                <SocialButton color="from-blue-500 to-cyan-500" label="X (Twitter)" />
-                <SocialButton color="from-blue-600 to-blue-800" label="Facebook" />
-                <SocialButton color="from-gray-800 to-black" label="TikTok" />
-              </div>
+  <SocialButton
+    color="from-purple-500 to-pink-500"
+    label="Instagram"
+    link="https://www.instagram.com/kuraxfoodloungebistro?igsh=djl0bzltY3lnbmI1"
+  />
+
+  <SocialButton
+    color="from-blue-500 to-cyan-500"
+    label="X (Twitter)"
+    link="https://x.com/kuraxfoodlounge?t=zSh1NNW0EPSeRwzyoOqinQ&s=09"
+  />
+
+  <SocialButton
+    color="from-blue-600 to-blue-800"
+    label="Facebook"
+    link="https://www.facebook.com/kuraxfoodlounge"
+  />
+
+  <SocialButton
+    color="from-gray-800 to-black"
+    label="TikTok"
+    link="https://www.tiktok.com/@kuraxfoodkyanja?_r=1&_t=ZM-92uWpBkTEMe"
+  />
+</div>
+
             </section>
     </div>
   );
