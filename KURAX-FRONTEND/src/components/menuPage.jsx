@@ -56,6 +56,8 @@ export default function MenuPage() {
     setCustomerDetails,
   } = useCart();
 
+  
+
   const [selectedCategory, setSelectedCategory] = useState("Starters");
 
   const filteredItems = menuItems.filter(

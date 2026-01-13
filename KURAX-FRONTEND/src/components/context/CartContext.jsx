@@ -3,35 +3,56 @@ import { createContext, useContext, useState, useEffect } from "react";
 const CartContext = createContext();
 
 export function CartProvider({ children }) {
-  // Load cart from localStorage initially
+  // Load initial state from localStorage or use default values
   const [cart, setCart] = useState(() => {
-    try {
-      const saved = localStorage.getItem("cart");
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error("Failed to parse cart from localStorage", e);
-      return [];
-    }
+    const saved = localStorage.getItem("cart");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [activeDish, setActiveDish] = useState(() => {
+    const saved = localStorage.getItem("activeDish");
+    return saved ? JSON.parse(saved) : null;
   });
 
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [activeDish, setActiveDish] = useState(null);
-  const [checkoutStep, setCheckoutStep] = useState(1);
-  const [customerDetails, setCustomerDetails] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    deliveryType: "Home",
-    city: "",
-    locationDesc: "",
-    paymentProvider: "",
-    mobileMoneyNumber: "",
+
+  const [checkoutStep, setCheckoutStep] = useState(() => {
+    const saved = localStorage.getItem("checkoutStep");
+    return saved ? Number(saved) : 1;
   });
 
-  // Sync cart to localStorage whenever it changes
+  const [customerDetails, setCustomerDetails] = useState(() => {
+    const saved = localStorage.getItem("customerDetails");
+    return saved
+      ? JSON.parse(saved)
+      : {
+          firstName: "",
+          lastName: "",
+          email: "",
+          deliveryType: "Home",
+          city: "",
+          locationDesc: "",
+          paymentProvider: "",
+          mobileMoneyNumber: "",
+        };
+  });
+
+  // Persist to localStorage whenever these change
   useEffect(() => {
     localStorage.setItem("cart", JSON.stringify(cart));
   }, [cart]);
+
+  useEffect(() => {
+    localStorage.setItem("activeDish", JSON.stringify(activeDish));
+  }, [activeDish]);
+
+  useEffect(() => {
+    localStorage.setItem("checkoutStep", checkoutStep);
+  }, [checkoutStep]);
+
+  useEffect(() => {
+    localStorage.setItem("customerDetails", JSON.stringify(customerDetails));
+  }, [customerDetails]);
 
   // Handlers
   const handleAddToCart = (dish) => {
@@ -40,11 +61,11 @@ export function CartProvider({ children }) {
       if (exists) {
         return prev.map((item) =>
           item.id === dish.id
-            ? { ...item, quantity: item.quantity + dish.quantity }
+            ? { ...item, quantity: item.quantity + (dish.quantity || 1) }
             : item
         );
       }
-      return [...prev, { ...dish }];
+      return [...prev, { ...dish, quantity: dish.quantity || 1 }];
     });
     setIsCartOpen(true);
   };
@@ -91,6 +112,7 @@ export function CartProvider({ children }) {
   );
 }
 
+// Hook
 export const useCart = () => useContext(CartContext);
 
 export default CartProvider;
