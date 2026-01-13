@@ -1,14 +1,22 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 
 const CartContext = createContext();
 
 export function CartProvider({ children }) {
-  // Global cart state
-  const [cart, setCart] = useState([]);
+  // Load cart from localStorage initially
+  const [cart, setCart] = useState(() => {
+    try {
+      const saved = localStorage.getItem("cart");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error("Failed to parse cart from localStorage", e);
+      return [];
+    }
+  });
+
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [activeDish, setActiveDish] = useState(null);
   const [checkoutStep, setCheckoutStep] = useState(1);
-
   const [customerDetails, setCustomerDetails] = useState({
     firstName: "",
     lastName: "",
@@ -20,25 +28,25 @@ export function CartProvider({ children }) {
     mobileMoneyNumber: "",
   });
 
-  // ================= Handlers =================
+  // Sync cart to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("cart", JSON.stringify(cart));
+  }, [cart]);
 
+  // Handlers
   const handleAddToCart = (dish) => {
-    // Ensure quantity is at least 1
-    const quantity = dish.quantity && dish.quantity > 0 ? dish.quantity : 1;
-
     setCart((prev) => {
       const exists = prev.find((item) => item.id === dish.id);
       if (exists) {
         return prev.map((item) =>
           item.id === dish.id
-            ? { ...item, quantity: item.quantity + quantity }
+            ? { ...item, quantity: item.quantity + dish.quantity }
             : item
         );
       }
-      return [...prev, { ...dish, quantity }];
+      return [...prev, { ...dish }];
     });
-
-    setIsCartOpen(true); // Automatically open cart
+    setIsCartOpen(true);
   };
 
   const handleRemoveFromCart = (id) => {
@@ -49,18 +57,16 @@ export function CartProvider({ children }) {
     setCart((prev) =>
       prev.map((item) =>
         item.id === id
-          ? { ...item, quantity: Math.max((item.quantity || 1) + delta, 1) }
+          ? { ...item, quantity: Math.max(item.quantity + delta, 1) }
           : item
       )
     );
   };
 
   const totalAmount = cart.reduce(
-    (sum, item) => sum + (item.price || 0) * (item.quantity || 1),
+    (sum, item) => sum + item.price * item.quantity,
     0
   );
-
-  // ================= Context Provider =================
 
   return (
     <CartContext.Provider
@@ -85,5 +91,6 @@ export function CartProvider({ children }) {
   );
 }
 
-// Custom hook to use the cart
 export const useCart = () => useContext(CartContext);
+
+export default CartProvider;

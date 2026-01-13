@@ -1,10 +1,11 @@
+
 import { useState } from "react";
 
 export default function useCart() {
   const [cart, setCart] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState(0);
   const [activeDish, setActiveDish] = useState(null);
-  const [checkoutStep, setCheckoutStep] = useState(1);
   const [customerDetails, setCustomerDetails] = useState({
     firstName: "",
     lastName: "",
@@ -13,29 +14,29 @@ export default function useCart() {
     city: "",
     locationDesc: "",
     paymentProvider: "AIRTEL",
-    mobileMoneyNumber: "",
+    mobileMoneyNumber: ""
   });
 
-  const handleAddToCart = (dish) => {
-    setCart((prev) => {
-      const existing = prev.find((i) => i.id === dish.id);
+  const addToCart = dish => {
+    setCart(prev => {
+      const existing = prev.find(i => i.id === dish.id);
       if (existing) {
-        return prev.map((i) =>
+        return prev.map(i =>
           i.id === dish.id
-            ? { ...i, quantity: i.quantity + (dish.quantity || 1) }
+            ? { ...i, quantity: i.quantity + dish.quantity }
             : i
         );
       }
-      return [...prev, { ...dish, quantity: dish.quantity || 1 }];
+      return [...prev, dish];
     });
   };
 
-  const handleRemoveFromCart = (id) =>
-    setCart((prev) => prev.filter((i) => i.id !== id));
+  const removeFromCart = id =>
+    setCart(prev => prev.filter(i => i.id !== id));
 
-  const handleQuantityChange = (id, amount) =>
-    setCart((prev) =>
-      prev.map((i) =>
+  const changeQuantity = (id, amount) =>
+    setCart(prev =>
+      prev.map(i =>
         i.id === id
           ? { ...i, quantity: Math.max(1, i.quantity + amount) }
           : i
@@ -43,7 +44,7 @@ export default function useCart() {
     );
 
   const totalAmount = cart.reduce(
-    (sum, i) => sum + Number(i.price || 0) * Number(i.quantity || 0),
+    (sum, i) => sum + i.price * i.quantity,
     0
   );
 
@@ -51,15 +52,15 @@ export default function useCart() {
     cart,
     isCartOpen,
     setIsCartOpen,
-    activeDish,
-    setActiveDish,
     checkoutStep,
     setCheckoutStep,
-    handleAddToCart,
-    handleRemoveFromCart,
-    handleQuantityChange,
+    activeDish,
+    setActiveDish,
+    addToCart,
+    removeFromCart,
+    changeQuantity,
     totalAmount,
     customerDetails,
-    setCustomerDetails,
+    setCustomerDetails
   };
 }
