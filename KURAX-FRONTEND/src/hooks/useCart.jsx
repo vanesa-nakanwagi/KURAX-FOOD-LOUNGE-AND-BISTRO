@@ -2,27 +2,40 @@ import { useState } from "react";
 
 export default function useCart() {
   const [cart, setCart] = useState([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [activeDish, setActiveDish] = useState(null);
+  const [checkoutStep, setCheckoutStep] = useState(1);
+  const [customerDetails, setCustomerDetails] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    deliveryType: "Home",
+    city: "",
+    locationDesc: "",
+    paymentProvider: "AIRTEL",
+    mobileMoneyNumber: "",
+  });
 
-  const addToCart = dish => {
-    setCart(prev => {
-      const existing = prev.find(i => i.id === dish.id);
+  const handleAddToCart = (dish) => {
+    setCart((prev) => {
+      const existing = prev.find((i) => i.id === dish.id);
       if (existing) {
-        return prev.map(i =>
+        return prev.map((i) =>
           i.id === dish.id
-            ? { ...i, quantity: i.quantity + dish.quantity }
+            ? { ...i, quantity: i.quantity + (dish.quantity || 1) }
             : i
         );
       }
-      return [...prev, dish];
+      return [...prev, { ...dish, quantity: dish.quantity || 1 }];
     });
   };
 
-  const removeFromCart = id =>
-    setCart(prev => prev.filter(i => i.id !== id));
+  const handleRemoveFromCart = (id) =>
+    setCart((prev) => prev.filter((i) => i.id !== id));
 
-  const changeQuantity = (id, amount) =>
-    setCart(prev =>
-      prev.map(i =>
+  const handleQuantityChange = (id, amount) =>
+    setCart((prev) =>
+      prev.map((i) =>
         i.id === id
           ? { ...i, quantity: Math.max(1, i.quantity + amount) }
           : i
@@ -30,15 +43,23 @@ export default function useCart() {
     );
 
   const totalAmount = cart.reduce(
-    (sum, i) => sum + i.price * i.quantity,
+    (sum, i) => sum + Number(i.price || 0) * Number(i.quantity || 0),
     0
   );
 
   return {
     cart,
-    addToCart,
-    removeFromCart,
-    changeQuantity,
+    isCartOpen,
+    setIsCartOpen,
+    activeDish,
+    setActiveDish,
+    checkoutStep,
+    setCheckoutStep,
+    handleAddToCart,
+    handleRemoveFromCart,
+    handleQuantityChange,
     totalAmount,
+    customerDetails,
+    setCustomerDetails,
   };
 }

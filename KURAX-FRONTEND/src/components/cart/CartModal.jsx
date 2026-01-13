@@ -1,5 +1,4 @@
-import { useState } from "react";
-import CheckoutForm from "../checkout/CheckoutForm.jsx"; // your checkout form
+import CheckoutForm from "../checkout/CheckoutForm.jsx";
 
 export default function CartModal({
   isCartOpen,
@@ -13,20 +12,10 @@ export default function CartModal({
   totalAmount,
   checkoutStep,
   setCheckoutStep,
+  customerDetails,
+  setCustomerDetails,
 }) {
   if (!isCartOpen) return null;
-
-  // State for checkout form
-  const [customerDetails, setCustomerDetails] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    deliveryType: "Home",
-    city: "",
-    locationDesc: "",
-    paymentProvider: "",
-    mobileMoneyNumber: "",
-  });
 
   return (
     <div className="fixed inset-0 bg-black/70 flex justify-center items-start pt-12 z-50 overflow-y-auto">
@@ -58,7 +47,10 @@ export default function CartModal({
                   />
 
                   <div className="flex-1 flex flex-col gap-2">
-                    <h3 className="font-semibold text-lg">{activeDish.name}</h3>
+                    <h3 className="font-semibold text-lg">
+                      {activeDish.name}
+                    </h3>
+
                     <span className="text-yellow-500 font-bold">
                       UGX {activeDish.price.toLocaleString()}
                     </span>
@@ -71,11 +63,13 @@ export default function CartModal({
                             quantity: Math.max(activeDish.quantity - 1, 1),
                           })
                         }
-                        className="px-2 py-1 bg-zinc-700 rounded-none"
+                        className="px-2 py-1 bg-zinc-700"
                       >
                         -
                       </button>
+
                       <span>{activeDish.quantity}</span>
+
                       <button
                         onClick={() =>
                           setActiveDish({
@@ -83,7 +77,7 @@ export default function CartModal({
                             quantity: activeDish.quantity + 1,
                           })
                         }
-                        className="px-2 py-1 bg-zinc-700 rounded-none"
+                        className="px-2 py-1 bg-zinc-700"
                       >
                         +
                       </button>
@@ -91,7 +85,7 @@ export default function CartModal({
 
                     <textarea
                       rows={3}
-                      className="bg-zinc-800 p-3 rounded-none"
+                      className="bg-zinc-800 p-3"
                       placeholder="Special instructions..."
                       value={activeDish.instructions}
                       onChange={(e) =>
@@ -107,7 +101,7 @@ export default function CartModal({
                         handleAddToCart(activeDish);
                         setActiveDish(null);
                       }}
-                      className="bg-yellow-500 text-black py-2 rounded font-semibold"
+                      className="bg-yellow-500 text-black py-2 font-semibold"
                     >
                       Add to Cart
                     </button>
@@ -128,11 +122,12 @@ export default function CartModal({
                 {cart.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center gap-3 bg-zinc-800 p-3 rounded"
+                    className="flex items-center gap-3 bg-zinc-800 p-3"
                   >
                     <img
                       src={item.image}
-                      className="w-16 h-16 rounded object-cover"
+                      className="w-16 h-16 object-cover"
+                      alt={item.name}
                     />
 
                     <div className="flex-1">
@@ -145,7 +140,7 @@ export default function CartModal({
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleQuantityChange(item.id, -1)}
-                        className="px-2 bg-zinc-700 rounded"
+                        className="px-2 bg-zinc-700"
                       >
                         -
                       </button>
@@ -154,7 +149,7 @@ export default function CartModal({
 
                       <button
                         onClick={() => handleQuantityChange(item.id, 1)}
-                        className="px-2 bg-zinc-700 rounded"
+                        className="px-2 bg-zinc-700"
                       >
                         +
                       </button>
@@ -176,7 +171,7 @@ export default function CartModal({
 
                 <button
                   onClick={() => setCheckoutStep(2)}
-                  className="bg-yellow-500 text-black py-3 rounded font-semibold"
+                  className="bg-yellow-500 text-black py-3 font-semibold"
                 >
                   Checkout
                 </button>
