@@ -187,7 +187,7 @@ export default function MenuPage() {
         
           <SocialButton
             color="from-blue-500 to-cyan-500"
-            label="X (Twitter)"
+            label="X"
             link="https://x.com/kuraxfoodlounge?t=zSh1NNW0EPSeRwzyoOqinQ&s=09"
           />
         
