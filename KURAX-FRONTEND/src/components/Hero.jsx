@@ -33,18 +33,19 @@ export default function Hero() {
 
   <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/80" />
 
-  <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-4 sm:px-6 md:px-8">
-    <h1 className="font-body font-semibold text-3xl sm:text-4xl md:text-6xl lg:text-7xl text-white leading-snug sm:leading-tight">
-      Kurax Food Lounge
-      <span className="block mt-2 sm:mt-3 text-yellow-400 font-body font-semibold">
-        & Bistro
-      </span>
-    </h1>
+  <div className="relative z-10 h-full flex flex-col items-center justify-start sm:justify-center text-center px-4 sm:px-6 md:px-8 pt-20 sm:pt-28 md:pt-0">
+  <h1 className="font-body font-semibold text-3xl sm:text-4xl md:text-6xl lg:text-7xl text-white leading-snug sm:leading-tight">
+    Kurax Food Lounge
+    <span className="block mt-2 sm:mt-3 text-yellow-400 font-body font-semibold">
+      & Bistro
+    </span>
+  </h1>
 
-    <p className="font-body font-medium mt-3 sm:mt-4 md:mt-6 text-base sm:text-lg md:text-2xl text-white leading-relaxed max-w-xs sm:max-w-md md:max-w-lg">
-      Luxury dining, signature drinks & rooftop vibes
-    </p>
-  </div>
+  <p className="font-body font-medium mt-3 sm:mt-4 md:mt-6 text-base sm:text-lg md:text-2xl text-white leading-relaxed max-w-xs sm:max-w-md md:max-w-lg">
+    Luxury dining, signature drinks & rooftop vibes
+  </p>
+</div>
+
 </section>
 
   );
