@@ -19,7 +19,7 @@ export default function Hero() {
   }, []);
 
   return (
-    <section className="relative w-full h-[300px] md:h-[700px]">
+    <section className="relative w-full h-screen sm:h-[80vh] md:h-screen overflow-hidden font-body">
       {/* Navbar */}
       <Navbar />
 
