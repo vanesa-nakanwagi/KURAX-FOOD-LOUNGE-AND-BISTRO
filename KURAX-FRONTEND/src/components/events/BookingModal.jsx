@@ -51,18 +51,24 @@ export default function BookingModal({ show, onClose, eventTitle }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex justify-center items-center z-50 p-4">
-      <div className="bg-zinc-900 w-full max-w-md rounded-none p-6 relative">
+    <div className="fixed inset-0 bg-black/60 dark:bg-white/30 flex justify-center items-center z-50 p-4">
+      <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl p-6 relative shadow-2xl transition-colors duration-300">
+        {/* Close Button */}
         <button
-          className="absolute top-3 right-3 text-white text-lg font-bold"
+          className="absolute top-3 right-3 text-gray-700 dark:text-gray-300 text-lg font-bold hover:text-yellow-400 transition"
           onClick={onClose}
         >
           ✕
         </button>
 
-        <h2 className="text-2xl font-bold mb-4 text-yellow-400">{eventTitle}</h2>
+        {/* Event Title */}
+        <h2 className="text-2xl font-bold mb-4 text-yellow-500 dark:text-yellow-400 text-center">
+          {eventTitle}
+        </h2>
 
+        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Name */}
           <div>
             <input
               type="text"
@@ -70,11 +76,12 @@ export default function BookingModal({ show, onClose, eventTitle }) {
               placeholder="Full Name"
               value={formData.name}
               onChange={handleChange}
-              className="w-full px-3 py-2 rounded-none bg-zinc-800 text-white border border-gray-600"
+              className="w-full px-4 py-2 rounded-lg bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 transition"
             />
             {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
           </div>
 
+          {/* Email */}
           <div>
             <input
               type="email"
@@ -82,11 +89,12 @@ export default function BookingModal({ show, onClose, eventTitle }) {
               placeholder="Email"
               value={formData.email}
               onChange={handleChange}
-              className="w-full px-3 py-2 rounded-none bg-zinc-800 text-white border border-gray-600"
+              className="w-full px-4 py-2 rounded-lg bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 transition"
             />
             {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
           </div>
 
+          {/* Guests */}
           <div>
             <input
               type="number"
@@ -94,49 +102,50 @@ export default function BookingModal({ show, onClose, eventTitle }) {
               placeholder="Number of Guests"
               value={formData.guests}
               onChange={handleChange}
-              className="w-full px-3 py-2 rounded-none bg-zinc-800 text-white border border-gray-600"
               min={1}
               max={20}
+              className="w-full px-4 py-2 rounded-lg bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 transition"
             />
             {errors.guests && <p className="text-red-500 text-sm mt-1">{errors.guests}</p>}
           </div>
 
+          {/* Date & Time */}
           <div className="flex gap-2">
             <input
               type="date"
               name="date"
               value={formData.date}
               onChange={handleChange}
-              className="w-1/2 px-3 py-2 rounded-none bg-zinc-800 text-white border border-gray-600"
+              className="w-1/2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 transition"
             />
             <input
               type="time"
               name="time"
               value={formData.time}
               onChange={handleChange}
-              className="w-1/2 px-3 py-2 rounded-none bg-zinc-800 text-white border border-gray-600"
+              className="w-1/2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 transition"
             />
           </div>
           {(errors.date || errors.time) && (
-            <p className="text-red-500 text-sm mt-1">
-              {errors.date || errors.time}
-            </p>
+            <p className="text-red-500 text-sm mt-1">{errors.date || errors.time}</p>
           )}
 
+          {/* Instructions */}
           <div>
             <textarea
               name="instructions"
               placeholder="Special Instructions (optional)"
               value={formData.instructions}
               onChange={handleChange}
-              className="w-full px-3 py-2 rounded-none bg-zinc-800 text-white border border-gray-600"
               rows={3}
+              className="w-full px-4 py-2 rounded-lg bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-400 transition"
             />
           </div>
 
+          {/* Submit */}
           <button
             type="submit"
-            className="w-full bg-yellow-400 text-black py-2 rounded-none font-semibold hover:bg-yellow-300 transition"
+            className="w-full bg-yellow-400 dark:bg-yellow-500 text-black dark:text-black py-2 rounded-lg font-semibold hover:bg-yellow-300 dark:hover:bg-yellow-400 transition"
           >
             Submit Booking
           </button>

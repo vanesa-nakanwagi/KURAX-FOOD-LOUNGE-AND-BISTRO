@@ -38,7 +38,7 @@ export default function FeaturedCards() {
   };
 
   return (
-    <section className="px-4 md:px-16 py-8">
+    <section className="px-4 md:px-16 py-8 bg-white dark:bg-black transition-colors duration-300">
       <h3 className="text-2xl md:text-3xl font-serif mb-6 text-yellow-500 text-center">
         Featured Dishes
       </h3>
@@ -47,17 +47,20 @@ export default function FeaturedCards() {
         {cards.map((c, idx) => (
           <div
             key={idx}
-            className="bg-zinc-900 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300 border-2 border-transparent"
+            className="rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
+                       border-2 border-transparent
+                       bg-gray-100 dark:bg-zinc-900
+                       hover:bg-gray-200 dark:hover:bg-zinc-800"
           >
             <img src={c.img} alt={c.title} className="w-full h-48 object-cover" />
             <div className="p-4">
-              <h4 className="font-semibold text-lg text-white">{c.title}</h4>
-              <p className="text-gray-400 text-sm my-2">{c.desc}</p>
+              <h4 className="font-semibold text-lg text-gray-900 dark:text-white">{c.title}</h4>
+              <p className="text-gray-600 dark:text-gray-400 text-sm my-2">{c.desc}</p>
               <div className="flex justify-between items-center">
                 <span className="font-bold text-yellow-500">{c.price}</span>
                 <button
                   onClick={() => handleOrder(c)}
-                  className="px-3 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 transition text-sm"
+                  className="px-3 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 dark:text-black transition text-sm"
                 >
                   Order Now
                 </button>

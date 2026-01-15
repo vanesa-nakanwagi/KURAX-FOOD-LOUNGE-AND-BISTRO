@@ -20,7 +20,7 @@ export default function EventsPage() {
   };
 
   return (
-    <div className="bg-black text-white font-[Outfit]">
+    <div className="bg-white dark:bg-black text-black dark:text-white font-[Outfit] transition-colors duration-300">
       {/* ================= HEADER ================= */}
       <TopSection searchPlaceholder="Search events..." />
 
@@ -28,15 +28,15 @@ export default function EventsPage() {
       <section className="relative h-[60vh] min-h-[500px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img src={terrace} alt="Kurax Events" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-black/60" />
+          <div className="absolute inset-0 bg-black/50 dark:bg-black/60" />
         </div>
         <div className="relative z-10 text-center max-w-4xl mx-auto px-6">
-          <h1 className="font-serif text-5xl md:text-7xl font-bold text-white mb-6 text-balance">
+          <h1 className="font-serif text-5xl md:text-7xl font-bold mb-6 text-white dark:text-yellow-400 text-balance">
             Unforgettable
             <br />
-            <span className="text-yellow-400">Experiences</span>
+            <span className="text-yellow-400 dark:text-yellow-400">Experiences</span>
           </h1>
-          <p className="text-xl md:text-2xl text-white/90 mb-8 text-pretty">
+          <p className="text-xl md:text-2xl text-white/90 dark:text-white/80 mb-8 text-pretty">
             Live music, themed dinners, and exclusive events on our rooftop terrace
           </p>
         </div>
@@ -45,8 +45,10 @@ export default function EventsPage() {
       {/* ================= EVENTS GRID ================= */}
       <section className="py-16 px-6 max-w-7xl mx-auto">
         <div className="text-center mb-12">
-          <h2 className="text-4xl font-serif font-bold mb-4">Upcoming Events</h2>
-          <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+          <h2 className="text-4xl font-serif font-bold mb-4 text-black dark:text-white">
+            Upcoming Events
+          </h2>
+          <p className="text-gray-700 dark:text-gray-400 text-lg max-w-2xl mx-auto">
             From live entertainment to exclusive dining experiences, there's always something special happening at Kurax
           </p>
         </div>
@@ -60,11 +62,10 @@ export default function EventsPage() {
       </section>
 
       {/* ================= CONNECT ================= */}
-      <section className="border-t border-white/10 px-10 py-16 text-center">
-        <h2 className="text-3xl font-serif mb-3">Connect With Us</h2>
-        <p className="text-gray-400 max-w-2xl mx-auto mb-8">
-          Follow us on social media for the latest updates, exclusive offers,
-          and behind-the-scenes content from Kurax Food Lounge & Bistro
+      <section className="border-t border-gray-300/20 dark:border-white/10 px-10 py-16 text-center">
+        <h2 className="text-3xl font-serif mb-3 text-black dark:text-white">Connect With Us</h2>
+        <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto mb-8">
+          Follow us on social media for the latest updates, exclusive offers, and behind-the-scenes content from Kurax Food Lounge & Bistro
         </p>
 
         <div className="flex justify-center gap-2">
@@ -73,19 +74,16 @@ export default function EventsPage() {
             label="Instagram"
             link="https://www.instagram.com/kuraxfoodloungebistro?igsh=djl0bzltY3lnbmI1"
           />
-        
           <SocialButton
             color="from-blue-500 to-cyan-500"
             label="Twitter"
             link="https://x.com/kuraxfoodlounge?t=zSh1NNW0EPSeRwzyoOqinQ&s=09"
           />
-        
           <SocialButton
             color="from-blue-600 to-blue-800"
             label="Facebook"
             link="https://www.facebook.com/kuraxfoodlounge"
           />
-        
           <SocialButton
             color="from-gray-800 to-black"
             label="TikTok"

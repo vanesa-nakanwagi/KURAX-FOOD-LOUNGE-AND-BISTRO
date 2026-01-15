@@ -7,7 +7,7 @@ export default function EventCard({ event }) {
 
   return (
     <>
-      <div className="bg-zinc-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group hover:border-yellow-400/50">
+      <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden shadow-md hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group hover:border-yellow-400/50">
         {/* Image */}
         <div className="relative h-56 overflow-hidden">
           <img
@@ -17,7 +17,7 @@ export default function EventCard({ event }) {
           />
           <div className="absolute top-4 left-4">
             <div className="bg-yellow-400 text-black px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1">
-              <event.icon className="w-4 h-4" />
+              {event.icon && <event.icon className="w-4 h-4" />}
               {event.category}
             </div>
           </div>
@@ -25,10 +25,12 @@ export default function EventCard({ event }) {
 
         {/* Content */}
         <div className="p-6">
-          <h3 className="font-serif text-2xl font-bold mb-3">{event.title}</h3>
-          <p className="text-gray-400 mb-4">{event.description}</p>
+          <h3 className="font-serif text-2xl font-bold mb-3 text-black dark:text-white">
+            {event.title}
+          </h3>
+          <p className="text-gray-700 dark:text-gray-400 mb-4">{event.description}</p>
 
-          <div className="space-y-2 mb-4 text-sm text-gray-300">
+          <div className="space-y-2 mb-4 text-sm text-gray-600 dark:text-gray-300">
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-yellow-400" />
               {event.date}
@@ -44,7 +46,7 @@ export default function EventCard({ event }) {
           </div>
 
           <button
-            className="w-full bg-yellow-400 text-black hover:bg-yellow-300 border-2 border-yellow-400 px-4 py-2 rounded-none text-sm font-semibold"
+            className="w-full bg-yellow-400 text-black hover:bg-yellow-300 dark:bg-yellow-500 dark:hover:bg-yellow-400 border-2 border-yellow-400 px-4 py-2 rounded-none text-sm font-semibold transition-colors duration-300"
             onClick={() => setIsModalOpen(true)}
           >
             Book Now
@@ -53,11 +55,13 @@ export default function EventCard({ event }) {
       </div>
 
       {/* Booking Modal */}
-     <BookingModal
-        show={isModalOpen}            // ✅ matches BookingModal
-        onClose={() => setIsModalOpen(false)}
-        eventTitle={event.title}      // ✅ matches BookingModal
-      />
+      {isModalOpen && (
+        <BookingModal
+          show={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          eventTitle={event.title}
+        />
+      )}
     </>
   );
 }
