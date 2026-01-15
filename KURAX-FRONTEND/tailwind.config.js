@@ -15,6 +15,7 @@ export default {
       heading: ["Poppins","sans-serif"],
       body: ["Inter","sans-serif"]
     },
+    
     animation:{
       fadeUp:'fadeUp .8s ease forwards'
       },

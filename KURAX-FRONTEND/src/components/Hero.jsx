@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Navbar from "./Navbar"; // adjust path if needed
 import hero1 from "../assets/images/hero1.jpg";
 import hero2 from "../assets/images/hero2.jpg";
 import hero3 from "../assets/images/hero3.jpg";
@@ -8,6 +9,7 @@ const images = [hero1, hero2, hero3];
 export default function Hero() {
   const [current, setCurrent] = useState(0);
 
+  // Image slider
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrent((prev) => (prev + 1) % images.length);
@@ -16,7 +18,11 @@ export default function Hero() {
   }, []);
 
   return (
-    <section className="relative h-screen w-full overflow-hidden">
+    <section className="relative h-screen w-full overflow-hidden font-body">
+      {/* Navbar at the top */}
+      <Navbar />
+
+      {/* Background images */}
       {images.map((img, index) => (
         <div
           key={index}
@@ -27,19 +33,24 @@ export default function Hero() {
         />
       ))}
 
+      {/* Dark overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/80" />
 
-      <div className="relative z-10 h-full flex items-center justify-center text-center px-6">
-        <div>
-          <h1 className="font-serif text-6xl md:text-7xl lg:text-8xl font-bold text-white">
-            Kurax Food Lounge
-            <span className="block mt-3 text-[#C9A24D]">& Bistro</span>
-          </h1>
+      {/* Hero content */}
+      <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
+        {/* Main heading */}
+        <h1 className="font-body font-semibold text-5xl md:text-6xl lg:text-7xl text-white leading-tight">
+          Kurax Food Lounge
+          <span className="block mt-3 text-yellow-400 font-body font-semibold">
+            & Bistro
+          </span>
+        </h1>
 
-          <p className="mt-6 text-xl md:text-2xl text-gray-200">
-            Luxury dining, signature drinks & rooftop vibes
-          </p>
-        </div>
+        {/* Subtitle */}
+        <p className="font-body font-medium mt-6 text-xl md:text-2xl text-white leading-relaxed">
+          Luxury dining, signature drinks & rooftop vibes
+        </p>
+
       </div>
     </section>
   );
