@@ -27,8 +27,9 @@ export default function Navbar() {
                 className="w-12 h-12 rounded-full object-cover"
               />
               <div>
-               <h1 className="font-body font-semibold text-white text-sm sm:text-base md:text-xl whitespace-nowrap">
-                     KURAX FOOD LOUNGE & BISTRO </h1>
+                <h1 className="text-md md:text-xl font-semibold text-white">
+                  KURAX FOOD LOUNGE & BISTRO
+                </h1>
                 <p className="text-sm md:text-base text-yellow-400">
                   Luxury dining, signature drinks & rooftop vibes
                 </p>
