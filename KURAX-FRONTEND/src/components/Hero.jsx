@@ -52,7 +52,7 @@ export default function Hero() {
           </span>
         </h1>
 
-        <p className="font-body font-medium mt-3 sm:mt-4 md:mt-6 text-base sm:text-lg md:text-2xl text-white leading-relaxed max-w-xs sm:max-w-md md:max-w-lg animate-fadeUp delay-200">
+        <p className="font-body font-medium mt-3 sm:mt-4 md:mt-6 text-base sm:text-lg md:text-2xl text-white/80 leading-relaxed max-w-xs sm:max-w-md md:max-w-lg animate-fadeUp delay-200">
           Let's Dine together and Savor the Moments
         </p>
 

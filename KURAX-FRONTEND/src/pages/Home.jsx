@@ -6,7 +6,6 @@ import EventsSection from "../components/EventsSection";
 import SocialButton from "../components/common/socialButton.jsx";
 import CartModal from "../components/cart/CartModal.jsx";
 
-
 export default function HomePage() {
   const {
     cart,
@@ -25,15 +24,14 @@ export default function HomePage() {
   } = useCart();
 
   return (
-    <div className="bg-black font-[Outfit]">
-      <TopSection
-        cartCount={cart.length}
-        onCartClick={() => setIsCartOpen(true)}
-        searchPlaceholder="Search items..."
-      />
+    <div className="bg-black font-body overflow-x-hidden">
+      {/* Single sticky header */}
+      <TopSection searchPlaceholder="Search items..." />
 
+      {/* Hero */}
       <HeroSection />
-      <FeaturedCards /> {/* no props needed now */}
+
+      <FeaturedCards />
       <EventsSection />
       <SocialButton />
 
@@ -49,8 +47,8 @@ export default function HomePage() {
         totalAmount={totalAmount}
         checkoutStep={checkoutStep}
         setCheckoutStep={setCheckoutStep}
-        customerDetails={customerDetails} 
-        setCustomerDetails={setCustomerDetails} 
+        customerDetails={customerDetails}
+        setCustomerDetails={setCustomerDetails}
       />
 
 
