@@ -71,7 +71,7 @@ export default function HomePage() {
 
   <SocialButton
     color="from-blue-500 to-cyan-500"
-    label="Twitter"
+    label="Twitter)"
     link="https://x.com/kuraxfoodlounge?t=zSh1NNW0EPSeRwzyoOqinQ&s=09"
   />
 

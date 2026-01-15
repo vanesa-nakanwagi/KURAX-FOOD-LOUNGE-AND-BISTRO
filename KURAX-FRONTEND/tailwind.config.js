@@ -8,9 +8,8 @@ export default {
         yellowPrimary: "#FACC15",
         surface: "#121212"
       },
-      fontFamily: {
-      serif: ['"Playfair Display"', 'serif'],
-    },
+     
+
     fontFamily: {
       heading: ["Poppins","sans-serif"],
       body: ["Inter","sans-serif"]

@@ -30,7 +30,7 @@ export default function Navbar() {
                 <h1 className="text-lg md:text-xl font-semibold text-white">
                   KURAX FOOD LOUNGE & BISTRO
                 </h1>
-                <p className="text-sm md:text-base text-yellow-400">
+                <p className="text-sm md:text-base text-yellow-600">
                   Luxury dining, signature drinks & rooftop vibes
                 </p>
               </div>
