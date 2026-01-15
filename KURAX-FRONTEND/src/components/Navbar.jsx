@@ -16,29 +16,26 @@ function NavButton({ children, href }) {
 
 export default function Navbar() {
   return (
-    <nav className="relative z-20 w-full bg-black/70 backdrop-blur border-b border-white/10 font-body">
-      <div className="max-w-full sm:max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-        
-        
-         {/* Logo */}
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <img
-                    src={logo}
-                    alt="Kurax Logo"
-                    className="w-12 h-12 rounded-full object-cover"
-                  />
-                  <div>
-                    <h1 className="text-lg md:text-xl font-semibold text-white">
-                      KURAX FOOD LOUNGE & BISTRO
-                    </h1>
-                    <p className="text-sm md:text-base text-yellow-400">
-                      Luxury dining, signature drinks & rooftop vibes
-                    </p>
-                  </div>
-                </div>
-
-       
-      </div>
-    </nav>
+    <header className="border-b border-yellow-500/20 sticky top-0 z-50 bg-black">
+          <div className="flex flex-col md:flex-row items-center md:justify-between px-4 md:px-8 py-4 gap-4 md:gap-0">
+    
+            {/* Logo */}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <img
+                src={logo}
+                alt="Kurax Logo"
+                className="w-12 h-12 rounded-full object-cover"
+              />
+              <div>
+                <h1 className="text-lg md:text-xl font-semibold text-white">
+                  KURAX FOOD LOUNGE & BISTRO
+                </h1>
+                <p className="text-sm md:text-base text-yellow-400">
+                  Luxury dining, signature drinks & rooftop vibes
+                </p>
+              </div>
+            </div>
+            </div>
+         </header>
   );
 }
