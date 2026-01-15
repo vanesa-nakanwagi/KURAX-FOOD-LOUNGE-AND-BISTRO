@@ -19,22 +19,23 @@ export default function Navbar() {
     <nav className="relative z-20 w-full bg-black/70 backdrop-blur border-b border-white/10 font-body">
       <div className="max-w-full sm:max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
         
-        {/* Logo + text */}
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-2 sm:gap-3 w-full sm:w-auto text-center sm:text-left">
-          <img
-            src={logo}
-            alt="Kurax Logo"
-            className="w-10 sm:w-12 h-10 sm:h-12 rounded-full object-cover flex-shrink-0"
-          />
-          <div className="leading-tight">
-            <h1 className="font-body text-base sm:text-lg md:text-xl font-semibold text-white">
-              KURAX FOOD LOUNGE & BISTRO
-            </h1>
-            <p className="font-body text-xs sm:text-sm md:text-base text-yellow-400">
-              Luxury dining, signature drinks & rooftop vibes
-            </p>
-          </div>
-        </div>
+        
+         {/* Logo */}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <img
+                    src={logo}
+                    alt="Kurax Logo"
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                  <div>
+                    <h1 className="text-lg md:text-xl font-semibold text-white">
+                      KURAX FOOD LOUNGE & BISTRO
+                    </h1>
+                    <p className="text-sm md:text-base text-yellow-400">
+                      Luxury dining, signature drinks & rooftop vibes
+                    </p>
+                  </div>
+                </div>
 
        
       </div>
