@@ -44,7 +44,16 @@ export default function Hero() {
   <p className="font-body font-medium mt-3 sm:mt-4 md:mt-6 text-base sm:text-lg md:text-2xl text-white leading-relaxed max-w-xs sm:max-w-md md:max-w-lg">
     Luxury dining, signature drinks & rooftop vibes
   </p>
+
+  {/* Sign In Button */}
+  <a
+    href="#signin"
+    className="mt-6 sm:mt-8 px-6 py-3 border-2 border-yellow-400 text-white rounded-none hover:bg-yellow-400 hover:text-black transition-colors flex items-center gap-2"
+  >
+    Sign In
+  </a>
 </div>
+
 
 </section>
 
