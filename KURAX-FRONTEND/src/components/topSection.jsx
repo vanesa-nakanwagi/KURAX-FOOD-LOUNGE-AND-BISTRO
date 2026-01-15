@@ -1,13 +1,13 @@
 import { Search, ShoppingCart } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useCart } from "../components/context/CartContext";
+import ThemeToggle from "../components/ThemeToggle"; // ✅ import the theme toggle
 import logo from "../assets/images/logo.jpeg";
 
 export default function TopSection({ searchPlaceholder }) {
   const { cart, setIsCartOpen } = useCart();
 
   return (
-
     <header className="border-b border-yellow-500/20 sticky top-0 z-50 bg-black">
       <div className="flex flex-col md:flex-row items-center md:justify-between px-4 md:px-8 py-4 gap-4 md:gap-0">
 
@@ -20,7 +20,6 @@ export default function TopSection({ searchPlaceholder }) {
           />
           <div>
             <h1 className="text-lg md:text-xl !font-semibold text-white" style={{ fontFamily: "Inter, sans-serif" }}>
-              
               KURAX FOOD LOUNGE & BISTRO
             </h1>
             <p className="text-sm md:text-base text-yellow-400">
@@ -29,7 +28,7 @@ export default function TopSection({ searchPlaceholder }) {
           </div>
         </div>
 
-        {/* Search + Cart */}
+        {/* Search + Cart + Theme Toggle */}
         <div className="w-full sm:w-3/4 md:w-1/3 flex items-center gap-2">
 
           {/* Search */}
@@ -60,6 +59,9 @@ export default function TopSection({ searchPlaceholder }) {
               </span>
             )}
           </button>
+
+          {/* Theme Toggle */}
+          <ThemeToggle /> {/* ✅ added here */}
         </div>
       </div>
 

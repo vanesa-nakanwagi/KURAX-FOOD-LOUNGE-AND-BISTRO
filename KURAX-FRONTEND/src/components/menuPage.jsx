@@ -121,7 +121,7 @@ export default function MenuPage() {
           {filteredItems.map((item) => (
             <div
               key={item.id}
-              className="bg-zinc-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300"
+              className="bg-zinc-900 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300"
             >
               <img
                 src={item.image}

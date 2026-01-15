@@ -47,7 +47,7 @@ export default function FeaturedCards() {
         {cards.map((c, idx) => (
           <div
             key={idx}
-            className="bg-zinc-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300 border-2 border-transparent"
+            className="bg-zinc-900 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300 border-2 border-transparent"
           >
             <img src={c.img} alt={c.title} className="w-full h-48 object-cover" />
             <div className="p-4">
