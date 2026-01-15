@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom"; // import Link
 import Navbar from "./Navbar"; 
 import hero1 from "../assets/images/hero1.jpg";
 import hero2 from "../assets/images/hero2.jpg";
@@ -22,7 +23,7 @@ export default function Hero() {
       {/* Navbar */}
       <Navbar />
 
-      {/* Background images with subtle zoom */}
+      {/* Background images */}
       {images.map((img, index) => (
         <div
           key={index}
@@ -33,10 +34,10 @@ export default function Hero() {
         />
       ))}
 
-      {/* Dark gradient overlay */}
+      {/* Gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
 
-      {/* Animated shapes (yellow/white circles) */}
+      {/* Animated shapes */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <span className="absolute w-24 h-24 bg-yellow-400 rounded-full opacity-30 -top-12 -left-12 animate-bounce-slow"></span>
         <span className="absolute w-16 h-16 bg-white rounded-full opacity-20 top-1/4 right-10 animate-bounce-slow"></span>
@@ -55,17 +56,15 @@ export default function Hero() {
           Let's Dine together and Savor the Moments
         </p>
 
-        {/* Sign In Button with arrow animation */}
-        <a
-          href="#signin"
+        {/* Sign In Button navigates to Home page */}
+        <Link
+          to="/home"
           className="mt-6 sm:mt-8 px-6 py-3 border-2 border-yellow-400 text-white rounded-none hover:bg-yellow-400 hover:text-black transition-all duration-300 flex items-center gap-2 animate-fadeUp delay-400 group"
         >
           Sign In
-          <span className="transform transition-transform group-hover:translate-x-1 text-white">→</span>
-        </a>
+         
+        </Link>
       </div>
-
-      
     </section>
   );
 }
