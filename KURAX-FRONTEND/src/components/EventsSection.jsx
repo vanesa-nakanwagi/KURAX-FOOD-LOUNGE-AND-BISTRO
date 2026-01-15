@@ -4,7 +4,7 @@ import { events } from "../data/events.jsx";
 export default function EventsSection() {
   return (
     <section className="py-16 px-6">
-      <h2 className="text-3xl font-serif text-yellow-900 text-center mb-10">
+      <h2 className="text-3xl font-serif text-yellow-500 text-center mb-10">
         Upcoming Events
       </h2>
 
