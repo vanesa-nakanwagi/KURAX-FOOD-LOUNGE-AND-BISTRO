@@ -24,9 +24,17 @@ export default function Navbar() {
             alt="Kurax Logo"
             className="w-10 h-10 rounded-full object-cover"
           />
-          <span className="text-white font-semibold tracking-wide">
-            KURAX FOOD LOUNGE & BISTRO
-          </span>
+          <div className="leading-tight">
+  <h1 className="text-white font-semibold tracking-wide text-base sm:text-lg md:text-xl">
+    <span className="block sm:inline">KURAX FOOD LOUNGE</span>
+    <span className="block sm:inline sm:ml-1">&amp; BISTRO</span>
+  </h1>
+
+  <p className="text-xs sm:text-sm md:text-base text-yellow-400 mt-1">
+    Luxury dining, signature drinks &amp; rooftop vibes
+  </p>
+</div>
+
         
         </div>
 
