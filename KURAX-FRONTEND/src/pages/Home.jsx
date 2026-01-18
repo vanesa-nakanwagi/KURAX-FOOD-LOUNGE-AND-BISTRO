@@ -32,6 +32,7 @@ export default function HomePage() {
         onCartClick={() => setIsCartOpen(true)}
         searchPlaceholder="Search items..."
       />
+      {/* ================= HERO ================= */}
       <HeroSection />
         <FeaturedCards /> 
         <EventsSection />

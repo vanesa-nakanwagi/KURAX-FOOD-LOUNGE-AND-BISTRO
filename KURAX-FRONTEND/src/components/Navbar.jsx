@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import logo from "../assets/images/logo.jpeg";
+import { Link } from "react-router-dom";
 
 const navLinks = [
-  { name: "Home", href: "#home" },
   { name: "Menu", href: "#menu" },
-  { name: "About", href: "#about" },
   { name: "Events", href: "#events" },
+  { name: "Booking Services", href: "services" },
+  { name: "About", href: "#about" },
   { name: "Location", href: "#location" },
   { name: "Contact", href: "#contact" },
 ];
@@ -97,12 +98,13 @@ export default function Navbar() {
               </a>
             ))}
 
-            <a
-              href="#signin"
-              className="mt-2 border border-yellow-400 text-yellow-400 text-center py-2 hover:bg-yellow-400 hover:text-black transition"
-            >
-              Sign In
-            </a>
+            <Link
+  to="/"
+  onClick={() => setOpen(false)}
+  className="mt-8 px-6 py-3 border-2 border-yellow-400 text-white text-center hover:bg-yellow-400 hover:text-black transition-all duration-300"
+>
+  Sign In
+</Link>
           </div>
         </div>
       )}

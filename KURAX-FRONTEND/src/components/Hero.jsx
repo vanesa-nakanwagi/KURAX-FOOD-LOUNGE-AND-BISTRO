@@ -7,160 +7,254 @@ import hero3 from "../assets/images/hero3.jpg";
 import luwombo from "../assets/images/luwombo.jpeg";
 import grilledGoat from "../assets/images/grilled_goat.jpeg";
 import matooke from "../assets/images/matooke.jpeg";
-import about from "../assets/images/about.jpg";
+
+import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react";
 
 
+const heroImages = [hero1, hero2, hero3];
 
-const images = [hero1, hero2, hero3];
+// Hardcoded events data
+const events = [
+  {
+    id: 2,
+    title: "Sunday Brunch Experience",
+    date: "Every Sunday",
+    time: "11:00 AM - 3:00 PM",
+    location: "Main Dining Area",
+    description: "All-you-can-eat brunch buffet with bottomless mimosas",
+    image: "https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?auto=format&fit=crop&w=800&q=80",
+    category: "Dining",
+  },
+  {
+    id: 3,
+    title: "Afrobeats Night",
+    date: "Every Saturday",
+    time: "9:00 PM - 2:00 AM",
+    location: "Rooftop Terrace",
+    description: "Dance the night away with the best Afrobeats DJs",
+    image: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&w=800&q=80",
+    category: "Nightlife",
+  },
+  {
+    id: 6,
+    title: "Open Mic Comedy Night",
+    date: "First Wednesday",
+    time: "8:00 PM - 10:30 PM",
+    location: "Main Lounge",
+    description: "Stand-up comedy with local and international comedians",
+    image: "https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=800&q=80",
+    category: "Entertainment",
+  },
+];
 
 export default function Hero() {
   const [current, setCurrent] = useState(0);
 
+  // Hero slideshow
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrent((prev) => (prev + 1) % images.length);
+      setCurrent((prev) => (prev + 1) % heroImages.length);
     }, 6000);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <section className="bg-black font-[Outfit]">
-        
+    <section className="relative bg-black font-[Outfit]">
+
       {/* Navbar */}
       <Navbar />
 
-      {/* Background images */}
-      {images.map((img, index) => (
-        <div
-          key={index}
-          className={`absolute inset-0 bg-center bg-cover transition-opacity duration-1000 ${
-            index === current ? "opacity-100" : "opacity-0"
-          }`}
-          style={{ backgroundImage: `url(${img})` }}
-        />
-      ))}
+      {/* Hero Container */}
+      <div className="relative w-full h-[80vh] sm:h-[70vh] md:h-[60vh] overflow-hidden">
 
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
+        {/* Background Images */}
+        {heroImages.map((img, index) => (
+          <div
+            key={index}
+            className={`absolute inset-0 bg-center bg-cover transition-opacity duration-1000 ${
+              index === current ? "opacity-100" : "opacity-0"
+            }`}
+            style={{ backgroundImage: `url(${img})` }}
+          />
+        ))}
 
-      {/* Hero content */}
-      <div className="relative z-10 flex min-h-[100svh] flex-col items-center justify-center text-center px-4">
-        <h1 className="font-bold text-3xl sm:text-4xl md:text-6xl lg:text-7xl leading-tight animate-fadeUp">
-          Elevated Local Dishes
-          <span className="block mt-2 text-yellow-600">
-            & Flavors
-          </span>
-        </h1>
+        {/* Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
 
-        <p className="mt-4 text-base sm:text-lg md:text-2xl text-white/80 max-w-md animate-fadeUp delay-200">
-          Let’s dine together and savor the moments
-        </p>
-
-        <Link
-          to="/home"
-          className="mt-8 px-6 py-3 border-2 border-yellow-400 text-white hover:bg-yellow-400 hover:text-black transition-all duration-300 animate-fadeUp delay-400"
-        >
-          Sign In
-        </Link>
+        {/* Hero Text */}
+        <div className="relative z-10 flex flex-col items-center justify-center h-full text-center px-4">
+          <h1 className="font-bold text-3xl sm:text-4xl md:text-6xl lg:text-7xl leading-tight animate-fadeUp">
+            Elevated Local
+            <span className="block mt-2 text-yellow-600">
+              & Cuisine Reimagined
+            </span>
+          </h1>
+          <p className="mt-2 text-sm sm:text-base md:text-lg text-white/90 max-w-xs sm:max-w-sm md:max-w-md animate-fadeUp delay-200">
+            Experience Uganda’s soul through elevated cuisine where tradition meets innovation.
+          </p>
+          
+        </div>
       </div>
 
-    {/* Signature Menu Section */}
+      {/* ================== Signature Dishes Section ================== */}
 <section className="bg-black text-white font-outfit py-20 px-4 sm:px-8">
   <div className="max-w-7xl mx-auto text-center">
-    <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4">
-      Signature Menu
-    </h2>
 
+    {/* Section header */}
+    <p className="text-yellow-500 uppercase text-sm mb-2 tracking-wide">
+      Our Specialties
+    </p>
+    <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">
+      Signature Dishes
+    </h2>
+    <div className="w-16 h-1 bg-yellow-500 mx-auto mb-4"></div>
     <p className="text-white/70 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
-      Carefully curated dishes that celebrate Uganda&apos;s culinary heritage,
-      crafted with passion, flavor, and a modern twist.
+      Carefully curated selections that celebrate Uganda&apos;s culinary heritage, crafted with passion and modern finesse.
     </p>
 
-    {/* Cards */}
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-      {/* Card 1 */}
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden hover:border-yellow-400/40 transition">
-        <img
-        src={luwombo}
-          alt="Luwombo"
-          className="w-full h-48 object-cover"
-        />
-
-        <div className="p-5 text-left">
-          <h3 className="text-lg font-semibold mb-1">Luwombo</h3>
-          <p className="text-sm text-white/60">
-            A royal Ugandan delicacy slow-cooked to perfection.
-          </p>
+    {/* Menu Cards */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+      {[
+        {
+          img: luwombo,
+          title: "Luwombo",
+          desc: "A royal Ugandan delicacy slow-cooked to perfection.",
+          price: "UGX 45,000",
+        },
+        {
+          img: grilledGoat,
+          title: "Grilled Goat",
+          desc: "Smoky, tender, and seasoned with local spices.",
+          price: "UGX 60,000",
+        },
+        {
+          img: matooke,
+          title: "Matooke",
+          desc: "A Ugandan staple elevated with Kurax finesse.",
+          price: "UGX 25,000",
+        },
+      ].map((c, idx) => (
+        <div
+          key={idx}
+          className="rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
+                     border-2 border-transparent
+                     bg-gray-100 dark:bg-zinc-900
+                     hover:bg-gray-200 dark:hover:bg-zinc-800"
+        >
+          <img src={c.img} alt={c.title} className="w-full h-48 object-cover" />
+          <div className="p-4 text-left">
+            <h4 className="font-semibold text-lg text-gray-900 dark:text-white">{c.title}</h4>
+            <p className="text-gray-600 dark:text-gray-400 text-sm my-2">{c.desc}</p>
+            <div className="flex justify-start items-center">
+              <span className="font-bold text-yellow-500">{c.price}</span>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* Card 2 */}
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden hover:border-yellow-400/40 transition">
-        <img
-         src={grilledGoat}
-        alt="Grilled Goat"
-         className="w-full h-48 object-cover"
-        />
-
-        <div className="p-5 text-left">
-          <h3 className="text-lg font-semibold mb-1">Grilled Goat</h3>
-          <p className="text-sm text-white/60">
-            Smoky, tender, and seasoned with local spices.
-          </p>
-        </div>
-      </div>
-
-      {/* Card 3 */}
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden hover:border-yellow-400/40 transition">
-      <img
-             src={matooke}
-             alt="Matooke"
-              className="w-full h-48 object-cover"
-    />
-
-        <div className="p-5 text-left">
-          <h3 className="text-lg font-semibold mb-1">Matooke</h3>
-          <p className="text-sm text-white/60">
-            A Ugandan staple elevated with Kurax finesse.
-          </p>
-        </div>
-      </div>
+      ))}
     </div>
+
+    {/* Explore Menu Button */}
+    <div className="mb-10">
+      <Link
+        to="/menus"
+        className="inline-block px-8 py-3 border-2 border-yellow-400 text-yellow-400 font-medium text-sm hover:bg-yellow-400 hover:text-black transition-all duration-300"
+      >
+        Explore Menu
+      </Link>
+    </div>
+
+    {/* Faint divider line at bottom */}
+    <div className="w-full h-px bg-yellow-500/20"></div>
   </div>
 </section>
-{/* About Kurax Section */}
-<section className="bg-black text-white font-outfit py-20 px-4 sm:px-8 border-t border-white/10">
-  <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-    
-    {/* Text */}
-    <div>
-      <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-        About Kurax
-      </h2>
 
-      <p className="text-white/70 leading-relaxed mb-4">
-        Kurax Food Lounge & Bistro is a celebration of culture, flavor, and
-        elevated dining. Rooted in Uganda’s rich culinary traditions, we blend
-        authentic recipes with modern presentation and ambiance.
-      </p>
 
-      <p className="text-white/70 leading-relaxed">
-        From signature dishes to rooftop vibes, Kurax is where food, community,
-        and unforgettable moments come together.
-      </p>
+    {/* ================== Featured Events Section ================== */}
+<section className="bg-black text-white font-outfit py-20 px-4 sm:px-8">
+  <div className="max-w-7xl mx-auto text-center">
+
+    {/* Section Header */}
+    <p className="text-yellow-500 uppercase text-sm mb-2 tracking-wide">
+      Upcoming Experiences
+    </p>
+    <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">
+      Featured Events
+    </h2>
+    <div className="w-16 h-1 bg-yellow-500 mx-auto mb-4"></div>
+    <p className="text-white/70 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
+      Join us for exclusive dining experiences, live entertainment, and special culinary celebrations.
+    </p>
+
+    {/* Event Cards */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {events.map((event) => (
+        <div
+          key={event.id}
+          className="bg-white dark:bg-zinc-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
+                     border-2 border-transparent hover:border-yellow-400/50 group"
+        >
+          {/* Image */}
+          <div className="relative h-56 overflow-hidden">
+            <img
+              src={event.image}
+              alt={event.title}
+              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+            />
+            {/* Category Badge */}
+            <div className="absolute top-4 left-4 z-10">
+              <div className="bg-yellow-400 text-black px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1">
+                {event.icon && <event.icon className="w-4 h-4" />}
+                {event.category}
+              </div>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6 text-left">
+            <h3 className="font-serif text-2xl font-bold mb-2 text-black dark:text-white">
+              {event.title}
+            </h3>
+            <p className="text-gray-700 dark:text-gray-400 mb-4 text-sm sm:text-base">
+              {event.description}
+            </p>
+
+            {/* Event Info */}
+            <div className="space-y-2 mb-4 text-sm text-gray-600 dark:text-gray-300">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-yellow-400" />
+                {event.date}
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-yellow-400" />
+                {event.time}
+              </div>
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-yellow-400" />
+                {event.location}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
 
-    {/* Image */}
-    <div className="relative">
-      <img
-        src={about}
-        alt="Kurax Interior"
-        className="rounded-xl w-full h-80 object-cover"
-      />
-      <div className="absolute inset-0 bg-black/20 rounded-xl" />
+    {/* Explore Events Button */}
+    <div className="mt-12">
+      <Link
+        to="/events"
+        className="inline-block px-8 py-3 border-2 border-yellow-400 text-yellow-400 font-medium text-sm hover:bg-yellow-400 hover:text-black transition-all duration-300"
+      >
+        Explore Events
+      </Link>
     </div>
+
+    {/* Faint divider line at bottom */}
+    <div className="w-full h-px bg-yellow-500/20 mt-16"></div>
   </div>
 </section>
-</section>
+
+
+
+    </section>
   );
 }
