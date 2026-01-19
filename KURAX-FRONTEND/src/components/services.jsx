@@ -47,7 +47,7 @@ const ExecutiveDiningServices = () => {
                         alt="Elegant corporate dining room" 
                         className="w-full h-full object-cover block" 
                     />
-                    <div className="absolute inset-0 bg-black/30 flex items-end justify-center p-6">
+                    <div className="absolute inset-0 flex items-end justify-center p-6">
                     <p className="text-xl font-semibold text-white/90 px-4 py-2 rounded">
                             "Where Business Meets Elegance"
                     </p>
