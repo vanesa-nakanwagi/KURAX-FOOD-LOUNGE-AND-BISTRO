@@ -128,18 +128,18 @@ export default function Hero() {
       
 
       {/* ================== Signature Dishes Section ================== */}
-<section className="bg-black text-white font-outfit py-20 px-4 sm:px-8">
+<section className="bg-white text-black font-outfit py-20 px-4 sm:px-8">
   <div className="max-w-7xl mx-auto text-center">
 
     {/* Section header */}
-    <p className="text-yellow-500 uppercase text-sm mb-2 tracking-wide">
-      Our Specialties
+    <p className="text-yellow-800 uppercase text-bg mb-2 tracking-wide">
+      Our Specialities
     </p>
     <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">
       Signature Dishes
     </h2>
     <div className="w-16 h-1 bg-yellow-500 mx-auto mb-4"></div>
-    <p className="text-white/70 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
+    <p className="text-black/70 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
       Carefully curated selections that celebrate Uganda&apos;s culinary heritage, crafted with passion and modern finesse.
     </p>
 
@@ -176,13 +176,13 @@ export default function Hero() {
           key={idx}
           className="rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
                      border-2 border-transparent
-                     bg-gray-100 dark:bg-zinc-900
-                     hover:bg-gray-200 dark:hover:bg-zinc-800"
+                     bg-white dark:bg-white-900
+                     hover:bg-gray-200"
         >
           <img src={c.img} alt={c.title} className="w-full h-48 object-cover" />
           <div className="p-4 text-left">
-            <h4 className="font-semibold text-lg text-gray-900 dark:text-white">{c.title}</h4>
-            <p className="text-gray-600 dark:text-gray-400 text-sm my-2">{c.desc}</p>
+            <h4 className="font-semibold text-lg text-black-900 dark:text-black">{c.title}</h4>
+            <p className="text-gray-600 dark:text-gray-600 text-sm my-2">{c.desc}</p>
             <div className="flex justify-start items-center">
               <span className="font-bold text-yellow-500">{c.price}</span>
             </div>
@@ -195,7 +195,7 @@ export default function Hero() {
     <div className="mb-10">
       <Link
         to="/menus"
-        className="inline-block px-8 py-3 border-2 border-yellow-400 text-yellow-400 font-medium text-sm hover:bg-yellow-400 hover:text-black transition-all duration-300"
+        className="inline-block px-8 py-3 border-2 border-yellow-400 text-black-900 font-medium text-sm hover:bg-yellow-400  transition-all duration-300"
       >
         Explore Menu
       </Link>
@@ -208,18 +208,18 @@ export default function Hero() {
 
 
     {/* ================== Featured Events Section ================== */}
-<section className="bg-black text-white font-outfit py-20 px-4 sm:px-8">
+<section className="bg-white text-black font-outfit py-20 px-4 sm:px-8">
   <div className="max-w-7xl mx-auto text-center">
 
     {/* Section Header */}
-    <p className="text-yellow-500 uppercase text-sm mb-2 tracking-wide">
+    <p className="text-yellow-800 uppercase text-bg mb-2 tracking-wide">
       Upcoming Experiences
     </p>
     <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">
       Featured Events
     </h2>
     <div className="w-16 h-1 bg-yellow-500 mx-auto mb-4"></div>
-    <p className="text-white/70 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
+    <p className="text-black/70 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
       Join us for exclusive dining experiences, live entertainment, and special culinary celebrations.
     </p>
 
@@ -228,7 +228,7 @@ export default function Hero() {
       {events.map((event) => (
         <div
           key={event.id}
-          className="bg-white dark:bg-zinc-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
+          className="bg-white dark:bg-white-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
                      border-2 border-transparent hover:border-yellow-400/50 group"
         >
           {/* Image */}
@@ -249,15 +249,15 @@ export default function Hero() {
 
           {/* Content */}
           <div className="p-6 text-left">
-            <h3 className="font-serif text-2xl font-bold mb-2 text-black dark:text-white">
+            <h3 className="font-serif text-2xl font-bold mb-2 text-black dark:text-black">
               {event.title}
             </h3>
-            <p className="text-gray-700 dark:text-gray-400 mb-4 text-sm sm:text-base">
+            <p className="text-gray-700 dark:text-gray-600 mb-4 text-sm sm:text-base">
               {event.description}
             </p>
 
             {/* Event Info */}
-            <div className="space-y-2 mb-4 text-sm text-gray-600 dark:text-gray-300">
+            <div className="space-y-2 mb-4 text-sm text-gray-700 dark:text-gray-600">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-yellow-400" />
                 {event.date}
@@ -280,7 +280,7 @@ export default function Hero() {
     <div className="mt-12">
       <Link
         to="/events"
-        className="inline-block px-8 py-3 border-2 border-yellow-400 text-yellow-400 font-medium text-sm hover:bg-yellow-400 hover:text-black transition-all duration-300"
+        className="inline-block px-8 py-3 border-2 border-yellow-400 text-black-900 font-medium text-sm hover:bg-yellow-400 hover:text-black transition-all duration-300"
       >
         Explore Events
       </Link>
