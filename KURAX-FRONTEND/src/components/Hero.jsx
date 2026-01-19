@@ -12,8 +12,8 @@ import terrace from "../assets/images/terrace.jpg";
 import ContactIconButton from "../components/common/socialButton.jsx";
 import ContactInfoItem from "../components/visitUs.jsx";
 import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react";
-
-
+import About from "../components/about.jsx";
+import ExecutiveDiningServices from "../components/services.jsx";
 const heroImages = [hero1, hero2, hero3, terrace];
 
 // Hardcoded events data
@@ -196,7 +196,7 @@ export default function Hero() {
     <div className="mb-10">
       <Link
         to="/menus"
-        className="inline-block px-8 py-3 border-2 border-yellow-400 text-black-900 font-medium text-sm hover:bg-yellow-400  transition-all duration-300"
+        className="mt-8 px-8 py-3 border-2 border-yellow-400 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-amber-500 self-start"
       >
         Explore Menu
       </Link>
@@ -281,7 +281,7 @@ export default function Hero() {
     <div className="mt-12">
       <Link
         to="/events"
-        className="inline-block px-8 py-3 text-bg border-2 border-yellow-400 text-black-900 font-medium text-sm hover:bg-yellow-400 hover:text-black transition-all duration-300"
+        className="mt-8 px-8 py-3 border-2 border-yellow-400 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-amber-500 self-start"
       >
         Explore Events
       </Link>
@@ -291,6 +291,9 @@ export default function Hero() {
     <div className="w-full h-px bg-yellow-500/20 mt-16"></div>
   </div>
 </section>
+
+<ExecutiveDiningServices />
+<About />
 <ContactInfoItem />
 
 <ContactIconButton />

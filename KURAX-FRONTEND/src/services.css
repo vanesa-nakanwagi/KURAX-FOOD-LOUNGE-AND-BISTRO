@@ -1,0 +1,141 @@
+/* Basic Reset and Global Styles (adjust as needed for your project) */
+.executive-dining-section {
+    background-color: #000000; /* Black background for the section */
+    color: #ffffff; /* White text */
+    font-family: Arial, sans-serif; /* Use your project's desired font */
+    padding: 60px 0;
+}
+
+.content-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex; /* Layout the image and services side-by-side */
+    gap: 40px;
+    padding: 0 20px;
+}
+
+/* --- Left Panel: Image and Quote --- */
+.image-panel {
+    flex: 1; /* Takes up roughly half the space */
+    position: relative;
+    overflow: hidden;
+    /* Optional: Aspect ratio control if the image size varies */
+    min-height: 550px; 
+}
+
+.dining-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Ensures the image covers the container */
+    display: block;
+}
+
+.image-quote {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    color: #e2e2dfee; /* Gold/yellow color for the quote */
+    font-size: 1.25rem;
+    font-weight: bold;
+    padding: 5px 10px;
+    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background for readability */
+}
+
+/* --- Right Panel: Services Content --- */
+.services-panel {
+    flex: 1; /* Takes up the other half */
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* Center the content vertically */
+    padding-top: 20px;
+}
+
+.premium-label {
+    color: #a8a8a8; /* Lighter gray for the small label */
+    font-size: 0.85rem;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+}
+
+.main-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 20px;
+}
+
+.intro-text {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: #cccccc;
+    margin-bottom: 30px;
+}
+
+/* --- Feature List --- */
+.features-list {
+    border-top: 1px solid #333333; /* Separator line */
+}
+
+.feature-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 20px 0;
+    border-bottom: 1px solid #333333; /* Separator line between features */
+}
+
+.feature-icon-box {
+    /* Styling for the icon background (the gold square in your image) */
+   
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.5rem; /* Adjust based on the icon you use */
+    margin-right: 15px;
+    /* Border to define the shape */
+}
+
+.feature-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin: 0;
+    margin-bottom: 5px;
+}
+
+.feature-description {
+    font-size: 0.95rem;
+    color: #cccccc;
+    margin: 0;
+}
+
+/* --- Button --- */
+.book-button {
+    background-color: #ffd700; /* Gold/yellow button */
+    color: #000000;
+    font-size: 1rem;
+    font-weight: bold;
+    padding: 15px 30px;
+    border: none;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: background-color 0.3s;
+    margin-top: 30px;
+    align-self: flex-start; /* Aligns the button to the left */
+}
+
+.book-button:hover {
+    background-color: #ffc400; 
+}
+
+/* --- Optional: Responsive Adjustments for Smaller Screens --- */
+@media (max-width: 900px) {
+    .content-container {
+        flex-direction: column;
+    }
+
+    .image-panel, .services-panel {
+        flex: auto;
+    }
+}
