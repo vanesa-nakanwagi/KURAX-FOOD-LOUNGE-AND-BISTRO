@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import SocialButton from "../components/common/socialButton.jsx";
+
 import CartModal from "../components/cart/CartModal.jsx";
 import TopSection from "../components/topSection.jsx";
 import { useLocation } from "react-router-dom";
@@ -176,39 +176,7 @@ export default function MenuPage() {
         />
       )}
 
-      {/* ================= CONNECT SECTION ================= */}
-      <section className="border-t border-gray-200 dark:border-gray-700 px-10 py-16 text-center transition-colors duration-300">
-        <h2 className="text-3xl font-serif mb-3 text-gray-900 dark:text-white">
-          Connect With Us
-        </h2>
-        <p className="text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-8">
-          Follow us on social media for the latest updates, exclusive offers,
-          and behind-the-scenes content from Kurax Food Lounge & Bistro
-        </p>
-
-        <div className="flex justify-center gap-2 flex-wrap">
-          <SocialButton
-            color="from-purple-500 to-pink-500"
-            label="Instagram"
-            link="https://www.instagram.com/kuraxfoodloungebistro?igsh=djl0bzltY3lnbmI1"
-          />
-          <SocialButton
-            color="from-blue-500 to-cyan-500"
-            label="Twitter"
-            link="https://x.com/kuraxfoodlounge?t=zSh1NNW0EPSeRwzyoOqinQ&s=09"
-          />
-          <SocialButton
-            color="from-blue-600 to-blue-800"
-            label="Facebook"
-            link="https://www.facebook.com/kuraxfoodlounge"
-          />
-          <SocialButton
-            color="from-gray-800 to-black"
-            label="TikTok"
-            link="https://www.tiktok.com/@kuraxfoodkyanja?_r=1&_t=ZM-92uWpBkTEMe"
-          />
-        </div>
-      </section>
+     
     </div>
   );
 }

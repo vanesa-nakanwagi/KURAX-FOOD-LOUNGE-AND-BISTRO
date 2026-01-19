@@ -9,6 +9,7 @@ import grilledGoat from "../assets/images/grilled_goat.jpeg";
 import matooke from "../assets/images/matooke.jpeg";
 import { useNavigate } from "react-router-dom";
 import terrace from "../assets/images/terrace.jpg";
+import ContactIconButton from "../components/common/socialButton.jsx";
 
 import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react";
 
@@ -291,7 +292,7 @@ export default function Hero() {
   </div>
 </section>
 
-
+<ContactIconButton />
 
     </section>
   );

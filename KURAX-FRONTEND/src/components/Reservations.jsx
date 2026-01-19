@@ -1,6 +1,6 @@
 import { useState } from "react";
 import TopSection from "./topSection";
-import SocialButton from "../components/common/socialButton.jsx";
+import ContactIconButton from "../components/common/socialButton.jsx";
 
 export default function ReservationsPage() {
   const [formData, setFormData] = useState({
@@ -180,37 +180,7 @@ export default function ReservationsPage() {
         </form>
       </section>
 
-      {/* Connect Section */}
-      <section className="border-t border-gray-300 dark:border-white/10 px-10 py-16 text-center transition-colors duration-300">
-        <h2 className="text-3xl font-serif mb-4 text-yellow-500">Connect With Us</h2>
-        <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto mb-8">
-          Follow us on social media for the latest updates, exclusive offers,
-          and behind-the-scenes content from Kurax Food Lounge & Bistro
-        </p>
-
-        <div className="flex flex-wrap justify-center gap-4">
-          <SocialButton
-            color="from-purple-500 to-pink-500"
-            label="Instagram"
-            link="https://www.instagram.com/kuraxfoodloungebistro?igsh=djl0bzltY3lnbmI1"
-          />
-          <SocialButton
-            color="from-blue-500 to-cyan-500"
-            label="Twitter"
-            link="https://x.com/kuraxfoodlounge?t=zSh1NNW0EPSeRwzyoOqinQ&s=09"
-          />
-          <SocialButton
-            color="from-blue-600 to-blue-800"
-            label="Facebook"
-            link="https://www.facebook.com/kuraxfoodlounge"
-          />
-          <SocialButton
-            color="from-gray-800 to-black"
-            label="TikTok"
-            link="https://www.tiktok.com/@kuraxfoodkyanja?_r=1&_t=ZM-92uWpBkTEMe"
-          />
-        </div>
-      </section>
+      <ContactIconButton />
     </div>
   );
 }
