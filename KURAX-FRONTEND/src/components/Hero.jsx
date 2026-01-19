@@ -78,16 +78,17 @@ export default function Hero() {
       {/* Hero Container */}
       <div className="relative w-full h-screen overflow-hidden">
 
-        {/* Background Images */}
         {heroImages.map((img, index) => (
-          <div
-            key={index}
-            className={`absolute inset-0 bg-center bg-cover transition-opacity duration-1000 ${
-              index === current ? "opacity-100" : "opacity-0"
-            }`}
-            style={{ backgroundImage: `url(${img})` }}
-          />
-        ))}
+  <div
+    key={index}
+    className={`absolute inset-0 bg-center bg-cover transition-opacity duration-1000 ${
+      index === current
+        ? "opacity-100 animate-zoomOut"
+        : "opacity-0"
+    }`}
+    style={{ backgroundImage: `url(${img})` }}
+  />
+))}
 
         {/* Gradient Overlay */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
