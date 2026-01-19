@@ -4,7 +4,7 @@ import React from 'react';
 // Custom components to handle the repetitive icon/text layout (unchanged)
 const ContactInfoItem = ({ icon, title, content }) => {
   // Styles based on the image: soft reddish-brown icon color and font styling
-  const iconColor = 'text-red-800/70'; 
+  const iconColor = 'text-yellow-700'; 
   const contentColor = 'text-gray-700';
 
   return (
