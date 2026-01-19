@@ -168,7 +168,7 @@ export default function CheckoutForm({
       </div>
 
       {/* Payment Instructions */}
-      <p className="text-sm text-gray-500 dark:text-gray-400">
+      <p className="text-sm text-gray-500 text-center dark:text-gray-400">
         You will receive a payment prompt on your phone. Enter your Mobile Money PIN to complete the transaction.
       </p>
 

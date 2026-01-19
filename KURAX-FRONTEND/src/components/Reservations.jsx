@@ -107,7 +107,7 @@ export default function ReservationsPage() {
               name="phone"
               value={formData.phone}
               onChange={handleChange}
-              placeholder="Phone Number"
+              placeholder="Whatsapp Number"
               className="w-full px-4 py-3 rounded-none bg-gray-200 dark:bg-zinc-800 text-black dark:text-white border border-gray-400 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
             />
             {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
@@ -164,6 +164,10 @@ export default function ReservationsPage() {
             />
           </div>
 
+          <p className="text-sm text-gray-500 text-center dark:text-gray-400 mb-4">
+        You will receive confirmation of your reservation via whatsapp.
+      </p>
+
           {/* Submit Button */}
           <button
             type="submit"
@@ -171,6 +175,8 @@ export default function ReservationsPage() {
           >
             Reserve Now
           </button>
+
+          
         </form>
       </section>
 
