@@ -1,6 +1,5 @@
 import { useCart } from "../components/context/CartContext";
 import TopSection from "../components/topSection";
-import HeroSection from "../components/HeroSection";
 import FeaturedCards from "../components/FeaturedCards";
 import EventsSection from "../components/EventsSection";
 import SocialButton from "../components/common/socialButton.jsx";
@@ -33,7 +32,7 @@ export default function HomePage() {
         searchPlaceholder="Search items..."
       />
       {/* ================= HERO ================= */}
-      <HeroSection />
+     
         <FeaturedCards /> 
         <EventsSection />
 

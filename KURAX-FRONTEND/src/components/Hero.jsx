@@ -7,11 +7,14 @@ import hero3 from "../assets/images/hero3.jpg";
 import luwombo from "../assets/images/luwombo.jpeg";
 import grilledGoat from "../assets/images/grilled_goat.jpeg";
 import matooke from "../assets/images/matooke.jpeg";
+import { useNavigate } from "react-router-dom";
+
 
 import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react";
 
 
 const heroImages = [hero1, hero2, hero3];
+
 
 // Hardcoded events data
 const events = [
@@ -49,7 +52,16 @@ const events = [
 
 export default function Hero() {
   const [current, setCurrent] = useState(0);
+  const navigate = useNavigate();
 
+  const goToMenu = () => {
+    navigate("/menus");
+  };
+
+  // Navigate to Reservation page
+  const goToReserve = () => {
+    navigate("/reservations"); // <-- make sure this route exists
+  };
   // Hero slideshow
   useEffect(() => {
     const interval = setInterval(() => {
@@ -65,7 +77,7 @@ export default function Hero() {
       <Navbar />
 
       {/* Hero Container */}
-      <div className="relative w-full h-[80vh] sm:h-[70vh] md:h-[60vh] overflow-hidden">
+      <div className="relative w-full h-screen overflow-hidden">
 
         {/* Background Images */}
         {heroImages.map((img, index) => (
@@ -92,9 +104,28 @@ export default function Hero() {
           <p className="mt-2 text-sm sm:text-base md:text-lg text-white/90 max-w-xs sm:max-w-sm md:max-w-md animate-fadeUp delay-200">
             Experience Uganda’s soul through elevated cuisine where tradition meets innovation.
           </p>
+
+          <div className="mt-8 flex flex-col sm:flex-row gap-4">
+  <button
+    onClick={goToMenu}
+    className="px-6 py-2 rounded-none bg-transparent border border-yellow-500 text-yellow-500 font-semibold hover:bg-yellow-500 hover:text-black transition"
+  >
+    View Menu
+  </button>
+  <button
+    onClick={goToReserve}
+    className="px-6 py-2 rounded-none bg-transparent border border-yellow-500 text-yellow-500 font-semibold hover:bg-yellow-500 hover:text-black transition"
+  >
+    Reserve Table
+  </button>
+  
+</div>
+
           
         </div>
+        
       </div>
+      
 
       {/* ================== Signature Dishes Section ================== */}
 <section className="bg-black text-white font-outfit py-20 px-4 sm:px-8">
