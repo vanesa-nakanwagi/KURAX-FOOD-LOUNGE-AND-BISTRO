@@ -73,7 +73,7 @@ export default function About() {
             />
             
             {/* Caption/Overlay Text */}
-            <div className="absolute inset-0 bg-black/30 flex items-end justify-center p-6">
+            <div className="absolute inset-0 bg-black/10 flex items-end justify-center p-6">
               <p className="text-xl font-semibold text-white/90 px-4 py-2 rounded">
                 "Experience the essence of Uganda"
               </p>
