@@ -59,7 +59,7 @@ export default function Hero() {
   }, []);
 
   return (
-    <section className="relative bg-black font-[Outfit]">
+    <section className="relative bg-white font-[Outfit]">
 
       {/* Navbar */}
       <Navbar />
