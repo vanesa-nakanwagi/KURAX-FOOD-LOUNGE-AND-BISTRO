@@ -10,7 +10,7 @@ import matooke from "../assets/images/matooke.jpeg";
 import { useNavigate } from "react-router-dom";
 import terrace from "../assets/images/terrace.jpg";
 import ContactIconButton from "../components/common/socialButton.jsx";
-
+import ContactInfoItem from "../components/visitUs.jsx";
 import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react";
 
 
@@ -291,6 +291,7 @@ export default function Hero() {
     <div className="w-full h-px bg-yellow-500/20 mt-16"></div>
   </div>
 </section>
+<ContactInfoItem />
 
 <ContactIconButton />
 
