@@ -3,17 +3,17 @@ import { Link } from "react-router-dom";
 import Navbar from "./Navbar";
 import hero1 from "../assets/images/hero1.jpg";
 import hero2 from "../assets/images/hero2.jpg";
-import hero3 from "../assets/images/hero3.jpg";
+import hero3 from "../assets/images/hero13.jpg";
 import luwombo from "../assets/images/luwombo.jpeg";
 import grilledGoat from "../assets/images/grilled_goat.jpeg";
 import matooke from "../assets/images/matooke.jpeg";
 import { useNavigate } from "react-router-dom";
-
+import terrace from "../assets/images/terrace.jpg";
 
 import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react";
 
 
-const heroImages = [hero1, hero2, hero3];
+const heroImages = [hero1, hero2, hero3, terrace];
 
 // Hardcoded events data
 const events = [
