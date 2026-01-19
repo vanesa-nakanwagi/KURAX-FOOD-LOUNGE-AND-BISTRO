@@ -14,6 +14,7 @@ export default function CartModal({
   setCheckoutStep,
   customerDetails,
   setCustomerDetails,
+  isAddingDish, // new flag to control activeDish preview
 }) {
   if (!isCartOpen) return null;
 
@@ -32,8 +33,8 @@ export default function CartModal({
         {/* ================= STEP 1: CART ================= */}
         {checkoutStep === 1 && (
           <>
-            {/* Active Dish */}
-            {activeDish && (
+            {/* Active Dish Preview ONLY if adding */}
+            {isAddingDish && activeDish && (
               <div className="mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
                 <h2 className="text-2xl font-serif text-yellow-500 mb-3">
                   Add to Cart
@@ -126,48 +127,50 @@ export default function CartModal({
                 {cart.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center gap-3 bg-gray-100 dark:bg-zinc-800 p-3 rounded-md shadow-sm hover:shadow-md transition"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-100 dark:bg-zinc-800 p-3 rounded-md shadow-sm hover:shadow-md transition"
                   >
                     <img
                       src={item.image}
-                      className="w-16 h-16 object-cover rounded-md border border-gray-200 dark:border-gray-700"
+                      className="w-full sm:w-16 h-48 sm:h-16 object-cover rounded-md border border-gray-200 dark:border-gray-700"
                       alt={item.name}
                     />
 
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 dark:text-white">
-                        {item.name}
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        UGX {(item.price * item.quantity).toLocaleString()}
-                      </p>
-                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+                          {item.name}
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          UGX {(item.price * item.quantity).toLocaleString()}
+                        </p>
+                      </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleQuantityChange(item.id, -1)}
-                        className="px-3 py-1 bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white rounded-md hover:bg-gray-300 dark:hover:bg-zinc-600 transition"
-                      >
-                        -
-                      </button>
+                      <div className="flex items-center gap-2 flex-shrink-0 mt-2 sm:mt-0">
+                        <button
+                          onClick={() => handleQuantityChange(item.id, -1)}
+                          className="px-3 py-1 bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white rounded-md hover:bg-gray-300 dark:hover:bg-zinc-600 transition"
+                        >
+                          -
+                        </button>
 
-                      <span className="w-6 text-center text-gray-900 dark:text-white">
-                        {item.quantity}
-                      </span>
+                        <span className="w-6 text-center text-gray-900 dark:text-white">
+                          {item.quantity}
+                        </span>
 
-                      <button
-                        onClick={() => handleQuantityChange(item.id, 1)}
-                        className="px-3 py-1 bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white rounded-md hover:bg-gray-300 dark:hover:bg-zinc-600 transition"
-                      >
-                        +
-                      </button>
+                        <button
+                          onClick={() => handleQuantityChange(item.id, 1)}
+                          className="px-3 py-1 bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white rounded-md hover:bg-gray-300 dark:hover:bg-zinc-600 transition"
+                        >
+                          +
+                        </button>
 
-                      <button
-                        onClick={() => handleRemoveFromCart(item.id)}
-                        className="px-2 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition"
-                      >
-                        🗑
-                      </button>
+                        <button
+                          onClick={() => handleRemoveFromCart(item.id)}
+                          className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition"
+                        >
+                          🗑
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
