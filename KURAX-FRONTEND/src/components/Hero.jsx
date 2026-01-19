@@ -144,7 +144,7 @@ export default function Hero() {
     </p>
 
     {/* Menu Cards */}
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
       {[
         {
           img: luwombo,
@@ -152,6 +152,7 @@ export default function Hero() {
           desc: "A royal Ugandan delicacy slow-cooked to perfection.",
           price: "UGX 45,000",
         },
+        
         {
           img: grilledGoat,
           title: "Grilled Goat",
@@ -163,6 +164,12 @@ export default function Hero() {
           title: "Matooke",
           desc: "A Ugandan staple elevated with Kurax finesse.",
           price: "UGX 25,000",
+        },
+        {
+          img: luwombo,
+          title: "Luwombo",
+          desc: "A royal Ugandan delicacy slow-cooked to perfection.",
+          price: "UGX 45,000",
         },
       ].map((c, idx) => (
         <div

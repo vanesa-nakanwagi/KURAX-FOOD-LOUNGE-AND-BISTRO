@@ -114,7 +114,7 @@ export default function MenuPage() {
 
       {/* ================= MENU GRID ================= */}
       <section className="px-4 md:px-16 py-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {filteredItems.map((item) => (
             <div
               key={item.id}
