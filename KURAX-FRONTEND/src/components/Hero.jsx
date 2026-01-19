@@ -105,7 +105,7 @@ export default function Hero() {
             Experience Uganda’s soul through elevated cuisine where tradition meets innovation.
           </p>
 
-          <div className="mt-8 flex flex-col sm:flex-row gap-4">
+          <div className="mt-8 flex flex-row gap-4">
   <button
     onClick={goToMenu}
     className="px-6 py-2 rounded-none bg-transparent border border-yellow-500 text-yellow-500 font-semibold hover:bg-yellow-500 hover:text-black transition"
