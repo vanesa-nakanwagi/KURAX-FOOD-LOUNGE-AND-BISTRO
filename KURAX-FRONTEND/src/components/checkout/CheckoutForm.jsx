@@ -68,7 +68,7 @@ export default function CheckoutForm({
             name="firstName"
             value={customerDetails.firstName || ""}
             onChange={handleChange}
-            className="w-full px-4 py-2 rounded-md bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
+            className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
             placeholder="First Name"
           />
           {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
@@ -80,7 +80,7 @@ export default function CheckoutForm({
             name="lastName"
             value={customerDetails.lastName || ""}
             onChange={handleChange}
-            className="w-full px-4 py-2 rounded-md bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
+            className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
             placeholder="Last Name"
           />
           {errors.lastName && <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>}
@@ -93,7 +93,7 @@ export default function CheckoutForm({
           name="email"
           value={customerDetails.email || ""}
           onChange={handleChange}
-          className="w-full px-4 py-2 rounded-md bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
+          className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
           placeholder="Email"
         />
         {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
@@ -105,7 +105,7 @@ export default function CheckoutForm({
           name="deliveryType"
           value={customerDetails.deliveryType || "Home"}
           onChange={handleChange}
-          className="w-full px-4 py-2 rounded-md bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
+          className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
         >
           <option value="Home">Home Delivery</option>
           <option value="Store">Store Pickup</option>
@@ -118,7 +118,7 @@ export default function CheckoutForm({
           name="city"
           value={customerDetails.city || ""}
           onChange={handleChange}
-          className="w-full px-4 py-2 rounded-md bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
+          className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
           placeholder="City / Town"
         />
         {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
@@ -132,7 +132,7 @@ export default function CheckoutForm({
           onChange={handleChange}
           rows={3}
           placeholder="Exact location"
-          className="w-full px-4 py-2 rounded-md bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition resize-none"
+          className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition resize-none"
         />
       </div>
 
@@ -142,7 +142,7 @@ export default function CheckoutForm({
           name="paymentProvider"
           value={customerDetails.paymentProvider || ""}
           onChange={handleChange}
-          className="w-full px-4 py-2 rounded-md bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
+          className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
         >
           <option value="">Select Payment Provider</option>
           <option value="AIRTEL">AIRTEL</option>
@@ -159,7 +159,7 @@ export default function CheckoutForm({
           name="mobileMoneyNumber"
           value={customerDetails.mobileMoneyNumber || ""}
           onChange={handleChange}
-          className="w-full px-4 py-2 rounded-md bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
+          className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition"
           placeholder="Mobile Money Number"
         />
         {errors.mobileMoneyNumber && (
@@ -176,7 +176,7 @@ export default function CheckoutForm({
       <button
         onClick={handlePayment}
         disabled={loading}
-        className={`w-full py-3 rounded-md font-semibold text-black bg-yellow-500 hover:bg-yellow-600 transition ${
+        className={`w-full py-3 rounded-none font-semibold text-black bg-yellow-500 hover:bg-yellow-600 transition ${
           loading ? "cursor-not-allowed opacity-70" : ""
         }`}
       >
@@ -195,7 +195,7 @@ export default function CheckoutForm({
         onClick={onBack}
         className="text-sm text-gray-500 dark:text-gray-400 mt-2 hover:underline transition"
       >
-        ← Back to Cart
+        Back to Cart
       </button>
     </div>
   );

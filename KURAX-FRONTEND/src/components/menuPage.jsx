@@ -79,8 +79,15 @@ export default function MenuPage() {
       instructions: "",
     };
 
-    handleAddToCart(dishWithQuantity);
+    // ----------------------------------------------------
+    // REMOVE THIS LINE:
+    // handleAddToCart(dishWithQuantity); 
+    // ----------------------------------------------------
+
+    // 1. Set the dish as the active one to be customized in the modal.
     setActiveDish(dishWithQuantity);
+    
+    // 2. Open the modal (to show the customization view).
     setIsCartOpen(true);
   };
 
