@@ -47,10 +47,11 @@ const ExecutiveDiningServices = () => {
                         alt="Elegant corporate dining room" 
                         className="w-full h-full object-cover block" 
                     />
-                    {/* Quote */}
-                    <div className="absolute bottom-5 left-5 text-lg font-bold text-amber-400 p-2 bg-black bg-opacity-50">
-                        "Where business meets elegance"
-                    </div>
+                    <div className="absolute inset-0 bg-black/30 flex items-end justify-center p-6">
+                    <p className="text-xl font-semibold text-white/90 px-4 py-2 rounded">
+                            "Where Business Meets Elegance"
+                    </p>
+                     </div>
                 </div>
 
                 {/* Right Side: Services Panel */}
