@@ -15,7 +15,6 @@ import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react";
 
 const heroImages = [hero1, hero2, hero3];
 
-
 // Hardcoded events data
 const events = [
   {
@@ -280,7 +279,7 @@ export default function Hero() {
     <div className="mt-12">
       <Link
         to="/events"
-        className="inline-block px-8 py-3 border-2 border-yellow-400 text-black-900 font-medium text-sm hover:bg-yellow-400 hover:text-black transition-all duration-300"
+        className="inline-block px-8 py-3 text-bg border-2 border-yellow-400 text-black-900 font-medium text-sm hover:bg-yellow-400 hover:text-black transition-all duration-300"
       >
         Explore Events
       </Link>
