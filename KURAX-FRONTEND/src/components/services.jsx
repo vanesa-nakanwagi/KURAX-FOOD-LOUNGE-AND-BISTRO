@@ -1,106 +1,76 @@
-import React from 'react';
+import {
+  Utensils,
+  Sofa,
+  Music,
+  PackageCheck,
+} from "lucide-react";
 
-// Replace this path with the actual path to your image
-import diningImage from '../assets/images/dining.jpg'; 
+export default function Services() {
+  const services = [
+    {
+      title: "Food & Beverages",
+      description:
+        "Premium dine-in meals, drinks, takeaways, and fast delivery prepared by expert chefs.",
+      icon: Utensils,
+    },
+    {
+      title: "Lounge Experience",
+      description:
+        "Relaxed rooftop dining with comfort, ambience, and free Wi-Fi for chilling or meetings.",
+      icon: Sofa,
+    },
+    {
+      title: "Events & Entertainment",
+      description:
+        "Live music, social events, private celebrations, and unforgettable nightlife vibes.",
+      icon: Music,
+    },
+    {
+      title: "Catering & Reservations",
+      description:
+        "Professional catering, corporate bookings, group reservations, and customer support.",
+      icon: PackageCheck,
+    },
+  ];
 
-// Note: Ensure Tailwind CSS is installed in your project for these classes to work.
+  return (
+    <section className="w-full bg-white px-6 py-20">
+      {/* Title */}
+      <div className="max-w-6xl mx-auto text-center mb-16">
+        <h2 className="text-3xl md:text-4xl font-bold text-yellow-900 tracking-wide">
+          PREMIUM SERVICES
+        </h2>
+        <p className="mt-4 text-black/70 max-w-2xl mx-auto">
+          Experience exceptional dining, entertainment, and hospitality crafted
+          to give you comfort, quality, and unforgettable moments.
+        </p>
+      </div>
 
-const ExecutiveDiningServices = () => {
-    // Data structure for the features on the right side
-    const features = [
-        {
-            icon: '🍽️', 
-            title: 'Private Dining Rooms',
-            description: 'Exclusive spaces for confidential business meetings and intimate corporate gatherings'
-        },
-        {
-            icon: '👥',
-            title: 'Group Reservations',
-            description: 'Accommodate teams from 8 to 40 guests with customized seating and curated menus'
-        },
-        {
-            icon: '⏱️',
-            title: 'Corporate Catering',
-            description: 'Professional catering solutions for conferences, launches, and special corporate events'
-        }
-    ];
+      {/* Cards */}
+      <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+        {services.map((service, index) => {
+          const Icon = service.icon;
 
-    /* Color Mapping based on the original request:
-    - Black background: bg-black
-    - White text: text-white
-    - Gold/Yellow: text-amber-400 or text-yellow-500 (used amber for a richer gold tone)
-    - Dark gray borders/text: border-gray-700, text-gray-400
-    - Font: font-['Outfit'] (assuming Outfit is imported globally)
-    */
+          return (
+            <div
+              key={index}
+              className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center hover:border-black-400/50 hover:-translate-y-2 transition-all duration-300"
+            >
+              <div className="flex items-center justify-center mb-4">
+                <Icon className="w-12 h-12 text-yellow-700" />
+              </div>
 
-    return (
-        // Executive Dining Section: Black background, Outfit font, vertical padding
-        <div className="bg-white text-black font-['Outfit'] py-16"> 
-            
-            {/* Content Container: Max width, centered, flex layout, gap, horizontal padding */}
-            <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-10 px-5">
-                
-                {/* Left Side: Image Panel */}
-                <div className="relative flex-1 min-h-[550px] overflow-hidden">
-                    <img 
-                        src={diningImage} 
-                        alt="Elegant corporate dining room" 
-                        className="w-full h-full object-cover block" 
-                    />
-                    <div className="absolute inset-0 flex items-end justify-center p-6">
-                    <p className="text-xl font-semibold text-white/90 px-4 py-2 rounded">
-                            "Where Business Meets Elegance"
-                    </p>
-                     </div>
-                </div>
+              <h3 className="text-lg font-semibold text-black mb-2">
+                {service.title}
+              </h3>
 
-                {/* Right Side: Services Panel */}
-                <div className="flex-1 flex flex-col justify-center pt-5">
-                    
-                    <p className="text-lg tracking-widest uppercase text-yellow-900 mb-2">
-                        PREMIUM SERVICES
-                    </p>
-                    <h2 className="text-4xl font-extrabold leading-tight mb-5">
-                        Executive Dining & Private Events
-                    </h2>
-                    
-                    <p className="text-base leading-relaxed text-gray-600 mb-8">
-                        Kurax provides the ideal setting for business professionals seeking a 
-                        refined atmosphere for meetings, networking, and corporate events. Our 
-                        quiet booths and private spaces ensure confidentiality and comfort.
-                    </p>
-
-                    {/* Features List */}
-                    <div>
-                        {features.map((feature, index) => (
-                            <div className="flex items-start py-5 " key={index}>
-                                {/* Icon Box */}
-                                <div className="flex items-center justify-center w-10 h-10 text-xl text-amber-400 mr-4 border  bg-gray-900">
-                                    {feature.icon}
-                                </div>
-                                {/* Feature Text */}
-                                <div>
-                                    <h3 className="text-xl font-bold mb-1">
-                                        {feature.title}
-                                    </h3>
-                                    <p className="text-sm text-gray-600">
-                                        {feature.description}
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Button with Hover Effect */}
-                    <button 
-                        className="mt-8 px-8 py-3 border-2 border-yellow-400 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-amber-500 self-start"
-                    >
-                        Book Event
-                    </button>
-                </div>
+              <p className="text-sm text-black/60">
+                {service.description}
+              </p>
             </div>
-        </div>
-    );
-};
-
-export default ExecutiveDiningServices;
+          );
+        })}
+      </div>
+    </section>
+  );
+}

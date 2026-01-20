@@ -13,7 +13,8 @@ import ContactIconButton from "../components/common/socialButton.jsx";
 import ContactInfoItem from "../components/visitUs.jsx";
 import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react";
 import About from "../components/about.jsx";
-import ExecutiveDiningServices from "../components/services.jsx";
+import Reserve from "../components/reserveHero.jsx";
+import Services from "../components/services.jsx";  
 const heroImages = [hero1, hero2, hero3, terrace];
 
 // Hardcoded events data
@@ -292,7 +293,8 @@ export default function Hero() {
   </div>
 </section>
 
-<ExecutiveDiningServices />
+<Services />
+<Reserve />
 <About />
 <ContactInfoItem />
 
@@ -301,3 +303,4 @@ export default function Hero() {
     </section>
   );
 }
+
