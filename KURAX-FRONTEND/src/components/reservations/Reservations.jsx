@@ -1,6 +1,6 @@
 import { useState } from "react";
-import TopSection from "./topSection";
-import ContactIconButton from "../components/common/socialButton.jsx";
+import TopSection from "../common/topSection";
+import FooterGlobal from "../common/footer.jsx";
 
 export default function ReservationsPage() {
   const [formData, setFormData] = useState({
@@ -180,7 +180,7 @@ export default function ReservationsPage() {
         </form>
       </section>
 
-      <ContactIconButton />
+      <FooterGlobal />
     </div>
   );
 }

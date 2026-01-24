@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { simulateMobileMoneyPayment } from "../utils/payment";
+import { simulateMobileMoneyPayment } from "../../utils/payment";
 
 export default function CheckoutForm({
   customerDetails,

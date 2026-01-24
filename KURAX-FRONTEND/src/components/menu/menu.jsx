@@ -1,23 +1,28 @@
 import { useState, useEffect } from "react";
 
-import CartModal from "../components/cart/CartModal.jsx";
-import TopSection from "../components/topSection.jsx";
+import CartModal from "./cart/CartModal.jsx";
+import TopSection from "../common/topSection.jsx";
 import { useLocation } from "react-router-dom";
-import { useCart } from "../components/context/CartContext.jsx";
-
+import { useCart } from "../context/CartContext.jsx";
+import hero3 from "../../assets/images/hero3.jpg"
+import burger from "../../assets/images/hero4.jpg";
+import grilledGoat from "../../assets/images/grilled_goat.jpeg";
+import luwombo from "../../assets/images/luwombo.jpeg";
+import hero5 from "../../assets/images/hero5.jpg";
+import hero13 from "../../assets/images/hero13.jpg";
+import wine from "../../assets/images/wine.jpg";
 const menuItems = [
-  { id: 1, category: "Starters", name: "Bruschetta", description: "Grilled bread with tomato and basil", price: 15000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=800&q=80" },
+  { id: 1, category: "Starters", name: "Bruschetta", description: "Grilled bread with tomato and basil", price: 15000, image: hero3 },
   { id: 2, category: "Main Courses", name: "Grilled Salmon", description: "Salmon fillet with lemon butter sauce", price: 65000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
-  { id: 3, category: "Starters", name: "Caesar Salad", description: "Crispy romaine with creamy dressing", price: 30000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
-  { id: 4, category: "Drinks & Cocktails", name: "Mojito", description: "Fresh mint and lime cocktail", price: 25000, image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03" },
+  { id: 3, category: "Starters", name: "Luwombo", description: "Crispy romaine with creamy dressing", price: 30000, image: luwombo },
+  { id: 4, category: "Drinks & Cocktails", name: "Mojito", description: "Fresh mint and lime cocktail", price: 25000, image: hero13 },
   { id: 5, category: "Main Courses", name: "Beef Steak", description: "Grilled to perfection with herbs", price: 70000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
-  { id: 6, category: "Drinks & Cocktails", name: "Espresso Martini", description: "Coffee flavored cocktail", price: 28000, image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03" },
-  { id: 7, category: "Starters", name: "Bruschetta", description: "Grilled bread with tomato and basil", price: 15000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=800&q=80" },
+  { id: 6, category: "Drinks & Cocktails", name: "Espresso Martini", description: "Coffee flavored cocktail", price: 28000, image: hero5 },
+  { id: 7, category: "Starters", name: "Burger", description: "Grilled bread with tomato and basil", price: 15000, image: burger },
   { id: 8, category: "Main Courses", name: "Grilled Salmon", description: "Salmon fillet with lemon butter sauce", price: 65000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
-  { id: 9, category: "Starters", name: "Caesar Salad", description: "Crispy romaine with creamy dressing", price: 30000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
-  { id: 10, category: "Drinks & Cocktails", name: "Mojito", description: "Fresh mint and lime cocktail", price: 25000, image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03" },
+  { id: 9, category: "Starters", name: "Grilled Goat", description: "Crispy romaine with creamy dressing", price: 30000, image: grilledGoat },
+  { id: 10, category: "Drinks & Cocktails", name: "Wine", description: "Fresh mint and lime cocktail", price: 25000, image: wine},
   { id: 11, category: "Main Courses", name: "Beef Steak", description: "Grilled to perfection with herbs", price: 70000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
-  { id: 12, category: "Drinks & Cocktails", name: "Espresso Martini", description: "Coffee flavored cocktail", price: 28000, image: "https://images.unsplash.com/photo-1510626176961-4b57d4fbad03" },
   { id: 13, category: "Starters", name: "Bruschetta", description: "Grilled bread with tomato and basil", price: 15000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=800&q=80" },
   { id: 14, category: "Main Courses", name: "Grilled Salmon", description: "Salmon fillet with lemon butter sauce", price: 65000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
   { id: 15, category: "Starters", name: "Caesar Salad", description: "Crispy romaine with creamy dressing", price: 30000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092" },
@@ -35,7 +40,7 @@ const menuItems = [
 
 const categories = ["Starters", "Main Courses", "Drinks & Cocktails"];
 
-export default function MenuPage() {
+export default function Menu() {
   const location = useLocation();
 
   const {
@@ -92,7 +97,7 @@ export default function MenuPage() {
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-900 text-gray-900 dark:text-white font-[Outfit] min-h-screen transition-colors duration-300">
+    <div className="bg-white dark:bg-black text-gray-900 dark:text-white font-[Outfit] min-h-screen transition-colors duration-300">
 
       {/* ================= HEADER ================= */}
       <div className="sticky top-0 z-50 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-gray-700 transition-colors duration-300">
@@ -125,12 +130,15 @@ export default function MenuPage() {
           {filteredItems.map((item) => (
             <div
               key={item.id}
-              className="bg-white dark:bg-zinc-800 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 border border-gray-200 dark:border-gray-700"
+               className="rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
+                     border-2 border-transparent
+                     bg-white-100 dark:bg-zinc-900
+                      "
             >
               <img
                 src={item.image}
                 alt={item.name}
-                className="w-full h-48 object-cover"
+                className="w-full h-48 object-cover "
               />
               <div className="p-4">
                 <h4 className="font-semibold text-lg text-gray-900 dark:text-white">
@@ -141,12 +149,12 @@ export default function MenuPage() {
                 </p>
 
                 <div className="flex justify-between items-center">
-                  <span className="font-bold text-yellow-500">
+                  <span className="font-bold text-yellow-600">
                     UGX {item.price.toLocaleString()}
                   </span>
                   <button
                     onClick={() => handleOrder(item)}
-                    className="px-3 py-1 bg-yellow-500 text-black text-sm hover:bg-yellow-400 transition"
+                    className="px-3 py-1 bg-yellow-500 rounded-s-none text-black text-sm hover:bg-yellow-500 transition"
                   >
                     Order Now
                   </button>

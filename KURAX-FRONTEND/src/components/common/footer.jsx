@@ -3,7 +3,7 @@ import logo from "../../assets/images/logo.jpeg";
 // Assuming SocialButton is available but we'll use a simpler icon component here
 
 // Helper component for the round icon buttons in the "Connect With Us" section
-const ContactIconButton = ({ icon, link }) => {
+const Footer = ({ icon, link }) => {
   return (
     <a
       href={link}
@@ -49,15 +49,22 @@ const ChatIcon = () => (
   </svg>
 );
 
-export default function Footer() {
+export default function FooterGlobal () {
   const quickLinks = [
-    { label: 'Menu', href: '/menu' },
-    { label: 'About Us', href: '/about' },
+    { label: 'Menu', href: '/menus' },
+    { label: 'About', href: '/about' },
     { label: 'Services', href: '/services' },
     { label: 'Location', href: '/location' },
     { label: 'Events & Bookings', href: '/events' },
     { label: 'Contact', href: '/contact' },
   ];
+
+   const paymentmethods = [
+    { label: 'Airtel', img: '/menus' },
+    { label: 'MTN', img: '/about' },
+    { label: 'VISA', img: '/services' },
+  ];
+ 
 
   // Define the social media links using the data from your CONNECT section
   const socialMediaLinks = [
@@ -75,6 +82,11 @@ export default function Footer() {
       label: 'Facebook', 
       link: "https://www.facebook.com/kuraxfoodlounge",
       icon: <FacebookIcon />,
+    },
+    { 
+      label: 'Whatsapp', 
+      link: "https://wa.kurax/256709913676",
+      icon: <ChatIcon />,
     },
   ];
 
@@ -106,21 +118,20 @@ export default function Footer() {
 
             {/* Description Text */}
             <p className="text-sm text-white/70 mb-4 max-w-sm">
-              Elevated local cuisine in the heart of Kyanja. Experience the
-              soul of Uganda through culinary artistry.
+             Luxury dining, signature drinks & rooftop vibes
             </p>
 
             {/* Highlighted Features */}
             <div className="text-sm font-semibold text-yellow-600">
-              <span className="mr-3">Premium Dining</span> • 
-              <span className="mx-3">Rooftop Ambiance</span> • 
-              <span className="ml-3">Authentic Flavors</span>
+              <span className="mr-3">• Premium Dining</span>  
+              <span className="mx-3">• Rooftop Ambiance</span> 
+              <span className="ml-3">• Authentic Flavors</span> 
             </div>
           </div>
 
           {/* 2. Quick Links Column (Middle) */}
           <div>
-            <h3 className="text-lg font-semibold mb-5">Quick Links</h3>
+            <h3 className="text-lg text-yellow-600 font-semibold mb-5">Quick Links</h3>
             <ul className="space-y-2">
               {quickLinks.map((link) => (
                 <li key={link.label}>
@@ -134,30 +145,26 @@ export default function Footer() {
               ))}
             </ul>
           </div>
+          
 
           {/* 3. Connect With Us Column (Right) */}
           <div>
-            <h3 className="text-lg font-semibold mb-5">Connect With Us</h3>
+            <h3 className="text-lg  text-yellow-600 font-semibold mb-5">Connect With Us</h3>
             
             {/* Social/Contact Icons (Using Social Media Links) */}
             <div className="flex space-x-3 mb-5">
               {socialMediaLinks.map((item) => (
-                <ContactIconButton 
+                <Footer 
                   key={item.label}
                   link={item.link}
                   icon={item.icon}
                 />
               ))}
-              
-              {/* Added back the general chat/contact icon from the original image */}
-               <ContactIconButton 
-                link="/contact"
-                icon={<ChatIcon />}
-              />
+
             </div>
 
             {/* Contact Details */}
-            <div className="space-y-1">
+            <div className="space-y-1 ">
               <p className="text-sm text-white/70">
                 <span className="font-semibold text-white/90">Email:</span> 
                 <a href="mailto:hello@kurax.ug" className="ml-1 hover:text-yellow-600">hello@kurax.ug</a>
@@ -166,6 +173,19 @@ export default function Footer() {
                 <span className="font-semibold text-white/90">Phone:</span> 
                 <a href="tel:+256700123456" className="ml-1 hover:text-yellow-600">+256 700 123 456</a>
               </p>
+            </div>
+
+
+            <h3 className="text-lg text-yellow-600 font-semibold mb-5 gap-4">We accept the following payment methods</h3>
+            {/* Social/Contact Icons (Using Social Media Links) */}
+            <div className="flex space-x-3 mb-5">
+              {paymentmethods.map((item) => (
+                <Footer 
+                  key={item.label}
+                  link={item.img}
+                />
+              ))}
+
             </div>
           </div>
         </div>

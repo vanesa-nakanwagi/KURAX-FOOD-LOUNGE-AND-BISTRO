@@ -1,10 +1,11 @@
-import HomePage from "./pages/Home.jsx";
+
 import MenusPage from "./pages/menuPage.jsx";
-import Hero from "./components/Hero.jsx";
-import EventsPage from "./components/events";
-import ReservationsPage from "./components/Reservations";
+import HomePage from "./pages/HomePage.jsx";
+import EventsPage from "./pages/eventsPage";
+import ReservationsPage from "./components/reservations/Reservations" ;
+import Signin from  "./components/signin/signin"
 import { Routes, Route } from "react-router-dom";
-import CartProvider  from "./components/context/CartContext.jsx"; // Global cart context
+import CartProvider  from "./components/context/CartContext.jsx"; 
 
 
 export default function App() {
@@ -12,11 +13,12 @@ export default function App() {
     <CartProvider>
       {/* All pages wrapped in CartProvider so cart is global */}
       <Routes>
-        <Route path="/" element={<Hero />} />   
-        <Route path="/home" element={<HomePage />} />       {/* Home */}
+         <Route path="/" element={<HomePage />} />
+        <Route path="/signin" element={<Signin />} />   
         <Route path="/menus" element={<MenusPage />} />    {/* Menu */}
         <Route path="/events" element={<EventsPage />} /> {/* Events */}
         <Route path="/reservations" element={<ReservationsPage />} /> {/* Reservations */}
+      
       </Routes>
     </CartProvider>
   );

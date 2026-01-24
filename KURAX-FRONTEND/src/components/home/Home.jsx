@@ -1,22 +1,29 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import Navbar from "./Navbar";
-import hero1 from "../assets/images/hero1.jpg";
-import hero2 from "../assets/images/hero2.jpg";
-import hero3 from "../assets/images/hero13.jpg";
-import luwombo from "../assets/images/luwombo.jpeg";
-import grilledGoat from "../assets/images/grilled_goat.jpeg";
-import matooke from "../assets/images/matooke.jpeg";
+import Navbar from "./Navbar.jsx";
+import hero1 from "../../assets/images/hero1.jpg";
+import hero12 from "../../assets/images/hero12.jpg";
+import hero3 from "../../assets/images/hero13.jpg";
+import luwombo from "../../assets/images/luwombo.jpeg";
+import grilledGoat from "../../assets/images/grilled_goat.jpeg";
+import cocktails from "../../assets/images/hero13.jpg";
+import burger from "../../assets/images/hero4.jpg";
 import { useNavigate } from "react-router-dom";
-import terrace from "../assets/images/terrace.jpg";
-import ContactIconButton from "../components/common/socialButton.jsx";
-import ContactInfoItem from "../components/visitUs.jsx";
-import { Calendar, Clock, MapPin, Music, Users, Sparkles } from "lucide-react";
-import About from "../components/about.jsx";
-import Reserve from "../components/reserveHero.jsx";
-import Services from "../components/services.jsx";  
-const heroImages = [hero1, hero2, hero3, terrace];
+import terrace from "../../assets/images/terrace.jpg";
+import { Calendar, Clock, MapPin } from "lucide-react";
+import FooterGlobal from "../common/footer.jsx";
+import VisitUs from "./visitUs.jsx";
+import About from "./about.jsx";
+import Reserve from "./reserveHome.jsx";
+import Services from "./services.jsx"; 
+import { useCart } from "../context/CartContext.jsx";
+import CartModal from "../menu/cart/CartModal.jsx";
+import BookingModal from "../events/BookingModal.jsx"; 
 
+const heroImages = [hero1, hero12, hero3, terrace];
+
+
+ const [isModalOpen, setIsModalOpen] = useState(false);
 // Hardcoded events data
 const events = [
   {
@@ -51,7 +58,7 @@ const events = [
   },
 ];
 
-export default function Hero() {
+export default function Home () {
   const [current, setCurrent] = useState(0);
   const navigate = useNavigate();
 
@@ -98,25 +105,25 @@ export default function Hero() {
         {/* Hero Text */}
         <div className="relative z-10 flex flex-col items-center justify-center h-full text-center px-4">
           <h1 className="font-bold text-3xl sm:text-4xl md:text-6xl lg:text-7xl leading-tight animate-fadeUp">
-            Elevated Local
+            KURAX FOOD LOUNGE
             <span className="block mt-2 text-yellow-600">
-              & Cuisine Reimagined
+              & BISTRO
             </span>
           </h1>
           <p className="mt-2 text-sm sm:text-base md:text-lg text-white/90 max-w-xs sm:max-w-sm md:max-w-md animate-fadeUp delay-200">
-            Experience Uganda’s soul through elevated cuisine where tradition meets innovation.
+            Luxury dining, signature drinks & rooftop vibes
           </p>
 
           <div className="mt-8 flex flex-row gap-4">
   <button
     onClick={goToMenu}
-    className="px-6 py-2 rounded-none bg-transparent border border-yellow-500 text-yellow-500 font-semibold hover:bg-yellow-500 hover:text-black transition"
+    className="px-6 py-2 rounded-none bg-transparent border border-yellow-600 text-yellow-600 font-semibold hover:bg-yellow-600 hover:text-black transition"
   >
     View Menu
   </button>
   <button
     onClick={goToReserve}
-    className="px-6 py-2 rounded-none bg-transparent border border-yellow-500 text-yellow-500 font-semibold hover:bg-yellow-500 hover:text-black transition"
+    className="px-6 py-2 rounded-none bg-transparent border border-yellow-600 text-yellow-600 font-semibold hover:bg-yellow-600 hover:text-black transition"
   >
     Reserve Table
   </button>
@@ -141,7 +148,7 @@ export default function Hero() {
       Signature Dishes
     </h2>
     <div className="w-16 h-1 bg-yellow-500 mx-auto mb-4"></div>
-    <p className="text-black/70 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
+    <p className="text- max-w-2xl mx-auto mb-12 text-base sm:text-lg">
       Carefully curated selections that celebrate Uganda&apos;s culinary heritage, crafted with passion and modern finesse.
     </p>
 
@@ -149,11 +156,12 @@ export default function Hero() {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
       {[
         {
-          img: luwombo,
-          title: "Luwombo",
+          img: burger,
+          title: "Burger",
           desc: "A royal Ugandan delicacy slow-cooked to perfection.",
           price: "UGX 45,000",
         },
+      
         
         {
           img: grilledGoat,
@@ -162,9 +170,9 @@ export default function Hero() {
           price: "UGX 60,000",
         },
         {
-          img: matooke,
-          title: "Matooke",
-          desc: "A Ugandan staple elevated with Kurax finesse.",
+          img: cocktails,
+          title: "Cocktails",
+          desc: "A luxurious staple elevated with Kurax finesse.",
           price: "UGX 25,000",
         },
         {
@@ -176,17 +184,23 @@ export default function Hero() {
       ].map((c, idx) => (
         <div
           key={idx}
-          className="rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
+          className="rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
                      border-2 border-transparent
-                     bg-white dark:bg-white-900
+                     bg-white-100 dark:bg-white-900
                      hover:bg-gray-200"
         >
           <img src={c.img} alt={c.title} className="w-full h-48 object-cover" />
           <div className="p-4 text-left">
             <h4 className="font-semibold text-lg text-black-900 dark:text-black">{c.title}</h4>
-            <p className="text-gray-600 dark:text-gray-600 text-sm my-2">{c.desc}</p>
-            <div className="flex justify-start items-center">
-              <span className="font-bold text-yellow-500">{c.price}</span>
+            <p className="text-gray-600 dark:text-gray-800 text-sm my-2">{c.desc}</p>
+            <div className="flex justify-between items-center">
+              <span className="font-bold text-yellow-600">{c.price}</span>
+              <button
+                  onClick={() => handleOrder(c)}
+                  className="px-3 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 dark:text-black transition text-sm"
+                >
+                  Order Now
+                </button>
             </div>
           </div>
         </div>
@@ -197,14 +211,12 @@ export default function Hero() {
     <div className="mb-10">
       <Link
         to="/menus"
-        className="mt-8 px-8 py-3 border-2 border-yellow-400 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-amber-500 self-start"
+        className="mt-8 px-8 py-3 border-2 border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-yellow-600 self-start"
       >
         Explore Menu
       </Link>
     </div>
 
-    {/* Faint divider line at bottom */}
-    <div className="w-full h-px bg-yellow-500/20"></div>
   </div>
 </section>
 
@@ -230,8 +242,8 @@ export default function Hero() {
       {events.map((event) => (
         <div
           key={event.id}
-          className="bg-white dark:bg-white-900 rounded-none overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
-                     border-2 border-transparent hover:border-yellow-400/50 group"
+          className="bg-white dark:bg-white-900 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
+                      "
         >
           {/* Image */}
           <div className="relative h-56 overflow-hidden">
@@ -240,13 +252,13 @@ export default function Hero() {
               alt={event.title}
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
             />
-            {/* Category Badge */}
-            <div className="absolute top-4 left-4 z-10">
-              <div className="bg-yellow-400 text-black px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1">
-                {event.icon && <event.icon className="w-4 h-4" />}
-                {event.category}
-              </div>
+            <div className="absolute top-4 left-4">
+            <div className="bg-yellow-400 text-black px-3 py-1 rounded-xl text-sm font-semibold flex items-center gap-1">
+              {event.icon && <event.icon className="w-4 h-4" />}
+              {event.category}
             </div>
+          
+        </div>
           </div>
 
           {/* Content */}
@@ -272,35 +284,47 @@ export default function Hero() {
                 <MapPin className="w-4 h-4 text-yellow-400" />
                 {event.location}
               </div>
+              
             </div>
+            <button
+            className="w-full bg-yellow-400 text-black hover:bg-yellow-300 dark:bg-yellow-500 dark:hover:bg-yellow-400 border-2 border-yellow-400 px-4 py-2 rounded-none text-sm font-semibold transition-colors duration-300"
+            onClick={() => setIsModalOpen(true)}
+          >
+            Book Now
+          </button>
           </div>
         </div>
       ))}
     </div>
 
+    {/* Booking Modal */}
+          {isModalOpen && (
+            <BookingModal
+              show={isModalOpen}
+              onClose={() => setIsModalOpen(false)}
+              eventTitle={event.title}
+            />
+          )}
+
     {/* Explore Events Button */}
     <div className="mt-12">
       <Link
         to="/events"
-        className="mt-8 px-8 py-3 border-2 border-yellow-400 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-amber-500 self-start"
+        className="mt-8 px-8 py-3 border-2 border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-amber-600 self-start"
       >
         Explore Events
       </Link>
     </div>
 
-    {/* Faint divider line at bottom */}
-    <div className="w-full h-px bg-yellow-500/20 mt-16"></div>
   </div>
 </section>
 
 <Services />
 <Reserve />
 <About />
-<ContactInfoItem />
-
-<ContactIconButton />
-
-    </section>
+<VisitUs />
+<FooterGlobal />
+</section>
   );
 }
 

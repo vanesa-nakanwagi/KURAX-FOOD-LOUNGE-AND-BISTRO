@@ -1,12 +1,12 @@
 
 import FooterGlobal from "../components/common/footer.jsx";
-import Menu from "../components/menu/menu.jsx";
+import Events from "../components/events/events.jsx";
 
-export default function MenusPage() {
+export default function EventsPage() {
   return (
     <div className="bg-black font-[Outfit]">
       
-      <Menu />
+      <Events/>
       <FooterGlobal />
      
     </div>

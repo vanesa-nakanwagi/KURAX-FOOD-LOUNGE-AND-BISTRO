@@ -1,16 +1,11 @@
 import { useState } from "react";
-import TopSection from "./topSection.jsx";
-import SocialButton from "./common/socialButton.jsx";
-import terrace from "../assets/images/terrace.jpg";
-import ContactIconButton from "./common/socialButton.jsx";
-// Components
-import EventCard from "../components/events/EventCard.jsx";
-import BookingModal from "../components/events/BookingModal.jsx";
+import TopSection from "../common/topSection.jsx";
+import terrace from "../../assets/images/terrace.jpg";
+import EventCard from "../events/EventCard.jsx";
+import BookingModal from "../events/BookingModal.jsx";
+import { events } from "../../data/events.jsx";
 
-// Import your events data
-import { events } from "../data/events.jsx";
-
-export default function EventsPage() {
+export default function Events() {
   const [showModal, setShowModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
 
@@ -61,7 +56,7 @@ export default function EventsPage() {
         </div>
       </section>
  
-      <ContactIconButton />
+     
 
       {/* ================= BOOKING MODAL ================= */}
       {showModal && (

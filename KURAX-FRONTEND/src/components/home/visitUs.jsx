@@ -2,7 +2,7 @@
 import React from 'react';
 
 // Custom components to handle the repetitive icon/text layout (unchanged)
-const ContactInfoItem = ({ icon, title, content }) => {
+const VisitUs = ({ icon, title, content }) => {
   // Styles based on the image: soft reddish-brown icon color and font styling
   const iconColor = 'text-yellow-700'; 
   const contentColor = 'text-gray-700';
@@ -89,7 +89,7 @@ export default function ContactPage() {
             <div className="space-y-8">
               
               {/* Address */}
-              <ContactInfoItem
+              <VisitUs
                 icon={LocationIcon}
                 title="Address"
                 content={
@@ -101,7 +101,7 @@ export default function ContactPage() {
               />
 
               {/* Business Proximity */}
-              <ContactInfoItem
+              <VisitUs
                 icon={ProximityIcon}
                 title="Business Proximity"
                 content={
@@ -114,7 +114,7 @@ export default function ContactPage() {
               />
 
               {/* Hours */}
-              <ContactInfoItem
+              <VisitUs
                 icon={HoursIcon}
                 title="Hours"
                 content={

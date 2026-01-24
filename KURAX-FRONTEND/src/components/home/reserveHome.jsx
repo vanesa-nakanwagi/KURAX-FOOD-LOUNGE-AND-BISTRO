@@ -1,7 +1,7 @@
 import React from 'react';
 
 // Replace this path with the actual path to your image
-import diningImage from '../assets/images/dining.jpg'; 
+import diningImage from '../../assets/images/dining.jpg'; 
 import { Users, DoorClosed, Briefcase } from "lucide-react";
 
 // Note: Ensure Tailwind CSS is installed in your project for these classes to work.
@@ -41,7 +41,7 @@ const Reserve = () => {
 
     return (
         // Executive Dining Section: Black background, Outfit font, vertical padding
-        <div className="bg-white text-black font-['Outfit'] py-16"> 
+        <div className="bg-zinc-400 text-black font-['Outfit'] py-16"> 
             
             {/* Content Container: Max width, centered, flex layout, gap, horizontal padding */}
             <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-10 px-5">
@@ -70,7 +70,7 @@ const Reserve = () => {
                         Executive Dining & Private Events
                     </h2>
                     
-                    <p className="text-base leading-relaxed text-gray-600 mb-8">
+                    <p className="text-base leading-relaxed text-gray-900 mb-8">
                         Kurax provides the ideal setting for business professionals seeking a 
                         refined atmosphere for meetings, networking, and corporate events. Our 
                         quiet booths and private spaces ensure confidentiality and comfort.
@@ -82,14 +82,14 @@ const Reserve = () => {
                             <div className="flex items-start py-5 " key={index}>
                                 {/* Icon Box */}
                                 <div className="flex items-center justify-center w-10 h-10 mr-4 border border-yellow-700/40 rounded-lg bg-yellow-700/5">
-  <feature.icon className="w-5 h-5 text-yellow-700" />
-</div>
+                                 <feature.icon className="w-5 h-5 text-yellow-700" />
+                                </div>
                                 {/* Feature Text */}
                                 <div>
                                     <h3 className="text-xl font-bold mb-1">
                                         {feature.title}
                                     </h3>
-                                    <p className="text-sm text-gray-600">
+                                    <p className="text-sm text-gray-900">
                                         {feature.description}
                                     </p>
                                 </div>
@@ -99,7 +99,7 @@ const Reserve = () => {
 
                     {/* Button with Hover Effect */}
                     <button 
-                        className="mt-8 px-8 py-3 border-2 border-yellow-400 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-amber-500 self-start"
+                        className=" bg-white mt-8 px-8 py-3 border-2 border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-yellow-600 self-start"
                     >
                         RESERVE TABLE
                     </button>

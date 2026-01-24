@@ -35,16 +35,19 @@ export default function Services() {
 
   return (
     <section className="w-full bg-white px-6 py-20">
-      {/* Title */}
-      <div className="max-w-6xl mx-auto text-center mb-16">
-        <h2 className="text-3xl md:text-4xl font-bold text-yellow-900 tracking-wide">
-          PREMIUM SERVICES
-        </h2>
-        <p className="mt-4 text-black/70 max-w-2xl mx-auto">
-          Experience exceptional dining, entertainment, and hospitality crafted
+       <div className="max-w-7xl mx-auto text-center">
+      {/* Section Header */}
+    <p className="text-yellow-800 uppercase text-bg mb-2 tracking-wide">
+      PREMIUM SERVICES
+    </p>
+    <h2 className="text-2xl text-black sm:text-4xl md:text-5xl font-bold mb-2">
+      Come Live Enjoy
+    </h2>
+    <div className="w-16 h-1 bg-yellow-500 mx-auto mb-4"></div>
+    <p className="text-black/70 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
+     Experience exceptional dining, entertainment, and hospitality crafted
           to give you comfort, quality, and unforgettable moments.
-        </p>
-      </div>
+    </p>
 
       {/* Cards */}
       <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -64,12 +67,13 @@ export default function Services() {
                 {service.title}
               </h3>
 
-              <p className="text-sm text-black/60">
+              <p className="text-sm text-black/80">
                 {service.description}
               </p>
             </div>
           );
         })}
+      </div>
       </div>
     </section>
   );

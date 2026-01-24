@@ -1,12 +1,11 @@
-
 import FooterGlobal from "../components/common/footer.jsx";
-import Menu from "../components/menu/menu.jsx";
+import ReservationsPage from "../components/reservations/Reservations.jsx";
 
 export default function MenusPage() {
   return (
     <div className="bg-black font-[Outfit]">
       
-      <Menu />
+      <ReservationsPage />
       <FooterGlobal />
      
     </div>

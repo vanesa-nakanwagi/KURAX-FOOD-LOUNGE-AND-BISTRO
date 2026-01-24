@@ -1,8 +1,8 @@
 import { Search, ShoppingCart } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useCart } from "../components/context/CartContext";
-import ThemeToggle from "../components/ThemeToggle"; // Theme toggle
-import logo from "../assets/images/logo.jpeg";
+import { useCart } from "../context/CartContext";
+import ThemeToggle from "../context/ThemeToggle"; // Theme toggle
+import logo from "../../assets/images/logo.jpeg";
 
 export default function TopSection({ searchPlaceholder }) {
   const { cart, setIsCartOpen } = useCart();
@@ -22,7 +22,7 @@ export default function TopSection({ searchPlaceholder }) {
             <h1 className="text-lg md:text-xl font-semibold text-black dark:text-white" style={{ fontFamily: "Inter, sans-serif" }}>
               KURAX FOOD LOUNGE & BISTRO
             </h1>
-            <p className="text-sm md:text-base text-yellow-400">
+            <p className="text-sm md:text-base text-yellow-500">
               Luxury dining, signature drinks & rooftop vibes
             </p>
           </div>
@@ -90,6 +90,7 @@ export default function TopSection({ searchPlaceholder }) {
         >
           Reservations
         </Link>
+        
       </nav>
     </header>
   );

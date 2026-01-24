@@ -1,22 +1,23 @@
 import { Calendar, Clock, MapPin } from "lucide-react";
 import { useState } from "react";
-import BookingModal from "./BookingModal.jsx"; // import the modal
+import BookingModal from "./BookingModal.jsx"; 
 
 export default function EventCard({ event }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
     <>
-      <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden shadow-md hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group hover:border-yellow-400/50">
+      <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden shadow-md hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group ">
         {/* Image */}
         <div className="relative h-56 overflow-hidden">
           <img
             src={event.image}
             alt={event.title}
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+            
           />
           <div className="absolute top-4 left-4">
-            <div className="bg-yellow-400 text-black px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1">
+            <div className="bg-yellow-400 text-black px-3 py-1 rounded-xl text-sm font-semibold flex items-center gap-1">
               {event.icon && <event.icon className="w-4 h-4" />}
               {event.category}
             </div>

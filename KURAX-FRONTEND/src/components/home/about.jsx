@@ -1,8 +1,24 @@
-// About.jsx
+import { useEffect, useState } from "react";
+import hero1 from "../../assets/images/hero1.jpg";
+import hero2 from "../../assets/images/hero2.jpg";
+import hero3 from "../../assets/images/hero13.jpg";
+import hero4 from "../../assets/images/hero4.jpg";
+import hero5 from "../../assets/images/hero5.jpg";
+import hero12 from "../../assets/images/hero12.jpg";
 
-import React from 'react';
-import hero1 from "../assets/images/hero1.jpg";
+const heroImages = [hero1, hero2, hero3, hero4, hero5, hero12];
+
 export default function About() {
+
+ const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+      const interval = setInterval(() => {
+        setCurrent((prev) => (prev + 1) % heroImages.length);
+      }, 6000);
+      return () => clearInterval(interval);
+    }, []);
+
   return (
     // Main Container: Black background, full width, with internal padding
     <div className="bg-black text-white min-h-screen font-[Outfit] pt-16 md:pt-24 pb-16">
@@ -64,13 +80,19 @@ export default function About() {
           </div>
 
           {/* RIGHT COLUMN: Image and Caption */}
-          <div className="relative rounded-lg overflow-hidden shadow-2xl h-[450px] md:h-[600px] mt-8 lg:mt-0">
+          <div className="relative rounded-none overflow-hidden shadow-2xl h-[450px] md:h-[600px] mt-8 lg:mt-0">
             {/* Image (using the provided image URL) */}
-            <img
-              src={hero1}
-              alt="Interior view of Kurax Food Lounge & Bistro with modern luxury decor and natural light."
-              className="w-full h-full object-cover block" 
-            />
+              {heroImages.map((img, index) => (
+  <div
+    key={index}
+    className={`absolute inset-0 bg-center bg-cover transition-opacity duration-1000 ${
+      index === current
+        ? "opacity-100 animate-zoomOut"
+        : "opacity-0"
+    }`}
+    style={{ backgroundImage: `url(${img})` }}
+  />
+))}
             
             {/* Caption/Overlay Text */}
             <div className="absolute inset-0 bg-black/10 flex items-end justify-center p-6">
