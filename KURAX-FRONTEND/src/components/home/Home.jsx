@@ -23,7 +23,7 @@ import BookingModal from "../events/BookingModal.jsx";
 const heroImages = [hero1, hero12, hero3, terrace];
 
 
- const [isModalOpen, setIsModalOpen] = useState(false);
+
 // Hardcoded events data
 const events = [
   {
@@ -61,7 +61,8 @@ const events = [
 export default function Home () {
   const [current, setCurrent] = useState(0);
   const navigate = useNavigate();
-
+  
+ const [isModalOpen, setIsModalOpen] = useState(false);
   const goToMenu = () => {
     navigate("/menus");
   };
