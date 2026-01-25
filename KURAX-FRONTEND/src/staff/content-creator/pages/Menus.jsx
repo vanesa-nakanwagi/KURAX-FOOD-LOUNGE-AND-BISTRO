@@ -134,7 +134,7 @@ export default function Menus() {
                         required
                         className="w-full bg-zinc-800 border border-slate-700 p-3 pl-10 rounded-xl focus:border-yellow-500 outline-none text-sm text-white"
                       />
-                      <DollarSign className="w-4 h-4 text-yellow-500/50 absolute left-3 top-3.5" />
+                      
                     </div>
                   </div>
                 </div>
