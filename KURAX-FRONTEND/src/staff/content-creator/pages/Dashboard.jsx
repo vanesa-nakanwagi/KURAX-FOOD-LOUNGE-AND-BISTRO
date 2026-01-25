@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import Sidebar from "../components/Sidebar";
 import StatsCard from "../components/StatsCard";
 import { useData } from "../../../components/context/DataContext";
+import Footer from "../../../components/common/Foooter";
 import {
   BarChart3, Upload, Clock, Utensils, Search, Heart, Eye, 
   Calendar, X, MapPin, ImageIcon, Plus
@@ -167,6 +168,7 @@ export default function Dashboard() {
             </div>
           </div>
         </main>
+        <Footer />
       </div>
 
       {/* MODAL */}

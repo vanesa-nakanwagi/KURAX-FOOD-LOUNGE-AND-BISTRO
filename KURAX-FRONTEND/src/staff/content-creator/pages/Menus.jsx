@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import { useData } from "../../../components/context/DataContext";
 import { Plus, Utensils, Edit2, Trash2, X,  CheckCircle2, AlertCircle, ImageIcon } from 'lucide-react'
-
+import Footer from "../../../components/common/Foooter";
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
 
@@ -95,6 +95,7 @@ export default function Menus() {
                 Add Menu
               </button>
             )}
+          
           </div>
 
           {formVisible && (
@@ -248,6 +249,7 @@ export default function Menus() {
             ))}
           </div>
         </main>
+          <Footer />
       </div>
     </div>
   )
