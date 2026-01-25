@@ -23,7 +23,7 @@ export default function AuthProvider({ children }) {
       }
     )
 
-    return () => listener.subscription.unsubscribe()
+    return () => listener?.subscription?.unsubscribe?.()
   }, [])
 
   return (

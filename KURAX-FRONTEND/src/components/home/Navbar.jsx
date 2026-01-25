@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import logo from "../../assets/images/logo.jpeg";
 import { Link } from "react-router-dom";
+// 1. Import the User icon
+import { UserCircle } from "lucide-react";
 
 const navLinks = [
   { name: "Menu", path: "/menus" },
@@ -32,19 +34,18 @@ export default function Navbar() {
           : "bg-transparent py-5"
       }`}
     >
-      <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
         
         {/* Logo */}
         <div className="flex items-center gap-3">
           <img
             src={logo}
             alt="Kurax Logo"
-            className="w-14 h-14 rounded-full object-cover"
+            className="w-12 h-12 md:w-14 md:h-14 rounded-full object-cover border border-yellow-500/20"
           />
-          <h1 className="text-lg md:text-xl font-semibold text-white dark:text-white">
-              KURAX FOOD LOUNGE & BISTRO
-            </h1>
-
+          <h1 className="text-sm md:text-xl font-bold text-white tracking-tight">
+              KURAX <span className="text-yellow-500">BISTRO</span>
+          </h1>
         </div>
 
         {/* Desktop Nav */}
@@ -53,50 +54,63 @@ export default function Navbar() {
             <Link
               key={link.name}
               to={link.path}
-              className="text-sm text-white hover:text-yellow-400 transition"
+              className="text-sm font-medium text-white/80 hover:text-yellow-400 transition"
             >
               {link.name}
             </Link>
           ))}
         </nav>
 
-
-        {/* Mobile Toggle */}
-        <button
-          onClick={() => setOpen(!open)}
-          className="md:hidden text-white"
-        >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            viewBox="0 0 24 24"
+        {/* Action Icons (Profile for Testing) */}
+        <div className="flex items-center gap-4">
+          {/* 2. Content Creator Profile Link */}
+          <Link 
+            to="/content-creator" 
+            className="flex items-center gap-2 group p-1"
+            title="Staff Dashboard (Test)"
           >
-            {open ? (
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            ) : (
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            )}
-          </svg>
-        </button>
+            <UserCircle className="w-6 h-6 md:w-7 md:h-7 text-white group-hover:text-yellow-500 transition-colors" />
+            <span className="hidden lg:block text-xs font-bold text-white group-hover:text-yellow-500 transition-colors uppercase tracking-widest">
+              Staff
+            </span>
+          </Link>
+
+          {/* Mobile Toggle */}
+          <button
+            onClick={() => setOpen(!open)}
+            className="md:hidden text-white p-1"
+          >
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              {open ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              )}
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Mobile Menu */}
       {open && (
-        <div className="md:hidden bg-black/95 border-t border-yellow-500/20">
-          <div className="flex flex-col px-6 py-4 gap-4">
+        <div className="md:hidden bg-black/95 border-t border-yellow-500/20 animate-in slide-in-from-top duration-300">
+          <div className="flex flex-col px-6 py-6 gap-5">
             {navLinks.map((link) => (
               <Link
                 key={link.name}
                 to={link.path}
                 onClick={() => setOpen(false)}
-                className="text-white hover:text-yellow-400"
+                className="text-lg font-medium text-white hover:text-yellow-400 border-b border-white/5 pb-2"
               >
                 {link.name}
               </Link>
             ))}
-
           </div>
         </div>
       )}

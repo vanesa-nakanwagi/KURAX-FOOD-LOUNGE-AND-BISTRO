@@ -1,23 +1,23 @@
-import React from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
-import StaffLogin from '../auth/StaffLogin'
-import Dashboard from '../content-creator/pages/Dashboard'
-import Menus from '../content-creator/pages/Menus'
-import Events from '../content-creator/pages/Events'
+import React from "react";
+import { Routes, Route } from "react-router-dom";
+
+import Dashboard from "../content-creator/pages/Dashboard";
+import Menus from "../content-creator/pages/Menus";
+import Events from "../content-creator/pages/Events";
+
 
 export default function StaffRoutes() {
   return (
     <Routes>
-      {/* Staff login */}
-      <Route path="" element={<StaffLogin />} />
+      {/* Default page → /content-creator */}
+      <Route index element={<Dashboard />} />
 
-      {/* Content Creator pages */}
-      <Route path="content-creator/dashboard" element={<Dashboard />} />
-      <Route path="content-creator/menus" element={<Menus />} />
-      <Route path="content-creator/events" element={<Events />} />
-
-      {/* Redirect unknown staff routes */}
-      <Route path="*" element={<Navigate to="" />} />
+      {/* Sub pages */}
+      <Route path="menus" element={<Menus />} />
+      <Route path="events" element={<Events />} />
+    
+      {/* Fallback inside staff */}
+      <Route path="*" element={<div className="p-10 text-white">Not found</div>} />
     </Routes>
-  )
+  );
 }
