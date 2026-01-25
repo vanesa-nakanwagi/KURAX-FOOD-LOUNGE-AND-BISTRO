@@ -74,10 +74,14 @@ export default function Sidebar() {
               {/* FIXED: Added the brand text here for mobile users */}
               <div className="flex items-center gap-3">
                 <img src={logo} alt="Logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
-                <div className="leading-tight">
-                  <h1 className="text-[11px] font-bold text-white uppercase tracking-tighter">KURAX FOOD LOUNGE & BISTRO</h1>
-                  <h1 className="text-[9px] font-medium text-yellow-500 uppercase">STAFF PANEL</h1>
-                </div>
+               <div className="flex flex-col justify-center leading-tight">
+  <h1 className="text-[11px] md:text-sm font-bold text-white uppercase tracking-tighter">
+    KURAX FOOD LOUNGE & BISTRO
+  </h1>
+  <h1 className="text-[9px] md:text-xs font-medium text-yellow-500 uppercase tracking-wider">
+    STAFF PANEL
+  </h1>
+</div>
               </div>
               <button onClick={() => setIsOpen(false)} className="text-slate-400 p-1 hover:text-white">
                 <X className="w-6 h-6" />
