@@ -66,65 +66,47 @@ export default function Events() {
      
 
 {/* ================= KURAX GALLERY ================= */}
-<section className="py-16 px-6 relative overflow-hidden bg-gray-100 dark:bg-black">
+<section className="py-16 px-4 md:px-6 relative overflow-hidden bg-gray-100 dark:bg-black">
   {/* Centered text */}
-  <div className="text-center mb-12 max-w-5xl mx-auto">
-    <p className="text-yellow-800 uppercase text-bg mb-2 tracking-wide">
+  <div className="text-center mb-12 max-w-5xl mx-auto px-2">
+    <p className="text-yellow-800 uppercase mb-2 tracking-wide text-sm sm:text-base">
       LIVE MOMENTS
     </p>
-    <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">
+    <h2 className="text-2xl sm:text-3xl md:text-5xl font-bold mb-4">
       KURAX GALLERY
     </h2>
-    <p className="text-base sm:text-lg max-w-2xl mx-auto mb-12">
+    <p className="text-sm sm:text-base md:text-lg max-w-2xl mx-auto mb-8">
       Dive into the essence of Kurax! Our gallery captures moments of joy, elegance, and unforgettable experiences, scroll through to feel the vibe.
     </p>
   </div>
 
   {/* Container for images */}
-  <div className="relative flex justify-start items-start gap-8 px-6 md:px-12">
+  <div className="relative flex flex-col md:flex-row justify-start items-start gap-6 md:gap-8 px-2 md:px-12">
 
     {/* Left Column */}
-    <div className="flex flex-col gap-6 z-10">
-      <div className="w-96 h-80 md:w-[400px] md:h-[320px] rounded-none overflow-hidden shadow-lg">
-        <img
-          src={galleryImages[0]}
-          alt="Gallery 1"
-          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-        />
-      </div>
-      <div className="w-96 h-80 md:w-[400px] md:h-[320px] rounded-none overflow-hidden shadow-lg">
-        <img
-          src={galleryImages[1]}
-          alt="Gallery 2"
-          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-        />
-      </div>
-      <div className="w-96 h-80 md:w-[400px] md:h-[320px] rounded-none overflow-hidden shadow-lg">
-        <img
-          src={galleryImages[3]}
-          alt="Gallery 2"
-          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-        />
-      </div>
-       <div className="w-96 h-80 md:w-[400px] md:h-[320px] rounded-none overflow-hidden shadow-lg">
-        <img
-          src={galleryImages[5]}
-          alt="Gallery 4"
-          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-        />
-      </div>
+    <div className="flex flex-col gap-4 md:gap-6 z-10 w-full md:w-auto">
+      {[0, 1, 3, 5].map((index) => (
+        <div
+          key={index}
+          className="w-full md:w-96 h-48 sm:h-64 md:h-80 rounded-none overflow-hidden shadow-lg"
+        >
+          <img
+            src={galleryImages[index]}
+            alt={`Gallery ${index + 1}`}
+            className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+          />
+        </div>
+      ))}
     </div>
 
     {/* Right Column (flexible width) */}
-    <div className="flex-grow h-[150%] rounded-none overflow-hidden shadow-lg z-10">
+    <div className="w-full md:flex-grow h-64 sm:h-80 md:h-[150%] rounded-none overflow-hidden shadow-lg z-10">
       <img
         src={galleryImages[4]}
         alt="Gallery 5"
         className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
       />
     </div>
-    
-
   </div>
 </section>
 
