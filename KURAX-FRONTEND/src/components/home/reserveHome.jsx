@@ -47,20 +47,20 @@ const Reserve = () => {
             <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-10 px-5">
                 
                 {/* Left Side: Image Panel */}
-                <div className="relative flex-1 min-h-[550px] overflow-hidden">
-                    <img 
-                        src={diningImage} 
-                        alt="Elegant corporate dining room" 
-                        className="w-full h-full object-cover block" 
-                    />
-                   <div className="absolute inset-0 flex items-end justify-center p-4 md:p-6">
-  <p className="text-center text-base sm:text-lg md:text-xl font-semibold text-white/90 px-3 sm:px-4 py-2 rounded max-w-full md:max-w-[90%]">
-    "Where Business Meets Elegance"
-  </p>
+                <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] md:aspect-[3/2] lg:aspect-[4/3] max-h-[500px] overflow-hidden rounded-none">
+  <img
+    src={diningImage}
+    alt="Elegant corporate dining room"
+    className="w-full h-full object-cover"
+  />
+  {/* Caption Overlay */}
+  <div className="absolute inset-0 flex items-end justify-center p-4 sm:p-6 bg-black/10">
+    <p className="text-center text-sm sm:text-base md:text-lg lg:text-xl font-semibold text-white/90 px-3 sm:px-4 py-2 rounded max-w-full md:max-w-[90%]">
+      "Where Business Meets Elegance"
+    </p>
+  </div>
 </div>
 
-                     
-                </div>
 
                 {/* Right Side: Services Panel */}
                 <div className="flex-1 flex flex-col justify-center pt-5">
