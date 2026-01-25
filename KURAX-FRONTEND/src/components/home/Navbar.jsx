@@ -26,7 +26,7 @@ export default function Navbar() {
 
   return (
     <header
-     className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${
+     className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 font-[Outfit] ${
         scrolled 
           ? "bg-black/90 backdrop-blur-md border-b border-yellow-500/10 py-3" 
           : "bg-transparent py-5"
@@ -41,7 +41,10 @@ export default function Navbar() {
             alt="Kurax Logo"
             className="w-14 h-14 rounded-full object-cover"
           />
-          
+          <h1 className="text-lg md:text-xl font-semibold text-white dark:text-white">
+              KURAX FOOD LOUNGE & BISTRO
+            </h1>
+
         </div>
 
         {/* Desktop Nav */}

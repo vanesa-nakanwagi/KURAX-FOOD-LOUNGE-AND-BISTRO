@@ -41,7 +41,7 @@ const Reserve = () => {
 
     return (
         // Executive Dining Section: Black background, Outfit font, vertical padding
-        <div className="bg-zinc-400 text-black font-['Outfit'] py-16"> 
+        <div className="bg-gray-100 text-black font-['Outfit'] py-16"> 
             
             {/* Content Container: Max width, centered, flex layout, gap, horizontal padding */}
             <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-10 px-5">

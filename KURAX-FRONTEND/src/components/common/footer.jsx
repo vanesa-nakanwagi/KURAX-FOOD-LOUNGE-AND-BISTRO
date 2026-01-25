@@ -1,5 +1,9 @@
 import React from 'react';
 import logo from "../../assets/images/logo.jpeg";
+import airtelLogo from "../../assets/images/airtell.jpeg";
+import mtnLogo from "../../assets/images/mtn.jpeg";
+import visaLogo from "../../assets/images/visa.jpeg";
+
 // Assuming SocialButton is available but we'll use a simpler icon component here
 
 // Helper component for the round icon buttons in the "Connect With Us" section
@@ -58,12 +62,12 @@ export default function FooterGlobal () {
     { label: 'Events & Bookings', href: '/events' },
     { label: 'Contact', href: '/contact' },
   ];
-
    const paymentmethods = [
-    { label: 'Airtel', img: '/menus' },
-    { label: 'MTN', img: '/about' },
-    { label: 'VISA', img: '/services' },
-  ];
+  { label: 'Airtel', img: airtelLogo },
+  { label: 'MTN', img: mtnLogo },
+  { label: 'VISA', img: visaLogo },
+];
+
  
 
   // Define the social media links using the data from your CONNECT section
@@ -176,17 +180,18 @@ export default function FooterGlobal () {
             </div>
 
 
-            <h3 className="text-lg text-yellow-600 font-semibold mb-5 gap-4">We accept the following payment methods</h3>
+            <h3 className="text-lg text-yellow-600 font-semibold mb-5 mt-8 gap-4">We accept the following payment methods</h3>
             {/* Social/Contact Icons (Using Social Media Links) */}
-            <div className="flex space-x-3 mb-5">
-              {paymentmethods.map((item) => (
-                <Footer 
-                  key={item.label}
-                  link={item.img}
-                />
-              ))}
-
-            </div>
+           <div className="flex space-x-3 mb-5">
+  {paymentmethods.map((item) => (
+    <img
+      key={item.label}
+      src={item.img}
+      alt={item.label}
+      className="w-10 h-10 object-contain" // adjust size as needed
+    />
+  ))}
+</div>
           </div>
         </div>
 

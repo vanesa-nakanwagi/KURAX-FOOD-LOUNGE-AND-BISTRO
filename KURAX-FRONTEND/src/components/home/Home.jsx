@@ -20,6 +20,7 @@ import { useCart } from "../context/CartContext.jsx";
 import CartModal from "../menu/cart/CartModal.jsx";
 import BookingModal from "../events/BookingModal.jsx"; 
 
+
 const heroImages = [hero1, hero12, hero3, terrace];
 
 
@@ -61,6 +62,21 @@ const events = [
 export default function Home () {
   const [current, setCurrent] = useState(0);
   const navigate = useNavigate();
+   const {
+    cart,
+    isCartOpen,
+    setIsCartOpen,
+    checkoutStep,
+    setCheckoutStep,
+    activeDish,
+    setActiveDish,
+    handleAddToCart,
+    handleRemoveFromCart,
+    handleQuantityChange,
+    totalAmount,
+    customerDetails,
+    setCustomerDetails,
+  } = useCart();
   
  const [isModalOpen, setIsModalOpen] = useState(false);
   const goToMenu = () => {
@@ -71,13 +87,35 @@ export default function Home () {
   const goToReserve = () => {
     navigate("/reservations"); // <-- make sure this route exists
   };
-  // Hero slideshow
+    useEffect(() => {
+    if (location.state?.preselectedItem) {
+      const dishWithQuantity = {
+        ...location.state.preselectedItem,
+        quantity: 1,
+        instructions: "",
+      };
+      setActiveDish(dishWithQuantity);
+      setIsCartOpen(true);
+    }
+  }, [location.state]);
+  
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrent((prev) => (prev + 1) % heroImages.length);
     }, 6000);
     return () => clearInterval(interval);
   }, []);
+ 
+   const handleOrder = (item) => {
+    const dishWithQuantity = {
+      ...item,
+      quantity: 1,
+      instructions: "",
+    };
+
+    setActiveDish(dishWithQuantity);
+    setIsCartOpen(true);
+  };
 
   return (
     <section className=" relative h-screen bg-white font-[Outfit]">
@@ -106,9 +144,9 @@ export default function Home () {
         {/* Hero Text */}
         <div className="relative z-10 flex flex-col items-center justify-center h-full text-center px-4">
           <h1 className="font-bold text-3xl sm:text-4xl md:text-6xl lg:text-7xl leading-tight animate-fadeUp">
-            KURAX FOOD LOUNGE
+            Elevated Local
             <span className="block mt-2 text-yellow-600">
-              & BISTRO
+              & Cuisine Reimagined
             </span>
           </h1>
           <p className="mt-2 text-sm sm:text-base md:text-lg text-white/90 max-w-xs sm:max-w-sm md:max-w-md animate-fadeUp delay-200">
@@ -118,7 +156,7 @@ export default function Home () {
           <div className="mt-8 flex flex-row gap-4">
   <button
     onClick={goToMenu}
-    className="px-6 py-2 rounded-none bg-transparent border border-yellow-600 text-yellow-600 font-semibold hover:bg-yellow-600 hover:text-black transition"
+    className="px-6 py-2 rounded-none bg-transparent border-2 border-yellow-600 text-yellow-600 font-semibold hover:bg-yellow-600 hover:text-black transition"
   >
     View Menu
   </button>
@@ -156,60 +194,89 @@ export default function Home () {
     {/* Menu Cards */}
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
       {[
-        {
-          img: burger,
-          title: "Burger",
-          desc: "A royal Ugandan delicacy slow-cooked to perfection.",
-          price: "UGX 45,000",
-        },
+  { 
+    id : 1,
+    image: burger,
+    name: "Burger",
+    description: "A royal Ugandan delicacy slow-cooked to perfection.",
+    price: 45000,
+  },
+  {
+    id: 2,
+    image: grilledGoat,
+    name: "Grilled Goat",
+    description: "Smoky, tender, and seasoned with local spices.",
+    price: 60000,
+  },
+  {
+    id: 3,
+    image: cocktails,
+    name: "Cocktails",
+    description: "A luxurious staple elevated with Kurax finesse.",
+    price: 25000,
+  },
+  {
+    id: 4,
+    image: luwombo,
+    name: "Luwombo",
+    description: "A royal Ugandan delicacy slow-cooked to perfection.",
+    price: 45000,
+  },
+].map((item, idx) => (
+  <div
+    key={idx}
+    className="
+      rounded-xl overflow-hidden
+      shadow-lg hover:shadow-2xl transition duration-300
+      bg-white
+      flex flex-col h-full
+    "
+  >
+    {/* Image */}
+    <img
+      src={item.image}
+      alt={item.name}
+      className="w-full h-48 object-cover"
+    />
+
+    {/* Content */}
+    <div className="p-4 text-left flex flex-col flex-1">
       
-        
-        {
-          img: grilledGoat,
-          title: "Grilled Goat",
-          desc: "Smoky, tender, and seasoned with local spices.",
-          price: "UGX 60,000",
-        },
-        {
-          img: cocktails,
-          title: "Cocktails",
-          desc: "A luxurious staple elevated with Kurax finesse.",
-          price: "UGX 25,000",
-        },
-        {
-          img: luwombo,
-          title: "Luwombo",
-          desc: "A royal Ugandan delicacy slow-cooked to perfection.",
-          price: "UGX 45,000",
-        },
-      ].map((c, idx) => (
-        <div
-          key={idx}
-          className="rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
-                     border-2 border-transparent
-                     bg-white-100 dark:bg-white-900
-                     hover:bg-gray-200"
+      <h4 className="font-semibold text-lg text-black">
+        {item.name}
+      </h4>
+
+      <p className="text-gray-600 text-sm my-2 line-clamp-3">
+        {item.description}
+      </p>
+
+      {/* Bottom aligned row */}
+          <div className="mt-auto flex justify-between items-center">
+            <span className="font-bold text-yellow-600">
+              UGX {item.price.toLocaleString()}
+            </span>
+
+        <button
+          onClick={() => handleOrder(item)}
+          
+          className="
+            px-4 py-2
+            bg-yellow-500 text-black
+            font-medium text-sm
+            hover:bg-yellow-400 transition
+          "
         >
-          <img src={c.img} alt={c.title} className="w-full h-48 object-cover" />
-          <div className="p-4 text-left">
-            <h4 className="font-semibold text-lg text-black-900 dark:text-black">{c.title}</h4>
-            <p className="text-gray-600 dark:text-gray-800 text-sm my-2">{c.desc}</p>
-            <div className="flex justify-between items-center">
-              <span className="font-bold text-yellow-600">{c.price}</span>
-              <button
-                  onClick={() => handleOrder(c)}
-                  className="px-3 py-1 bg-yellow-500 text-black rounded-none hover:bg-yellow-400 dark:text-black transition text-sm"
-                >
-                  Order Now
-                </button>
-            </div>
-          </div>
-        </div>
-      ))}
+          Order Now
+        </button>
+      </div>
+    </div>
+  </div>
+))}
+
     </div>
 
     {/* Explore Menu Button */}
-    <div className="mb-10">
+    <div className="mt-12">
       <Link
         to="/menus"
         className="mt-8 px-8 py-3 border-2 border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-yellow-600 self-start"
@@ -217,22 +284,36 @@ export default function Home () {
         Explore Menu
       </Link>
     </div>
-
   </div>
 </section>
 
+ {/* ================= CART MODAL ================= */}
+      {isCartOpen && (
+        <CartModal
+          isCartOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          activeDish={activeDish}
+          setActiveDish={setActiveDish}
+          cart={cart}
+          handleAddToCart={handleAddToCart}
+          handleRemoveFromCart={handleRemoveFromCart}
+          handleQuantityChange={handleQuantityChange}
+          totalAmount={totalAmount}
+          checkoutStep={checkoutStep}
+          setCheckoutStep={setCheckoutStep}
+          customerDetails={customerDetails}
+          setCustomerDetails={setCustomerDetails}
+        />
+      )}
 
-    {/* ================== Featured Events Section ================== */}
-<section className="bg-white text-black font-outfit py-20 px-4 sm:px-8">
+
+   {/* ================== Featured Events Section ================== */}
+<section className="bg-gray-100 text-black font-outfit py-20 px-4 sm:px-8">
   <div className="max-w-7xl mx-auto text-center">
 
     {/* Section Header */}
-    <p className="text-yellow-800 uppercase text-bg mb-2 tracking-wide">
-      Upcoming Experiences
-    </p>
-    <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">
-      Featured Events
-    </h2>
+    <p className="text-yellow-800 uppercase mb-2 tracking-wide">Upcoming Experiences</p>
+    <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">Featured Events</h2>
     <div className="w-16 h-1 bg-yellow-500 mx-auto mb-4"></div>
     <p className="text-black/70 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
       Join us for exclusive dining experiences, live entertainment, and special culinary celebrations.
@@ -243,8 +324,7 @@ export default function Home () {
       {events.map((event) => (
         <div
           key={event.id}
-          className="bg-white dark:bg-white-900 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
-                      "
+          className="bg-white  rounded-xl overflow-hidden shadow-md hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group flex flex-col"
         >
           {/* Image */}
           <div className="relative h-56 overflow-hidden">
@@ -254,25 +334,24 @@ export default function Home () {
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
             />
             <div className="absolute top-4 left-4">
-            <div className="bg-yellow-400 text-black px-3 py-1 rounded-xl text-sm font-semibold flex items-center gap-1">
-              {event.icon && <event.icon className="w-4 h-4" />}
-              {event.category}
+              <div className="bg-yellow-400 text-black px-3 py-1 rounded-xl text-sm font-semibold flex items-center gap-1">
+                {event.icon && <event.icon className="w-4 h-4" />}
+                {event.category}
+              </div>
             </div>
-          
-        </div>
           </div>
 
           {/* Content */}
-          <div className="p-6 text-left">
-            <h3 className="font-serif text-2xl font-bold mb-2 text-black dark:text-black">
+          <div className="p-6 flex flex-col flex-1 text-left">
+            <h3 className="font-serif text-2xl font-bold mb-2 text-black">
               {event.title}
             </h3>
-            <p className="text-gray-700 dark:text-gray-600 mb-4 text-sm sm:text-base">
+            <p className="text-gray-700 mb-4 flex-1 text-sm sm:text-base">
               {event.description}
             </p>
 
             {/* Event Info */}
-            <div className="space-y-2 mb-4 text-sm text-gray-700 dark:text-gray-600">
+            <div className="space-y-2 mb-4 text-sm text-gray-600">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-yellow-400" />
                 {event.date}
@@ -285,18 +364,22 @@ export default function Home () {
                 <MapPin className="w-4 h-4 text-yellow-400" />
                 {event.location}
               </div>
-              
             </div>
-            <button
-            className="w-full bg-yellow-400 text-black hover:bg-yellow-300 dark:bg-yellow-500 dark:hover:bg-yellow-400 border-2 border-yellow-400 px-4 py-2 rounded-none text-sm font-semibold transition-colors duration-300"
-            onClick={() => setIsModalOpen(true)}
-          >
-            Book Now
-          </button>
+
+            {/* Button at the bottom */}
+            <div className="mt-auto">
+              <button
+                className="w-full bg-yellow-400 text-black hover:bg-yellow-300 dark:bg-yellow-500 dark:hover:bg-yellow-400 border-yellow-500 px-8 py-3 rounded-none text-sm font-semibold transition-all duration-300"
+                onClick={() => setIsModalOpen(true)}
+              >
+                Book Now
+              </button>
+            </div>
           </div>
         </div>
       ))}
     </div>
+
 
     {/* Booking Modal */}
           {isModalOpen && (

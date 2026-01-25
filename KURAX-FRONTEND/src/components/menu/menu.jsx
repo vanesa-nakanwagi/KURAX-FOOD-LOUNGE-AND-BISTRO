@@ -83,16 +83,7 @@ export default function Menu() {
       quantity: 1,
       instructions: "",
     };
-
-    // ----------------------------------------------------
-    // REMOVE THIS LINE:
-    // handleAddToCart(dishWithQuantity); 
-    // ----------------------------------------------------
-
-    // 1. Set the dish as the active one to be customized in the modal.
     setActiveDish(dishWithQuantity);
-    
-    // 2. Open the modal (to show the customization view).
     setIsCartOpen(true);
   };
 
@@ -124,46 +115,63 @@ export default function Menu() {
         </div>
       </div>
 
-      {/* ================= MENU GRID ================= */}
-      <section className="px-4 md:px-16 py-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {filteredItems.map((item) => (
-            <div
-              key={item.id}
-               className="rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300
-                     border-2 border-transparent
-                     bg-white-100 dark:bg-zinc-900
-                      "
-            >
-              <img
-                src={item.image}
-                alt={item.name}
-                className="w-full h-48 object-cover "
-              />
-              <div className="p-4">
-                <h4 className="font-semibold text-lg text-gray-900 dark:text-white">
-                  {item.name}
-                </h4>
-                <p className="text-gray-600 dark:text-gray-300 text-sm my-2">
-                  {item.description}
-                </p>
+     {/* ================= MENU GRID ================= */}
+<section className="px-4 md:px-16 py-8">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+    {filteredItems.map((item) => (
+      <div
+        key={item.id}
+        className="
+          rounded-xl overflow-hidden
+          shadow-lg hover:shadow-2xl
+          transition duration-300
+          bg-white dark:bg-zinc-900
+          flex flex-col h-full
+          hover:-translate-y-1
+        "
+      >
+        {/* Image */}
+        <img
+          src={item.image}
+          alt={item.name}
+          className="w-full h-48 object-cover"
+        />
 
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-yellow-600">
-                    UGX {item.price.toLocaleString()}
-                  </span>
-                  <button
-                    onClick={() => handleOrder(item)}
-                    className="px-3 py-1 bg-yellow-500 rounded-s-none text-black text-sm hover:bg-yellow-500 transition"
-                  >
-                    Order Now
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+        {/* Content */}
+        <div className="p-4 flex flex-col flex-1">
+          <h4 className="font-semibold text-lg text-gray-900 dark:text-white">
+            {item.name}
+          </h4>
+
+          <p className="text-gray-600 dark:text-gray-300 text-sm my-2 line-clamp-3">
+            {item.description}
+          </p>
+
+          {/* Bottom aligned row */}
+          <div className="mt-auto flex justify-between items-center">
+            <span className="font-bold text-yellow-600">
+              UGX {item.price.toLocaleString()}
+            </span>
+
+            <button
+              onClick={() => handleOrder(item)}
+              className="
+                px-4 py-2
+                bg-yellow-500 text-black
+                font-medium text-sm
+                hover:bg-yellow-400
+                transition
+              "
+            >
+              Order Now
+            </button>
+          </div>
         </div>
-      </section>
+      </div>
+    ))}
+  </div>
+</section>
+
 
       {/* ================= CART MODAL ================= */}
       {(activeDish || isCartOpen) && (

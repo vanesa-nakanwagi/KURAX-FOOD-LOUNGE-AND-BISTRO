@@ -8,7 +8,7 @@ export default function TopSection({ searchPlaceholder }) {
   const { cart, setIsCartOpen } = useCart();
 
   return (
-    <header className="border-b border-yellow-500/20 sticky top-0 z-50 bg-white dark:bg-black transition-colors duration-300">
+    <header className="border-b border-yellow-500/20 sticky top-0 z-50 bg-white dark:bg-black transition-colors duration-300 font-[Outfit]">
       <div className="flex flex-col md:flex-row items-center md:justify-between px-4 md:px-8 py-4 gap-4 md:gap-0">
 
         {/* Logo */}
@@ -19,7 +19,7 @@ export default function TopSection({ searchPlaceholder }) {
             className="w-12 h-12 rounded-full object-cover"
           />
           <div>
-            <h1 className="text-lg md:text-xl font-semibold text-black dark:text-white" style={{ fontFamily: "Inter, sans-serif" }}>
+            <h1 className="text-lg md:text-xl font-semibold text-black dark:text-white">
               KURAX FOOD LOUNGE & BISTRO
             </h1>
             <p className="text-sm md:text-base text-yellow-500">
