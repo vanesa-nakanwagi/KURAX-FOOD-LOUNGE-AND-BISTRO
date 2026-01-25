@@ -75,7 +75,7 @@ export default function Sidebar() {
               <div className="flex items-center gap-3">
                 <img src={logo} alt="Logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
                <div className="flex flex-col justify-center leading-tight">
-  <h1 className="text-[20px] md:text-sm font-bold text-white uppercase tracking-tighter">
+  <h1 className="text-[10px] md:text-sm font-bold text-white uppercase tracking-tighter">
     KURAX STAFF PANEL
   </h1>
  
@@ -115,7 +115,7 @@ export default function Sidebar() {
         <div className="pt-6 border-t border-slate-800">
           <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all">
             <LogOut className="w-5 h-5" />
-            <span className="font-medium text-sm">Logout</span>
+            <span className="font-medium text-sm">Logoutt</span>
           </button>
         </div>
       </div>
