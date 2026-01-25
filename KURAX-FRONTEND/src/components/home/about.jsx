@@ -83,15 +83,15 @@ export default function About() {
           <div className="relative rounded-none overflow-hidden shadow-2xl h-[450px] md:h-[600px] mt-8 lg:mt-0">
             {/* Image (using the provided image URL) */}
               {heroImages.map((img, index) => (
-  <div
-    key={index}
-    className={`absolute inset-0 bg-center bg-cover transition-opacity duration-1000 ${
-      index === current
-        ? "opacity-100 animate-zoomOut"
-        : "opacity-0"
-    }`}
-    style={{ backgroundImage: `url(${img})` }}
-  />
+          <div
+            key={index}
+            className={`absolute inset-0 bg-center bg-cover transition-opacity duration-1000 ${
+            index === current
+             ? "opacity-100 animate-zoomOut"
+             : "opacity-0"
+            }`}
+         style={{ backgroundImage: `url(${img})` }}
+         />
 ))}
             
             {/* Caption/Overlay Text */}

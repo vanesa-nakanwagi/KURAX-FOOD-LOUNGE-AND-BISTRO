@@ -14,7 +14,7 @@ export default function App() {
       {/* All pages wrapped in CartProvider so cart is global */}
       <Routes>
          <Route path="/" element={<HomePage />} />
-        <Route path="/signin" element={<Signin />} />   
+        <Route path="/staff-login" element={<Signin />} />   
         <Route path="/menus" element={<MenusPage />} />    {/* Menu */}
         <Route path="/events" element={<EventsPage />} /> {/* Events */}
         <Route path="/reservations" element={<ReservationsPage />} /> {/* Reservations */}
