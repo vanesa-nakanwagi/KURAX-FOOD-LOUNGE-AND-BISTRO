@@ -146,7 +146,7 @@ export default function Dashboard() {
                         <p className="text-[9px] md:text-[10px] text-slate-500 uppercase font-bold">{item.price ? 'Menu' : 'Event'}</p>
                       </div>
                     </div>
-                    <span className="hidden sm:block text-yellow-400 text-[10px] font-bold px-2 py-1 bg-yellow-400/10 rounded-full italic">Latest</span>
+                    <span className="text-yellow-400 text-[9px] md:text-[10px] font-bold px-2 py-1 bg-yellow-400/10 rounded-full italic">Latest</span>
                   </div>
                 ))}
               </div>

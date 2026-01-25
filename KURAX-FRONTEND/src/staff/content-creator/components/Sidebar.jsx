@@ -51,6 +51,7 @@ export default function Sidebar() {
           <img src={logo} alt="Logo" className="w-8 h-8 rounded-full" />
           {/* Optional: Add a short version of the name here if you want it on the bar itself */}
           <span className="text-[10px] font-bold text-white uppercase tracking-tighter lg:hidden">Kurax Food Lounge & Bistro</span>
+          <h1 className="text-[9px] font-medium text-yellow-500 uppercase">STAFF PANEL</h1>
         </div>
         <button 
           onClick={() => setIsOpen(true)}
