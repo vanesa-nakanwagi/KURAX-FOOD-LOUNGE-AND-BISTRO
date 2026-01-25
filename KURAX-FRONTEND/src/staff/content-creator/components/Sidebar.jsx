@@ -50,8 +50,9 @@ export default function Sidebar() {
         <div className="flex items-center gap-2">
           <img src={logo} alt="Logo" className="w-8 h-8 rounded-full" />
           {/* Optional: Add a short version of the name here if you want it on the bar itself */}
-          <span className="text-[10px] font-bold text-white uppercase tracking-tighter lg:hidden">Kurax Staff Panel</span>
-         
+          <span className="text-sm sm:text-base font-black text-white uppercase tracking-tight lg:hidden ml-1">
+  Kurax Staff Panel
+</span>
         </div>
         <button 
           onClick={() => setIsOpen(true)}

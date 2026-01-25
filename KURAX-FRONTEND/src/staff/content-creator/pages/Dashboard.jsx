@@ -4,7 +4,7 @@ import StatsCard from "../components/StatsCard";
 import { useData } from "../../../components/context/DataContext";
 import {
   BarChart3, Upload, Clock, Utensils, Search, Heart, Eye, 
-  Calendar, X, DollarSign, MapPin, ImageIcon, Plus
+  Calendar, X, MapPin, ImageIcon, Plus
 } from "lucide-react";
 
 /* ---------------- Quick Actions Component ---------------- */
@@ -76,23 +76,25 @@ export default function Dashboard() {
     setActiveAction(null);
   };
 
-  const allActivity = [...menus, ...events]
+  // FETCH ONLY THE FIRST FIVE AND SORT BY LATEST
+  const filteredActivity = [...menus, ...events]
     .sort((a, b) => b.id - a.id)
-    .filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    .filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    .slice(0, 5);
 
   const stats = [
     { title: "Total Menus", value: menus.length, change: "+2", trend: "up", icon: "Utensils", description: "Total" },
     { title: "Total Events", value: events.length, change: "+1", trend: "up", icon: "Calendar", description: "Upcoming" },
-    { title: "Toal Views", value: "3.2k", change: "+18%", trend: "up", icon: "Eye", description: "30 days" },
+    { title: "Total Views", value: "3.2k", change: "+18%", trend: "up", icon: "Eye", description: "30 days" },
     { title: "Total Bookings", value: 127, change: "+22%", trend: "up", icon: "Heart", description: "Total" }
   ];
 
   return (
-    <div className="relative flex flex-col md:flex-row min-h-screen bg-black-950 text-slate-100 font-[Outfit]">
+    <div className="flex h-screen bg-black-950 text-slate-100 font-[Outfit] overflow-hidden">
       <Sidebar />
 
-      <div className="flex-1 flex flex-col w-full">
-        <main className="p-4 md:p-8 pt-20 md:pt-8"> {/* pt-20 for mobile header clearance */}
+      <div className="flex-1 flex flex-col overflow-y-auto">
+        <main className="p-4 md:p-8 pt-20 lg:pt-8"> 
           
           <div className="mb-6">
             <h2 className="text-xl md:text-2xl font-bold text-white">
@@ -106,7 +108,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Search - Full width on mobile */}
           <div className="mb-6">
             <div className="flex items-center gap-2 bg-zinc-900 border border-slate-800 rounded-xl px-4 py-3 focus-within:border-yellow-500/50 transition-colors w-full md:w-fit md:ml-auto">
               <Search className="w-4 h-4 text-slate-500" />
@@ -120,14 +121,13 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Stats - 2 cols on mobile, 4 on desktop */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-8">
             {stats.map((stat, index) => (
               <StatsCard key={index} {...stat} />
             ))}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-10">
             <div className="lg:col-span-2 order-2 lg:order-1 rounded-2xl bg-zinc-900 border border-slate-800 p-4 md:p-6">
               <h3 className="text-base md:text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 md:w-5 md:h-5 text-yellow-400" />
@@ -135,8 +135,8 @@ export default function Dashboard() {
               </h3>
 
               <div className="space-y-2 md:space-y-3">
-                {allActivity.slice(0, 5).map((item, index) => (
-                  <div key={index} className="flex justify-between items-center p-3 md:p-4 bg-zinc-800/30 rounded-xl border border-slate-800/50">
+                {filteredActivity.map((item, index) => (
+                  <div key={item.id || index} className="flex justify-between items-center p-3 md:p-4 bg-zinc-800/30 rounded-xl border border-slate-800/50">
                     <div className="flex items-center gap-2 md:gap-3">
                       <div className="p-1.5 md:p-2 bg-zinc-900 rounded-lg">
                          {item.price ? <Utensils className="w-3 h-3 md:w-4 md:h-4 text-yellow-500" /> : <Calendar className="w-3 h-3 md:w-4 md:h-4 text-yellow-500" />}
@@ -146,9 +146,19 @@ export default function Dashboard() {
                         <p className="text-[9px] md:text-[10px] text-slate-500 uppercase font-bold">{item.price ? 'Menu' : 'Event'}</p>
                       </div>
                     </div>
-                    <span className="text-yellow-400 text-[9px] md:text-[10px] font-bold px-2 py-1 bg-yellow-400/10 rounded-full italic">Latest</span>
+                    {/* ONLY THE FIRST ITEM GETS THE BADGE */}
+                    {index === 0 && (
+                      <span className="text-yellow-400 text-[9px] md:text-[10px] font-bold px-2 py-1 bg-yellow-400/10 rounded-full italic animate-pulse">
+                        Latest
+                      </span>
+                    )}
                   </div>
                 ))}
+                {filteredActivity.length === 0 && (
+                  <div className="text-center py-10 text-slate-500 text-sm italic">
+                    No activity found
+                  </div>
+                )}
               </div>
             </div>
 
@@ -159,7 +169,7 @@ export default function Dashboard() {
         </main>
       </div>
 
-      {/* MODAL - Mobile Optimized */}
+      {/* MODAL */}
       {activeAction && (
         <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-black/90 backdrop-blur-md p-0 md:p-4">
           <div className="bg-zinc-900 border-t md:border border-slate-800 w-full max-w-lg rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
@@ -189,21 +199,19 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <input required name="name" value={formData.name} onChange={handleInputChange} className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm" placeholder="Title..." />
+              <input required name="name" value={formData.name} onChange={handleInputChange} className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm text-white" placeholder="Title..." />
 
               {activeAction === 'menu' ? (
-                <div className="relative">
-                  <DollarSign className="absolute left-3 top-3.5 w-4 h-4 text-yellow-500/50" />
-                  <input required name="price" type="number" value={formData.price} onChange={handleInputChange} className="w-full bg-zinc-800 border border-slate-700 p-3 pl-10 rounded-xl focus:border-yellow-500 outline-none text-sm" placeholder="Price (UGX)" />
-                </div>
+                /* CLEAN PRICE INPUT: No DollarSign icon, no pl-10 */
+                <input required name="price" type="number" value={formData.price} onChange={handleInputChange} className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm text-white" placeholder="Price (UGX)" />
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <input required type="date" name="date" value={formData.date} onChange={handleInputChange} className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm text-white" />
-                  <input required name="location" value={formData.location} onChange={handleInputChange} className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm" placeholder="Venue..." />
+                  <input required name="location" value={formData.location} onChange={handleInputChange} className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm text-white" placeholder="Venue..." />
                 </div>
               )}
 
-              <textarea name="description" value={formData.description} onChange={handleInputChange} rows="2" className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm" placeholder="Description..." />
+              <textarea name="description" value={formData.description} onChange={handleInputChange} rows="2" className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm text-white" placeholder="Description..." />
 
               <div className="pt-2 flex gap-3">
                 <button type="submit" className="flex-1 py-4 bg-yellow-500 text-black rounded-xl font-bold text-sm shadow-lg shadow-yellow-500/20 active:scale-95 transition-transform">
