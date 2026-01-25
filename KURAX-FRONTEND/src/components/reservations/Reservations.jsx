@@ -1,6 +1,8 @@
 import { useState } from "react";
 import TopSection from "../common/topSection";
 import FooterGlobal from "../common/footer.jsx";
+import { FaCheckCircle } from "react-icons/fa";
+import WhatsApp from "../home/WhatsApp.jsx";
 
 export default function ReservationsPage() {
   const [formData, setFormData] = useState({
@@ -13,7 +15,13 @@ export default function ReservationsPage() {
     instructions: ""
   });
 
+  const [whatsAppMessage, setWhatsAppMessage] = useState("");
+
+  
+
+
   const [errors, setErrors] = useState({});
+  const [showModal, setShowModal] = useState(false);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -38,14 +46,38 @@ export default function ReservationsPage() {
   };
 
   const handleSubmit = (e) => {
-    e.preventDefault();
-    const validationErrors = validate();
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
+  e.preventDefault();
+  const validationErrors = validate();
+  if (Object.keys(validationErrors).length > 0) {
+    setErrors(validationErrors);
+    return;
+  }
 
-    alert(`Reservation submitted!\n${JSON.stringify(formData, null, 2)}`);
+  setErrors({});
+  setShowModal(true);
+
+  // Create message
+  const message = `Reserve Confirmed ✅
+Name: ${formData.name}
+Email: ${formData.email}
+Phone: ${formData.phone}
+Date: ${formData.date}
+Time: ${formData.time}
+Guests: ${formData.guests}
+Instructions: ${formData.instructions}`;
+
+  // WhatsApp URL
+  const phoneNumber = "256709913676"; // your WhatsApp number
+  const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+
+  // Open WhatsApp in a new tab/window
+  window.open(url, "_blank");
+};
+
+
+
+  const closeModal = () => {
+    setShowModal(false);
     setFormData({
       name: "",
       email: "",
@@ -55,7 +87,6 @@ export default function ReservationsPage() {
       guests: 1,
       instructions: ""
     });
-    setErrors({});
   };
 
   return (
@@ -164,9 +195,7 @@ export default function ReservationsPage() {
             />
           </div>
 
-          <p className="text-sm text-gray-500 text-center dark:text-gray-400 mb-4">
-        You will receive confirmation of your reservation via whatsapp.
-      </p>
+          
 
           {/* Submit Button */}
           <button
@@ -175,12 +204,49 @@ export default function ReservationsPage() {
           >
             Reserve Now
           </button>
+          {whatsAppMessage && <WhatsApp message={whatsAppMessage} />}
 
-          
         </form>
       </section>
 
       <FooterGlobal />
+
+      {/* Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-100 dark:bg-zinc-900 p-6 rounded-md max-w-md w-full relative">
+            {/* Tick Icon */}
+            <div className="flex justify-center mb-4">
+              <FaCheckCircle className="text-yellow-900 text-6xl" />
+            </div>
+            <h3 className="text-xl md:text-2xl font-bold text-center text-yellow-600 mb-4">
+              RESERVE CONFIRMED
+            </h3>
+
+            {/* Reservation Summary */}
+            <div className="text-gray-900 dark:text-white mb-4 space-y-2">
+              <p><strong>Name:</strong> {formData.name}</p>
+              <p><strong>Email:</strong> {formData.email}</p>
+              <p><strong>Phone:</strong> {formData.phone}</p>
+              <p><strong>Date:</strong> {formData.date}</p>
+              <p><strong>Time:</strong> {formData.time}</p>
+              <p><strong>Guests:</strong> {formData.guests}</p>
+              {formData.instructions && <p><strong>Notes:</strong> {formData.instructions}</p>}
+            </div>
+
+            <p className="text-sm text-gray-500 text-center dark:text-gray-400 mb-4">
+              You will receive confirmation on your WhatsApp number.
+            </p>
+
+            <button
+              onClick={closeModal}
+              className="w-full py-2 bg-yellow-600 text-black font-semibold rounded-none hover:bg-yellow-400 transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

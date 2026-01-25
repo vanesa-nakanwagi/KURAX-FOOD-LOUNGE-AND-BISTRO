@@ -65,7 +65,7 @@ export default function Signin() {
           <img
   src={logo}
   alt="Kurax Logo"
-  className="w-10 h-2 sm:w-16 sm:h-16 mx-auto rounded-full mb-4"
+  className="w-14 h-14 sm:w-16 sm:h-16 mx-auto rounded-full mb-4"
 />
 
 <h1 className="text-2xl sm:text-3xl font-bold tracking-wide">
