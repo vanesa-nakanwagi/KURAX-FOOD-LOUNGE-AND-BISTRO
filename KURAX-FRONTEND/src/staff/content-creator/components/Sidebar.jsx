@@ -50,7 +50,6 @@ export default function Sidebar() {
       <div className="lg:hidden fixed top-0 left-0 w-full bg-zinc-900 border-b border-slate-800 p-4 flex items-center justify-between z-[60]">
         <div className="flex items-center gap-2">
           <img src={logo} alt="Logo" className="w-8 h-8 rounded-full" />
-          <span className="text-white font-bold text-xs tracking-tighter uppercase">Kurax Admin</span>
         </div>
         <button 
           onClick={() => setIsOpen(true)}
