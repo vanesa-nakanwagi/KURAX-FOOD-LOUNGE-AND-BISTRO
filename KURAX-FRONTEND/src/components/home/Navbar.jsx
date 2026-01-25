@@ -44,7 +44,7 @@ export default function Navbar() {
             className="w-12 h-12 md:w-14 md:h-14 rounded-full object-cover border border-yellow-500/20"
           />
           <h1 className="text-sm md:text-xl font-bold text-white tracking-tight">
-              KURAX <span className="text-yellow-500">BISTRO</span>
+              KURAX FOOD LOUNGE & BISTRO
           </h1>
         </div>
 
@@ -70,9 +70,7 @@ export default function Navbar() {
             title="Staff Dashboard (Test)"
           >
             <UserCircle className="w-6 h-6 md:w-7 md:h-7 text-white group-hover:text-yellow-500 transition-colors" />
-            <span className="hidden lg:block text-xs font-bold text-white group-hover:text-yellow-500 transition-colors uppercase tracking-widest">
-              Staff
-            </span>
+            
           </Link>
 
           {/* Mobile Toggle */}
