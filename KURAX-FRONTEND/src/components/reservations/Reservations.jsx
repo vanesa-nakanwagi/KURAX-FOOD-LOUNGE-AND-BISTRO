@@ -2,7 +2,6 @@ import { useState } from "react";
 import TopSection from "../common/topSection";
 import FooterGlobal from "../common/footer.jsx";
 import { FaCheckCircle } from "react-icons/fa";
-import WhatsApp from "../home/WhatsApp.jsx";
 
 export default function ReservationsPage() {
   const [formData, setFormData] = useState({
@@ -15,9 +14,6 @@ export default function ReservationsPage() {
     instructions: ""
   });
 
-  const [whatsAppMessage, setWhatsAppMessage] = useState("");
-
-  
 
 
   const [errors, setErrors] = useState({});
@@ -46,35 +42,16 @@ export default function ReservationsPage() {
   };
 
   const handleSubmit = (e) => {
-  e.preventDefault();
-  const validationErrors = validate();
-  if (Object.keys(validationErrors).length > 0) {
-    setErrors(validationErrors);
-    return;
-  }
+    e.preventDefault();
+    const validationErrors = validate();
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
 
-  setErrors({});
-  setShowModal(true);
-
-  // Create message
-  const message = `Reserve Confirmed ✅
-Name: ${formData.name}
-Email: ${formData.email}
-Phone: ${formData.phone}
-Date: ${formData.date}
-Time: ${formData.time}
-Guests: ${formData.guests}
-Instructions: ${formData.instructions}`;
-
-  // WhatsApp URL
-  const phoneNumber = "256709913676"; // your WhatsApp number
-  const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
-
-  // Open WhatsApp in a new tab/window
-  window.open(url, "_blank");
-};
-
-
+    setErrors({});
+    setShowModal(true); // <-- show the confirmation modal
+  };
 
   const closeModal = () => {
     setShowModal(false);
@@ -204,11 +181,12 @@ Instructions: ${formData.instructions}`;
           >
             Reserve Now
           </button>
-          {whatsAppMessage && <WhatsApp message={whatsAppMessage} />}
-
+          
         </form>
       </section>
 
+
+<div className="w-full h-[2px] bg-yellow-900  dark:bg-yellow-900"></div>
       <FooterGlobal />
 
       {/* Modal */}
@@ -220,7 +198,7 @@ Instructions: ${formData.instructions}`;
               <FaCheckCircle className="text-yellow-900 text-6xl" />
             </div>
             <h3 className="text-xl md:text-2xl font-bold text-center text-yellow-600 mb-4">
-              RESERVE CONFIRMED
+              RESERVATION SUBMITTED!!!
             </h3>
 
             {/* Reservation Summary */}

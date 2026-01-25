@@ -4,7 +4,12 @@ import terrace from "../../assets/images/terrace.jpg";
 import EventCard from "../events/EventCard.jsx";
 import BookingModal from "../events/BookingModal.jsx";
 import { events } from "../../data/events.jsx";
-
+import gallery5 from "../../assets/images/occasion.jpeg"; 
+import gallery1 from "../../assets/images/hero1.jpg";
+import gallery2 from "../../assets/images/hero2.jpg";
+import gallery3 from "../../assets/images/hero3.jpg";
+import gallery4 from "../../assets/images/hero4.jpg";
+import gallery6 from "../../assets/images/wine.jpg";
 export default function Events() {
   const [showModal, setShowModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -13,6 +18,8 @@ export default function Events() {
     setSelectedEvent(event);
     setShowModal(true);
   };
+
+  const galleryImages = [gallery1, gallery2, gallery3, gallery4, gallery5, gallery6]; // Add all gallery images here
 
   return (
     <div className="bg-white dark:bg-black text-black dark:text-white font-[Outfit] transition-colors duration-300">
@@ -55,8 +62,74 @@ export default function Events() {
           ))}
         </div>
       </section>
- 
+
      
+
+{/* ================= KURAX GALLERY ================= */}
+<section className="py-16 px-6 relative overflow-hidden bg-gray-100 dark:bg-black">
+  {/* Centered text */}
+  <div className="text-center mb-12 max-w-5xl mx-auto">
+    <p className="text-yellow-800 uppercase text-bg mb-2 tracking-wide">
+      LIVE MOMENTS
+    </p>
+    <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">
+      KURAX GALLERY
+    </h2>
+    <p className="text-base sm:text-lg max-w-2xl mx-auto mb-12">
+      Dive into the essence of Kurax! Our gallery captures moments of joy, elegance, and unforgettable experiences, scroll through to feel the vibe.
+    </p>
+  </div>
+
+  {/* Container for images */}
+  <div className="relative flex justify-start items-start gap-8 px-6 md:px-12">
+
+    {/* Left Column */}
+    <div className="flex flex-col gap-6 z-10">
+      <div className="w-96 h-80 md:w-[400px] md:h-[320px] rounded-none overflow-hidden shadow-lg">
+        <img
+          src={galleryImages[0]}
+          alt="Gallery 1"
+          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+        />
+      </div>
+      <div className="w-96 h-80 md:w-[400px] md:h-[320px] rounded-none overflow-hidden shadow-lg">
+        <img
+          src={galleryImages[1]}
+          alt="Gallery 2"
+          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+        />
+      </div>
+      <div className="w-96 h-80 md:w-[400px] md:h-[320px] rounded-none overflow-hidden shadow-lg">
+        <img
+          src={galleryImages[3]}
+          alt="Gallery 2"
+          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+        />
+      </div>
+       <div className="w-96 h-80 md:w-[400px] md:h-[320px] rounded-none overflow-hidden shadow-lg">
+        <img
+          src={galleryImages[5]}
+          alt="Gallery 4"
+          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+        />
+      </div>
+    </div>
+
+    {/* Right Column (flexible width) */}
+    <div className="flex-grow h-[150%] rounded-none overflow-hidden shadow-lg z-10">
+      <img
+        src={galleryImages[4]}
+        alt="Gallery 5"
+        className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+      />
+    </div>
+    
+
+  </div>
+</section>
+
+
+<div className="w-full h-[2px] bg-yellow-900  dark:bg-yellow-900"></div>
 
       {/* ================= BOOKING MODAL ================= */}
       {showModal && (

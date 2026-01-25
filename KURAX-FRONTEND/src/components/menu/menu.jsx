@@ -171,7 +171,7 @@ export default function Menu() {
     ))}
   </div>
 </section>
-
+<div className="w-full h-[2px] bg-yellow-900 my-8 dark:bg-yellow-900"></div>
 
       {/* ================= CART MODAL ================= */}
       {(activeDish || isCartOpen) && (
