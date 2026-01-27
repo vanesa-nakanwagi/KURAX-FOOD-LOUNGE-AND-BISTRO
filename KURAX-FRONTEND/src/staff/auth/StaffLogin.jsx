@@ -1,5 +1,4 @@
-// src/staff/auth/StaffLogin.jsx
-import React from "react";
+import React, { useEffect } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import logo from "../../assets/images/logo.jpeg";
 
@@ -19,6 +18,20 @@ export default function StaffLogin() {
       alert("Login failed: " + err.message);
     }
   };
+
+  // Run once to get your Supabase user ID
+  useEffect(() => {
+    const getUserId = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) {
+        console.error(error);
+      } else if (user) {
+        console.log("Your Supabase user ID is:", user.id);
+      }
+    };
+
+    getUserId();
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-black font-[Outfit] text-white px-4">
