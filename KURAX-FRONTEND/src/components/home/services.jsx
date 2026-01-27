@@ -28,7 +28,7 @@ export default function Services() {
     {
       title: "Catering & Reservations",
       description:
-        "Professional catering, corporate bookings, group reservations, and customer support.",
+        "Exclusive professional catering services, group reservations, and customer support.",
       icon: PackageCheck,
     },
   ];

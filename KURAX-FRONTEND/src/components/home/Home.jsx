@@ -50,7 +50,7 @@ const events = [
   {
     id: 6,
     title: "Open Mic Comedy Night",
-    date: "First Wednesday",
+    date: "Every Wednesday",
     time: "8:00 PM - 10:30 PM",
     location: "Main Lounge",
     description: "Stand-up comedy with local and international comedians",
@@ -83,9 +83,11 @@ export default function Home () {
     navigate("/menus");
   };
 
+  
+
   // Navigate to Reservation page
   const goToReserve = () => {
-    navigate("/reservations"); // <-- make sure this route exists
+    navigate("/reservations"); 
   };
     useEffect(() => {
     if (location.state?.preselectedItem) {

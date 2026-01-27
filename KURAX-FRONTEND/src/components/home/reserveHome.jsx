@@ -3,12 +3,16 @@ import React from 'react';
 // Replace this path with the actual path to your image
 import diningImage from '../../assets/images/dining.jpg'; 
 import { Users, DoorClosed, Briefcase } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
-// Note: Ensure Tailwind CSS is installed in your project for these classes to work.
+
 
 const Reserve = () => {
-    // Data structure for the features on the right side
-    
+   
+    const goToReserve = () => {
+    navigate("/reservations"); 
+  };
+  const navigate = useNavigate();
     const features = [
   {
     icon: DoorClosed,
@@ -93,7 +97,7 @@ const Reserve = () => {
       ))}
     </div>
 
-    <button className="bg-white mt-8 px-8 py-3 border-2 border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-yellow-600 self-start">
+    <button  onClick={goToReserve} className="bg-white mt-8 px-8 py-3 border-2 border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-yellow-600 self-start">
       RESERVE TABLE
     </button>
   </div>

@@ -60,15 +60,6 @@ export default function Navbar() {
           ))}
         </nav>
 
-        {/* Staff Login */}
-        <div className="hidden md:block">
-          <Link
-            to="/staff-login"
-            className="border border-yellow-600 text-yellow-400 px-5 py-2 text-sm font-medium hover:bg-yellow-600 hover:text-black transition"
-          >
-            Staff Login
-          </Link>
-        </div>
 
         {/* Mobile Toggle */}
         <button
@@ -106,13 +97,6 @@ export default function Navbar() {
               </Link>
             ))}
 
-            <Link
-              to="/staff-login"
-              onClick={() => setOpen(false)}
-              className="mt-6 px-6 py-3 border-2 border-yellow-600 text-white text-center hover:bg-yellow-600 hover:text-black transition"
-            >
-              Staff Login
-            </Link>
           </div>
         </div>
       )}
