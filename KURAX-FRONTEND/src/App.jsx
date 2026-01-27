@@ -6,9 +6,11 @@ import HomePage from "./pages/HomePage.jsx";
 import MenusPage from "./pages/menuPage.jsx";
 import EventsPage from "./pages/eventsPage.jsx";
 import ReservationsPage from "./components/reservations/Reservations.jsx";
+import WaiterRoutes from "./staff/routes/WaiterRoutes";
 
 // Staff routes
 import StaffRoutes from "./staff/routes/StaffRoutes.jsx";
+import KitchenRoutes from "./staff/routes/KitchenRoutes";
 
 export default function App() {
   return (
@@ -21,6 +23,11 @@ export default function App() {
 
       {/* Staff UI (no login, no auth) */}
       <Route path="/content-creator/*" element={<StaffRoutes />} />
+      {/* Waiter Routes - Simplified to one line */}
+        <Route path="/staff/waiter/*" element={<WaiterRoutes />} />
+
+      {/* KITCHEN ROUTES */}
+          <Route path="/kitchen/*" element={<KitchenRoutes />} />
 
       {/* Fallback */}
       <Route

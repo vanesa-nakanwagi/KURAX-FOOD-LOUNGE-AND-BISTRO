@@ -97,7 +97,7 @@ export default function Dashboard() {
       <div className="flex-1 flex flex-col overflow-y-auto">
         <main className="p-4 md:p-8 pt-20 lg:pt-8"> 
           
-          <div className="mb-6">
+          <div className="mb-9">
             <h2 className="text-xl md:text-2xl font-bold text-white">
               Welcome back, <span className="text-yellow-400">Essah</span>
             </h2>
