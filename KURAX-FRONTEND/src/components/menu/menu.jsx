@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-
+import { Plus, SearchX } from "lucide-react";
 import CartModal from "./cart/CartModal.jsx";
 import TopSection from "../common/topSection.jsx";
 import { useLocation } from "react-router-dom";
@@ -61,7 +61,7 @@ export default function Menu() {
 
   const [selectedCategory, setSelectedCategory] = useState("Starters");
 
-  const filteredItems = menuItems.filter(
+  const filteredMenus = menuItems.filter(
     (item) => item.category === selectedCategory
   );
 
@@ -118,57 +118,54 @@ export default function Menu() {
      {/* ================= MENU GRID ================= */}
 <section className="px-4 md:px-16 py-8">
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-    {filteredItems.map((item) => (
-      <div
-        key={item.id}
-        className="
-          rounded-xl overflow-hidden
-          shadow-lg hover:shadow-2xl
-          transition duration-300
-          bg-white dark:bg-zinc-900
-          flex flex-col h-full
-          hover:-translate-y-1
-        "
-      >
-        {/* Image */}
-        <img
-          src={item.image}
-          alt={item.name}
-          className="w-full h-48 object-cover"
-        />
+    {filteredMenus.map((item) => (
+        <div 
+          key={item.id} 
+          className="group bg-white dark:bg-black text-black dark:text-white  border border-white/5 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all flex flex-col shadow-2xl"
+        >
+          {/* Large Image Section */}
+          <div className="h-56 bg-zinc-800 relative overflow-hidden">
+            {item.image ? (
+              <img 
+                src={item.image} 
+                alt={item.name} 
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-zinc-700 font-black text-xs uppercase tracking-tighter bg-gradient-to-br from-zinc-800 to-zinc-900">
+                Kurax Kitchen
+              </div>
+            )}
+          </div>
 
-        {/* Content */}
-        <div className="p-4 flex flex-col flex-1">
-          <h4 className="font-semibold text-lg text-gray-900 dark:text-white">
-            {item.name}
-          </h4>
+          {/* Details Section */}
+          <div className="p-6 flex-1 flex flex-col">
+            {/* Title and Price on the same row */}
+            <div className="flex justify-between items-start gap-4 mb-3">
+              <h4 className="text-lg font-black text-black mb-3 uppercase tracking-tight  dark:text-white leading-tight">
+              
+                {item.name}
+              </h4>
+              <div className="text-right flex-shrink-0">
+                <span className="text-yellow-500 text-base font-black tracking-tighter">
+                  UGX {Number(item.price).toLocaleString()}
+                </span>
+              </div>
+            </div>
+            
+            <p className="text-xs text-zinc-500 line-clamp-2 mb-8 italic leading-relaxed">
+              {item.description || "Freshly prepared Kurax special available for order now."}
+            </p>
 
-          <p className="text-gray-600 dark:text-gray-300 text-sm my-2 line-clamp-3">
-            {item.description}
-          </p>
-
-          {/* Bottom aligned row */}
-          <div className="mt-auto flex justify-between items-center">
-            <span className="font-bold text-yellow-600">
-              UGX {item.price.toLocaleString()}
-            </span>
-
-            <button
+            <button 
               onClick={() => handleOrder(item)}
-              className="
-                px-4 py-2
-                bg-yellow-500 text-black
-                font-medium text-sm
-                hover:bg-yellow-400
-                transition
-              "
+              className="mt-auto w-full py-4 text-color-black bg-yellow-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-3 transition-all uppercase italic shadow-lg active:scale-95"
             >
-              Order Now
+              <Plus size={18} /> Add to Order
             </button>
           </div>
         </div>
-      </div>
-    ))}
+      ))}
   </div>
 </section>
 <div className="w-full h-[2px] bg-yellow-900 my-8 dark:bg-yellow-900"></div>

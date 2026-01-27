@@ -19,6 +19,7 @@ import Services from "./services.jsx";
 import { useCart } from "../context/CartContext.jsx";
 import CartModal from "../menu/cart/CartModal.jsx";
 import BookingModal from "../events/BookingModal.jsx"; 
+import { Plus, SearchX } from "lucide-react";
 
 
 const heroImages = [hero1, hero12, hero3, terrace];
@@ -225,54 +226,51 @@ export default function Home () {
     price: 45000,
   },
 ].map((item, idx) => (
-  <div
-    key={idx}
-    className="
-      rounded-xl overflow-hidden
-      shadow-lg hover:shadow-2xl transition duration-300
-      bg-white
-      flex flex-col h-full
-    "
-  >
-    {/* Image */}
-    <img
-      src={item.image}
-      alt={item.name}
-      className="w-full h-48 object-cover"
-    />
-
-    {/* Content */}
-    <div className="p-4 text-left flex flex-col flex-1">
-      
-      <h4 className="font-semibold text-lg text-black">
-        {item.name}
-      </h4>
-
-      <p className="text-gray-600 text-sm my-2 line-clamp-3">
-        {item.description}
-      </p>
-
-      {/* Bottom aligned row */}
-          <div className="mt-auto flex justify-between items-center">
-            <span className="font-bold text-yellow-600">
-              UGX {item.price.toLocaleString()}
-            </span>
-
-        <button
-          onClick={() => handleOrder(item)}
-          
-          className="
-            px-4 py-2
-            bg-yellow-500 text-black
-            font-medium text-sm
-            hover:bg-yellow-400 transition
-          "
+  <div 
+          key={item.id} 
+          className="group bg-white-900/40 border border-white/5 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all flex flex-col shadow-2xl"
         >
-          Order Now
-        </button>
-      </div>
-    </div>
-  </div>
+          {/* Large Image Section */}
+          <div className="h-56 bg-zinc-800 relative overflow-hidden">
+            {item.image ? (
+              <img 
+                src={item.image} 
+                alt={item.name} 
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-zinc-700 font-black text-xs uppercase tracking-tighter bg-gradient-to-br from-zinc-800 to-zinc-900">
+                Kurax Kitchen
+              </div>
+            )}
+          </div>
+
+          {/* Details Section */}
+          <div className="p-6 flex-1 flex flex-col">
+            {/* Title and Price on the same row */}
+            <div className="flex justify-between items-start gap-4 mb-3">
+              <h4 className="text-lg font-black text-black uppercase tracking-tight leading-tight">
+                {item.name}
+              </h4>
+              <div className="text-right flex-shrink-0">
+                <span className="text-yellow-500 text-base font-black tracking-tighter">
+                  UGX {Number(item.price).toLocaleString()}
+                </span>
+              </div>
+            </div>
+            
+            <p className="text-xs text-zinc-500 line-clamp-2 mb-8 italic leading-relaxed">
+              {item.description || "Freshly prepared Kurax special available for order now."}
+            </p>
+
+            <button 
+              onClick={() => handleOrder(item)}
+              className="mt-auto w-full py-4 text-color-black bg-yellow-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-3 transition-all uppercase italic shadow-lg active:scale-95"
+            >
+              <Plus size={18} /> Add to Order
+            </button>
+          </div>
+        </div>
 ))}
 
     </div>
@@ -281,7 +279,7 @@ export default function Home () {
     <div className="mt-12">
       <Link
         to="/menus"
-        className="mt-8 px-8 py-3 border-2 border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-yellow-600 self-start"
+        className="mt-8 px-8 py-3 border-2 border-yellow-600 italic text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-yellow-600 self-start"
       >
         Explore Menu
       </Link>
@@ -371,7 +369,7 @@ export default function Home () {
             {/* Button at the bottom */}
             <div className="mt-auto">
               <button
-                className="w-full bg-yellow-400 text-black hover:bg-yellow-300 dark:bg-yellow-500 dark:hover:bg-yellow-400 border-yellow-500 px-8 py-3 rounded-none text-sm font-semibold transition-all duration-300"
+                className="mt-auto w-full py-4 text-color-black bg-yellow-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-3 transition-all uppercase italic shadow-lg active:scale-95"
                 onClick={() => setIsModalOpen(true)}
               >
                 Book Now
@@ -396,7 +394,7 @@ export default function Home () {
     <div className="mt-12">
       <Link
         to="/events"
-        className="mt-8 px-8 py-3 border-2 border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-amber-600 self-start"
+        className="mt-8 px-8 py-3 border-2 border-yellow-600 italic text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-amber-600 self-start"
       >
         Explore Events
       </Link>

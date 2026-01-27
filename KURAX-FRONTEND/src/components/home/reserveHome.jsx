@@ -97,7 +97,7 @@ const Reserve = () => {
       ))}
     </div>
 
-    <button  onClick={goToReserve} className="bg-white mt-8 px-8 py-3 border-2 border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-yellow-600 self-start">
+    <button  onClick={goToReserve} className="bg-white mt-8 px-8 py-3 border-2 italic border-yellow-600 text-black font-bold uppercase tracking-wider transition duration-300 hover:bg-yellow-600 self-start">
       RESERVE TABLE
     </button>
   </div>
