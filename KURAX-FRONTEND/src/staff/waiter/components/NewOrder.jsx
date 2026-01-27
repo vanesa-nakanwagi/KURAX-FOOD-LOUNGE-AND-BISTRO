@@ -169,105 +169,110 @@ export default function NewOrder() {
         <StaffOrderMenu onAddItem={addToCart} searchQuery={searchQuery} />
       </div>
 
-      {/* BALANCED DARK CART SIDEBAR - Now fully scrollable as one unit */}
+      {/* BALANCED DARK CART SIDEBAR */}
 <div className={`
   fixed lg:relative inset-y-0 right-0 z-[60] 
   w-full sm:w-[400px] lg:w-[420px] 
-  bg-zinc-900 border-l border-white/5 p-5 
+  bg-zinc-900 border-l border-white/5 
   flex flex-col shadow-2xl transition-transform duration-300 ease-in-out
   ${isCartOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
-  overflow-y-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden
+  h-full overflow-hidden
 `}>
   
-  {/* Header Section */}
-  <div className="flex justify-between items-center mb-6 shrink-0">
-    <div className="flex items-center gap-3">
-       <button onClick={() => setIsCartOpen(false)} className="lg:hidden p-2 bg-white/5 rounded-lg">
-          <ChevronLeft size={20} />
-       </button>
-       <h2 className="text-xl font-black uppercase tracking-tighter text-yellow-500 italic">Your Cart</h2>
+  {/* 1. FIXED HEADER - Header doesn't move */}
+  <div className="p-5 pb-2 shrink-0 bg-zinc-900/50 backdrop-blur-md">
+    <div className="flex justify-between items-center mb-6">
+      <div className="flex items-center gap-3">
+         <button onClick={() => setIsCartOpen(false)} className="lg:hidden p-2 bg-white/5 rounded-lg">
+            <ChevronLeft size={20} />
+         </button>
+         <h2 className="text-xl font-black uppercase tracking-tighter text-yellow-500 italic">Your Cart</h2>
+      </div>
+      <button 
+        onClick={startNewOrder}
+        className="flex items-center gap-2 text-[10px] font-bold bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-all text-zinc-400 border border-white/5"
+      >
+        <RefreshCcw size={12} /> NEW ORDER
+      </button>
     </div>
-    <button 
-      onClick={startNewOrder}
-      className="flex items-center gap-2 text-[10px] font-bold bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-all text-zinc-400 border border-white/5"
-    >
-      <RefreshCcw size={12} /> NEW ORDER
-    </button>
   </div>
-        {/* Natural Height List - No internal scrolling */}
-<div className="space-y-4 mb-8">
-  {cart.map((item) => (
-    <div key={item.id} className="bg-black/40 border border-white/5 p-3 rounded-2xl flex flex-col gap-3 transition-all">
-      <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-zinc-800 border border-white/10">
-          <img src={item.image || "https://via.placeholder.com/150"} alt={item.name} className="w-full h-full object-cover opacity-80" />
-        </div>
-        <div className="flex-1">
-          <h4 className="text-sm font-bold text-white leading-tight uppercase tracking-tight">{item.name}</h4>
-          <p className="text-[11px] text-yellow-500/80 font-black mt-0.5">UGX {Number(item.price).toLocaleString()}</p>
-        </div>
-        <div className="flex items-center bg-zinc-800 rounded-lg p-1 border border-white/5">
-          <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-yellow-500 transition-colors"><Minus size={14} /></button>
-          <span className="px-3 text-xs font-bold text-white">{item.quantity}</span>
-          <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-yellow-500 transition-colors"><Plus size={14} /></button>
-        </div>
-        <button onClick={() => removeFromCart(item.id)} className="text-rose-500/70 hover:text-rose-500 p-1 transition-colors">
-          <Trash2 size={18} />
-        </button>
-      </div>
-      <div className="flex items-center gap-2 bg-black/50 p-2.5 rounded-xl border border-white/5">
-        <MessageSquare size={14} className="text-zinc-600" />
-        <input 
-          type="text"
-          placeholder="Note for chef..."
-          value={item.note}
-          onChange={(e) => updateNote(item.id, e.target.value)}
-          className="bg-transparent text-[10px] w-full outline-none text-zinc-400 placeholder:text-zinc-700 italic"
-        />
-      </div>
-    </div>
-  ))}
-  
-  {cart.length === 0 && (
-    <div className="flex flex-col items-center justify-center py-10 opacity-20">
-      <Plus size={48} className="mb-2" />
-      <p className="text-xs font-bold uppercase tracking-widest text-center">Your order is empty</p>
-    </div>
-  )}
-</div>
 
-        <div className="mt-auto pt-6 border-t border-white/10">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex flex-col">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase">Responsible Waiter</span>
-              <span className="text-xs font-bold text-white">{currentWaiter}</span>
+  {/* 2. SCROLLABLE AREA - Only the items scroll */}
+  <div className="flex-1 overflow-y-auto p-5 pt-0 scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="space-y-4 mb-8">
+      {cart.map((item) => (
+        <div key={item.id} className="bg-black/40 border border-white/5 p-3 rounded-2xl flex flex-col gap-3 transition-all">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-zinc-800 border border-white/10">
+              <img src={item.image || "https://via.placeholder.com/150"} alt={item.name} className="w-full h-full object-cover opacity-80" />
             </div>
-            <div className="text-right">
-              <span className="text-xs font-black text-zinc-500 uppercase block">Total</span>
-              <span className="text-2xl font-black text-white tracking-tighter">
-                <span className="text-yellow-500 mr-1 text-sm">UGX</span>
-                {total.toLocaleString()}
-              </span>
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-white leading-tight uppercase tracking-tight">{item.name}</h4>
+              <p className="text-[11px] text-yellow-500/80 font-black mt-0.5">UGX {Number(item.price).toLocaleString()}</p>
             </div>
+            <div className="flex items-center bg-zinc-800 rounded-lg p-1 border border-white/5">
+              <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-yellow-500 transition-colors"><Minus size={14} /></button>
+              <span className="px-3 text-xs font-bold text-white">{item.quantity}</span>
+              <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-yellow-500 transition-colors"><Plus size={14} /></button>
+            </div>
+            <button onClick={() => removeFromCart(item.id)} className="text-rose-500/70 hover:text-rose-500 p-1 transition-colors">
+              <Trash2 size={18} />
+            </button>
           </div>
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            <PaymentTab label="Cash" icon={<Banknote size={16}/>} active={paymentMethod === 'Cash'} onClick={setPaymentMethod} />
-            <PaymentTab label="Card" icon={<CreditCard size={16}/>} active={paymentMethod === 'Card'} onClick={setPaymentMethod} />
-            <PaymentTab 
-              label="Momo" 
-              icon={<Smartphone size={16}/>} 
-              active={paymentMethod === 'Momo'} 
-              onClick={(val) => { setPaymentMethod(val); setShowMomoModal(true); }} 
+          <div className="flex items-center gap-2 bg-black/50 p-2.5 rounded-xl border border-white/5">
+            <MessageSquare size={14} className="text-zinc-600" />
+            <input 
+              type="text"
+              placeholder="Note for chef..."
+              value={item.note}
+              onChange={(e) => updateNote(item.id, e.target.value)}
+              className="bg-transparent text-[10px] w-full outline-none text-zinc-400 placeholder:text-zinc-700 italic"
             />
           </div>
-          <button 
-            onClick={handleProcessOrder} 
-            className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl flex items-center justify-center gap-3 uppercase italic transition-all shadow-[0_10px_20px_-10px_rgba(234,179,8,0.3)]"
-          >
-            <Send size={18} /> Send to Kitchen
-          </button>
         </div>
+      ))}
+      {cart.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-10 opacity-20">
+          <Plus size={48} className="mb-2" />
+          <p className="text-xs font-bold uppercase tracking-widest text-center">Your order is empty</p>
+        </div>
+      )}
+    </div>
+  </div>
+
+  {/* 3. STICKY FOOTER - Always visible at the bottom */}
+  <div className="p-5 bg-zinc-900 border-t border-white/10 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.4)]">
+    <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col">
+        <span className="text-[10px] font-bold text-zinc-500 uppercase">Responsible Waiter</span>
+        <span className="text-xs font-bold text-white">{currentWaiter}</span>
       </div>
+      <div className="text-right">
+        <span className="text-xs font-black text-zinc-500 uppercase block">Total</span>
+        <span className="text-2xl font-black text-white tracking-tighter">
+          <span className="text-yellow-500 mr-1 text-sm">UGX</span>
+          {total.toLocaleString()}
+        </span>
+      </div>
+    </div>
+    <div className="grid grid-cols-3 gap-2 mb-4">
+      <PaymentTab label="Cash" icon={<Banknote size={16}/>} active={paymentMethod === 'Cash'} onClick={setPaymentMethod} />
+      <PaymentTab label="Card" icon={<CreditCard size={16}/>} active={paymentMethod === 'Card'} onClick={setPaymentMethod} />
+      <PaymentTab 
+        label="Momo" 
+        icon={<Smartphone size={16}/>} 
+        active={paymentMethod === 'Momo'} 
+        onClick={(val) => { setPaymentMethod(val); setShowMomoModal(true); }} 
+      />
+    </div>
+    <button 
+      onClick={handleProcessOrder} 
+      className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl flex items-center justify-center gap-3 uppercase italic transition-all shadow-[0_10px_20px_-10px_rgba(234,179,8,0.3)]"
+    >
+      <Send size={18} /> Send to Kitchen
+    </button>
+  </div>
+</div>
 
       {/* Background Overlay for mobile drawer */}
       {isCartOpen && (
