@@ -30,8 +30,8 @@ export default function WaiterLayout() {
         </h1>
         
         {/* Staff Panel Subtitle */}
-        <h1 className="text-[10px] md:text-xs font-bold text-yellow-500 uppercase tracking-[0.2em] mt-0.5">
-          STAFF PANEL
+        <h1 className="text-[10px] md:text-xs font-bold text-yellow-400 lowercase  mt-0.5">
+        Luxury dining, signature drinks & rooftop vibes
         </h1>
       
       </div>

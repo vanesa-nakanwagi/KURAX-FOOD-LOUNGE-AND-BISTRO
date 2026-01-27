@@ -241,7 +241,7 @@ export default function NewOrder() {
   </div>
 
   {/* 3. STICKY FOOTER - Always visible at the bottom */}
-  <div className="p-5 bg-zinc-900 border-t border-white/10 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.4)]">
+  <div className="p-5 bg-zinc-900 border-t border-white/10 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.4)] mb-20 lg:mb-0">
     <div className="flex justify-between items-center mb-6">
       <div className="flex flex-col">
         <span className="text-[10px] font-bold text-zinc-500 uppercase">Responsible Waiter</span>
