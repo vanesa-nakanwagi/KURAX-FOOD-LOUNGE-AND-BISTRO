@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import StaffOrderMenu from "./StaffOrderMenu";
 import { useData } from "../../../components/context/DataContext";
 import { Banknote, CreditCard, Smartphone, Search, Plus, Minus, Trash2, MessageSquare, Send, X, RefreshCcw, Phone, ChevronLeft } from "lucide-react";
-
+import burger from "../../../assets/images/hero4.jpg";
 export default function NewOrder() {
   const { setOrders } = useData() || {};
   const currentWaiter = "John Doe"; 
@@ -204,7 +204,7 @@ export default function NewOrder() {
         <div key={item.id} className="bg-black/40 border border-white/5 p-3 rounded-2xl flex flex-col gap-3 transition-all">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-zinc-800 border border-white/10">
-              <img src={item.image || "https://via.placeholder.com/150"} alt={item.name} className="w-full h-full object-cover opacity-80" />
+              <img src={item.image } alt={item.name} className="w-full h-full object-cover opacity-80" />
             </div>
             <div className="flex-1">
               <h4 className="text-sm font-bold text-white leading-tight uppercase tracking-tight">{item.name}</h4>

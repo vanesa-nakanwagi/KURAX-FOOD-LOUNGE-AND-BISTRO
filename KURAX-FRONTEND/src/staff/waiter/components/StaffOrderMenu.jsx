@@ -35,7 +35,7 @@ export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
       {filteredMenus.map((item) => (
         <div 
           key={item.id} 
-          className="group bg-zinc-900/40 border border-white/5 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all flex flex-col shadow-2xl"
+          className="group bg-zinc-900 border border-white/5 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all flex flex-col shadow-2xl"
         >
           {/* Large Image Section */}
           <div className="h-56 bg-zinc-800 relative overflow-hidden">
