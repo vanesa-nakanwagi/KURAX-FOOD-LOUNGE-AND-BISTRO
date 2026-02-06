@@ -1,5 +1,5 @@
-import React from "react";
-import { useData } from "../../../components/context/DataContext";
+
+import { useData } from "../../../customer/components/context/DataContext";
 import { Plus, SearchX } from "lucide-react";
 
 export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
@@ -23,7 +23,7 @@ export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
 
   if (filteredMenus.length === 0) {
     return (
-      <div className="col-span-full py-20 flex flex-col items-center justify-center bg-zinc-900/50 rounded-3xl border border-white/5">
+      <div className="col-span-full py-20 flex flex-col items-center justify-center bg-zinc-900/50 rounded-full border border-white/5">
         <SearchX size={40} className="text-zinc-700 mb-3" />
         <p className="text-zinc-500 text-sm font-bold italic">No items match "{searchQuery}"</p>
       </div>

@@ -53,7 +53,7 @@ export default function EventCard({ event }) {
         {/* Button at the bottom */}
         <div className="mt-auto">
           <button
-            className="mt-auto w-full py-4 text-color-black bg-yellow-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-3 transition-all uppercase italic shadow-lg active:scale-95"
+            className="mt-auto w-full py-4 text-color-black bg-yellow-400 text-black rounded-2xl text-xs font-black flex items-center justify-center gap-3 transition-all uppercase italic shadow-lg active:scale-95"
             onClick={() => setIsModalOpen(true)}
           >
             Book Now

@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
-import Sidebar from '../components/Sidebar'
-import { useData } from "../../../components/context/DataContext";
+import Sidebar from '../../content-creator/components/Sidebar'
+import { useData } from "../../../customer/components/context/DataContext";
 import { Plus, Calendar, MapPin, Clock, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon } from 'lucide-react'
-import Footer from "../../../components/common/Foooter";
+import Footer from "../../../customer/components/common/Foooter";
 export default function Events() {
   const { events, setEvents } = useData()
   const [formVisible, setFormVisible] = useState(false)

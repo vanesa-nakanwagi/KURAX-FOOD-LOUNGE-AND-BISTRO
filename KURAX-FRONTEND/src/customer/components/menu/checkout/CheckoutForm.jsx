@@ -274,7 +274,7 @@ if (customerDetails.paymentProvider === "CARD") {
   <option value="">Select Payment Provider</option>
   <option value="AIRTEL">AIRTEL Mobile Money</option>
   <option value="MTN">MTN Mobile Money</option>
-  <option value="CARD">Debit / Credit Card</option>
+  
 </select>
 {/* Mobile Money Number Input */}
 {customerDetails.paymentProvider && customerDetails.paymentProvider !== "CARD" && (
@@ -292,73 +292,10 @@ if (customerDetails.paymentProvider === "CARD") {
   </div>
 )}
 
-
         {errors.paymentProvider && (
           <p className="text-red-500 text-sm mt-1">{errors.paymentProvider}</p>
         )}
       </div>
-
- {customerDetails.paymentProvider === "CARD" && (
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-    {/* Card Number */}
-    <div className="md:col-span-3">
-     <input
-  name="cardNumber"
-  value={customerDetails.cardNumber || ""}
-  onChange={handleChange}
-  inputMode="numeric"
-  maxLength={19}
-  placeholder="1234 5678 9012 3456"
-  className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-yellow-500"
-/>
-
-{customerDetails.cardType && customerDetails.cardType !== "UNKNOWN" && (
-  <p className="text-xs text-yellow-500 mt-1">
-    {customerDetails.cardType} detected
-  </p>
-)}
-
-      {errors.cardNumber && <p className="text-red-500 text-sm mt-1">{errors.cardNumber}</p>}
-    </div>
-
-    {/* Expiry */}
-    <div>
-      <input
-  name="cardExpiry"
-  value={customerDetails.cardExpiry || ""}
-  onChange={handleChange}
-  inputMode="numeric"
-  maxLength={5}
-  placeholder="MM/YY"
-  className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-yellow-500"
-/>
-
-      {errors.cardExpiry && <p className="text-red-500 text-sm mt-1">{errors.cardExpiry}</p>}
-    </div>
-
-    {/* CVC */}
-    <div>
-     <input
-  name="cardCVC"
-  value={customerDetails.cardCVC || ""}
-  onChange={handleChange}
-  inputMode="numeric"
-  maxLength={customerDetails.cardType === "AMEX" ? 4 : 3}
-  placeholder={customerDetails.cardType === "AMEX" ? "4-digit CVC" : "3-digit CVC"}
-  className="w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-yellow-500"
-/>
-
-      {errors.cardCVC && <p className="text-red-500 text-sm mt-1">{errors.cardCVC}</p>}
-    </div>
-  </div>
-)}
-
-<p className="text-sm text-gray-500 text-center dark:text-gray-400">
-  {customerDetails.paymentProvider === "CARD"
-    ? "Your card will be charged securely. Do not refresh the page during payment."
-    : "You will receive a payment prompt on your phone. Enter your Mobile Money PIN to complete the transaction."
-  }
-</p>
 
       {/* Pay Button */}
       <button

@@ -1,8 +1,7 @@
 import React, { useState } from "react";
-import NewOrder from "./NewOrder";
-import OrderHistory from "./OrderHistory";
+import CashierDashboard from "./cashierDashboard";
 import { LayoutDashboard, PlusCircle, Receipt, UtensilsCrossed } from "lucide-react";
-import logo from "../../../customer/assets/images/logo.jpeg";
+import logo from "../../../assets/images/logo.jpeg";
 
 export default function WaiterLayout() {
   const [activeTab, setActiveTab] = useState("order"); // Default to taking orders

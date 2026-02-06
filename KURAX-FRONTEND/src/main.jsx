@@ -4,10 +4,10 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
 
-import AuthProvider from "./context/AuthContext"; // <- import AuthProvider
-import { CartProvider } from "./components/context/CartContext";
-import { ThemeProvider } from "./components/context/ThemeContext";
-import { DataProvider } from './components/context/DataContext';
+import AuthProvider from "./customer/context/AuthContext"; // <- import AuthProvider
+import { CartProvider } from "./customer/components/context/CartContext";
+import { ThemeProvider } from "./customer/components/context/ThemeContext";
+import { DataProvider } from './customer/components/context/DataContext';
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

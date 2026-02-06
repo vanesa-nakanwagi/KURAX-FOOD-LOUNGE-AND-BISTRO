@@ -1,17 +1,14 @@
-import React from "react";
+
 import { Routes, Route } from "react-router-dom";
+import HomePage from "./customer/pages/HomePage.jsx";
+import MenusPage from "./customer/pages/menuPage.jsx";
+import EventsPage from "./customer/pages/eventsPage.jsx";
+import ReservationsPage from "./customer/components/reservations/Reservations.jsx";
 
-// Public pages (UNCHANGED)
-import HomePage from "./pages/HomePage.jsx";
-import MenusPage from "./pages/menuPage.jsx";
-import EventsPage from "./pages/eventsPage.jsx";
-import ReservationsPage from "./components/reservations/Reservations.jsx";
 import WaiterRoutes from "./staff/routes/WaiterRoutes";
-
-// Staff routes
-import StaffRoutes from "./staff/routes/StaffRoutes.jsx";
+import ContentCreatorRoutes from "./staff/routes/ContentCreatorRoutes.jsx";
 import KitchenRoutes from "./staff/routes/KitchenRoutes";
-
+import CashierRoutes from "./staff/routes/CashierRoutes.jsx";
 export default function App() {
   return (
     <Routes>
@@ -21,13 +18,15 @@ export default function App() {
       <Route path="/events" element={<EventsPage />} />
       <Route path="/reservations" element={<ReservationsPage />} />
 
-      {/* Staff UI (no login, no auth) */}
-      <Route path="/content-creator/*" element={<StaffRoutes />} />
+     
+        <Route path="/content-creator/*" element={<ContentCreatorRoutes />} />
       {/* Waiter Routes - Simplified to one line */}
         <Route path="/staff/waiter/*" element={<WaiterRoutes />} />
 
       {/* KITCHEN ROUTES */}
           <Route path="/kitchen/*" element={<KitchenRoutes />} />
+      {/* In your main App.jsx Routes block */}
+          <Route path="/cashier/*" element={<CashierRoutes />} />
 
       {/* Fallback */}
       <Route

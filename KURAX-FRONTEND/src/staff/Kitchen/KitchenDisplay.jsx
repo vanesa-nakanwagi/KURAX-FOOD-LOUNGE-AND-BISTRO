@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useData } from "../../components/context/DataContext";
+import { useData } from "../../customer/components/context/DataContext";
 import { Clock, CheckCircle, Utensils, AlertCircle, User, Volume2, Play, Flame, Timer } from "lucide-react";
-
+import Footer from "../../customer/components/common/Foooter";
 export default function KitchenDisplay() {
   const { orders = [], setOrders } = useData() || {};
   const [audioEnabled, setAudioEnabled] = useState(false);
@@ -132,6 +132,7 @@ export default function KitchenDisplay() {
           );
         })}
       </div>
+      < Footer/>
     </div>
   );
 }

@@ -1,11 +1,10 @@
-
 import { Routes, Route, Navigate } from "react-router-dom";
-import KitchenDisplay from "../Kitchen/KitchenDisplay"; 
+import CashierDashboard from "../cashier/cashierDashboard"; 
 
-export default function KitchenRoutes() {
+export default function CashierRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<KitchenDisplay />} />
+      <Route path="/" element={<CashierDashboard />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

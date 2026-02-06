@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import logo from "../../../assets/images/logo.jpeg";
+import logo from "../../../customer/assets/images/logo.jpeg";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,

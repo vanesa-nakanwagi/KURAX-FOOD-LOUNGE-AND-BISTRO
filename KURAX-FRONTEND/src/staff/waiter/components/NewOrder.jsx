@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import StaffOrderMenu from "./StaffOrderMenu";
-import { useData } from "../../../components/context/DataContext";
+import { useData } from "../../../customer/components/context/DataContext";
 import { Banknote, CreditCard, Smartphone, Search, Plus, Minus, Trash2, MessageSquare, Send, X, RefreshCcw, Phone, ChevronLeft } from "lucide-react";
-import burger from "../../../assets/images/hero4.jpg";
+
 export default function NewOrder() {
   const { setOrders } = useData() || {};
   const currentWaiter = "John Doe"; 
@@ -16,7 +16,6 @@ export default function NewOrder() {
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [searchQuery, setSearchQuery] = useState("");
   
-  // NEW STATE: Controls the mobile sidebar drawer
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   useEffect(() => {
@@ -54,7 +53,7 @@ export default function NewOrder() {
     }));
   };
 
-  const removeFromCart = (id) => {
+  const handleremoveFromCart = (id) => {
     setCart(cart.filter(item => item.id !== id));
   };
 
@@ -159,10 +158,10 @@ export default function NewOrder() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
             <input 
               type="text"
-              placeholder="Search menu..."
+              placeholder="Search menu items..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-900 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm focus:border-yellow-500 outline-none transition-all"
+              className="w-full bg-zinc-900 border border-white/10 rounded-full py-2 pl-10 pr-4 text-sm focus:border-yellow-500 outline-none transition-all"
             />
           </div>
         </div>
@@ -215,7 +214,7 @@ export default function NewOrder() {
               <span className="px-3 text-xs font-bold text-white">{item.quantity}</span>
               <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-yellow-500 transition-colors"><Plus size={14} /></button>
             </div>
-            <button onClick={() => removeFromCart(item.id)} className="text-rose-500/70 hover:text-rose-500 p-1 transition-colors">
+            <button onClick={() => handleremoveFromCart(item.id)} className="text-rose-500/70 hover:text-rose-500 p-1 transition-colors">
               <Trash2 size={18} />
             </button>
           </div>

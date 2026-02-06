@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
-import Sidebar from '../components/Sidebar'
-import { useData } from "../../../components/context/DataContext";
+import Sidebar from '../../content-creator/components/Sidebar'
+import { useData } from "../../../customer/components/context/DataContext";
 import { Plus, Utensils, Edit2, Trash2, X,  CheckCircle2, AlertCircle, ImageIcon } from 'lucide-react'
-import Footer from "../../../components/common/Foooter";
+import Footer from "../../../customer/components/common/Foooter";
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
 

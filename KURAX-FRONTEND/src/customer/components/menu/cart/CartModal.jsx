@@ -1,5 +1,5 @@
 import CheckoutForm from "../checkout/CheckoutForm.jsx";
-
+import { Trash2, Plus } from "lucide-react";
 export default function CartModal({
   isCartOpen,
   onClose,
@@ -124,9 +124,10 @@ export default function CartModal({
                 </h2>
 
                 {cart.length === 0 ? (
-                  <p className="text-gray-500 dark:text-gray-400">
-                    Your cart is empty.
-                  </p>
+                 <div className="flex flex-col items-center justify-center py-10 opacity-20">
+          <Plus size={48} className="mb-2" />
+          <p className="text-xs font-bold uppercase tracking-widest text-center">Your order is empty</p>
+        </div>
                 ) : (
                   <div className="flex flex-col gap-4">
                     {cart.map((item) => (
@@ -174,13 +175,9 @@ export default function CartModal({
                             </button>
                           </div>
 
-                          {/* Delete Button */}
-                          <button
-                            onClick={() => handleRemoveFromCart(item.id)}
-                            className="px-2 py-1 bg-red-500 text-white rounded-none hover:bg-red-600 transition flex-shrink-0"
-                          >
-                            🗑
-                          </button>
+                          <button onClick={() => handleRemoveFromCart(item.id)} className="text-rose-500/70 hover:text-rose-500 p-1 transition-colors">
+              <Trash2 size={18} />
+            </button>
                         </div>
                       </div>
                     ))}

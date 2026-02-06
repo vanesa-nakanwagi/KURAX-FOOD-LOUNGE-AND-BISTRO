@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { useData } from "../../../components/context/DataContext";
+import { useData } from "../../../customer/components/context/DataContext";
 import { Clock, Banknote, AlertCircle, CreditCard, Smartphone, ChevronRight, Trash2, CheckCircle, Flame, Timer } from "lucide-react";
 
 export default function OrderHistory() {
