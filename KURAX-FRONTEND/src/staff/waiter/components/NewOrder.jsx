@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from "react";
 import StaffOrderMenu from "./StaffOrderMenu";
 import { useData } from "../../../customer/components/context/DataContext";
-import { Banknote, CreditCard, Smartphone, Search, Plus, Minus, Trash2, MessageSquare, Send, X, RefreshCcw, Phone, ChevronLeft } from "lucide-react";
+import { 
+  Banknote, CreditCard, Smartphone, Search, Plus, Minus, 
+  Trash2, MessageSquare, Send, X, RefreshCcw, Phone, 
+  ChevronLeft, LogOut, ShieldCheck 
+} from "lucide-react";
 
 export default function NewOrder() {
   const { setOrders } = useData() || {};
@@ -11,11 +15,12 @@ export default function NewOrder() {
     const savedCart = localStorage.getItem('kurax_waiter_cart');
     return savedCart ? JSON.parse(savedCart) : [];
   });
+  
   const [showMomoModal, setShowMomoModal] = useState(false);
+  const [showEndShiftModal, setShowEndShiftModal] = useState(false); // New State
   const [momoDetails, setMomoDetails] = useState({ phone: "", provider: "MTN" });
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [searchQuery, setSearchQuery] = useState("");
-  
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   useEffect(() => {
@@ -81,7 +86,7 @@ export default function NewOrder() {
     setCart([]);
     setMomoDetails({ phone: "", provider: "MTN" });
     setShowMomoModal(false);
-    setIsCartOpen(false); // Close drawer on success
+    setIsCartOpen(false); 
     localStorage.removeItem('kurax_waiter_cart');
     setPaymentMethod("Cash");
   };
@@ -89,7 +94,7 @@ export default function NewOrder() {
   return (
     <div className="flex flex-col lg:flex-row h-full bg-black font-[Outfit] text-slate-200 overflow-hidden relative">
       
-      {/* MOBILE VERTICAL TOGGLE BAR - Only visible on small screens */}
+      {/* MOBILE TOGGLE */}
       {!isCartOpen && (
         <button 
           onClick={() => setIsCartOpen(true)}
@@ -102,6 +107,7 @@ export default function NewOrder() {
         </button>
       )}
 
+      {/* MOMO MODAL */}
       {showMomoModal && (
         <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-zinc-900 border border-white/10 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
@@ -150,6 +156,48 @@ export default function NewOrder() {
         </div>
       )}
 
+      {/* --- UPDATED END SHIFT MODAL --- */}
+{showEndShiftModal && (
+  <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
+      {/* Changed max-w-md to max-w-[350px] for a slimmer, tighter look */}
+      <div className="w-full max-w-[350px] bg-zinc-900 border border-white/10 rounded-[2.5rem] p-8 shadow-2xl text-center">
+          
+          <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-yellow-500">
+              <ShieldCheck size={32} />
+          </div>
+          
+          <h2 className="text-xl font-black italic uppercase text-white mb-1 leading-none">Shift Summary</h2>
+          <p className="text-zinc-500 text-[9px] font-black uppercase tracking-widest mb-6">Waiter Session Report</p>
+          
+          <div className="space-y-2 mb-8 text-left">
+              <div className="flex justify-between items-center p-3.5 bg-black/50 rounded-2xl border border-white/5">
+                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Total Sales</span>
+                  <span className="font-black italic text-yellow-500 text-sm">UGX 450,000</span>
+              </div>
+              <div className="flex justify-between items-center p-3.5 bg-black/50 rounded-2xl border border-white/5">
+                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Orders</span>
+                  <span className="font-black italic text-white text-sm">12</span>
+              </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+              <button 
+                  className="w-full py-4 bg-yellow-500 text-black rounded-xl font-black uppercase italic text-xs shadow-lg active:scale-95 transition-transform"
+                  onClick={() => { alert("Report Sent to Essah."); window.location.href = "/"; }}
+              >
+                  Confirm & Send HQ
+              </button>
+              <button 
+                onClick={() => setShowEndShiftModal(false)} 
+                className="w-full py-3 text-zinc-600 font-black uppercase italic text-[9px] hover:text-zinc-400 transition-colors"
+              >
+                  BACK TO MENU
+              </button>
+          </div>
+      </div>
+  </div>
+)}
+
       {/* Menu Area */}
       <div className="flex-1 p-6 overflow-y-auto bg-black">
         <div className="flex justify-between items-center mb-6">
@@ -168,112 +216,102 @@ export default function NewOrder() {
         <StaffOrderMenu onAddItem={addToCart} searchQuery={searchQuery} />
       </div>
 
-      {/* BALANCED DARK CART SIDEBAR */}
-<div className={`
-  fixed lg:relative inset-y-0 right-0 z-[60] 
-  w-full sm:w-[400px] lg:w-[420px] 
-  bg-zinc-900 border-l border-white/5 
-  flex flex-col shadow-2xl transition-transform duration-300 ease-in-out
-  ${isCartOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
-  h-full overflow-hidden
-`}>
-  
-  {/* 1. FIXED HEADER - Header doesn't move */}
-  <div className="p-5 pb-2 shrink-0 bg-zinc-900/50 backdrop-blur-md">
-    <div className="flex justify-between items-center mb-6">
-      <div className="flex items-center gap-3">
-         <button onClick={() => setIsCartOpen(false)} className="lg:hidden p-2 bg-white/5 rounded-lg">
-            <ChevronLeft size={20} />
-         </button>
-         <h2 className="text-xl font-black uppercase tracking-tighter text-yellow-500 italic">Your Cart</h2>
-      </div>
-      <button 
-        onClick={startNewOrder}
-        className="flex items-center gap-2 text-[10px] font-bold bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-all text-zinc-400 border border-white/5"
-      >
-        <RefreshCcw size={12} /> NEW ORDER
-      </button>
-    </div>
-  </div>
-
-  {/* 2. SCROLLABLE AREA - Only the items scroll */}
-  <div className="flex-1 overflow-y-auto p-5 pt-0 scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-    <div className="space-y-4 mb-8">
-      {cart.map((item) => (
-        <div key={item.id} className="bg-black/40 border border-white/5 p-3 rounded-2xl flex flex-col gap-3 transition-all">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-zinc-800 border border-white/10">
-              <img src={item.image } alt={item.name} className="w-full h-full object-cover opacity-80" />
+      {/* CART SIDEBAR */}
+      <div className={`
+        fixed lg:relative inset-y-0 right-0 z-[60] 
+        w-full sm:w-[400px] lg:w-[420px] 
+        bg-zinc-900 border-l border-white/5 
+        flex flex-col shadow-2xl transition-transform duration-300 ease-in-out
+        ${isCartOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+        h-full overflow-hidden
+      `}>
+        
+        <div className="p-5 pb-2 shrink-0 bg-zinc-900/50 backdrop-blur-md">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+               <button onClick={() => setIsCartOpen(false)} className="lg:hidden p-2 bg-white/5 rounded-lg">
+                  <ChevronLeft size={20} />
+               </button>
+               <h2 className="text-xl font-black uppercase tracking-tighter text-yellow-500 italic">Your Cart</h2>
             </div>
-            <div className="flex-1">
-              <h4 className="text-sm font-bold text-white leading-tight uppercase tracking-tight">{item.name}</h4>
-              <p className="text-[11px] text-yellow-500/80 font-black mt-0.5">UGX {Number(item.price).toLocaleString()}</p>
-            </div>
-            <div className="flex items-center bg-zinc-800 rounded-lg p-1 border border-white/5">
-              <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-yellow-500 transition-colors"><Minus size={14} /></button>
-              <span className="px-3 text-xs font-bold text-white">{item.quantity}</span>
-              <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-yellow-500 transition-colors"><Plus size={14} /></button>
-            </div>
-            <button onClick={() => handleremoveFromCart(item.id)} className="text-rose-500/70 hover:text-rose-500 p-1 transition-colors">
-              <Trash2 size={18} />
+            <button onClick={startNewOrder} className="flex items-center gap-2 text-[10px] font-bold bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-all text-zinc-400 border border-white/5">
+              <RefreshCcw size={12} /> NEW ORDER
             </button>
           </div>
-          <div className="flex items-center gap-2 bg-black/50 p-2.5 rounded-xl border border-white/5">
-            <MessageSquare size={14} className="text-zinc-600" />
-            <input 
-              type="text"
-              placeholder="Note for chef..."
-              value={item.note}
-              onChange={(e) => updateNote(item.id, e.target.value)}
-              className="bg-transparent text-[10px] w-full outline-none text-zinc-400 placeholder:text-zinc-700 italic"
-            />
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 pt-0">
+          <div className="space-y-4 mb-8">
+            {cart.map((item) => (
+              <div key={item.id} className="bg-black/40 border border-white/5 p-3 rounded-2xl flex flex-col gap-3">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-zinc-800 border border-white/10">
+                    <img src={item.image} alt={item.name} className="w-full h-full object-cover opacity-80" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-bold text-white leading-tight uppercase tracking-tight">{item.name}</h4>
+                    <p className="text-[11px] text-yellow-500/80 font-black mt-0.5">UGX {Number(item.price).toLocaleString()}</p>
+                  </div>
+                  <div className="flex items-center bg-zinc-800 rounded-lg p-1">
+                    <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-yellow-500"><Minus size={14} /></button>
+                    <span className="px-3 text-xs font-bold text-white">{item.quantity}</span>
+                    <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-yellow-500"><Plus size={14} /></button>
+                  </div>
+                  <button onClick={() => handleremoveFromCart(item.id)} className="text-rose-500/70 p-1"><Trash2 size={18} /></button>
+                </div>
+                <div className="flex items-center gap-2 bg-black/50 p-2.5 rounded-xl border border-white/5">
+                  <MessageSquare size={14} className="text-zinc-600" />
+                  <input type="text" placeholder="Note for chef..." value={item.note} onChange={(e) => updateNote(item.id, e.target.value)} className="bg-transparent text-[10px] w-full outline-none text-zinc-400 italic" />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      ))}
-      {cart.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-10 opacity-20">
-          <Plus size={48} className="mb-2" />
-          <p className="text-xs font-bold uppercase tracking-widest text-center">Your order is empty</p>
+
+        {/* STICKY FOOTER */}
+        <div className="p-5 bg-zinc-900 border-t border-white/10 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.4)] mb-20 lg:mb-0">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-zinc-500 uppercase">Responsible Waiter</span>
+              <span className="text-xs font-bold text-white">{currentWaiter}</span>
+            </div>
+            <div className="text-right">
+              <span className="text-xs font-black text-zinc-500 uppercase block">Total</span>
+              <span className="text-2xl font-black text-white tracking-tighter">
+                <span className="text-yellow-500 mr-1 text-sm">UGX</span>
+                {total.toLocaleString()}
+              </span>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <PaymentTab label="Cash" icon={<Banknote size={16}/>} active={paymentMethod === 'Cash'} onClick={setPaymentMethod} />
+            <PaymentTab label="Card" icon={<CreditCard size={16}/>} active={paymentMethod === 'Card'} onClick={setPaymentMethod} />
+            <PaymentTab label="Momo" icon={<Smartphone size={16}/>} active={paymentMethod === 'Momo'} onClick={(val) => { setPaymentMethod(val); setShowMomoModal(true); }} />
+          </div>
+
+          <div className="space-y-3">
+              <button onClick={handleProcessOrder} className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl flex items-center justify-center gap-3 uppercase italic transition-all shadow-lg shadow-yellow-500/10">
+                <Send size={18} /> Send to Kitchen
+              </button>
+
+              {/* END SHIFT BUTTON ADDED HERE */}
+              <button 
+                onClick={() => {
+                    if(cart.length > 0) {
+                        alert("Please clear or process the current order before ending your shift.");
+                        return;
+                    }
+                    setShowEndShiftModal(true);
+                }} 
+                className="w-full py-3 bg-zinc-800/50 text-rose-500 border border-rose-500/20 rounded-2xl flex items-center justify-center gap-2 text-[10px] font-black uppercase italic hover:bg-rose-500 hover:text-white transition-all"
+              >
+                <LogOut size={14} /> End My Shift Session
+              </button>
+          </div>
         </div>
-      )}
-    </div>
-  </div>
-
-  {/* 3. STICKY FOOTER - Always visible at the bottom */}
-  <div className="p-5 bg-zinc-900 border-t border-white/10 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.4)] mb-20 lg:mb-0">
-    <div className="flex justify-between items-center mb-6">
-      <div className="flex flex-col">
-        <span className="text-[10px] font-bold text-zinc-500 uppercase">Responsible Waiter</span>
-        <span className="text-xs font-bold text-white">{currentWaiter}</span>
       </div>
-      <div className="text-right">
-        <span className="text-xs font-black text-zinc-500 uppercase block">Total</span>
-        <span className="text-2xl font-black text-white tracking-tighter">
-          <span className="text-yellow-500 mr-1 text-sm">UGX</span>
-          {total.toLocaleString()}
-        </span>
-      </div>
-    </div>
-    <div className="grid grid-cols-3 gap-2 mb-4">
-      <PaymentTab label="Cash" icon={<Banknote size={16}/>} active={paymentMethod === 'Cash'} onClick={setPaymentMethod} />
-      <PaymentTab label="Card" icon={<CreditCard size={16}/>} active={paymentMethod === 'Card'} onClick={setPaymentMethod} />
-      <PaymentTab 
-        label="Momo" 
-        icon={<Smartphone size={16}/>} 
-        active={paymentMethod === 'Momo'} 
-        onClick={(val) => { setPaymentMethod(val); setShowMomoModal(true); }} 
-      />
-    </div>
-    <button 
-      onClick={handleProcessOrder} 
-      className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl flex items-center justify-center gap-3 uppercase italic transition-all shadow-[0_10px_20px_-10px_rgba(234,179,8,0.3)]"
-    >
-      <Send size={18} /> Send to Kitchen
-    </button>
-  </div>
-</div>
 
-      {/* Background Overlay for mobile drawer */}
       {isCartOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden" onClick={() => setIsCartOpen(false)} />
       )}
@@ -283,15 +321,8 @@ export default function NewOrder() {
 
 function PaymentTab({ label, icon, active, onClick }) {
   return (
-    <button 
-      onClick={() => onClick(label)} 
-      className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-all ${
-        active 
-        ? 'bg-white text-black border-white shadow-lg shadow-white/5 scale-[1.02]' 
-        : 'bg-zinc-800/50 border-white/5 text-zinc-500 hover:border-white/10'
-      }`}
-    >
-      {icon} <span className="text-[10px] font-black uppercase tracking-tighter">{label}</span>
+    <button onClick={() => onClick(label)} className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-all ${active ? 'bg-white text-black border-white shadow-lg' : 'bg-zinc-800/50 border-white/5 text-zinc-500'}`}>
+      {icon} <span className="text-[10px] font-black uppercase">{label}</span>
     </button>
   );
 }
