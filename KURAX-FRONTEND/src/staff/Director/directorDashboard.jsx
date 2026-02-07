@@ -132,7 +132,7 @@ function OverviewSection({ onViewRegistry }){
 
         {/* 3. LIVE LOGS (Quick feed) */}
         <div className="bg-zinc-900/30 border border-white/5 rounded-3xl md:rounded-[2.5rem] p-5 md:p-8">
-          <h3 className="text-sm md:text-lg font-black uppercase italic mb-6 tracking-widest">System Logs</h3>
+          <h3 className="text-sm md:text-lg font-black uppercase italic mb-6 tracking-widest">LIve System Logs</h3>
           <div className="space-y-5 md:space-y-6">
             <ActivityItem type="SHIFT" msg="Cashier John Doe ended shift" time="2m ago" color="bg-yellow-500" />
             <ActivityItem type="SALE" msg="Order #8241 closed - UGX 120,000" time="1h ago" color="bg-emerald-500" />

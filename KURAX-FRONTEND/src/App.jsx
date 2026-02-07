@@ -11,7 +11,8 @@ import WaiterRoutes from "./staff/routes/WaiterRoutes";
 import ContentCreatorRoutes from "./staff/routes/ContentCreatorRoutes.jsx";
 import KitchenRoutes from "./staff/routes/KitchenRoutes";
 import CashierRoutes from "./staff/routes/CashierRoutes.jsx";
-import DirectorRoutes from "./staff/routes/DirectorRoutes.jsx"; // New Director Route
+import DirectorRoutes from "./staff/routes/DirectorRoutes.jsx"; 
+import AccountantRoutes from "./staff/routes/AccountantRoutes.jsx";
 
 
 export default function App() {
@@ -35,6 +36,8 @@ export default function App() {
 
       {/* WAITER (Table Management) */}
       <Route path="/staff/waiter/*" element={<WaiterRoutes />} />
+
+      <Route path="/accountant/*" element={<AccountantRoutes />} />
 
       {/* KITCHEN (Chef & Food Prep) */}
       <Route path="/kitchen/*" element={<KitchenRoutes />} />
