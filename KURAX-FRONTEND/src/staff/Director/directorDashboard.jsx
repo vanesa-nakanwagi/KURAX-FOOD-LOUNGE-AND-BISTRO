@@ -7,13 +7,14 @@ import {
   CreditCard, Clock, Menu, X, Eye, EyeOff 
 } from "lucide-react";
 import Logo from "../../customer/assets/images/logo.jpeg";
+import Footer from "../../customer/components/common/Foooter";
 
 export default function DirectorDashboard() {
   const [activeTab, setActiveTab] = useState("OVERVIEW"); 
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile sidebar state
+ 
   const [user] = useState({ name: "Essah", role: "Director" });
-
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
   return (
@@ -38,7 +39,7 @@ export default function DirectorDashboard() {
             <img src={Logo} alt="Logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
             <div className="flex flex-col justify-center leading-tight">
               <h1 className="text-sm md:text-lg font-black text-white uppercase tracking-tighter leading-none">
-                KURAX FOOD
+                KURAX FOOD LOUNGE & BISTRO
               </h1>
               <p className="text-yellow-500 text-[10px] font-bold uppercase tracking-widest">ADMIN PANEL</p>
             </div>
@@ -85,11 +86,6 @@ export default function DirectorDashboard() {
               <div className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full border-2 border-black"></div>
             </div>
             <div className="flex items-center gap-3 ml-2 md:ml-4">
-              <div className="hidden sm:block text-right">
-                <p className="text-[10px] font-black text-white uppercase">{user.name}</p>
-                <p className="text-[9px] font-bold text-yellow-500 uppercase tracking-widest">{user.role}</p>
-              </div>
-              <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-yellow-500 to-amber-200 border border-white/10" />
             </div>
           </div>
         </header>
@@ -101,6 +97,8 @@ export default function DirectorDashboard() {
           {activeTab === "FINANCES" && <FinancesSection />}
           {activeTab === "HISTORY" && <HistorySection />}
         </div>
+
+         <Footer />
       </main>
 
       {showCreateAccount && <CreateStaffModal onClose={() => setShowCreateAccount(false)} />}
@@ -111,16 +109,15 @@ export default function DirectorDashboard() {
 function OverviewSection() {
   return (
     <div className="space-y-6 md:space-y-8">
-      {/* TOP STATS GRID */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <StatCard label="Total Revenue" value={4850000} trend="+12%" color="text-emerald-500" icon={<TrendingUp size={16}/>} />
-        <StatCard label="Cash" value={1250000} color="text-white" icon={<Banknote size={16}/>}/>
-        <StatCard label="Momo" value={2100000} color="text-yellow-500" icon={<Smartphone size={16}/>}/>
-        <StatCard label="Card" value={1500000} color="text-blue-500" icon={<CreditCard size={16}/>}/>
+      {/* STATS GRID: Now 2 columns on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
+        <StatCard label="Total Revenue" value={4850000} trend="+12%" color="text-emerald-500" icon={<TrendingUp size={14}/>} />
+        <StatCard label="Cash" value={1250000} color="text-white" icon={<Banknote size={14}/>}/>
+        <StatCard label="Momo" value={2100000} color="text-yellow-500" icon={<Smartphone size={14}/>}/>
+        <StatCard label="Card" value={1500000} color="text-blue-500" icon={<CreditCard size={14}/>}/>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
-        {/* SHIFT ACTIVITY - Takes up 2 columns on desktop */}
         <div className="lg:col-span-2 bg-zinc-900/30 border border-white/5 rounded-3xl md:rounded-[2.5rem] p-5 md:p-8">
           <h3 className="text-sm md:text-lg font-black uppercase italic mb-6 text-white/50 tracking-widest">Shift End Activity</h3>
           <div className="space-y-3 md:space-y-4">
@@ -130,7 +127,6 @@ function OverviewSection() {
           </div>
         </div>
 
-        {/* LIVE LOGS - The part that was crashing */}
         <div className="bg-zinc-900/30 border border-white/5 rounded-3xl md:rounded-[2.5rem] p-5 md:p-8">
           <h3 className="text-sm md:text-lg font-black uppercase italic mb-6 tracking-widest">Live Logs</h3>
           <div className="space-y-5 md:space-y-6">
@@ -143,6 +139,8 @@ function OverviewSection() {
     </div>
   );
 }
+
+
 
 function StaffSection({ onAdd }) {
     // Local state for demonstration - in production this comes from your DB
@@ -491,6 +489,7 @@ function CreateStaffModal({ onClose }) {
                     </div>
                 </div>
             </div>
+             
         </div>
     );
 }
