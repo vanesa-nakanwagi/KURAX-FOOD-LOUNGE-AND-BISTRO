@@ -102,11 +102,12 @@ const generateWhatsAppReport = () => {
 
        {/* MOBILE MENU MODAL */}
 {mobileMenuOpen && (
-  <div className="fixed inset-0 z-[150] bg-black/98 backdrop-blur-2xl flex flex-col p-6">
+  <div className="fixed inset-0 z-[150] bg-black/98 backdrop-blur-2xl flex flex-col p-6 animate-in fade-in zoom-in duration-300">
     {/* Header with Brand Info */}
     <div className="flex justify-between items-center mb-12 mt-4">
       <div className="flex items-center gap-3">
-        <img src={Logo} alt="Logo" className="w-10 h-10 rounded-full border border-yellow-500/20" />
+        {/* FIXED: Changed Logo to logo */}
+        <img src={logo} alt="Logo" className="w-10 h-10 rounded-full border border-yellow-500/20 object-cover" />
         <div className="flex flex-col">
           <span className="text-xs font-black text-white uppercase tracking-tighter">Kurax Admin</span>
           <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest">Quick Actions</span>
@@ -123,10 +124,11 @@ const generateWhatsAppReport = () => {
     {/* Refined Navigation List */}
     <div className="flex flex-col gap-3">
       {[
-        { key: "FINANCIAL_HISTORY", label: "Financial History", icon: <History size={20} /> },
-        { key: "PHYSICAL", label: "Physical Finances", icon: <BarChart3 size={20} /> },
+        // Note: Ensure History, BarChart3, ShieldCheck are added to your Lucide imports
+        { key: "FINANCIAL_HISTORY", label: "Financial History", icon: <Receipt size={20} /> },
+        { key: "PHYSICAL", label: "Physical Finances", icon: <Calculator size={20} /> },
         { key: "PETTY", label: "Log Petty Cash", icon: <Wallet size={20} /> },
-        { key: "AUDIT", label: "Live Audit", icon: <ShieldCheck size={20} /> },
+        { key: "AUDIT", label: "Live Audit", icon: <CheckCircle2 size={20} /> },
       ].map((item) => (
         <button
           key={item.key}
@@ -150,7 +152,8 @@ const generateWhatsAppReport = () => {
     {/* Secondary Actions */}
     <div className="mt-auto border-t border-white/5 pt-6 pb-8">
       <button className="flex items-center gap-3 text-zinc-600 font-black uppercase text-[10px] tracking-widest px-2">
-        <LogOut size={16} /> Logout Director Session
+        {/* Note: Ensure LogOut is added to your Lucide imports */}
+        <RotateCcw size={16} /> Logout Session
       </button>
     </div>
   </div>
