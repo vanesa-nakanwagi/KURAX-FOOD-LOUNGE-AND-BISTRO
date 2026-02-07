@@ -92,7 +92,7 @@ ${pettyLogs.length > 0
           <button onClick={generateWhatsAppReport} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-3 rounded-2xl font-black uppercase italic text-[10px] hover:bg-emerald-500 transition-all">
             <Share2 size={14} /> WhatsApp Report
           </button>
-          <button onClick={() => setShowPettyModal(true)} className="flex items-center gap-2 bg-white text-black px-4 py-3 rounded-2xl font-black uppercase italic text-[10px] hover:bg-yellow-500 transition-all">
+          <button onClick={() => setShowPettyModal(true)} className="flex items-center gap-2 bg-yellow-400 text-black px-4 py-3 rounded-2xl font-black uppercase italic text-[10px]  transition-all">
             <PlusCircle size={14} /> Log Petty Cash
           </button>
         </div>
