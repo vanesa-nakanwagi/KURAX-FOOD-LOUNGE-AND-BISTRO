@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Logo from "../../customer/assets/images/logo.jpeg";
 import Footer from "../../customer/components/common/Foooter";
+import { RevenueChart } from "./charts";
 
 export default function DirectorDashboard() {
   const [activeTab, setActiveTab] = useState("OVERVIEW"); 
@@ -92,7 +93,12 @@ export default function DirectorDashboard() {
 
         {/* CONTENT SWITCHER */}
         <div className="p-4 md:p-8 max-w-[1600px] mx-auto w-full">
-          {activeTab === "OVERVIEW" && <OverviewSection />}
+          {/* Inside DirectorDashboard.jsx */}
+{activeTab === "OVERVIEW" && (
+  <OverviewSection 
+    onViewRegistry={() => setActiveTab("HISTORY")} 
+  />
+)}
           {activeTab === "STAFF" && <StaffSection onAdd={() => setShowCreateAccount(true)} />}
           {activeTab === "FINANCES" && <FinancesSection />}
           {activeTab === "HISTORY" && <HistorySection />}
@@ -106,10 +112,10 @@ export default function DirectorDashboard() {
   );
 }
 
-function OverviewSection() {
+function OverviewSection({ onViewRegistry }){
   return (
     <div className="space-y-6 md:space-y-8">
-      {/* STATS GRID: Now 2 columns on mobile, 4 on desktop */}
+      {/* 1. STATS GRID (Revenue, Cash, Momo, Card) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
         <StatCard label="Total Revenue" value={4850000} trend="+12%" color="text-emerald-500" icon={<TrendingUp size={14}/>} />
         <StatCard label="Cash" value={1250000} color="text-white" icon={<Banknote size={14}/>}/>
@@ -118,22 +124,44 @@ function OverviewSection() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
+        {/* 2. REVENUE CHART */}
         <div className="lg:col-span-2 bg-zinc-900/30 border border-white/5 rounded-3xl md:rounded-[2.5rem] p-5 md:p-8">
-          <h3 className="text-sm md:text-lg font-black uppercase italic mb-6 text-white/50 tracking-widest">Shift End Activity</h3>
-          <div className="space-y-3 md:space-y-4">
-             <ShiftMiniCard staff="John (Cashier)" cash="1.2M" momo="2.1M" card="1.5M" time="10:45 PM" />
-             <ShiftMiniCard staff="Chef Brian (Kitchen)" status="CLEANED & CLOSED" time="11:15 PM" type="service" />
-             <ShiftMiniCard staff="Alex (Waiter)" sales="450k" time="11:30 PM" type="service" />
-          </div>
+          <h3 className="text-sm md:text-lg font-black uppercase italic mb-2 text-white/50 tracking-widest">Revenue Flow</h3>
+          <RevenueChart />
         </div>
 
+        {/* 3. LIVE LOGS (Quick feed) */}
         <div className="bg-zinc-900/30 border border-white/5 rounded-3xl md:rounded-[2.5rem] p-5 md:p-8">
-          <h3 className="text-sm md:text-lg font-black uppercase italic mb-6 tracking-widest">Live Logs</h3>
+          <h3 className="text-sm md:text-lg font-black uppercase italic mb-6 tracking-widest">System Logs</h3>
           <div className="space-y-5 md:space-y-6">
             <ActivityItem type="SHIFT" msg="Cashier John Doe ended shift" time="2m ago" color="bg-yellow-500" />
-            <ActivityItem type="STAFF" msg="Chef Mike logged in" time="15m ago" color="bg-blue-500" />
             <ActivityItem type="SALE" msg="Order #8241 closed - UGX 120,000" time="1h ago" color="bg-emerald-500" />
+            <ActivityItem type="STAFF" msg="Chef Mike logged in" time="15m ago" color="bg-blue-500" />
           </div>
+        </div>
+      </div>
+
+      {/* 4. SHIFT END ACTIVITY (Full Width Row) */}
+      <div className="bg-zinc-900/30 border border-white/5 rounded-3xl md:rounded-[2.5rem] p-6 md:p-8">
+        <div className="flex justify-between items-center mb-6">
+            <div>
+                <h3 className="text-sm md:text-lg font-black uppercase italic text-white/50 tracking-widest">Recent Shift Liquidations</h3>
+                <p className="text-[10px] text-zinc-600 font-bold uppercase">Final tallies from floor staff</p>
+            </div>
+            {/* Inside OverviewSection component */}
+<button 
+    onClick={onViewRegistry}
+    className="text-[10px] font-black text-yellow-500 border border-yellow-500/20 px-4 py-2 rounded-xl hover:bg-yellow-500 hover:text-black transition-all"
+>
+    VIEW REGISTRY
+</button>
+        </div>
+        
+        {/* Grid for shift cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <ShiftMiniCard staff="John (Cashier)" cash="1.2M" momo="2.1M" card="1.5M" time="10:45 PM" />
+            <ShiftMiniCard staff="Chef Brian (Kitchen)" status="CLEANED & CLOSED" time="11:15 PM" type="service" />
+            <ShiftMiniCard staff="Alex (Waiter)" sales="450k" time="11:30 PM" type="service" />
         </div>
       </div>
     </div>
