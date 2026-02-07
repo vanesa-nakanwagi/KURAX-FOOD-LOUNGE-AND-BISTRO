@@ -48,14 +48,22 @@ export default function AccountantDashboard() {
       ));
     }
   };
-
-  const generateWhatsAppReport = () => {
-    const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    const netExpectedCash = systemTotals.cash - pettyCashTotal;
-    const report = `*KURAX BISTRO - DAILY AUDIT* 📅 *Date:* ${date}\nREVENUE: UGX ${totalRevenue.toLocaleString()}\nEXPECTED CASH: UGX ${netExpectedCash.toLocaleString()}`;
-    navigator.clipboard.writeText(report);
-    alert("Report copied to clipboard!");
-  };
+const generateWhatsAppReport = () => {
+  const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const netExpectedCash = systemTotals.cash - pettyCashTotal;
+  const report = `*KURAX BISTRO - DAILY AUDIT* 📅 *Date:* ${date} ---------------------------------- 
+  💰 *REVENUE SUMMARY* 
+   • Cash Sales: UGX ${systemTotals.cash.toLocaleString()}
+   • Momo Sales: UGX ${systemTotals.momo.toLocaleString()} 
+   • Card Sales: UGX ${systemTotals.card.toLocaleString()} 
+   *TOTAL REVENUE: UGX ${totalRevenue.toLocaleString()}* 
+   💸 *PETTY CASH/EXPENSES* ${pettyLogs.length > 0 ? pettyLogs.map(log => `• ${log.reason}: -${log.amount.toLocaleString()}`).join('\n') : '• No petty cash logged today.'} 
+   *TOTAL PETTY CASH: UGX ${pettyCashTotal.toLocaleString()}* 
+   📉 *FINAL CASH HANDOVER* 
+   *Expected Cash in Hand: UGX ${netExpectedCash.toLocaleString()}*`;
+  navigator.clipboard.writeText(report);
+  alert("Dynamic report copied to clipboard!");
+};
 
   return (
     // THE FIX: flex flex-col min-h-screen ensures the page fills the screen
@@ -92,37 +100,61 @@ export default function AccountantDashboard() {
           </div>
         </div>
 
-        {/* MOBILE MENU MODAL */}
-        {mobileMenuOpen && (
-          <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl p-8 flex flex-col justify-center">
-            <button 
-              onClick={() => setMobileMenuOpen(false)}
-              className="absolute top-8 right-8 p-3 bg-white/5 rounded-full text-white hover:bg-yellow-400 hover:text-black transition-all"
-            >
-              <X size={28} strokeWidth={3} />
-            </button>
-            <div className="space-y-4">
-              {[
-                ["FINANCIAL_HISTORY", "Financial History"],
-                ["PHYSICAL", "Physical Finances"],
-                ["PETTY", "Log Petty Cash"],
-                ["AUDIT", "Live Audit"],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    setActiveSection(key);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full text-center p-6 rounded-[2rem] font-black uppercase text-sm tracking-tighter transition-all active:scale-95 shadow-lg
-                    ${activeSection === key ? 'bg-white text-black ring-4 ring-yellow-400' : 'bg-yellow-400 text-black shadow-yellow-500/10'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+       {/* MOBILE MENU MODAL */}
+{mobileMenuOpen && (
+  <div className="fixed inset-0 z-[150] bg-black/98 backdrop-blur-2xl flex flex-col p-6">
+    {/* Header with Brand Info */}
+    <div className="flex justify-between items-center mb-12 mt-4">
+      <div className="flex items-center gap-3">
+        <img src={Logo} alt="Logo" className="w-10 h-10 rounded-full border border-yellow-500/20" />
+        <div className="flex flex-col">
+          <span className="text-xs font-black text-white uppercase tracking-tighter">Kurax Admin</span>
+          <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest">Quick Actions</span>
+        </div>
+      </div>
+      <button 
+        onClick={() => setMobileMenuOpen(false)}
+        className="p-3 bg-zinc-900 rounded-full text-zinc-400 border border-white/5"
+      >
+        <X size={20} />
+      </button>
+    </div>
+
+    {/* Refined Navigation List */}
+    <div className="flex flex-col gap-3">
+      {[
+        { key: "FINANCIAL_HISTORY", label: "Financial History", icon: <History size={20} /> },
+        { key: "PHYSICAL", label: "Physical Finances", icon: <BarChart3 size={20} /> },
+        { key: "PETTY", label: "Log Petty Cash", icon: <Wallet size={20} /> },
+        { key: "AUDIT", label: "Live Audit", icon: <ShieldCheck size={20} /> },
+      ].map((item) => (
+        <button
+          key={item.key}
+          onClick={() => {
+            setActiveSection(item.key);
+            setMobileMenuOpen(false);
+          }}
+          className={`group flex items-center gap-4 w-full p-5 rounded-2xl font-black uppercase text-xs tracking-widest transition-all active:scale-[0.98] border
+            ${activeSection === item.key 
+              ? 'bg-yellow-500 text-black border-yellow-500 shadow-xl shadow-yellow-500/20' 
+              : 'bg-zinc-900/50 text-zinc-400 border-white/5 hover:border-yellow-500/50'}`}
+        >
+          <div className={`${activeSection === item.key ? 'text-black' : 'text-yellow-500'}`}>
+            {item.icon}
           </div>
-        )}
+          {item.label}
+        </button>
+      ))}
+    </div>
+
+    {/* Secondary Actions */}
+    <div className="mt-auto border-t border-white/5 pt-6 pb-8">
+      <button className="flex items-center gap-3 text-zinc-600 font-black uppercase text-[10px] tracking-widest px-2">
+        <LogOut size={16} /> Logout Director Session
+      </button>
+    </div>
+  </div>
+)}
 
         {/* SECTION: FINANCIAL HISTORY */}
         {(activeSection === "FINANCIAL_HISTORY" || window.innerWidth >= 768) && (
