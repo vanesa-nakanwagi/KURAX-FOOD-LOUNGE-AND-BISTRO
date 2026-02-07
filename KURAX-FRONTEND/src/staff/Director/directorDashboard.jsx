@@ -472,24 +472,57 @@ function ShiftMiniCard({ staff, cash, momo, card, time, type, status }) {
 }
 
 function CreateStaffModal({ onClose }) {
+    // 1. Add state to toggle visibility
+    const [showPin, setShowPin] = useState(false);
+
     return (
         <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
             <div className="w-full max-w-md bg-zinc-900 border border-white/10 rounded-[2.5rem] p-6 md:p-10 shadow-2xl">
                 <h2 className="text-xl md:text-2xl font-black italic uppercase text-yellow-500 mb-6 md:mb-8">Staff Account</h2>
+                
                 <div className="space-y-4">
-                    <input type="text" placeholder="FULL NAME" className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none" />
+                    <input 
+                        type="text" 
+                        placeholder="FULL NAME" 
+                        className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none" 
+                    />
+                    
                     <select className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-zinc-400 focus:border-yellow-500 outline-none">
                         <option>SELECT ROLE</option>
-                        <option>WAITER</option><option>CASHIER</option><option>CHEF</option>
+                        <option>WAITER</option>
+                        <option>CASHIER</option>
+                        <option>CHEF</option>
                     </select>
-                    <input type="password" placeholder="ASSIGN ACCESS PIN" className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none" />
+
+                    {/* 2. PIN INPUT WITH EYE TOGGLE */}
+                    <div className="relative">
+                        <input 
+                            type={showPin ? "text" : "password"} 
+                            placeholder="ASSIGN ACCESS PIN" 
+                            className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none pr-12" 
+                        />
+                        <button 
+                            type="button"
+                            onClick={() => setShowPin(!showPin)}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-yellow-500 transition-colors"
+                        >
+                            {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                    </div>
+
                     <div className="flex gap-3 pt-6">
-                        <button onClick={onClose} className="flex-1 py-4 text-zinc-500 font-black uppercase italic text-xs">Cancel</button>
-                        <button className="flex-[2] py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase italic text-sm transition-transform active:scale-95">Activate</button>
+                        <button 
+                            onClick={onClose} 
+                            className="flex-1 py-4 text-zinc-500 font-black uppercase italic text-xs"
+                        >
+                            Cancel
+                        </button>
+                        <button className="flex-[2] py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase italic text-sm transition-transform active:scale-95">
+                            Activate
+                        </button>
                     </div>
                 </div>
             </div>
-             
         </div>
     );
 }
