@@ -4,9 +4,6 @@ import airtelLogo from "../../assets/images/airtell.jpeg";
 import mtnLogo from "../../assets/images/mtn.jpeg";
 import visaLogo from "../../assets/images/visa.jpeg";
 
-// Assuming SocialButton is available but we'll use a simpler icon component here
-
-// Helper component for the round icon buttons in the "Connect With Us" section
 const Footer = ({ icon, link }) => {
   return (
     <a

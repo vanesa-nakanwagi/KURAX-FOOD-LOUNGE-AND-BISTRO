@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { UserCircle } from "lucide-react";
 
 const navLinks = [
+  { name: "Home", path: "/#hero" },
   { name: "Menu", path: "/#menus" },
   { name: "Events", path: "/#events" },
   { name: "Reservations", path: "/#reservations" },

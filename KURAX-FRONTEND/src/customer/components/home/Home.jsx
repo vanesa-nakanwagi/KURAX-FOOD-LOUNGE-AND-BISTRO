@@ -121,7 +121,7 @@ export default function Home () {
   };
 
   return (
-    <section id="hero" className=" relative h-screen bg-white font-[Outfit]">
+    <section id="hero" className="scroll-mt-32 relative h-screen bg-white font-[Outfit]">
 
       {/* Navbar */}
       <Navbar />
@@ -179,7 +179,7 @@ export default function Home () {
       
 
       {/* ================== Signature Dishes Section ================== */}
-<section   id="menus" className="bg-white text-black font-outfit py-20 px-4 sm:px-8">
+<section   id="menus" className="bg-white text-black scroll-mt-32 font-outfit py-20 px-4 sm:px-8">
   <div className="max-w-7xl mx-auto text-center">
 
     {/* Section header */}
@@ -308,7 +308,7 @@ export default function Home () {
 
 
   {/* ================== Featured Events Section ================== */}
-<section  id="events" className="bg-gray-100 text-black font-outfit py-20 px-4 sm:px-8">
+<section  id="events" className="bg-gray-100 text-black scroll-mt-32  font-outfit py-20 px-4 sm:px-8">
   <div className="max-w-7xl mx-auto text-center">
 
     {/* Section Header */}
@@ -417,25 +417,25 @@ export default function Home () {
   </div>
 </section>
 
-<section id="reservations">
+<section id="reservations" className="scroll-mt-32">
   <Reserve />
 </section>
 
-<section id="services">
+<section id="services" className="scroll-mt-32">
   <Services />
 </section>
 
 
 
-<section id="about">
+<section id="about" className="scroll-mt-32">
   <About />
 </section>
 
-<section id="visit">
+<section id="visit" className="scroll-mt-32">
   <VisitUs />
 </section>
 
-<section id="contact">
+<section id="contact" className="scroll-mt-32">
   <FooterGlobal />
 </section>
 
