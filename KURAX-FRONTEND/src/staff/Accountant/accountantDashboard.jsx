@@ -113,17 +113,44 @@ export default function AccountantDashboard() {
           </div>
 
           <div className="space-y-10">
-            {activeSection === "FINANCIAL_HISTORY" && (
-              <section className="animate-in slide-in-from-bottom-4 duration-500">
-                <h3 className="text-yellow-500 font-black uppercase text-xs mb-6 italic tracking-tighter">Daily Revenue Summary</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <AccountantStatCard label="Total Revenue" value={totalRevenue} icon={<Receipt size={14} />} color="text-yellow-500" />
-                  <AccountantStatCard label="Expected Cash" value={systemTotals.cash - pettyCashTotal} icon={<Banknote size={14} />} color="text-emerald-500" />
-                  <AccountantStatCard label="Momo Sales" value={systemTotals.momo} icon={<Smartphone size={14} />} color="text-blue-400" />
-                  <AccountantStatCard label="Card Sales" value={systemTotals.card} icon={<CreditCard size={14} />} color="text-purple-500" />
-                </div>
-              </section>
-            )}
+          {activeSection === "FINANCIAL_HISTORY" && (
+  <section className="animate-in slide-in-from-bottom-4 duration-500">
+    <h3 className="text-yellow-500 font-black uppercase text-xs mb-6 italic tracking-tighter">
+      Daily Revenue Summary
+    </h3>
+    
+    {/* UPDATED GRID CLASSES HERE */}
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <AccountantStatCard 
+        label="Expected Cash" 
+        value={systemTotals.cash - pettyCashTotal} 
+        icon={<Banknote size={14} />} 
+        color="text-emerald-500" 
+      />
+      <AccountantStatCard 
+        label="Momo Sales" 
+        value={systemTotals.momo} 
+        icon={<Smartphone size={14} />} 
+        color="text-blue-400" 
+      />
+      <AccountantStatCard 
+        label="Card Sales" 
+        value={systemTotals.card} 
+        icon={<CreditCard size={14} />} 
+        color="text-purple-500" 
+      />
+
+       <AccountantStatCard 
+    label="Total Revenue" 
+    value={totalRevenue} 
+    icon={<Receipt size={14} />} 
+    color="text-black" 
+    bgColor="bg-yellow-400"
+    isDarkText={true}
+  />
+    </div>
+  </section>
+)}
 
             {activeSection === "PHYSICAL COUNT" && (
               <section className="animate-in slide-in-from-bottom-4 duration-500">
@@ -299,22 +326,20 @@ export default function AccountantDashboard() {
 
 
 
-function AccountantStatCard({ label, value, icon, color }) {
-
+function AccountantStatCard({ label, value, icon, color, bgColor = "bg-zinc-900/30", isDarkText = false }) {
   return (
-
-    <div className="bg-zinc-900/30 border border-white/5 p-5 md:p-6 rounded-3xl">
-
-      <div className={`p-3 w-fit bg-black rounded-2xl mb-4 border border-white/5 ${color}`}>{icon}</div>
-
-      <p className="text-[8px] md:text-[10px] font-black text-zinc-500 uppercase mb-1 tracking-widest">{label}</p>
-
-      <h4 className="text-sm md:text-xl font-black text-white italic truncate leading-none">UGX {value.toLocaleString()}</h4>
-
+    <div className={`${bgColor} border border-white/5 p-4 md:p-6 rounded-2xl md:rounded-3xl transition-all duration-300`}>
+      <div className={`p-2 md:p-3 w-fit bg-black/20 rounded-xl mb-3 border border-white/5 ${color}`}>
+        {icon}
+      </div>
+      <p className={`text-[7px] md:text-[10px] font-black uppercase mb-1 tracking-widest leading-none ${isDarkText ? 'text-black/60' : 'text-zinc-500'}`}>
+        {label}
+      </p>
+      <h4 className={`text-[11px] md:text-xl font-black italic truncate leading-none ${isDarkText ? 'text-black' : 'text-white'}`}>
+        UGX {value.toLocaleString()}
+      </h4>
     </div>
-
   );
-
 }
 
 
