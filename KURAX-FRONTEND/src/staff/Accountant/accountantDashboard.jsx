@@ -70,12 +70,34 @@ export default function AccountantDashboard() {
 
       <div className="flex-1 flex flex-col">
         {/* MOBILE HEADER */}
-        <div className="lg:hidden flex justify-between items-center p-4 border-b border-white/5 sticky top-0 bg-black/50 backdrop-blur-md z-[100]">
-           <img src={logo} alt="logo" className="w-8 h-8 rounded-full" />
-           <button onClick={() => setMobileMenuOpen(true)} className="text-yellow-500 p-2 bg-zinc-900 rounded-lg">
-             <Menu size={20} />
-           </button>
-        </div>
+<div className="lg:hidden flex justify-between items-center p-4 border-b border-white/5 sticky top-0 bg-black/80 backdrop-blur-md z-[100]">
+  <div className="flex items-center gap-3">
+    <img src={logo} alt="logo" className="w-8 h-8 rounded-full object-cover border border-yellow-500/20" />
+    <div className="flex flex-col justify-center leading-tight">
+      <h1 className="text-[10px] font-black text-white uppercase tracking-tighter">
+        KURAX FOOD LOUNGE & BISTRO
+      </h1>
+      <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest">ACCOUNTANT PANEL</p>
+    </div>
+  </div>
+
+  <div className="flex items-center gap-2">
+    {/* WhatsApp button restored for Mobile */}
+    <button 
+      onClick={generateWhatsAppReport} 
+      className="p-2.5 bg-emerald-600/20 text-emerald-500 rounded-xl border border-emerald-500/20 active:scale-90 transition-transform"
+    >
+      <Share2 size={18} />
+    </button>
+    
+    <button 
+      onClick={() => setMobileMenuOpen(true)} 
+      className="text-yellow-500 p-2.5 bg-zinc-900 rounded-xl border border-white/5"
+    >
+      <Menu size={20} />
+    </button>
+  </div>
+</div>
 
         <main className="flex-grow p-4 md:p-10">
           <div className="flex justify-between items-end mb-10">
