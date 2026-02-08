@@ -91,7 +91,7 @@ export default function AccountantDashboard() {
   <div className="flex items-center gap-3">
     <img src={logo} alt="logo" className="w-8 h-8 rounded-full object-cover border border-yellow-500/20" />
     <div className="flex flex-col justify-center leading-tight">
-      <h1 className="text-[10px] font-black text-white uppercase tracking-tighter">
+      <h1 className="text-[15px] font-black text-white uppercase tracking-tighter">
         KURAX FOOD LOUNGE & BISTRO
       </h1>
       <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest">ACCOUNTANT PANEL</p>

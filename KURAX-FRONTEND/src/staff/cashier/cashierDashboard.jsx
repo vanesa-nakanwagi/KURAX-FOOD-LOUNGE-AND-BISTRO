@@ -5,7 +5,7 @@ import {
   Smartphone, CreditCard, X, Clock, AlertCircle 
 } from "lucide-react";
 import Footer from "../../customer/components/common/Foooter";
-
+import logo from "../../customer/assets/images/logo.jpeg";
 export default function CashierDashboard() {
   const [activeSection, setActiveSection] = useState("PENDING"); 
   const [orderStatusFilter, setOrderStatusFilter] = useState("CLOSED"); // Sub-filter for Order Status
@@ -100,13 +100,27 @@ const handleConfirmOrder = (order) => {
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Mobile Header */}
-        <header className="xl:hidden flex items-center justify-between px-6 py-4 bg-zinc-900/50 border-b border-white/5">
-          <h1 className="text-xs font-black text-white uppercase tracking-widest">Kurax Cashier</h1>
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-zinc-800 rounded-lg text-yellow-500">
-            <Menu size={20} />
-          </button>
-        </header>
+        {/* Mobile Header: Now matching Sidebar Branding */}
+<header className="xl:hidden flex items-center justify-between px-6 py-4 bg-[#0c0c0c] border-b border-white/5">
+  <div className="flex items-center gap-3">
+    <img src={logo} alt="logo" className="w-9 h-9 rounded-full object-cover border border-yellow-500/20" />
+    <div className="flex flex-col">
+      <h1 className="text-[10px] font-black text-white uppercase tracking-tighter leading-tight">
+        KURAX FOOD LOUNGE & BISTRO
+      </h1>
+      <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest leading-tight">
+        Accountant Panel
+      </p>
+    </div>
+  </div>
+  
+  <button 
+    onClick={() => setIsSidebarOpen(true)} 
+    className="p-2 bg-zinc-900 rounded-xl text-yellow-500 active:scale-95 transition-all"
+  >
+    <Menu size={20} />
+  </button>
+</header>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-10">
   

@@ -31,19 +31,30 @@ export default function SideBar({
         fixed inset-y-0 left-0 z-[130] w-[280px] bg-[#0c0c0c] border-r border-white/5 flex flex-col transition-transform duration-300 transform
         xl:relative xl:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        {/* Branding */}
-        <div className="p-6 border-b border-white/5 flex justify-between items-center">
-          <div className="flex items-center gap-3 mb-10">
-                      <img src={logo} alt="logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
-                      <div className="flex flex-col">
-                        <h1 className="text-sm font-black text-white uppercase tracking-tighter">KURAX FOOD LOUNGE & BISTRO</h1>
-                        <p className="text-yellow-500 text-[9px] font-bold uppercase tracking-widest">Accountant Panel</p>
-                      </div>
-                    </div>
-          <button onClick={() => setIsOpen(false)} className="xl:hidden text-zinc-500 hover:text-white transition-colors">
-            <X size={20}/>
-          </button>
-        </div>
+        {/* Branding Section */}
+<div className="p-6 border-b border-white/5 flex flex-col gap-4">
+  <div className="flex justify-between items-center w-full">
+    <div className="flex items-center gap-3">
+      <img src={logo} alt="logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
+      <div className="flex flex-col">
+        <h1 className="text-[20px] font-black text-white uppercase tracking-tighter leading-tight">
+          KURAX FOOD LOUNGE & BISTRO
+        </h1>
+        <p className="text-yellow-500 text-[9px] font-bold uppercase tracking-widest leading-tight">
+          Accountant Panel
+        </p>
+      </div>
+    </div>
+    
+    {/* Close button for mobile */}
+    <button 
+      onClick={() => setIsOpen(false)} 
+      className="xl:hidden p-2 text-zinc-500 hover:text-white transition-colors"
+    >
+      <X size={20}/>
+    </button>
+  </div>
+</div>
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
