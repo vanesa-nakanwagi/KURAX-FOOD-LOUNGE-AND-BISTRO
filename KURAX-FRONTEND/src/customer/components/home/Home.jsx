@@ -121,7 +121,7 @@ export default function Home () {
   };
 
   return (
-    <section className=" relative h-screen bg-white font-[Outfit]">
+    <section id="hero" className=" relative h-screen bg-white font-[Outfit]">
 
       {/* Navbar */}
       <Navbar />
@@ -179,7 +179,7 @@ export default function Home () {
       
 
       {/* ================== Signature Dishes Section ================== */}
-<section className="bg-white text-black font-outfit py-20 px-4 sm:px-8">
+<section   id="menus" className="bg-white text-black font-outfit py-20 px-4 sm:px-8">
   <div className="max-w-7xl mx-auto text-center">
 
     {/* Section header */}
@@ -308,7 +308,7 @@ export default function Home () {
 
 
   {/* ================== Featured Events Section ================== */}
-<section className="bg-gray-100 text-black font-outfit py-20 px-4 sm:px-8">
+<section  id="events" className="bg-gray-100 text-black font-outfit py-20 px-4 sm:px-8">
   <div className="max-w-7xl mx-auto text-center">
 
     {/* Section Header */}
@@ -417,11 +417,29 @@ export default function Home () {
   </div>
 </section>
 
-<Services />
-<Reserve />
-<About />
-<VisitUs />
-<FooterGlobal />
+<section id="reservations">
+  <Reserve />
+</section>
+
+<section id="services">
+  <Services />
+</section>
+
+
+
+<section id="about">
+  <About />
+</section>
+
+<section id="visit">
+  <VisitUs />
+</section>
+
+<section id="contact">
+  <FooterGlobal />
+</section>
+
+
 </section>
   );
 }

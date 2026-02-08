@@ -5,13 +5,13 @@ import { Link } from "react-router-dom";
 import { UserCircle } from "lucide-react";
 
 const navLinks = [
-  { name: "Menu", path: "/menus" },
-  { name: "Events", path: "/events" },
-  { name: "Reservations", path: "/reservations" },
-  { name: "Services", path: "/services" },
-  { name: "About", path: "/about" },
-  { name: "Location", path: "/location" },
-  { name: "Contact", path: "/contact" },
+  { name: "Menu", path: "/#menus" },
+  { name: "Events", path: "/#events" },
+  { name: "Reservations", path: "/#reservations" },
+  { name: "Services", path: "/#services" },
+  { name: "About", path: "/#about" },
+  { name: "Location", path: "/#visit" },
+  { name: "Contact", path: "/#contact" },
 ];
 
 export default function Navbar() {

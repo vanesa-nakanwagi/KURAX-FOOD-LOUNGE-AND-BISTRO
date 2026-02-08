@@ -55,12 +55,12 @@ const ChatIcon = () => (
 
 export default function FooterGlobal () {
   const quickLinks = [
-    { label: 'Menu', href: '/menus' },
-    { label: 'About', href: '/about' },
-    { label: 'Services', href: '/services' },
-    { label: 'Location', href: '/location' },
-    { label: 'Events & Bookings', href: '/events' },
-    { label: 'Contact', href: '/contact' },
+    { label: 'Menu', href: '/#menus' },
+    { label: 'About', href: '/#about' },
+    { label: 'Services', href: '/#services' },
+    { label: 'Location', href: '/#visit' },
+    { label: 'Events & Bookings', href: '/#events' },
+    { label: 'Contact', href: '/#contact' },
   ];
    const paymentmethods = [
   { label: 'Airtel', img: airtelLogo },

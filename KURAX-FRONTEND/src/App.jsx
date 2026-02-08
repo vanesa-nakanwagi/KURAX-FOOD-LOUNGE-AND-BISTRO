@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-
+import ScrollToHash from "./customer/components/home/ScrollToHash";
 // Public Pages
 import HomePage from "./customer/pages/HomePage.jsx";
 import MenusPage from "./customer/pages/menuPage.jsx";
@@ -17,6 +17,8 @@ import AccountantRoutes from "./staff/routes/AccountantRoutes.jsx";
 
 export default function App() {
   return (
+    <>
+    <ScrollToHash />
     <Routes>
       {/* --- PUBLIC CUSTOMER PAGES --- */}
       <Route path="/" element={<HomePage />} />
@@ -62,5 +64,6 @@ export default function App() {
         }
       />
     </Routes>
+    </>
   );
 }
