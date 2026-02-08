@@ -1,25 +1,26 @@
-import React, { useState, useEffect } from "react";
-import logo from "../../customer/assets/images/logo.jpeg";
+import React, { useState } from "react";
+import SideBar from "./SideBar";
 import { 
-  Banknote, CheckCircle2, Clock, Search, TrendingUp, Filter, 
-  XCircle, ChevronRight, Truck, UserCheck, Receipt, X, Send, 
-  Smartphone, CreditCard, AlertCircle, LayoutDashboard
+  Menu, Search, ChevronRight, Truck, Banknote, 
+  Smartphone, CreditCard, X, Clock, AlertCircle 
 } from "lucide-react";
 import Footer from "../../customer/components/common/Foooter";
 
 export default function CashierDashboard() {
-  // --- STATE MANAGEMENT ---
-  const [activeFilter, setActiveFilter] = useState("PENDING"); 
+  const [activeSection, setActiveSection] = useState("PENDING"); 
+  const [orderStatusFilter, setOrderStatusFilter] = useState("CLOSED"); // Sub-filter for Order Status
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showShiftSummary, setShowShiftSummary] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [selectedSettlement, setSelectedSettlement] = useState(null);
-  const [showRidersMobile, setShowRidersMobile] = useState(false); // New state for mobile rider toggle
-
+  const [animatingIds, setAnimatingIds] = useState([]); 
+  // Change from hardcoded const to dynamic state
+const [riders, setRiders] = useState([]);
   // --- REVENUE STATE ---
   const [cashOnCounter, setCashOnCounter] = useState(450000);
   const [cashOnMomo, setCashOnMomo] = useState(120000);
   const [totalViaCard, setTotalViaCard] = useState(300000);
-
+  
   // --- ORDER STATE ---
   const [allOrders, setAllOrders] = useState([
     { id: "8241",  waiter: "JOHN", method: "CASH", total: 45000, status: "PENDING", time: "12:10 PM" },
@@ -27,182 +28,220 @@ export default function CashierDashboard() {
     { id: "8243", waiter: "SARAH", method: "CARD", total: 120000, status: "CLOSED", time: "10:30 AM" },
   ]);
 
-  const riders = [
-    { id: 1, name: "Alex B.", status: "OUT", cash: 85000, momo: 120000 },
-    { id: 2, name: "Sarah K.", status: "OUT", cash: 45000, momo: 0 },
-  ];
+  const addNewRider = () => {
+  const name = prompt("Enter Rider Name:"); // Simple for now, or use a custom Modal
+  if (name) {
+    const newRider = {
+      id: Date.now(), // Unique ID for this session
+      name: name,
+      status: "IN",
+      cash: 0,
+      momo: 0
+    };
+    setRiders(prev => [...prev, newRider]);
+  }
+};
 
-  const handleConfirmOrder = (order) => {
+  const handleRiderSettlement = (riderData) => {
+  // 1. Move the money to your collection stats
+  setCashOnCounter(prev => prev + riderData.cash);
+  setCashOnMomo(prev => prev + riderData.momo);
+
+  // 2. Clear the rider's current balance in the UI 
+  // This prevents double-counting the same money
+  setRiders(prev => prev.map(r => 
+    r.id === riderData.id ? { ...r, cash: 0, momo: 0, status: "SETTLED" } : r
+  ));
+
+  // 3. Trigger the receipt for the rider to take as proof
+  setSelectedSettlement(riderData);
+  setShowReceipt(true);
+};
+const handleConfirmOrder = (order) => {
+  // Start animation
+  setAnimatingIds((prev) => [...prev, order.id]);
+
+  // Wait 500ms for animation to finish before updating state
+  setTimeout(() => {
     setAllOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "CLOSED" } : o));
+    
+    // Update Revenue
     if (order.method === "CASH") setCashOnCounter(prev => prev + order.total);
     if (order.method === "MOMO") setCashOnMomo(prev => prev + order.total);
     if (order.method === "CARD") setTotalViaCard(prev => prev + order.total);
-  };
 
-  const filteredOrders = allOrders.filter(o => o.status === activeFilter);
+    // Remove from animating list
+    setAnimatingIds((prev) => prev.filter((id) => id !== order.id));
+  }, 500);
+};
+
+  // Improved Filter Logic: 
+  // If in PENDING section, show PENDING. 
+  // If in CLOSED section, use the sub-filter (Pending/Delayed/Closed)
+  const filteredOrders = allOrders.filter(o => {
+    if (activeSection === "PENDING") return o.status === "PENDING";
+    if (activeSection === "CLOSED") return o.status === orderStatusFilter;
+    return false;
+  });
 
   return (
-    <div className="flex h-screen bg-black font-[Outfit] text-slate-200 overflow-hidden flex-col md:flex-row">
+    <div className="flex h-screen bg-black font-[Outfit] text-slate-200 overflow-hidden">
       
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <SideBar 
+        activeSection={activeSection}
+        setActiveSection={(section) => {
+            setActiveSection(section);
+            if(section === "CLOSED") setOrderStatusFilter("CLOSED"); // Reset sub-filter when switching
+        }}
+        isOpen={isSidebarOpen}
+        setIsOpen={setIsSidebarOpen}
+        onEndShift={() => setShowShiftSummary(true)}
+        stats={{ cash: cashOnCounter, momo: cashOnMomo, card: totalViaCard }}
+      />
 
-        {/* Top Header */}
-        <header className="flex items-center justify-between px-4 md:px-6 py-4 bg-zinc-900/50 border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <img src={logo} alt="Logo" className="w-8 h-8 md:w-10 md:h-10 rounded-full object-cover border border-yellow-500/20" />
-            <div className="flex flex-col justify-center leading-tight">
-              <h1 className="text-xs md:text-lg font-black text-white uppercase tracking-tighter leading-none">
-                KURAX FOOD LOUNGE
-              </h1>
-              <h1 className="text-[8px] md:text-xs font-bold text-yellow-400 lowercase mt-0.5">
-                Luxury dining & rooftop vibes
-              </h1>
-            </div>
-          </div>
-          
-          {/* Mobile Rider Toggle */}
-          <button 
-            onClick={() => setShowRidersMobile(!showRidersMobile)}
-            className="xl:hidden p-2 bg-zinc-800 rounded-lg text-yellow-500"
-          >
-            <Truck size={20} />
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Mobile Header */}
+        <header className="xl:hidden flex items-center justify-between px-6 py-4 bg-zinc-900/50 border-b border-white/5">
+          <h1 className="text-xs font-black text-white uppercase tracking-widest">Kurax Cashier</h1>
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-zinc-800 rounded-lg text-yellow-500">
+            <Menu size={20} />
           </button>
         </header>
-        
-        {/* 1. REVENUE & STATUS HEADER (Responsive Grid) */}
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 p-4 md:p-6 bg-[#0a0a0a] border-b border-white/5 overflow-x-auto">
-          <HeaderStat icon={<Banknote size={18}/>} label="CASH" value={cashOnCounter} color="text-green-500" />
-          <HeaderStat icon={<Smartphone size={18}/>} label="MOMO" value={cashOnMomo} color="text-yellow-500" />
-          <HeaderStat icon={<CreditCard size={18}/>} label="CARD" value={totalViaCard} color="text-blue-500" />
-          <HeaderStat icon={<CheckCircle2 size={18}/>} label="CLOSED" value={allOrders.filter(o => o.status === "CLOSED").length} color="text-emerald-500" hideCurrency />
-          <HeaderStat icon={<Clock size={18}/>} label="PENDING" value={allOrders.filter(o => o.status === "PENDING").length} color="text-amber-500" hideCurrency />
-          <HeaderStat icon={<AlertCircle size={18}/>} label="DELAY" value={allOrders.filter(o => o.status === "DELAYED").length} color="text-rose-600 animate-pulse" hideCurrency />
+
+        <main className="flex-1 overflow-y-auto p-4 md:p-10">
+  
+  {/* 1. SECTION TABS - Only visible when "Order Status" is active */}
+  {activeSection === "CLOSED" && (
+    <div className="mb-10 flex flex-col gap-4">
+      <div className="flex flex-col md:flex-row md:items-center gap-6">
+        <div className="flex gap-6 border-b border-white/5 md:ml-4">
+          {["PENDING", "DELAYED", "CLOSED"].map((status) => (
+            <button
+              key={status}
+              onClick={() => setOrderStatusFilter(status)}
+              className={`pb-2 text-[11px] font-black uppercase tracking-[0.2em] transition-all relative ${
+                orderStatusFilter === status ? "text-yellow-500" : "text-zinc-500"
+              }`}
+            >
+              {status}
+              {orderStatusFilter === status && (
+                <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-500 animate-in fade-in slide-in-from-left-2" />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* 2. DYNAMIC CONTENT AREA */}
+  <div className="space-y-8">
+    
+   {activeSection === "RIDERS" && (
+  <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="flex justify-between items-end">
+      <div className="mb-6">
+        <h2 className="text-3xl md:text-4xl font-black text-white uppercase  tracking-tighter">
+          Rider Details
+        </h2>
+        <p className="text-zinc-500 text-[10px] md:text-xs mt-2 max-w-2xl">
+          Manage funds brought in by delivery personnel. Add a rider to begin reconciliation.
+        </p>
+      </div>
+      
+      {/* ADD RIDER BUTTON */}
+      <button 
+        onClick={addNewRider}
+        className="mb-6 px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-yellow-500 border border-white/5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+      >
+        + Add Rider
+      </button>
+    </div>
+
+    {riders.length > 0 ? (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {riders.map(rider => (
+          <RiderCard 
+            key={rider.id} 
+            rider={rider} 
+            onReconcile={(inputData) => handleRiderSettlement({ ...rider, ...inputData })} 
+          />
+        ))}
+      </div>
+    ) : (
+      <div className="py-20 border-2 border-dashed border-white/5 rounded-[3rem] flex flex-col items-center justify-center opacity-30">
+        <Truck size={48} className="mb-4" />
+        <p className="text-[10px] font-black uppercase tracking-[0.3em]">No riders active in this shift</p>
+      </div>
+    )}
+  </div>
+)}
+    {/* --- COLLECTION / PENDING VIEW --- */}
+    {activeSection === "PENDING" && (
+      <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
+        <div className="mb-6">
+          <h2 className="text-3xl md:text-4xl font-black text-white uppercase  tracking-tighter">
+            My Collection
+          </h2>
+          <p className="text-zinc-500 text-[10px] md:text-xs mt-2 max-w-2xl leading-relaxed">
+            Real-time overview of your shift earnings. Monitor physical cash, mobile money, and card settlements to ensure accurate reconciliation.
+          </p>
         </div>
 
-        {/* 2. FILTER TOOLBAR */}
-        <div className="px-4 md:px-6 py-4 flex items-center justify-between border-b border-white/5 overflow-x-auto whitespace-nowrap">
-          <div className="flex gap-4 md:gap-8">
-            {["PENDING", "DELAYED", "CLOSED"].map((status) => (
-              <button
-                key={status}
-                onClick={() => setActiveFilter(status)}
-                className={`relative pb-2 text-[10px] md:text-[11px] font-black uppercase tracking-widest transition-all duration-300 ${
-                  activeFilter === status ? "text-yellow-500" : "text-zinc-500"
-                }`}
-              >
-                {status}
-                {activeFilter === status && (
-                  <div className="absolute bottom-0 left-0 w-full h-0.5 bg-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.5)]" />
-                )}
-              </button>
-            ))}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+          <HeaderStat 
+            icon={<Banknote size={18}/>} 
+            label="PHYSICAL CASH" 
+            value={cashOnCounter} 
+            color="text-green-500" 
+          />
+          <HeaderStat 
+            icon={<Smartphone size={18}/>} 
+            label="MOBILE MONEY" 
+            value={cashOnMomo} 
+            color="text-yellow-500" 
+          />
+          <HeaderStat 
+            icon={<CreditCard size={18}/>} 
+            label="CARD PAYMENTS" 
+            value={totalViaCard} 
+            color="text-blue-500" 
+          />
+          <HeaderStat 
+            icon={<Banknote size={18}/>} 
+            label="TOTAL REVENUE" 
+            value={cashOnCounter + cashOnMomo + totalViaCard} 
+            color="text-yellow-500"
+          />
+        </div>
+      </div>
+    )}
+
+    {/* --- ORDER STATUS VIEW (Filterable List) --- */}
+    {activeSection === "CLOSED" && (
+      <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
+        {filteredOrders.length > 0 ? (
+          filteredOrders.map(order => (
+            <OrderCard 
+              key={order.id} 
+              order={order} 
+              onConfirm={handleConfirmOrder} 
+              isExiting={animatingIds.includes(order.id)}
+            />
+          ))
+        ) : (
+          <div className="py-20 text-center opacity-30 uppercase text-[10px] font-black tracking-widest text-zinc-500">
+            No orders found in this category
           </div>
-
-          <button 
-            onClick={() => setShowShiftSummary(true)}
-            className="ml-4 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white text-[9px] md:text-[10px] font-black uppercase rounded-xl border border-white/10 transition-all shrink-0"
-          >
-            End Shift
-          </button>
-        </div>
-
-        {/* 3. DYNAMIC ORDER LIST */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
-          {filteredOrders.length > 0 ? (
-            filteredOrders.map((order) => (
-              <div key={order.id} className="bg-zinc-900/30 border border-white/5 rounded-[1.5rem] md:rounded-[2rem] p-4 md:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-zinc-900/50 transition-all group">
-                
-                <div className="flex items-center gap-4 md:gap-5">
-                  <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-black border border-white/10 flex items-center justify-center shrink-0">
-                    {order.method === "CASH" && <Banknote className="text-green-500" size={20} />}
-                    {order.method === "MOMO" && <Smartphone className="text-yellow-500" size={20} />}
-                    {order.method === "CARD" && <CreditCard className="text-blue-500" size={20} />}
-                  </div>
-
-                  <div className="min-w-0">
-                    <h4 className="font-black uppercase italic text-white tracking-tight flex items-center gap-2 md:gap-3 text-sm md:text-base">
-                      <span className="text-yellow-500">#{order.id.slice(-4)}</span>
-                      <span className="opacity-20 text-xs">|</span>
-                      <span className="truncate">WAITER: {order.waiter}</span>
-                    </h4>
-                    
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">{order.time}</span>
-                      <span className="px-2 py-0.5 bg-white/5 rounded text-[8px] font-black text-zinc-400 uppercase">
-                        {order.method}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between sm:justify-end gap-6 md:gap-8 border-t border-white/5 pt-4 sm:pt-0 sm:border-0">
-                  <div className="sm:text-right">
-                    <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">TOTAL AMOUNT</p>
-                    <p className="text-sm md:text-base font-black text-white whitespace-nowrap">UGX {(order.total || 0).toLocaleString()}</p>
-                  </div>
-                  
-                  {order.status !== "CLOSED" && (
-                    <button 
-                      onClick={() => handleConfirmOrder(order)}
-                      className="px-6 md:px-10 py-3 md:py-5 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-xl md:rounded-2xl uppercase italic flex items-center gap-2 transition-all shadow-xl shadow-yellow-500/10"
-                    >
-                      CONFIRM <ChevronRight size={18} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center opacity-20 italic space-y-2">
-              <Search size={48} />
-              <p className="font-black uppercase tracking-widest text-xs text-center">No {activeFilter.toLowerCase()} orders found</p>
-            </div>
-          )}
-        </div>
+        )}
+      </div>
+    )}
+  </div>
+</main>
         <Footer />
       </div>
 
-      {/* --- RIDER SIDEBAR (Responsive Behavior) --- */}
-      <aside className={`
-        fixed inset-y-0 right-0 z-[110] w-[300px] md:w-[380px] bg-[#0c0c0c] border-l border-white/5 flex flex-col transition-transform duration-300 transform
-        xl:relative xl:translate-x-0 ${showRidersMobile ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}
-      `}>
-        <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-center">
-          <h2 className="text-base md:text-lg font-black uppercase tracking-widest text-yellow-400 italic flex items-center gap-3">
-            <Truck size={20} /> RIDERS
-          </h2>
-          <button onClick={() => setShowRidersMobile(false)} className="xl:hidden text-zinc-500"><X size={20}/></button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
-          {riders.map((rider) => (
-            <div key={rider.id} className="bg-zinc-900/40 border border-white/5 p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem]">
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 md:w-10 md:h-10 bg-zinc-800 rounded-full flex items-center justify-center font-black text-xs text-zinc-500">{rider.name[0]}</div>
-                  <h4 className="font-black text-white text-xs md:text-sm">{rider.name}</h4>
-                </div>
-                <button 
-                  onClick={() => {setSelectedSettlement(rider); setShowReceipt(true);}}
-                  className="text-yellow-400 text-[9px] md:text-[10px] font-black uppercase underline"
-                >
-                  RECONCILE
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <MoneyBox label="CASH" value={rider.cash} />
-                <MoneyBox label="MOMO" value={rider.momo} highlight />
-              </div>
-            </div>
-          ))}
-        </div>
-      </aside>
-
-      {/* Backdrop for mobile sidebar */}
-      {showRidersMobile && (
-        <div className="fixed inset-0 bg-black/60 z-[105] xl:hidden" onClick={() => setShowRidersMobile(false)} />
-      )}
-
-      {/* MODALS (Simplified for Mobile) */}
+      {/* MODALS */}
       {showReceipt && <ReceiptModal data={selectedSettlement} onClose={() => setShowReceipt(false)} />}
       {showShiftSummary && (
         <ShiftSummaryModal 
@@ -213,17 +252,115 @@ export default function CashierDashboard() {
     </div>
   );
 }
+// --- SUB-COMPONENTS ---
 
-// Helper components remain largely the same, but with padding/text adjustments
+function OrderCard({ order, onConfirm }) {
+  return (
+    <div className="bg-zinc-900/30 border border-white/5 rounded-[2rem] p-6 flex flex-col md:flex-row items-center justify-between gap-6 group hover:bg-zinc-900/50 transition-all">
+      <div className="flex items-center gap-5 w-full md:w-auto">
+        <div className="w-14 h-14 rounded-2xl bg-black border border-white/10 flex items-center justify-center shrink-0">
+          {order.method === "CASH" && <Banknote className="text-green-500" size={24} />}
+          {order.method === "MOMO" && <Smartphone className="text-yellow-500" size={24} />}
+          {order.method === "CARD" && <CreditCard className="text-blue-500" size={24} />}
+        </div>
+        <div>
+          <h4 className="font-black uppercase italic text-white text-lg tracking-tight">
+            <span className="text-yellow-500 mr-2">#{order.id}</span>
+            WAITER: {order.waiter}
+          </h4>
+          <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{order.time} • {order.method}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between md:justify-end gap-8 w-full md:w-auto border-t md:border-0 border-white/5 pt-4 md:pt-0">
+        <div className="text-left md:text-right">
+          <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1">TOTAL AMOUNT</p>
+          <p className="text-xl font-black text-white whitespace-nowrap">UGX {order.total.toLocaleString()}</p>
+        </div>
+        {order.status !== "CLOSED" && (
+          <button 
+            onClick={() => onConfirm(order)}
+            className="px-8 py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl uppercase italic flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-yellow-500/10"
+          >
+            CONFIRM <ChevronRight size={18} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RiderCard({ rider, onReconcile }) {
+  // Local state for the inputs
+  const [inputCash, setInputCash] = useState(rider.cash);
+  const [inputMomo, setInputMomo] = useState(rider.momo);
+
+  return (
+    <div className="bg-zinc-900/40 border border-white/5 p-6 rounded-[2.5rem] transition-all hover:bg-zinc-900/60">
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 bg-yellow-500/10 text-yellow-500 rounded-full flex items-center justify-center font-black">
+            {rider.name[0]}
+          </div>
+          <div>
+            <h4 className="font-black text-white uppercase italic tracking-tight">{rider.name}</h4>
+            <span className="text-[8px] bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded font-black uppercase tracking-widest">
+              {rider.status}
+            </span>
+          </div>
+        </div>
+        <button 
+          onClick={() => onReconcile({ cash: inputCash, momo: inputMomo })} 
+          className="bg-yellow-500 hover:bg-yellow-400 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase italic transition-all active:scale-95"
+        >
+          Reconcile
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* CASH INPUT */}
+        <div className="bg-black/40 p-3 rounded-2xl border border-white/5">
+          <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-2">Cash Brought</p>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-bold text-zinc-600">UGX</span>
+            <input 
+              type="number"
+              value={inputCash}
+              onChange={(e) => setInputCash(Number(e.target.value))}
+              className="bg-transparent border-none outline-none text-white font-black text-sm w-full focus:text-yellow-500 transition-colors"
+            />
+          </div>
+        </div>
+
+        {/* MOMO INPUT */}
+        <div className="bg-black/40 p-3 rounded-2xl border border-white/5">
+          <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-2">Momo Collected</p>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-bold text-zinc-600">UGX</span>
+            <input 
+              type="number"
+              value={inputMomo}
+              onChange={(e) => setInputMomo(Number(e.target.value))}
+              className="bg-transparent border-none outline-none text-white font-black text-sm w-full focus:text-yellow-500 transition-colors"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ... Keep your existing MoneyBox, ReceiptModal, ShiftSummaryModal, and SummaryRow below ...
+
 function HeaderStat({ icon, label, value, color, hideCurrency }) {
   return (
-    <div className="bg-zinc-900/30 p-3 md:p-4 rounded-[1.2rem] md:rounded-[1.5rem] border border-white/5 flex flex-col gap-1 md:gap-2 min-w-[120px]">
-      <div className={`p-1.5 md:p-2 w-fit rounded-lg md:rounded-xl bg-zinc-800/50 ${color}`}>{icon}</div>
-      <div>
-        <p className="text-[8px] md:text-[9px] font-black uppercase text-zinc-500 tracking-widest leading-none mb-1">{label}</p>
-        <h3 className="text-sm md:text-lg font-black text-white italic">
-          {!hideCurrency && <span className="text-[8px] md:text-[10px] mr-1 opacity-50 not-italic">UGX</span>}
-          {typeof value === 'number' ? value.toLocaleString() : value}
+    <div className="bg-zinc-900/30 p-3 md:p-4 rounded-[1.2rem] border border-white/5 flex flex-col gap-1 min-w-0">
+      <div className={`p-1.5 w-fit rounded-lg bg-zinc-800/50 ${color}`}>{icon}</div>
+      <div className="overflow-hidden">
+        <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest truncate">{label}</p>
+        <h3 className="text-sm md:text-lg font-black text-white italic truncate">
+          {!hideCurrency && <span className="text-[8px] mr-1 opacity-50 not-italic">UGX</span>}
+          {value.toLocaleString()}
         </h3>
       </div>
     </div>
@@ -286,5 +423,6 @@ function SummaryRow({ label, value, color }) {
       <span className="text-[9px] md:text-xs font-bold text-zinc-500 uppercase">{label}</span>
       <span className={`text-base md:text-xl font-black italic ${color}`}>UGX {value.toLocaleString()}</span>
     </div>
-  );
+  ); 
+
 }
