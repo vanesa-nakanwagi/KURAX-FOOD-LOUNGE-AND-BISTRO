@@ -1,10 +1,14 @@
 import React, { useState } from 'react'
 import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
-import { Plus, Utensils, Edit2, Trash2, X,  CheckCircle2, AlertCircle, ImageIcon } from 'lucide-react'
+import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon } from 'lucide-react'
 import Footer from "../../../customer/components/common/Foooter";
+
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
+
+// These categories must match exactly what your public website expects to filter by
+const CATEGORIES = ["Starters", "Local Foods", "Drinks and Cocktails", "Desserts", "Main Course"];
 
 export default function Menus() {
   const { menus, setMenus } = useData()
@@ -15,6 +19,7 @@ export default function Menus() {
     name: '',
     description: '',
     price: '',
+    category: 'Starters', 
     image_file: null,
     published: false
   })
@@ -50,7 +55,7 @@ export default function Menus() {
   const resetForm = () => {
     setFormVisible(false)
     setEditingMenu(null)
-    setFormData({ name: '', description: '', price: '', image_file: null, published: false })
+    setFormData({ name: '', description: '', price: '', category: 'Starters', image_file: null, published: false })
   }
 
   const handleEdit = (menu) => {
@@ -60,7 +65,6 @@ export default function Menus() {
       image_file: menu.image_file instanceof Blob ? menu.image_file : null 
     })
     setFormVisible(true)
-    // We scroll the specific div now, not the window
     document.getElementById('content-area')?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -70,13 +74,9 @@ export default function Menus() {
   }
 
   return (
-    /* CORRECTION: h-screen and overflow-hidden prevents the whole page from scrolling */
     <div className="flex h-screen font-[Outfit] bg-black-950 text-slate-100 overflow-hidden">
-      
-      {/* Sidebar is now naturally sticky because the parent is h-screen */}
       <Sidebar />
 
-      {/* CORRECTION: overflow-y-auto on this div makes ONLY the main content scrollable */}
       <div id="content-area" className="flex-1 flex flex-col overflow-y-auto">
         <main className="p-4 md:p-8 pt-20 lg:pt-8">
           
@@ -95,7 +95,6 @@ export default function Menus() {
                 Add Menu
               </button>
             )}
-          
           </div>
 
           {formVisible && (
@@ -123,20 +122,34 @@ export default function Menus() {
                       className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm text-white"
                     />
                   </div>
+                  
+                  {/* Category Selection: This ensures the item is "tagged" in the database for the public site */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category</label>
+                    <select
+                      name="category"
+                      value={formData.category}
+                      onChange={handleChange}
+                      required
+                      className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm text-white appearance-none cursor-pointer"
+                    >
+                      {CATEGORIES.map(cat => (
+                        <option key={cat} value={cat} className="bg-zinc-900">{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Price (UGX)</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        name="price"
-                        placeholder="0"
-                        value={formData.price}
-                        onChange={handleChange}
-                        required
-                        className="w-full bg-zinc-800 border border-slate-700 p-3 pl-10 rounded-xl focus:border-yellow-500 outline-none text-sm text-white"
-                      />
-                      
-                    </div>
+                    <input
+                      type="text"
+                      name="price"
+                      placeholder="0"
+                      value={formData.price}
+                      onChange={handleChange}
+                      required
+                      className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-sm text-white"
+                    />
                   </div>
                 </div>
 
@@ -166,11 +179,6 @@ export default function Menus() {
                         {formData.image_file ? 'Change Image' : 'Upload Image'}
                       </div>
                     </div>
-                    {formData.image_file && formData.image_file instanceof Blob && (
-                      <div className="relative w-12 h-12 flex-shrink-0">
-                        <img src={URL.createObjectURL(formData.image_file)} alt="Preview" className="w-full h-full object-cover rounded-xl border border-slate-700" />
-                      </div>
-                    )}
                   </div>
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-t border-slate-800 pt-6">
@@ -213,6 +221,9 @@ export default function Menus() {
                         <span className="text-[10px] uppercase font-bold tracking-widest">No Cover</span>
                     </div>
                   )}
+                  
+                  {/* Visual Category Tags have been removed per request */}
+
                   <div className="absolute top-3 right-3">
                     <span className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${
                       menu.published ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-zinc-800 text-slate-500 border border-slate-700'
@@ -249,7 +260,7 @@ export default function Menus() {
             ))}
           </div>
         </main>
-          <Footer />
+        <Footer />
       </div>
     </div>
   )

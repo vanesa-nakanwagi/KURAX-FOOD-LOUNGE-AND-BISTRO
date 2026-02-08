@@ -307,7 +307,7 @@ export default function Home () {
       )}
 
 
-   {/* ================== Featured Events Section ================== */}
+  {/* ================== Featured Events Section ================== */}
 <section className="bg-gray-100 text-black font-outfit py-20 px-4 sm:px-8">
   <div className="max-w-7xl mx-auto text-center">
 
@@ -324,29 +324,43 @@ export default function Home () {
       {events.map((event) => (
         <div
           key={event.id}
-          className="bg-white  rounded-xl overflow-hidden shadow-md hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group flex flex-col"
+          className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group flex flex-col"
         >
-          {/* Image */}
+          {/* Image Container */}
           <div className="relative h-56 overflow-hidden">
             <img
-              src={event.image}
-              alt={event.title}
+              src={event.image_file ? URL.createObjectURL(event.image_file) : event.image}
+              alt={event.name || event.title}
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
             />
-            <div className="absolute top-4 left-4">
-              <div className="bg-yellow-400 text-black px-3 py-1 rounded-xl text-sm font-semibold flex items-center gap-1">
-                {event.icon && <event.icon className="w-4 h-4" />}
-                {event.category}
+            
+            {/* TAGS & CATEGORY OVERLAY */}
+            <div className="absolute top-4 left-4 flex flex-col gap-2 items-start">
+              {/* Main Category Badge */}
+              <div className="bg-yellow-400 text-black px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 shadow-lg">
+                {event.icon && <event.icon className="w-3 h-3" />}
+                {event.category || "Featured"}
               </div>
+
+              {/* Tag Functionality: Mapping through multiple tags */}
+              {event.tags && event.tags.map((tag, index) => (
+                <div 
+                  key={index} 
+                  className="bg-black/70 backdrop-blur-md text-white px-2 py-1 rounded border border-white/10 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 shadow-md"
+                >
+                  <Tag className="w-2.5 h-2.5 text-yellow-400" />
+                  {tag}
+                </div>
+              ))}
             </div>
           </div>
 
           {/* Content */}
           <div className="p-6 flex flex-col flex-1 text-left">
             <h3 className="font-serif text-2xl font-bold mb-2 text-black">
-              {event.title}
+              {event.name || event.title}
             </h3>
-            <p className="text-gray-700 mb-4 flex-1 text-sm sm:text-base">
+            <p className="text-gray-700 mb-4 flex-1 text-sm sm:text-base line-clamp-3">
               {event.description}
             </p>
 
@@ -369,7 +383,7 @@ export default function Home () {
             {/* Button at the bottom */}
             <div className="mt-auto">
               <button
-                className="mt-auto w-full py-4 text-color-black bg-yellow-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-3 transition-all uppercase italic shadow-lg active:scale-95"
+                className="w-full py-4 bg-yellow-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-3 transition-all uppercase italic shadow-lg active:scale-95"
                 onClick={() => setIsModalOpen(true)}
               >
                 Book Now
@@ -378,7 +392,7 @@ export default function Home () {
           </div>
         </div>
       ))}
-    </div>
+    </div >
 
 
     {/* Booking Modal */}
