@@ -52,6 +52,7 @@ const ChatIcon = () => (
 
 export default function FooterGlobal () {
   const quickLinks = [
+    { label: 'Home', href: '/#hero' },
     { label: 'Menu', href: '/#menus' },
     { label: 'About', href: '/#about' },
     { label: 'Services', href: '/#services' },
