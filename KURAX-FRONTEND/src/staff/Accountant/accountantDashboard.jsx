@@ -16,6 +16,7 @@ export default function AccountantDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [pettyCashTotal, setPettyCashTotal] = useState(0);
   const [pettyLogs, setPettyLogs] = useState([]);
+  const [isShiftClosed, setIsShiftClosed] = useState(false);
 
   const [orders, setOrders] = useState([
     { id: "#9021", staff: "Alex", amount: 45000, method: "CASH", time: "14:20", status: "ACTIVE" },
@@ -50,6 +51,22 @@ export default function AccountantDashboard() {
       ));
     }
   };
+
+  const handleCloseShift = () => {
+  const summary = {
+    total: totalRevenue,
+    cash: systemTotals.cash,
+    momo: systemTotals.momo,
+    card: systemTotals.card,
+    petty: pettyCashTotal,
+    net: systemTotals.cash - pettyCashTotal,
+    time: new Date().toLocaleTimeString()
+  };
+  
+  setShiftSummary(summary);
+  setIsShiftClosed(true);
+  generateWhatsAppReport(); // Automatically triggers the report for the Director
+};
 
   const generateWhatsAppReport = () => {
     const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -263,6 +280,64 @@ export default function AccountantDashboard() {
       </section>
     )}
 
+   {activeSection === "END_OF_SHIFT" && (
+  <section className="animate-in zoom-in-95 duration-500 max-w-2xl mx-auto py-6">
+    {!isShiftClosed ? (
+      <div className="bg-zinc-900/40 border border-white/5 p-10 rounded-[3rem] text-center">
+        <div className="w-20 h-20 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-rose-500/20">
+          <RotateCcw size={32} />
+        </div>
+        <h3 className="text-2xl font-black text-white uppercase italic mb-2">Close Daily Shift?</h3>
+        <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest mb-8">
+          This will finalize all collections and notify the Director.
+        </p>
+        <button 
+          onClick={handleCloseShift}
+          className="w-full py-5 bg-yellow-400  text-black rounded-2xl font-black uppercase italic text-sm transition-all active:scale-95 shadow-xl shadow-rose-900/20"
+        >
+          Confirm & Send to Director
+        </button>
+      </div>
+    ) : (
+      <div className="space-y-6">
+        {/* SUCCESS MESSAGE */}
+        <div className="bg-emerald-500 text-black p-6 rounded-[2.5rem] flex items-center gap-4">
+          <CheckCircle2 size={30} />
+          <div>
+            <h3 className="font-black uppercase italic leading-none">Shift Closed Successfully</h3>
+            <p className="text-[9px] font-bold uppercase opacity-70">Report sent to Director at {shiftSummary?.time}</p>
+          </div>
+        </div>
+
+        {/* FINAL SUMMARY TABLE */}
+        <div className="bg-zinc-900 border border-white/5 rounded-[2.5rem] overflow-hidden">
+          <div className="p-6 border-b border-white/5 bg-white/5">
+             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-500">Official Shift Summary</h4>
+          </div>
+          <div className="p-6 space-y-4">
+            <SummaryLine label="Gross Revenue" value={shiftSummary?.total} />
+            <SummaryLine label="Momo/Card Total" value={shiftSummary?.momo + shiftSummary?.card} />
+            <SummaryLine label="Petty Cash Spent" value={shiftSummary?.petty} isNegative />
+            <div className="pt-4 border-t border-white/10">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black text-white uppercase italic">Final Cash Handover</span>
+                <span className="text-xl font-black text-emerald-500 italic">UGX {shiftSummary?.net.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button 
+          onClick={() => window.location.reload()}
+          className="w-full py-4 bg-zinc-900 text-zinc-500 rounded-2xl font-black uppercase text-[10px] border border-white/5"
+        >
+          Start New Shift
+        </button>
+      </div>
+    )}
+  </section>
+)}
+
     {/* 4. LIVE AUDIT SECTION (Now properly separated) */}
     {activeSection === "LIVE AUDIT" && (
       <section className="bg-zinc-900/30 border border-white/5 rounded-3xl overflow-hidden animate-in fade-in duration-500">
@@ -342,7 +417,16 @@ function AccountantStatCard({ label, value, icon, color, bgColor = "bg-zinc-900/
   );
 }
 
-
+function SummaryLine({ label, value, isNegative = false }) {
+  return (
+    <div className="flex justify-between items-center text-[11px] font-bold uppercase tracking-tight">
+      <span className="text-zinc-500">{label}</span>
+      <span className={isNegative ? "text-rose-500" : "text-white"}>
+        {isNegative ? "-" : ""} UGX {value?.toLocaleString()}
+      </span>
+    </div>
+  );
+}
 
 function AuditRow({ order, onVoid }) {
 
