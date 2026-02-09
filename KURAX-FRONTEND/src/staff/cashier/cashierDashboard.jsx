@@ -6,22 +6,23 @@ import {
 } from "lucide-react";
 import Footer from "../../customer/components/common/Foooter";
 import logo from "../../customer/assets/images/logo.jpeg";
+
+
+
 export default function CashierDashboard() {
   const [activeSection, setActiveSection] = useState("PENDING"); 
-  const [orderStatusFilter, setOrderStatusFilter] = useState("CLOSED"); // Sub-filter for Order Status
+  const [orderStatusFilter, setOrderStatusFilter] = useState("CLOSED"); 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showShiftSummary, setShowShiftSummary] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [selectedSettlement, setSelectedSettlement] = useState(null);
   const [animatingIds, setAnimatingIds] = useState([]); 
-  // Change from hardcoded const to dynamic state
-const [riders, setRiders] = useState([]);
-  // --- REVENUE STATE ---
+  const [riders, setRiders] = useState([]);
   const [cashOnCounter, setCashOnCounter] = useState(450000);
   const [cashOnMomo, setCashOnMomo] = useState(120000);
   const [totalViaCard, setTotalViaCard] = useState(300000);
   
-  // --- ORDER STATE ---
+  
   const [allOrders, setAllOrders] = useState([
     { id: "8241",  waiter: "JOHN", method: "CASH", total: 45000, status: "PENDING", time: "12:10 PM" },
     { id: "8242", waiter: "JOHN", method: "MOMO", total: 75000, status: "DELAYED", time: "11:45 AM" },
@@ -29,10 +30,10 @@ const [riders, setRiders] = useState([]);
   ]);
 
   const addNewRider = () => {
-  const name = prompt("Enter Rider Name:"); // Simple for now, or use a custom Modal
+  const name = prompt("Enter Rider Name:"); 
   if (name) {
     const newRider = {
-      id: Date.now(), // Unique ID for this session
+      id: Date.now(), 
       name: name,
       status: "IN",
       cash: 0,
@@ -109,7 +110,7 @@ const handleConfirmOrder = (order) => {
         KURAX FOOD LOUNGE & BISTRO
       </h1>
       <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest leading-tight">
-        Accountant Panel
+        Cashier Panel
       </p>
     </div>
   </div>
@@ -198,7 +199,7 @@ const handleConfirmOrder = (order) => {
             My Collection
           </h2>
           <p className="text-zinc-500 text-[10px] md:text-xs mt-2 max-w-2xl leading-relaxed">
-            Real-time overview of your shift earnings. Monitor physical cash, mobile money, and card settlements to ensure accurate reconciliation.
+            Track your performance and live statuses
           </p>
         </div>
 

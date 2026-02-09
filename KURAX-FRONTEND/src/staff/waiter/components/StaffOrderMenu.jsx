@@ -45,7 +45,7 @@ export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
                 className={`relative pb-4 text-sm font-bold transition-all whitespace-nowrap
                   ${activeCategory === cat 
                     ? "text-yellow-500" 
-                    : theme === 'dark' ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-900"}`}
+                    : theme === 'dark' ? "text-zinc-500" : "text-black"}`}
               >
                 {cat}
                 {activeCategory === cat && (

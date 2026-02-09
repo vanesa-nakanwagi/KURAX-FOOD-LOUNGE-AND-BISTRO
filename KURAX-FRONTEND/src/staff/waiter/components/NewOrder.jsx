@@ -159,7 +159,7 @@ setPaymentMethod("Cash");
 
   return (
     <div className={`flex flex-col lg:flex-row h-full font-[Outfit] overflow-hidden relative transition-colors duration-300
-      ${theme === 'dark' ? 'bg-black text-slate-200' : 'bg-zinc-50 text-zinc-900'}`}>
+      ${theme === 'dark' ? 'bg-black text-white' : 'bg-white text-black'}`}>
       
       {/* MOBILE TOGGLE (Adjusted for light mode) */}
       {!isCartOpen && (
@@ -183,7 +183,7 @@ setPaymentMethod("Cash");
               <button onClick={() => setShowMomoModal(false)} className={`p-2 rounded-full ${theme === 'dark' ? 'bg-white/5 hover:bg-white/10' : 'bg-black/5 hover:bg-black/10'}`}>
                 <X size={20}/>
               </button>
-            </div>
+            </div>Cart
             {/* ... Modal content remains similar, just use theme for inputs/buttons ... */}
           </div>
         </div>

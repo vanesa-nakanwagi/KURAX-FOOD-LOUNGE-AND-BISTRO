@@ -20,13 +20,26 @@ export const DataProvider = ({ children }) => {
     ];
   });
 
-  // --- ORDERS STATE (The Kitchen Sync) ---
+  // --- ORDERS STATE ---
   const [orders, setOrders] = useState(() => {
     const savedOrders = localStorage.getItem('kurax_orders');
     return savedOrders ? JSON.parse(savedOrders) : [];
   });
 
-  // 1. Save Menus/Events to LocalStorage
+  // --- ADD THIS: STAFF STATE ---
+  const [staffList, setStaffList] = useState(() => {
+    const savedStaff = localStorage.getItem('kurax_staff');
+    return savedStaff ? JSON.parse(savedStaff) : [
+        // Optional: Add a default admin or mock staff here
+        { id: 101, name: "Essah", role: "MANAGER", status: "ACTIVE", isPermitted: true }
+    ];
+  });
+
+  // Save Staff to LocalStorage
+  useEffect(() => {
+    localStorage.setItem('kurax_staff', JSON.stringify(staffList));
+  }, [staffList]);
+
   useEffect(() => {
     localStorage.setItem('kurax_menus', JSON.stringify(menus));
   }, [menus]);
@@ -35,18 +48,15 @@ export const DataProvider = ({ children }) => {
     localStorage.setItem('kurax_events', JSON.stringify(events));
   }, [events]);
 
-  // 2. Save Orders to LocalStorage
   useEffect(() => {
     localStorage.setItem('kurax_orders', JSON.stringify(orders));
   }, [orders]);
 
-  // 3. THE MAGIC LINK: Listen for changes from other tabs
+  // Sync across tabs
   useEffect(() => {
     const handleStorageChange = (e) => {
-      if (e.key === 'kurax_orders' && e.newValue) {
-        setOrders(JSON.parse(e.newValue));
-      }
-      // Optional: sync menus/events across tabs too
+      if (e.key === 'kurax_orders' && e.newValue) setOrders(JSON.parse(e.newValue));
+      if (e.key === 'kurax_staff' && e.newValue) setStaffList(JSON.parse(e.newValue));
       if (e.key === 'kurax_menus' && e.newValue) setMenus(JSON.parse(e.newValue));
     };
 
@@ -58,7 +68,8 @@ export const DataProvider = ({ children }) => {
     <DataContext.Provider value={{ 
       menus, setMenus, 
       events, setEvents, 
-      orders, setOrders // Make sure these are exported!
+      orders, setOrders,
+      staffList, setStaffList 
     }}>
       {children}
     </DataContext.Provider>

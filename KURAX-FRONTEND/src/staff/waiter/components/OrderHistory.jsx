@@ -1,15 +1,28 @@
 import React, { useEffect } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
-import { useTheme } from "../../../customer/components/context/ThemeContext"; // Import theme hook
-import { Clock, Banknote, AlertCircle, CreditCard, Smartphone, ChevronRight, CheckCircle, Flame, Timer } from "lucide-react";
+import { useTheme } from "../../../customer/components/context/ThemeContext";
+import { Clock, Banknote, AlertCircle, CreditCard, Smartphone, ChevronRight, CheckCircle, Flame, Timer, ClipboardList } from "lucide-react";
 
 export default function OrderHistory() {
   const { orders = [] } = useData() || {};
-  const { theme } = useTheme(); // Access theme
+  const { theme } = useTheme();
+
+  // Configuration
+  const DAILY_GOAL = 20; 
+  const waiterName = "John Doe"; // Replace with your auth logic
+  const today = new Date().toISOString().split('T')[0];
+
+  // Logic for daily stats
+  const dailyWaiterOrders = orders.filter(order => {
+    const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
+    return order.waiterName === waiterName && orderDate === today;
+  });
 
   const myOrders = orders.length > 0 
     ? [...orders].sort((a, b) => b.timestamp - a.timestamp) 
     : [];
+
+  const progressPercent = Math.min((dailyWaiterOrders.length / DAILY_GOAL) * 100, 100);
 
   useEffect(() => {
     const latestOrder = myOrders[0];
@@ -30,17 +43,37 @@ export default function OrderHistory() {
       theme === 'dark' ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'
     }`}>
       
-      <div className="mb-8 flex justify-between items-start">
-        <div>
+      <div className="mb-8">
           <h1 className="text-2xl font-black uppercase tracking-tighter">My Collections</h1>
           <p className={`${theme === 'dark' ? 'text-slate-500' : 'text-zinc-500'} text-sm`}>
-            Review your live order statuses
+            Track your performance and live statuses
           </p>
-        </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        {/* Progress Card */}
+        <div className={`p-4 rounded-2xl border transition-all ${
+          theme === 'dark' ? 'bg-zinc-900 border-slate-800' : 'bg-white border-black/5 shadow-sm'
+        }`}>
+          <div className="flex items-center justify-between mb-2">
+            <ClipboardList className="text-orange-500" size={20} />
+            <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Goal</span>
+          </div>
+          <p className="text-[10px] font-bold uppercase text-zinc-500">Today's Orders</p>
+          <div className="flex items-baseline gap-2 mb-3">
+            <h3 className="text-2xl font-black">{dailyWaiterOrders.length}</h3>
+            <span className="text-[10px] font-bold text-slate-500">/ {DAILY_GOAL}</span>
+          </div>
+          <div className="space-y-1">
+            <div className={`w-full h-1.5 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-black' : 'bg-zinc-100'}`}>
+              <div 
+                className="h-full bg-orange-500 rounded-full transition-all duration-1000"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
         <SummaryCard theme={theme} label="Total Cash" value={totals.Cash} icon={<Banknote className="text-emerald-500" />} />
         <SummaryCard theme={theme} label="Mobile Money" value={totals.Momo} icon={<Smartphone className="text-yellow-500" />} />
         <SummaryCard theme={theme} label="Card Sales" value={totals.Card} icon={<CreditCard className="text-blue-500" />} />
@@ -48,10 +81,6 @@ export default function OrderHistory() {
       </div>
 
       <div className="space-y-3">
-        <h3 className={`text-xs font-black uppercase tracking-widest mb-4 ${theme === 'dark' ? 'text-slate-500' : 'text-zinc-400'}`}>
-          Live Status & History
-        </h3>
-        
         {myOrders.map((order) => (
           <div key={order.id} className={`p-4 rounded-2xl flex items-center justify-between group transition-all border ${
             theme === 'dark' 
@@ -72,40 +101,26 @@ export default function OrderHistory() {
                   <StatusBadge status={order.status} />
                 </p>
                 <p className={`text-[10px] uppercase font-bold tracking-tighter ${theme === 'dark' ? 'text-slate-500' : 'text-zinc-400'}`}>
-                  {order.timestamp ? new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '00:00'} • {order.items?.length || 0} Items
+                   {order.items?.length || 0} Items
                 </p>
               </div>
             </div>
 
             <div className="text-right flex items-center gap-4">
-              <div>
-                <p className={`text-sm font-black ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
-                  UGX {(order.total || 0).toLocaleString()}
-                </p>
-                {order.status === "Ready" ? (
-                  <span className="text-[9px] font-black text-emerald-500 uppercase animate-pulse">Ready to Serve</span>
-                ) : (
-                  <span className={`text-[9px] font-bold uppercase ${theme === 'dark' ? 'text-slate-500' : 'text-zinc-400'}`}>Paid</span>
-                )}
-              </div>
-              <ChevronRight size={16} className={`transition-colors ${theme === 'dark' ? 'text-slate-700 group-hover:text-yellow-500' : 'text-zinc-300 group-hover:text-yellow-600'}`} />
+              <p className={`text-sm font-black ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                UGX {(order.total || 0).toLocaleString()}
+              </p>
+              <ChevronRight size={16} className="text-zinc-500" />
             </div>
           </div>
         ))}
-
-        {myOrders.length === 0 && (
-          <div className={`text-center py-20 border-2 border-dashed rounded-3xl ${
-            theme === 'dark' ? 'border-slate-800 bg-zinc-900/20' : 'border-zinc-200 bg-white'
-          }`}>
-            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">No orders recorded yet</p>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-// --- UPDATED HELPER COMPONENTS ---
+/** * HELPER FUNCTIONS (Place these outside the main component) 
+ **/
 
 function StatusBadge({ status }) {
   const configs = {
@@ -129,6 +144,13 @@ function getStatusBorder(status, mode) {
   return mode === 'dark' ? "border-slate-800" : "border-black/5";
 }
 
+function getIconColor(method) {
+  if (method === 'Cash') return 'text-emerald-500';
+  if (method === 'Momo') return 'text-yellow-600';
+  if (method === 'Card') return 'text-blue-500';
+  return 'text-white';
+}
+
 function SummaryCard({ label, value, icon, highlight, theme }) {
   const baseClasses = highlight 
     ? 'bg-yellow-500 border-yellow-500 text-black shadow-lg shadow-yellow-500/10' 
@@ -146,11 +168,4 @@ function SummaryCard({ label, value, icon, highlight, theme }) {
       <h3 className="text-lg font-black leading-tight">UGX {value.toLocaleString()}</h3>
     </div>
   );
-}
-
-function getIconColor(method) {
-  if (method === 'Cash') return 'text-emerald-500';
-  if (method === 'Momo') return 'text-yellow-600';
-  if (method === 'Card') return 'text-blue-500';
-  return 'text-white';
 }

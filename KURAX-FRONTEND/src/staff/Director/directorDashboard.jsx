@@ -1,22 +1,44 @@
-import React, { useState } from "react";
-import { Edit3, Trash2 } from "lucide-react";
+
+import React, { useState, useEffect } from "react"; 
 import { 
   Users, BarChart3, Wallet, Bell, Plus, ShieldCheck, 
   ArrowUpRight, ArrowDownRight, TrendingUp, Settings, 
   LogOut, LayoutDashboard, History, Banknote, Smartphone, 
-  CreditCard, Clock, Menu, X, Eye, EyeOff 
+  CreditCard, Clock, Menu, X, Eye, EyeOff, Flame, Search
 } from "lucide-react";
+
 import Logo from "../../customer/assets/images/logo.jpeg";
 import Footer from "../../customer/components/common/Foooter";
 import { RevenueChart } from "./charts";
+import { useData } from "../../customer/components/context/DataContext";
 
 export default function DirectorDashboard() {
   const [activeTab, setActiveTab] = useState("OVERVIEW"); 
   const [showCreateAccount, setShowCreateAccount] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile sidebar state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { staffList, setStaffList, orders } = useData() || { staffList: [], setStaffList: () => {}, orders: [] };
  
   const [user] = useState({ name: "Essah", role: "Director" });
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+
+
+  const [editingStaff, setEditingStaff] = useState(null);
+  const handleSaveStaff = (staffData) => {
+    const exists = staffList.find(s => s.id === staffData.id);
+
+    if (exists) {
+      // Update existing
+      setStaffList(staffList.map(s => s.id === staffData.id ? staffData : s));
+    } else {
+      // Add new
+      setStaffList([...staffList, staffData]);
+    }
+    
+    setShowCreateAccount(false);
+    setEditingStaff(null); // Reset after saving
+  };
+
+
 
   return (
     <div className="flex h-screen bg-black text-slate-200 font-[Outfit] overflow-hidden">
@@ -99,7 +121,21 @@ export default function DirectorDashboard() {
     onViewRegistry={() => setActiveTab("HISTORY")} 
   />
 )}
-          {activeTab === "STAFF" && <StaffSection onAdd={() => setShowCreateAccount(true)} />}
+        {activeTab === "STAFF" && (
+  <StaffSection 
+    onAdd={() => {
+      setEditingStaff(null); // Ensure it's empty for "New"
+      setShowCreateAccount(true);
+    }}
+    onEdit={(staff) => {
+      setEditingStaff(staff); // Set the staff to be edited
+      setShowCreateAccount(true); // Open the same modal
+    }}
+    staffList={staffList} 
+    setStaffList={setStaffList}
+    orders={orders}
+  />
+)}
           {activeTab === "FINANCES" && <FinancesSection />}
           {activeTab === "HISTORY" && <HistorySection />}
         </div>
@@ -107,7 +143,17 @@ export default function DirectorDashboard() {
          <Footer />
       </main>
 
-      {showCreateAccount && <CreateStaffModal onClose={() => setShowCreateAccount(false)} />}
+   
+{showCreateAccount && (
+  <CreateStaffModal 
+    onClose={() => {
+      setShowCreateAccount(false); // Closes the modal
+      setEditingStaff(null);       // CRITICAL: Clears the "Edit" memory
+    }} 
+    onSave={handleSaveStaff}
+    initialData={editingStaff} 
+  />
+)}
     </div>
   );
 }
@@ -170,41 +216,79 @@ function OverviewSection({ onViewRegistry }){
 
 
 
-function StaffSection({ onAdd }) {
-    // Local state for demonstration - in production this comes from your DB
-    const [staffList, setStaffList] = useState([
-        { id: 1, name: "Sarah K.", role: "MANAGER", status: "ACTIVE" },
-        { id: 2, name: "John Doe", role: "CASHIER", status: "OFF-DUTY" },
-        { id: 3, name: "Chef Mike", role: "CHEF", status: "ACTIVE" }
-    ]);
+function StaffSection({ onAdd, staffList, setStaffList, orders, onEdit }) {
+    const [searchTerm, setSearchTerm] = useState("");
+    const today = new Date().toISOString().split('T')[0];
+    const DAILY_GOAL = 20;
 
-    const deleteStaff = (id) => {
-        if(window.confirm("Are you sure you want to remove this staff member?")) {
+    // Filter staff based on search
+    const filteredStaff = (staffList || []).filter(staff => 
+        staff.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        staff.role.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const togglePermission = (id) => {
+        const updatedStaff = staffList.map(s => 
+            s.id === id ? { ...s, isPermitted: !s.isPermitted } : s
+        );
+        setStaffList(updatedStaff); 
+    };
+
+    const deleteStaff = (id, name) => {
+        if(window.confirm(`Terminate ${name}'s access?`)) {
             setStaffList(staffList.filter(s => s.id !== id));
         }
     };
 
+    const getStaffDailyStats = (staffName) => {
+        const staffOrders = (orders || []).filter(order => {
+            const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
+            return order.waiterName === staffName && orderDate === today;
+        });
+
+        return staffOrders.reduce((acc, curr) => {
+            acc.totalOrders += 1;
+            acc.totalRevenue += curr.total;
+            acc[curr.paymentMethod] = (acc[curr.paymentMethod] || 0) + curr.total;
+            return acc;
+        }, { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 });
+    };
+
     return (
-        <div className="bg-zinc-900/30 border border-white/5 rounded-3xl md:rounded-[2.5rem] p-5 md:p-8">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 md:mb-10">
+        <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-5 md:p-8">
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-10">
                 <div>
-                    <h3 className="text-lg md:text-xl font-black uppercase italic">Staff Ecosystem</h3>
-                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Manage access & permissions</p>
+                    <h3 className="text-xl font-black uppercase italic text-white">Staff Ecosystem</h3>
+                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Live Performance & Access Control</p>
                 </div>
-                <button onClick={onAdd} className="w-full sm:w-auto bg-yellow-500 text-black px-6 py-3 rounded-2xl font-black uppercase italic text-xs flex justify-center items-center gap-2 transition-transform active:scale-95">
-                    <Plus size={16}/> Create Account
-                </button>
+
+                <div className="flex flex-col md:flex-row gap-4 w-full xl:w-auto">
+                    <div className="relative group flex-1 md:min-w-[300px]">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-yellow-500 transition-colors" size={18} />
+                        <input 
+                            type="text" 
+                            placeholder="Search by name or role..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full bg-black/50 border border-white/5 p-3.5 pl-12 rounded-2xl text-sm font-bold text-white focus:border-yellow-500/50 outline-none transition-all"
+                        />
+                    </div>
+                    <button onClick={onAdd} className="bg-yellow-500 text-black px-6 py-3.5 rounded-2xl font-black uppercase italic text-xs flex items-center justify-center gap-2">
+                        <Plus size={16}/> Create Account
+                    </button>
+                </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {staffList.map(staff => (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {filteredStaff.map(staff => (
                     <StaffCard 
                         key={staff.id} 
-                        name={staff.name} 
-                        role={staff.role} 
-                        status={staff.status} 
-                        onDelete={() => deleteStaff(staff.id)}
-                        onEdit={() => alert(`Editing ${staff.name}...`)}
+                        staff={staff}
+                        stats={getStaffDailyStats(staff.name)}
+                        goal={DAILY_GOAL}
+                        onTogglePermission={() => togglePermission(staff.id)}
+                        onDelete={() => deleteStaff(staff.id, staff.name)}
+                        onEdit={() => onEdit(staff)}
                     />
                 ))}
             </div>
@@ -421,43 +505,104 @@ function OrderRow({ id, waiter, method, amount, time, status }) {
   );
 }
 
-function StaffCard({ name, role, status, onEdit, onDelete }) {
+function StaffCard({ staff, stats, onTogglePermission, onDelete, onEdit }) {
+    // 1. Permission Logic: Only Managers/Supervisors get the "Unlock" toggle
+    const canTakeOrdersRole = staff.role === "MANAGER" || staff.role === "SUPERVISOR";
+    const isWaiter = staff.role === "WAITER";
+    const isChef = staff.role === "CHEF";
+      const DAILY_GOAL = 20;
+ 
+
+    // 2. Access Status
+    const hasOrderAccess = isWaiter || (canTakeOrdersRole && staff.isPermitted);
+
     return (
-        <div className="bg-black/40 border border-white/5 p-5 rounded-2xl flex flex-col gap-4 hover:border-yellow-500/30 transition-all group">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center font-black text-white border border-white/5">
-                        {name[0]}
+        <div className="bg-black/60 border border-white/5 p-6 rounded-[2rem] flex flex-col gap-6 hover:border-white/10 transition-all">
+            <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center font-black text-white border border-white/5 uppercase">
+                        {staff.name[0]}
                     </div>
                     <div>
-                        <p className="text-sm font-black text-white italic tracking-tight">{name}</p>
-                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{role}</p>
+                        <p className="text-sm font-black text-white italic tracking-tight">{staff.name}</p>
+                        <p className={`text-[9px] font-bold uppercase tracking-widest ${isChef ? 'text-blue-400' : 'text-yellow-500'}`}>
+                            {staff.role}
+                        </p>
                     </div>
                 </div>
-                <span className={`text-[8px] font-black px-2 py-1 rounded-md tracking-tighter ${
-                    status === 'ACTIVE' 
-                        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' 
-                        : 'bg-zinc-800 text-zinc-500'
-                }`}>
-                    {status}
-                </span>
+               
+
+                {/* Director's Toggle: Only shown for high-level staff */}
+                {canTakeOrdersRole && (
+                    <button 
+                        onClick={onTogglePermission}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all ${
+                            staff.isPermitted 
+                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
+                            : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                        }`}
+                    >
+                        {staff.isPermitted ? <ShieldCheck size={12}/> : <EyeOff size={12}/>}
+                        <span className="text-[8px] font-black uppercase">
+                            {staff.isPermitted ? "Permitted" : "Locked"}
+                        </span>
+                    </button>
+                )}
             </div>
 
-            {/* ACTION BUTTONS */}
-            <div className="flex gap-2 border-t border-white/5 pt-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+            {/* STATS SECTION */}
+            {isChef ? (
+                // CHEF VIEW: No financial data
+                <div className="bg-zinc-900/50 p-6 rounded-2xl border border-white/5 text-center flex flex-col items-center justify-center gap-2">
+                    <div className="p-2 bg-blue-500/10 rounded-full text-blue-400">
+                        <Flame size={20} />
+                    </div>
+                    <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kitchen Operations Only</p>
+                </div>
+            ) : (
+                // ORDER-TAKERS VIEW: (Waiters, Managers, Supervisors)
+                <>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-zinc-900/50 p-3 rounded-2xl border border-white/5 text-center">
+    <p className="text-[8px] font-black text-zinc-500 uppercase mb-1">Orders Taken</p>
+    <p className="text-lg font-black italic">
+        {stats.totalOrders} 
+        <span className="text-xs text-zinc-600 not-italic ml-1">/ {DAILY_GOAL}</span>
+    </p>
+</div>
+                       <div className="bg-yellow-500 p-3 rounded-2xl text-black text-center">
+    <p className="text-[8px] font-black text-black uppercase mb-1">Total Revenue</p>
+    <p className="text-sm font-black italic">
+        UGX {stats.totalRevenue.toLocaleString()}
+    </p>
+</div>
+                    </div>
+
+                    <div className="space-y-2 border-t border-white/5 pt-4">
+                        <FinanceMiniRow label="Cash" value={stats.CASH || 0} color="text-emerald-500" />
+                        <FinanceMiniRow label="Momo" value={stats.MOMO || 0} color="text-yellow-500" />
+                        <FinanceMiniRow label="Card" value={stats.CARD || 0} color="text-blue-500" />
+                    </div>
+                </>
+            )}
+
+            <div className="flex gap-4 pt-2 mt-auto">
                 <button 
-                    onClick={onEdit}
-                    className="flex-1 flex items-center justify-center gap-2 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-[9px] font-black uppercase italic transition-colors"
-                >
-                    <Edit3 size={12} className="text-yellow-500" /> Edit
-                </button>
-                <button 
-                    onClick={onDelete}
-                    className="flex-1 flex items-center justify-center gap-2 py-2 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg text-[9px] font-black uppercase italic text-rose-500 transition-colors"
-                >
-                    <Trash2 size={12} /> Delete
-                </button>
+    onClick={onEdit} // Make sure this is linked!
+    className="text-[9px] font-black uppercase text-zinc-600 hover:text-white transition-colors"
+>
+    Edit Profile
+</button>
+                <button onClick={onDelete} className="text-[9px] font-black uppercase text-zinc-600 hover:text-rose-500 transition-colors">Terminate</button>
             </div>
+        </div>
+    );
+}
+function FinanceMiniRow({ label, value, color }) {
+    return (
+        <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-tighter">
+            <span className="text-zinc-500">{label}</span>
+            <span className={color}>UGX {value.toLocaleString()}</span>
         </div>
     );
 }
@@ -499,34 +644,91 @@ function ShiftMiniCard({ staff, cash, momo, card, time, type, status }) {
     );
 }
 
-function CreateStaffModal({ onClose }) {
-    // 1. Add state to toggle visibility
+// 1. Add 'initialData' to the destructured props
+function CreateStaffModal({ onClose, onSave, initialData }) {
     const [showPin, setShowPin] = useState(false);
+    
+    // 2. Initialize state based on whether we are editing or creating
+    const [formData, setFormData] = useState({
+        id: initialData?.id || null, // Keep existing ID if editing
+        name: initialData?.name || "",
+        role: initialData?.role || "SELECT ROLE",
+        pin: initialData?.pin || ""
+    });
+
+    useEffect(() => {
+        if (initialData) {
+            setFormData({
+                id: initialData.id,
+                name: initialData.name,
+                role: initialData.role,
+                pin: initialData.pin
+            });
+        } else {
+            // Reset to empty if we are creating a new account
+            setFormData({ id: null, name: "", role: "SELECT ROLE", pin: "" });
+        }
+    }, [initialData]);
+
+    const handleActivate = () => {
+        if (!formData.name || formData.role === "SELECT ROLE" || !formData.pin) {
+            alert("Please fill in all fields!");
+            return;
+        }
+
+        // 3. Construct the payload
+        const staffPayload = {
+            // Spread existing data (to keep status, etc.) then overwrite with form data
+            ...(initialData || {}),
+            id: formData.id || Date.now(), // Use existing ID or create new one
+            name: formData.name,
+            role: formData.role,
+            pin: formData.pin,
+            status: initialData?.status || "OFF-DUTY",
+            // If new staff, waiters are auto-permitted. If editing, keep old permission.
+            isPermitted: initialData ? initialData.isPermitted : formData.role === "WAITER",
+        };
+
+        onSave(staffPayload);
+    };
 
     return (
         <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
             <div className="w-full max-w-md bg-zinc-900 border border-white/10 rounded-[2.5rem] p-6 md:p-10 shadow-2xl">
-                <h2 className="text-xl md:text-2xl font-black italic uppercase text-yellow-500 mb-6 md:mb-8">Staff Account</h2>
+                {/* 4. Dynamic Heading */}
+                <h2 className="text-xl md:text-2xl font-black italic uppercase text-yellow-500 mb-6 md:mb-8">
+                    {initialData ? "Edit Staff Account" : "Create Staff Account"}
+                </h2>
                 
                 <div className="space-y-4">
                     <input 
                         type="text" 
                         placeholder="FULL NAME" 
+                        value={formData.name}
+                        onChange={(e) => setFormData({...formData, name: e.target.value})}
                         className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none" 
                     />
                     
-                    <select className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-zinc-400 focus:border-yellow-500 outline-none">
-                        <option>SELECT ROLE</option>
-                        <option>WAITER</option>
-                        <option>CASHIER</option>
-                        <option>CHEF</option>
+                    <select 
+                        value={formData.role}
+                        onChange={(e) => setFormData({...formData, role: e.target.value})}
+                        className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-zinc-400 focus:border-yellow-500 outline-none"
+                    >
+                        <option disabled value="SELECT ROLE">SELECT ROLE</option>
+                        <option value="WAITER">WAITER</option>
+                        <option value="CASHIER">CASHIER</option>
+                        <option value="CHEF">CHEF</option>
+                        <option value="MANAGER">MANAGER</option>
+                        <option value="SUPERVISOR">SUPERVISOR</option>
                     </select>
 
-                    {/* 2. PIN INPUT WITH EYE TOGGLE */}
                     <div className="relative">
                         <input 
                             type={showPin ? "text" : "password"} 
                             placeholder="ASSIGN ACCESS PIN" 
+                            value={formData.pin}
+                            maxLength={4}
+                            onChange={(e) => setFormData({...formData, pin: e.target.value})}
                             className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none pr-12" 
                         />
                         <button 
@@ -545,8 +747,11 @@ function CreateStaffModal({ onClose }) {
                         >
                             Cancel
                         </button>
-                        <button className="flex-[2] py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase italic text-sm transition-transform active:scale-95">
-                            Activate
+                        <button 
+                            onClick={handleActivate}
+                            className="flex-[2] py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase italic text-sm transition-transform active:scale-95 shadow-lg shadow-yellow-500/10"
+                        >
+                            {initialData ? "Update Profile" : "Activate Account"}
                         </button>
                     </div>
                 </div>

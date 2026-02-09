@@ -41,7 +41,7 @@ export default function SideBar({
           KURAX FOOD LOUNGE & BISTRO
         </h1>
         <p className="text-yellow-500 text-[9px] font-bold uppercase tracking-widest leading-tight">
-          Accountant Panel
+          Cashier Panel
         </p>
       </div>
     </div>

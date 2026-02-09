@@ -66,7 +66,7 @@ export default function Navbar() {
         <div className="flex items-center gap-4">
           {/* 2. Content Creator Profile Link */}
           <Link 
-            to="/cashier" 
+            to="/director" 
             className="flex items-center gap-2 group p-1"
             title="Staff Dashboard (Test)"
           >
