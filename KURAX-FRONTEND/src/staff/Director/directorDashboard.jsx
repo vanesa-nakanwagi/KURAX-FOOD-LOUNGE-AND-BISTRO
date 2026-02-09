@@ -152,6 +152,7 @@ export default function DirectorDashboard() {
     }} 
     onSave={handleSaveStaff}
     initialData={editingStaff} 
+    staffList={staffList}
   />
 )}
     </div>
@@ -645,7 +646,7 @@ function ShiftMiniCard({ staff, cash, momo, card, time, type, status }) {
 }
 
 // 1. Add 'initialData' to the destructured props
-function CreateStaffModal({ onClose, onSave, initialData }) {
+function CreateStaffModal({ onClose, onSave, initialData}, staffList) {
     const [showPin, setShowPin] = useState(false);
     
     // 2. Initialize state based on whether we are editing or creating
@@ -671,26 +672,53 @@ function CreateStaffModal({ onClose, onSave, initialData }) {
     }, [initialData]);
 
     const handleActivate = () => {
-        if (!formData.name || formData.role === "SELECT ROLE" || !formData.pin) {
-            alert("Please fill in all fields!");
-            return;
-        }
+    // 1. Basic Validation
+    if (!formData.name || formData.role === "SELECT ROLE" || !formData.pin) {
+        alert("Please fill in all fields!");
+        return;
+    }
 
-        // 3. Construct the payload
-        const staffPayload = {
-            // Spread existing data (to keep status, etc.) then overwrite with form data
-            ...(initialData || {}),
-            id: formData.id || Date.now(), // Use existing ID or create new one
-            name: formData.name,
-            role: formData.role,
-            pin: formData.pin,
-            status: initialData?.status || "OFF-DUTY",
-            // If new staff, waiters are auto-permitted. If editing, keep old permission.
-            isPermitted: initialData ? initialData.isPermitted : formData.role === "WAITER",
-        };
+    // 2. PIN Length Validation
+    if (formData.pin.length !== 4) {
+        alert("The Access PIN must be exactly 4 digits.");
+        return;
+    }
 
-        onSave(staffPayload);
+    const safeStaffArray = Array.isArray(staffList) 
+        ? staffList 
+        : Object.values(staffList || {});
+
+    const currentStaff = Array.isArray(staffList) ? staffList : [];
+
+    const isPinTaken = currentStaff.find(staff => {
+        // We use String() to make sure we are comparing text to text
+        // This fixes the "1234" vs 1234 problem
+        const existingPin = String(staff.pin);
+        const newPin = String(formData.pin);
+        
+        return existingPin === newPin && staff.id !== formData.id;
+    });
+
+    if (isPinTaken) {
+        alert(`ACCESS DENIED: PIN ${formData.pin} is already assigned to ${isPinTaken.name}.`);
+        return;
+    }
+
+    
+
+    // 3. Package the data if unique
+    const staffPayload = {
+        ...(initialData || {}),
+        id: formData.id || Date.now(),
+        name: formData.name,
+        role: formData.role,
+        pin: formData.pin,
+        status: initialData?.status || "OFF-DUTY",
+        isPermitted: initialData ? initialData.isPermitted : formData.role === "WAITER",
     };
+
+    onSave(staffPayload);
+};
 
     return (
         <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
