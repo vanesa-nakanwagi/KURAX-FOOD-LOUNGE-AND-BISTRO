@@ -1,119 +1,162 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
-import { Clock, Banknote, AlertCircle, CreditCard, Smartphone, ChevronRight, CheckCircle, Flame, Timer, ClipboardList } from "lucide-react";
+import { Clock, Banknote, AlertCircle, CreditCard, Smartphone, ChevronRight, CheckCircle, Flame, Timer, ClipboardList, Utensils, User } from "lucide-react";
 
 export default function OrderHistory() {
-  const { orders = [] } = useData() || {};
+  const { orders = [], setOrders } = useData() || {}; 
   const { theme } = useTheme();
+  const [activeTab, setActiveTab] = useState("Live");
 
   // Configuration
   const DAILY_GOAL = 20; 
-  const waiterName = "John Doe"; // Replace with your auth logic
+  const waiterName = "John Doe"; 
   const today = new Date().toISOString().split('T')[0];
 
-  // Logic for daily stats
   const dailyWaiterOrders = orders.filter(order => {
     const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
     return order.waiterName === waiterName && orderDate === today;
   });
 
-  const myOrders = orders.length > 0 
-    ? [...orders].sort((a, b) => b.timestamp - a.timestamp) 
-    : [];
+  const filteredOrders = dailyWaiterOrders.filter(order => {
+    if (activeTab === "Live") return ["Pending", "Preparing", "Ready", "Delayed"].includes(order.status);
+    return order.status === "Served";
+  }).sort((a, b) => b.timestamp - a.timestamp);
+
+  const markAsServed = (id) => {
+    setOrders(prev => prev.map(order => 
+      order.id === id ? { ...order, status: "Served" } : order
+    ));
+  };
 
   const progressPercent = Math.min((dailyWaiterOrders.length / DAILY_GOAL) * 100, 100);
 
-  useEffect(() => {
-    const latestOrder = myOrders[0];
-    if (latestOrder?.status === "Ready") {
-      const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
-      audio.play().catch(() => console.log("Audio blocked"));
-    }
-  }, [myOrders.map(o => o.status).join(',')]);
-
-  const totals = myOrders.reduce((acc, order) => {
+  const totals = dailyWaiterOrders.reduce((acc, order) => {
     acc[order.paymentMethod] = (acc[order.paymentMethod] || 0) + order.total;
     acc.all += order.total;
     return acc;
   }, { Cash: 0, Card: 0, Momo: 0, all: 0 });
+
+
+  const addMoreToOrder = (existingOrder) => {
+  // 1. Load the existing order's items back into the cart
+  setCart(existingOrder.items);
+  // 2. Set the table name automatically
+  setTableName(existingOrder.tableName);
+  // 3. Switch tab back to "Order"
+  setActiveTab("order");
+  // 4. Remove the old entry (it will be replaced by the updated one)
+  setOrders(prev => prev.filter(o => o.id !== existingOrder.id));
+};
 
   return (
     <div className={`p-4 md:p-8 min-h-screen font-[Outfit] pb-24 transition-colors duration-300 ${
       theme === 'dark' ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'
     }`}>
       
-      <div className="mb-8">
-          <h1 className="text-2xl font-black uppercase tracking-tighter">My Collections</h1>
-          <p className={`${theme === 'dark' ? 'text-slate-500' : 'text-zinc-500'} text-sm`}>
-            Track your performance and live statuses
-          </p>
+      {/* HEADER WITH OPTION 2: SERVICE BADGE */}
+      <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black uppercase tracking-tighter italic">My Collections</h1>
+            <p className={`${theme === 'dark' ? 'text-slate-500' : 'text-zinc-500'} text-sm`}>
+              Track performance and serve ready orders
+            </p>
+          </div>
+
+          {/* ACTIVE WAITER BADGE */}
+          <div className={`inline-flex items-center gap-3 px-4 py-2 rounded-2xl border self-start md:self-auto transition-all ${
+            theme === 'dark' ? 'bg-zinc-900 border-white/10' : 'bg-white border-black/5 shadow-sm'
+          }`}>
+            <div className="relative">
+              <div className="w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center text-black shadow-lg shadow-yellow-500/20">
+                <User size={16} strokeWidth={3} />
+              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-zinc-900 rounded-full animate-pulse" />
+            </div>
+            <div>
+              <p className="text-[8px] font-black uppercase tracking-[0.2em] text-zinc-500 leading-none mb-1">Authenticated</p>
+              <h3 className="text-[11px] font-black uppercase tracking-tight text-yellow-500">{waiterName}</h3>
+            </div>
+          </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-        {/* Progress Card */}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <div className={`p-4 rounded-2xl border transition-all ${
           theme === 'dark' ? 'bg-zinc-900 border-slate-800' : 'bg-white border-black/5 shadow-sm'
         }`}>
-          <div className="flex items-center justify-between mb-2">
-            <ClipboardList className="text-orange-500" size={20} />
-            <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Goal</span>
-          </div>
-          <p className="text-[10px] font-bold uppercase text-zinc-500">Today's Orders</p>
-          <div className="flex items-baseline gap-2 mb-3">
-            <h3 className="text-2xl font-black">{dailyWaiterOrders.length}</h3>
-            <span className="text-[10px] font-bold text-slate-500">/ {DAILY_GOAL}</span>
-          </div>
-          <div className="space-y-1">
-            <div className={`w-full h-1.5 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-black' : 'bg-zinc-100'}`}>
-              <div 
-                className="h-full bg-orange-500 rounded-full transition-all duration-1000"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
+          <p className="text-[10px] font-bold uppercase text-zinc-500 mb-1">Goal Progress</p>
+          <h3 className="text-xl font-black">{dailyWaiterOrders.length} <span className="text-xs opacity-30">/ {DAILY_GOAL}</span></h3>
+          <div className="w-full h-1 bg-zinc-800 mt-2 rounded-full overflow-hidden">
+            <div className="h-full bg-orange-500" style={{ width: `${progressPercent}%` }} />
           </div>
         </div>
+        <SummaryCard theme={theme} label="Cash" value={totals.Cash} icon={<Banknote size={16} className="text-emerald-500" />} />
+        <SummaryCard theme={theme} label="Momo" value={totals.Momo} icon={<Smartphone size={16} className="text-yellow-500" />} />
+        <SummaryCard theme={theme} label="Card" value={totals.Card} icon={<CreditCard size={16} className="text-blue-500" />} />
+        <SummaryCard theme={theme} label="Total" value={totals.all} highlight />
+      </div>
 
-        <SummaryCard theme={theme} label="Total Cash" value={totals.Cash} icon={<Banknote className="text-emerald-500" />} />
-        <SummaryCard theme={theme} label="Mobile Money" value={totals.Momo} icon={<Smartphone className="text-yellow-500" />} />
-        <SummaryCard theme={theme} label="Card Sales" value={totals.Card} icon={<CreditCard className="text-blue-500" />} />
-        <SummaryCard theme={theme} label="Gross Total" value={totals.all} icon={<Clock className={theme === 'dark' ? 'text-white' : 'text-black'} />} highlight />
+      {/* Tabs and Orders follow... */}
+      <div className="flex gap-4 mb-6 border-b border-white/5">
+        <button 
+          onClick={() => setActiveTab("Live")}
+          className={`pb-2 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'Live' ? 'text-yellow-500 border-b-2 border-yellow-500' : 'text-zinc-500'}`}
+        >
+          Live Orders ({dailyWaiterOrders.filter(o => o.status !== "Served").length})
+        </button>
+        <button 
+          onClick={() => setActiveTab("History")}
+          className={`pb-2 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'History' ? 'text-yellow-500 border-b-2 border-yellow-500' : 'text-zinc-500'}`}
+        >
+          Served ({dailyWaiterOrders.filter(o => o.status === "Served").length})
+        </button>
       </div>
 
       <div className="space-y-3">
-        {myOrders.map((order) => (
-          <div key={order.id} className={`p-4 rounded-2xl flex items-center justify-between group transition-all border ${
-            theme === 'dark' 
-              ? `bg-zinc-900 ${getStatusBorder(order.status, 'dark')}` 
-              : `bg-white ${getStatusBorder(order.status, 'light')}`
-          }`}>
-            <div className="flex items-center gap-4">
-              <div className={`p-3 rounded-xl border ${
-                theme === 'dark' ? 'bg-black border-slate-800' : 'bg-zinc-100 border-zinc-200'
-              } ${getIconColor(order.paymentMethod)}`}>
-                {order.paymentMethod === 'Cash' && <Banknote size={20} />}
-                {order.paymentMethod === 'Card' && <CreditCard size={20} />}
-                {order.paymentMethod === 'Momo' && <Smartphone size={20} />}
-              </div>
-              <div>
-                <p className={`font-bold text-sm flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
-                  {order.id}
-                  <StatusBadge status={order.status} />
-                </p>
-                <p className={`text-[10px] uppercase font-bold tracking-tighter ${theme === 'dark' ? 'text-slate-500' : 'text-zinc-400'}`}>
-                   {order.items?.length || 0} Items
-                </p>
-              </div>
-            </div>
-
-            <div className="text-right flex items-center gap-4">
-              <p className={`text-sm font-black ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
-                UGX {(order.total || 0).toLocaleString()}
-              </p>
-              <ChevronRight size={16} className="text-zinc-500" />
-            </div>
+        {filteredOrders.length === 0 ? (
+          <div className="py-20 text-center opacity-20">
+            <ClipboardList size={40} className="mx-auto mb-2" />
+            <p className="text-[10px] font-black uppercase tracking-widest">No {activeTab} Orders</p>
           </div>
-        ))}
+        ) : (
+          filteredOrders.map((order) => (
+            <div key={order.id} className={`p-4 rounded-[2rem] flex items-center justify-between group transition-all border-2 ${
+              theme === 'dark' 
+                ? `bg-zinc-900 ${getStatusBorder(order.status, 'dark')}` 
+                : `bg-white ${getStatusBorder(order.status, 'light')}`
+            }`}>
+              <div className="flex items-center gap-4">
+                <div className={`p-3 rounded-xl ${theme === 'dark' ? 'bg-black' : 'bg-zinc-100'} ${getIconColor(order.paymentMethod)}`}>
+                  {order.paymentMethod === 'Cash' && <Banknote size={20} />}
+                  {order.paymentMethod === 'Card' && <CreditCard size={20} />}
+                  {order.paymentMethod === 'Momo' && <Smartphone size={20} />}
+                </div>
+                <div>
+                  <p className="font-black text-sm flex items-center gap-2">
+                    {order.id}
+                    <StatusBadge status={order.status} />
+                  </p>
+                  <p className="text-[10px] uppercase font-bold text-zinc-500">
+                     {order.items?.length || 0} Items • UGX {order.total.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                {order.status === "Ready" && (
+                  <button 
+                    onClick={() => markAsServed(order.id)}
+                    className="bg-emerald-500 text-black px-6 py-2 rounded-xl text-[10px] font-black uppercase italic animate-pulse shadow-lg shadow-emerald-500/20"
+                  >
+                    Serve Now
+                  </button>
+                )}
+                <ChevronRight size={16} className="text-zinc-700" />
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
@@ -127,6 +170,7 @@ function StatusBadge({ status }) {
     Pending: { color: "bg-zinc-800 text-zinc-400", icon: <Timer size={10} />, label: "Pending" },
     Preparing: { color: "bg-blue-600 text-white", icon: <Flame size={10} />, label: "Cooking" },
     Ready: { color: "bg-emerald-500 text-black", icon: <CheckCircle size={10} />, label: "Ready" },
+    Served: { color: "bg-zinc-800 text-zinc-600", icon: <Utensils size={10} />, label: "Served" },
     Delayed: { color: "bg-rose-600 text-white", icon: <AlertCircle size={10} />, label: "Late" }
   };
   const config = configs[status] || configs.Pending;

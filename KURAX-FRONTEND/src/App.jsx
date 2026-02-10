@@ -13,6 +13,7 @@ import KitchenRoutes from "./staff/routes/KitchenRoutes";
 import CashierRoutes from "./staff/routes/CashierRoutes.jsx";
 import DirectorRoutes from "./staff/routes/DirectorRoutes.jsx"; 
 import AccountantRoutes from "./staff/routes/AccountantRoutes.jsx";
+import ManagerRoutes from "./staff/routes/ManagerRoutes.jsx";
 
 
 export default function App() {
@@ -38,6 +39,10 @@ export default function App() {
 
       {/* WAITER (Table Management) */}
       <Route path="/staff/waiter/*" element={<WaiterRoutes />} />
+
+
+      {/* MANAGER (Table Management) */}
+      <Route path="/staff/manager/*" element={<ManagerRoutes />} />
 
       <Route path="/accountant/*" element={<AccountantRoutes />} />
 

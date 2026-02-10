@@ -60,14 +60,14 @@ export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
 
       {/* GRID SECTION */}
       {filteredMenus.length === 0 ? (
-        <div className={`py-20 flex flex-col items-center justify-center rounded-[2.5rem] border ${theme === 'dark' ? 'bg-zinc-900/30 border-white/5' : 'bg-zinc-50 border-black/5'}`}>
+        <div className={`py-60 flex flex-col items-center justify-center rounded-[2.5rem] border ${theme === 'dark' ? 'bg-zinc-900/30 border-white/5' : 'bg-zinc-50 border-black/5'}`}>
           <SearchX size={40} className="text-zinc-400 mb-3" />
           <p className="text-zinc-500 text-sm font-bold italic tracking-tighter">
             No items in {activeCategory} match "{searchQuery}"
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 md:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2.5 gap-6 md:gap-8">
           {filteredMenus.map((item) => (
             <div 
               key={item.id} 

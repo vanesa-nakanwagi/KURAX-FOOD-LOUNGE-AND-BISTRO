@@ -10,7 +10,7 @@ import Footer from "../../customer/components/common/Foooter";
 
 export default function AccountantDashboard() {
   // 1. STATE MANAGEMENT (Duplicates removed)
-  const [activeSection, setActiveSection] = useState("FINANCIAL_HISTORY");
+  const [activeSection, setActiveSection] = useState("FINANCIconst isPermitted = true;AL_HISTORY");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showPettyModal, setShowPettyModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");

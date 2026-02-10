@@ -1,13 +1,32 @@
 import React, { useState } from "react";
 import NewOrder from "./NewOrder";
 import OrderHistory from "./OrderHistory";
-import { LayoutDashboard, PlusCircle, Receipt, UtensilsCrossed } from "lucide-react";
+import { PlusCircle, Receipt, LogOut, Clock, Printer, X } from "lucide-react"; // Added new icons
 import logo from "../../../customer/assets/images/logo.jpeg";
-import { useTheme } from "../../../customer/components/context/ThemeContext"; // Added theme context
+import { useTheme } from "../../../customer/components/context/ThemeContext"; 
+import { useData } from "../../../customer/components/context/DataContext"; // Added to get order data
 
 export default function WaiterLayout() {
   const [activeTab, setActiveTab] = useState("order");
-  const { theme } = useTheme(); // Access current theme
+  const [showShiftModal, setShowShiftModal] = useState(false); // Modal State
+  const { theme } = useTheme();
+  const { orders = [] } = useData() || {}; // Get global orders
+
+  // Configuration (Matches your OrderHistory logic)
+  const waiterName = "John Doe"; 
+  const today = new Date().toISOString().split('T')[0];
+
+  // Logic to calculate shift totals
+  const dailyOrders = orders.filter(order => {
+    const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
+    return order.waiterName === waiterName && orderDate === today;
+  });
+
+  const shiftTotals = dailyOrders.reduce((acc, order) => {
+    acc[order.paymentMethod] = (acc[order.paymentMethod] || 0) + (order.total || 0);
+    acc.all += (order.total || 0);
+    return acc;
+  }, { Cash: 0, Card: 0, Momo: 0, all: 0 });
 
   const renderContent = () => {
     switch (activeTab) {
@@ -22,6 +41,16 @@ export default function WaiterLayout() {
       theme === 'dark' ? 'bg-black text-slate-100' : 'bg-zinc-50 text-zinc-900'
     }`}>
       
+      {/* End Shift Modal */}
+      <EndShiftModal 
+        isOpen={showShiftModal} 
+        onClose={() => setShowShiftModal(false)} 
+        totals={shiftTotals}
+        orderCount={dailyOrders.length}
+        waiterName={waiterName}
+        theme={theme}
+      />
+
       {/* Top Header */}
       <header className={`flex items-center justify-between px-6 py-4 border-b transition-colors duration-300 ${
         theme === 'dark' ? 'bg-zinc-900/50 border-white/5' : 'bg-white border-black/5'
@@ -41,12 +70,11 @@ export default function WaiterLayout() {
         </div>
       </header>
 
-      {/* Main View Area */}
       <main className="flex-1 overflow-y-auto pb-24">
         {renderContent()}
       </main>
 
-      {/* Mobile-First Bottom Navigation */}
+      {/* Bottom Navigation */}
       <nav className={`fixed bottom-0 left-0 right-0 backdrop-blur-xl border-t px-8 py-3 pb-6 flex justify-around items-center z-[100] transition-colors duration-300 ${
         theme === 'dark' ? 'bg-zinc-900/80 border-white/5' : 'bg-white/80 border-black/5'
       }`}>
@@ -67,26 +95,80 @@ export default function WaiterLayout() {
           theme={theme}
         />
 
+        {/* NEW END SHIFT BUTTON */}
+        <NavButton 
+          active={false} 
+          onClick={() => setShowShiftModal(true)}
+          icon={<LogOut size={24} />}
+          label="End Shift"
+          theme={theme}
+          isDanger={true}
+        />
       </nav>
     </div>
   );
 }
 
-/* Sub-component for Nav Buttons */
-function NavButton({ icon, label, active, onClick, theme }) {
-  // Determine inactive text color based on theme
-  const inactiveColor = theme === 'dark' ? "text-slate-500 hover:text-slate-300" : "text-zinc-400 hover:text-zinc-600";
+/* Modal and Sub-components */
+function EndShiftModal({ isOpen, onClose, totals, orderCount, waiterName, theme }) {
+  if (!isOpen) return null;
+
+  const cardBg = theme === 'dark' ? 'bg-black/40 border-white/5' : 'bg-zinc-50 border-black/5';
 
   return (
-    <button 
-      onClick={onClick}
-      className={`flex flex-col items-center gap-1 transition-all duration-300 ${
-        active ? "text-yellow-500 scale-110" : inactiveColor
-      }`}
-    >
-      <div className={`${active ? "drop-shadow-[0_0_8px_rgba(234,179,8,0.4)]" : ""}`}>
-        {icon}
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+      <div className={`w-full max-w-sm rounded-[3rem] p-8 border ${
+        theme === 'dark' ? 'bg-zinc-900 border-white/10 text-white' : 'bg-white border-black/5 text-zinc-900'
+      }`}>
+        <div className="flex flex-col items-center text-center">
+          <div className="w-14 h-14 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center mb-4">
+            <Clock size={28} />
+          </div>
+          <h2 className="text-xl font-black uppercase italic tracking-tighter">Shift Summary</h2>
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-6">{waiterName}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <SummaryRow label="Orders" value={orderCount} bg={cardBg} />
+          <SummaryRow label="Cash" value={`UGX ${totals.Cash.toLocaleString()}`} bg={cardBg} />
+          <SummaryRow label="Momo" value={`UGX ${totals.Momo.toLocaleString()}`} bg={cardBg} />
+          <SummaryRow label="Card" value={`UGX ${totals.Card.toLocaleString()}`} bg={cardBg} />
+        </div>
+
+        <div className="bg-yellow-500 p-5 rounded-[2rem] text-black text-center mb-6">
+          <p className="text-[10px] font-black uppercase opacity-60">Total Gross</p>
+          <p className="text-2xl font-black">UGX {totals.all.toLocaleString()}</p>
+        </div>
+
+        <div className="space-y-3">
+          <button className="w-full py-4 bg-zinc-900 text-white dark:bg-white dark:text-black rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-2">
+             <Printer size={16} /> Print Report
+          </button>
+          <button onClick={onClose} className="w-full text-zinc-500 font-black uppercase text-[10px] py-2">
+            Close
+          </button>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value, bg }) {
+  return (
+    <div className={`p-4 rounded-2xl border ${bg}`}>
+      <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">{label}</p>
+      <p className="text-xs font-black truncate">{value}</p>
+    </div>
+  );
+}
+
+function NavButton({ icon, label, active, onClick, theme, isDanger }) {
+  const inactiveColor = theme === 'dark' ? "text-slate-500" : "text-zinc-400";
+  const colorClass = isDanger ? "text-rose-500" : active ? "text-yellow-500 scale-110" : inactiveColor;
+
+  return (
+    <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-all duration-300 ${colorClass}`}>
+      {icon}
       <span className="text-[10px] font-black uppercase tracking-tighter">{label}</span>
     </button>
   );

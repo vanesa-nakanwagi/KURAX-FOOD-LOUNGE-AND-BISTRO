@@ -4,7 +4,7 @@ import {
   Users, BarChart3, Wallet, Bell, Plus, ShieldCheck, 
   ArrowUpRight, ArrowDownRight, TrendingUp, Settings, 
   LogOut, LayoutDashboard, History, Banknote, Smartphone, 
-  CreditCard, Clock, Menu, X, Eye, EyeOff, Flame, Search
+  CreditCard, Clock, Menu, X, Eye, EyeOff, Flame, Search, ShieldAlert
 } from "lucide-react";
 
 import Logo from "../../customer/assets/images/logo.jpeg";
@@ -16,7 +16,7 @@ export default function DirectorDashboard() {
   const [activeTab, setActiveTab] = useState("OVERVIEW"); 
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { staffList, setStaffList, orders } = useData() || { staffList: [], setStaffList: () => {}, orders: [] };
+  const { staffList, setStaffList, orders, currentUser } = useData() || { staffList: [], setStaffList: () => {}, orders: [] };
  
   const [user] = useState({ name: "Essah", role: "Director" });
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
@@ -123,7 +123,8 @@ export default function DirectorDashboard() {
 )}
         {activeTab === "STAFF" && (
   <StaffSection 
-    onAdd={() => {
+  currentUser={currentUser}
+  onAdd={() => {
       setEditingStaff(null); // Ensure it's empty for "New"
       setShowCreateAccount(true);
     }}
@@ -217,16 +218,19 @@ function OverviewSection({ onViewRegistry }){
 
 
 
-function StaffSection({ onAdd, staffList, setStaffList, orders, onEdit }) {
+function StaffSection({ onAdd, staffList, setStaffList, orders, onEdit, currentUser }) {
     const [searchTerm, setSearchTerm] = useState("");
     const today = new Date().toISOString().split('T')[0];
     const DAILY_GOAL = 20;
 
-    // Filter staff based on search
-    const filteredStaff = (staffList || []).filter(staff => 
-        staff.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        staff.role.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+const filteredStaff = (staffList || []).filter(staff => {
+        const matchesSearch = staff.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              staff.role.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        const isNotMe = staff.id !== currentUser?.id; // Hide the logged-in director
+
+        return matchesSearch && isNotMe;
+    });
 
     const togglePermission = (id) => {
         const updatedStaff = staffList.map(s => 
@@ -283,14 +287,14 @@ function StaffSection({ onAdd, staffList, setStaffList, orders, onEdit }) {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {filteredStaff.map(staff => (
                     <StaffCard 
-                        key={staff.id} 
-                        staff={staff}
-                        stats={getStaffDailyStats(staff.name)}
-                        goal={DAILY_GOAL}
-                        onTogglePermission={() => togglePermission(staff.id)}
-                        onDelete={() => deleteStaff(staff.id, staff.name)}
-                        onEdit={() => onEdit(staff)}
-                    />
+        key={staff.id} 
+        staff={staff}
+        // Only calculate stats if they aren't a Director
+        stats={staff.role === "DIRECTOR" ? null : getStaffDailyStats(staff.name)}
+        onTogglePermission={() => togglePermission(staff.id)}
+        onDelete={() => deleteStaff(staff.id, staff.name)}
+        onEdit={() => onEdit(staff)}
+    />
                 ))}
             </div>
         </div>
@@ -507,53 +511,62 @@ function OrderRow({ id, waiter, method, amount, time, status }) {
 }
 
 function StaffCard({ staff, stats, onTogglePermission, onDelete, onEdit }) {
-    // 1. Permission Logic: Only Managers/Supervisors get the "Unlock" toggle
+    // 1. Expanded Logic for Director
+    const isDirector = staff.role === "DIRECTOR";
     const canTakeOrdersRole = staff.role === "MANAGER" || staff.role === "SUPERVISOR";
     const isWaiter = staff.role === "WAITER";
     const isChef = staff.role === "CHEF";
-      const DAILY_GOAL = 20;
- 
+    const DAILY_GOAL = 20;
 
-    // 2. Access Status
-    const hasOrderAccess = isWaiter || (canTakeOrdersRole && staff.isPermitted);
+    // 2. Safe Stats (Fallback to 0 if stats is null/undefined)
+    const safeStats = stats || { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 };
 
     return (
         <div className="bg-black/60 border border-white/5 p-6 rounded-[2rem] flex flex-col gap-6 hover:border-white/10 transition-all">
             <div className="flex justify-between items-start">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center font-black text-white border border-white/5 uppercase">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-white border border-white/5 uppercase ${isDirector ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30' : 'bg-zinc-800'}`}>
                         {staff.name[0]}
                     </div>
                     <div>
                         <p className="text-sm font-black text-white italic tracking-tight">{staff.name}</p>
-                        <p className={`text-[9px] font-bold uppercase tracking-widest ${isChef ? 'text-blue-400' : 'text-yellow-500'}`}>
+                        <p className={`text-[9px] font-bold uppercase tracking-widest ${
+                            isDirector ? 'text-rose-500' : isChef ? 'text-blue-400' : 'text-yellow-500'
+                        }`}>
                             {staff.role}
                         </p>
                     </div>
                 </div>
-               
-
-                {/* Director's Toggle: Only shown for high-level staff */}
-                {canTakeOrdersRole && (
-                    <button 
-                        onClick={onTogglePermission}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all ${
-                            staff.isPermitted 
-                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
-                            : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
-                        }`}
-                    >
-                        {staff.isPermitted ? <ShieldCheck size={12}/> : <EyeOff size={12}/>}
-                        <span className="text-[8px] font-black uppercase">
-                            {staff.isPermitted ? "Permitted" : "Locked"}
-                        </span>
-                    </button>
-                )}
+                 {/* Hide the toggle if it's a Director, show it for Managers/Supervisors */}
+{(canTakeOrdersRole && !isDirector) && (
+    <button 
+        onClick={onTogglePermission}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all ${
+            staff.isPermitted 
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
+            : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+        }`}
+    >
+        {staff.isPermitted ? <ShieldCheck size={12}/> : <EyeOff size={12}/>}
+        <span className="text-[8px] font-black uppercase">
+            {staff.isPermitted ? "Permitted" : "Locked"}
+        </span>
+    </button>
+)}
             </div>
 
             {/* STATS SECTION */}
-            {isChef ? (
-                // CHEF VIEW: No financial data
+            {isDirector ? (
+                // DIRECTOR VIEW: Administrative Info
+                <div className="bg-zinc-900/80 p-6 rounded-2xl border border-yellow-500/10 text-center flex flex-col items-center justify-center gap-2">
+                    <div className="p-2 bg-yellow-500/10 rounded-full text-yellow-500">
+                        <ShieldAlert size={20} />
+                    </div>
+                    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Master Admin Account</p>
+                    <p className="text-[8px] font-bold text-zinc-600 uppercase">No Sales Tracking for this role</p>
+                </div>
+            ) : isChef ? (
+                // CHEF VIEW
                 <div className="bg-zinc-900/50 p-6 rounded-2xl border border-white/5 text-center flex flex-col items-center justify-center gap-2">
                     <div className="p-2 bg-blue-500/10 rounded-full text-blue-400">
                         <Flame size={20} />
@@ -561,44 +574,51 @@ function StaffCard({ staff, stats, onTogglePermission, onDelete, onEdit }) {
                     <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kitchen Operations Only</p>
                 </div>
             ) : (
-                // ORDER-TAKERS VIEW: (Waiters, Managers, Supervisors)
+                // ORDER-TAKERS VIEW (Waiters, Managers, Supervisors)
                 <>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="bg-zinc-900/50 p-3 rounded-2xl border border-white/5 text-center">
-    <p className="text-[8px] font-black text-zinc-500 uppercase mb-1">Orders Taken</p>
-    <p className="text-lg font-black italic">
-        {stats.totalOrders} 
-        <span className="text-xs text-zinc-600 not-italic ml-1">/ {DAILY_GOAL}</span>
-    </p>
-</div>
-                       <div className="bg-yellow-500 p-3 rounded-2xl text-black text-center">
-    <p className="text-[8px] font-black text-black uppercase mb-1">Total Revenue</p>
-    <p className="text-sm font-black italic">
-        UGX {stats.totalRevenue.toLocaleString()}
-    </p>
-</div>
+                            <p className="text-[8px] font-black text-zinc-500 uppercase mb-1">Orders Taken</p>
+                            <p className="text-lg font-black italic">
+                                {safeStats.totalOrders} 
+                                <span className="text-xs text-zinc-600 not-italic ml-1">/ {DAILY_GOAL}</span>
+                            </p>
+                        </div>
+                        <div className="bg-yellow-500 p-3 rounded-2xl text-black text-center">
+                            <p className="text-[8px] font-black text-black uppercase mb-1">Total Revenue</p>
+                            <p className="text-sm font-black italic">
+                                UGX {safeStats.totalRevenue.toLocaleString()}
+                            </p>
+                        </div>
                     </div>
 
                     <div className="space-y-2 border-t border-white/5 pt-4">
-                        <FinanceMiniRow label="Cash" value={stats.CASH || 0} color="text-emerald-500" />
-                        <FinanceMiniRow label="Momo" value={stats.MOMO || 0} color="text-yellow-500" />
-                        <FinanceMiniRow label="Card" value={stats.CARD || 0} color="text-blue-500" />
+                        <FinanceMiniRow label="Cash" value={safeStats.CASH || 0} color="text-emerald-500" />
+                        <FinanceMiniRow label="Momo" value={safeStats.MOMO || 0} color="text-yellow-500" />
+                        <FinanceMiniRow label="Card" value={safeStats.CARD || 0} color="text-blue-500" />
                     </div>
                 </>
             )}
 
             <div className="flex gap-4 pt-2 mt-auto">
                 <button 
-    onClick={onEdit} // Make sure this is linked!
-    className="text-[9px] font-black uppercase text-zinc-600 hover:text-white transition-colors"
->
-    Edit Profile
-</button>
-                <button onClick={onDelete} className="text-[9px] font-black uppercase text-zinc-600 hover:text-rose-500 transition-colors">Terminate</button>
+                    onClick={onEdit}
+                    className="text-[9px] font-black uppercase text-zinc-600 hover:text-white transition-colors"
+                >
+                    Edit Profile
+                </button>
+                {/* Prevent deleting Directors easily? (Optional safety) */}
+                <button 
+                    onClick={onDelete} 
+                    className="text-[9px] font-black uppercase text-zinc-600 hover:text-rose-500 transition-colors"
+                >
+                    Terminate
+                </button>
             </div>
         </div>
     );
 }
+
 function FinanceMiniRow({ label, value, color }) {
     return (
         <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-tighter">
@@ -706,16 +726,17 @@ function CreateStaffModal({ onClose, onSave, initialData}, staffList) {
 
     
 
-    // 3. Package the data if unique
     const staffPayload = {
-        ...(initialData || {}),
-        id: formData.id || Date.now(),
-        name: formData.name,
-        role: formData.role,
-        pin: formData.pin,
-        status: initialData?.status || "OFF-DUTY",
-        isPermitted: initialData ? initialData.isPermitted : formData.role === "WAITER",
-    };
+    ...(initialData || {}),
+    id: formData.id || Date.now(),
+    name: formData.name,
+    role: formData.role,
+    pin: formData.pin,
+    status: initialData?.status || "OFF-DUTY",
+    isPermitted: formData.role === "DIRECTOR" 
+        ? true 
+        : (initialData ? initialData.isPermitted : formData.role === "WAITER"),
+};
 
     onSave(staffPayload);
 };
@@ -748,6 +769,9 @@ function CreateStaffModal({ onClose, onSave, initialData}, staffList) {
                         <option value="CHEF">CHEF</option>
                         <option value="MANAGER">MANAGER</option>
                         <option value="SUPERVISOR">SUPERVISOR</option>
+                        <option value="DIRECTOR">DIRECTOR</option>
+                        <option value="ACCOUNTANT">ACCOUNTANT</option>
+                        <option value="CONTENT-MANAGER">CONTENT MANAGER</option>
                     </select>
 
                     <div className="relative">
