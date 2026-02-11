@@ -91,52 +91,33 @@ const removeFromCart = (id) => {
     item.id === id ? { ...item, note: note } : item
   ));
 };
+const handleProcessOrder = () => {
+  if (!tableName) return alert("Please select a table");
 
-  const handleProcessOrder = () => {
-  if (!tableName) {
-    alert("Please enter a Table Name/Number first!");
-    return;
-  }
+  const newOrder = {
+    id: `ORD-${Date.now().toString().slice(-6)}`,
+    tableName,
+    items: cart,
+    total: cartTotal,
+    paymentMethod, // "Momo", "Cash", or "Card"
+    status: "Pending", // This ensures it goes to the kitchen immediately
+    
+    // THE LOGIC: Only Cash/Card are marked as paid immediately. 
+    // Momo is FALSE so it won't show in your Summary Cards yet.
+    isPaid: paymentMethod !== "Momo", 
+    
+    timestamp: new Date().toISOString(),
+    waiterName: "John Doe"
+  };
 
-  // Check if this table already has an active (unpaid) order
-  const existingOrder = orders.find(o => o.tableName === tableName && o.isPaid === false);
+  // 1. Add order to the list
+  setOrders(prev => [...prev, newOrder]);
 
-  if (existingOrder) {
-    // UPDATE EXISTING ORDER (Customer asked for more items)
-    const updatedOrders = orders.map(order => {
-      if (order.id === existingOrder.id) {
-        return {
-          ...order,
-          // Merge old items with new items in the cart
-          items: [...order.items, ...cart.map(item => ({ ...item, isNew: true }))], 
-          total: order.total + cartTotal,
-          status: "Pending", // Reset to Pending so Chef sees it
-        };
-      }
-      return order;
-    });
-    setOrders(updatedOrders);
-  } else {
-    // CREATE BRAND NEW ORDER
-    const finalOrder = {
-      id: `TBL-${tableName}-${Date.now().toString().slice(-4)}`,
-      items: [...cart],
-      total: cartTotal,
-      paymentMethod,
-      status: "Pending",
-      isPaid: false,
-      tableName,
-      timestamp: new Date().toISOString(),
-      waiterName: currentWaiter,
-    };
-    setOrders(prev => [...prev, finalOrder]);
-  }
-
-  // Reset everything
+  // 2. Clear the cart and close the side panel/modal
   setCart([]);
   setTableName("");
-  setIsCartOpen(false); 
-  localStorage.removeItem('kurax_waiter_cart');
+  setIsCartOpen(false); // Close the cart sidebar
+  
 };
   return (
     <div className={`flex flex-col lg:flex-row h-full font-[Outfit] overflow-hidden relative transition-colors duration-300
@@ -210,7 +191,7 @@ const removeFromCart = (id) => {
           placeholder="Search items..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className={`w-full border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-bold outline-none transition-all
+          className={`w-full border-none rounded-full py-4 pl-12 pr-4 text-sm font-bold outline-none transition-all
             ${theme === 'dark' 
               ? 'bg-zinc-900 text-white focus:ring-2 focus:ring-yellow-500' 
               : 'bg-zinc-100 text-zinc-900 focus:ring-2 focus:ring-yellow-500'}`}
@@ -220,7 +201,7 @@ const removeFromCart = (id) => {
       {/* Cart Button */}
       <button 
         onClick={() => setIsCartOpen(true)} 
-        className="relative w-14 h-14 rounded-2xl bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg shadow-yellow-500/20 active:scale-95 transition-transform"
+        className="relative w-14 h-14 rounded-full bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg shadow-yellow-500/20 active:scale-95 transition-transform"
       >
         <ShoppingCart size={24} className="text-black" />
         {cart.length > 0 && (
@@ -231,7 +212,7 @@ const removeFromCart = (id) => {
       </button>
 
       {/* Theme Toggle - Tucked neatly at the end */}
-      <div className={`shrink-0 rounded-2xl p-2 border ${theme === 'dark' ? 'bg-zinc-900 border-white/10' : 'bg-zinc-100 border-black/10'}`}>
+      <div className={`shrink-0 rounded-full p-2 border ${theme === 'dark' ? 'bg-zinc-900 border-white/10' : 'bg-zinc-100 border-black/10'}`}>
         <ThemeToggle />
       </div>
     </div>
@@ -420,7 +401,14 @@ function CartModal({
             <div className="grid grid-cols-3 gap-3">
               <PaymentTab label="Cash" icon={<Banknote size={20}/>} active={paymentMethod === 'Cash'} onClick={setPaymentMethod} theme={theme} />
               <PaymentTab label="Card" icon={<CreditCard size={20}/>} active={paymentMethod === 'Card'} onClick={setPaymentMethod} theme={theme} />
-              <PaymentTab label="Momo" icon={<Smartphone size={20}/>} active={paymentMethod === 'Momo'} onClick={(val) => { setPaymentMethod(val); setShowMomoModal(true); }} theme={theme} />
+              {/* NEW CODE: Just sets the method, no popup */}
+<PaymentTab 
+  label="Momo" 
+  icon={<Smartphone size={20}/>} 
+  active={paymentMethod === 'Momo'} 
+  onClick={setPaymentMethod} // Just pass the function directly
+  theme={theme} 
+/>
             </div>
           </div>
 
