@@ -179,56 +179,70 @@ const removeFromCart = (id) => {
         totalAmount={cartTotal} 
       />
 
-      {/* MENU AREA */}
-      <div className={`flex-1 p-6 overflow-y-auto transition-colors duration-300 ${theme === 'dark' ? 'bg-black' : 'bg-white'}`}>
-        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-          <h2 className={`text-xl font-black uppercase italic border-l-4 border-yellow-500 pl-3 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
-            Explore Menu
-          </h2>
-        
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
-              <input 
-                type="text"
-                placeholder="Search menu items..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className={`w-full border rounded-full py-2 pl-10 pr-4 text-sm outline-none transition-all
-                  ${theme === 'dark' 
-                    ? 'bg-zinc-900 border-white/10 text-white focus:border-yellow-500' 
-                    : 'bg-zinc-100 border-black/10 text-zinc-900 focus:border-yellow-500'}`}
-              />
-            </div>
+{/* MENU AREA */}
+<div className={`flex-1 px-4 md:px-6 py-6 overflow-y-auto transition-colors duration-300 ${theme === 'dark' ? 'bg-black' : 'bg-white'}`}>
+  
+  {/* MOBILE-OPTIMIZED HEADER STACK */}
+  <div className="flex flex-col gap-6 mb-8">
+    
+    {/* 1. TITLE SECTION (Left Aligned) */}
+    <div className="flex flex-col items-start">
+      <div className="flex items-center gap-3">
+        {/* Bold Accent Bar */}
+        <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
+        <h2 className={`text-3xl font-black uppercase italic tracking-tighter leading-none ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+          Explore Menu
+        </h2>
+      </div>
+      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em] mt-2 ml-4">
+        Select items to start your order
+      </p>
+    </div>
 
-          <button 
-  onClick={() => setIsCartOpen(true)} 
-  className="relative w-12 h-12 rounded-full bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg shadow-yellow-500/20 hover:scale-105 transition-transform active:scale-95"
->
-  <ShoppingCart size={22} className="text-black" />
-  {cart.length > 0 && (
-    <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-md animate-in zoom-in duration-300">
-      {cart.length}
-    </span>
-  )}
-</button>
-
-            <div className={`shrink-0 rounded-full p-1 border ${theme === 'dark' ? 'bg-zinc-900 border-white/10' : 'bg-zinc-100 border-black/10'}`}>
-              <ThemeToggle />
-            </div>
-          </div>
-        </div>
-
-        <StaffOrderMenu onAddItem={addToCart} searchQuery={searchQuery} />
+    {/* 2. SEARCH & CONTROLS ROW */}
+    <div className="flex items-center gap-3 w-full">
+      
+      {/* Search Input - Full width on mobile */}
+      <div className="relative flex-grow">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+        <input 
+          type="text"
+          placeholder="Search items..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className={`w-full border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-bold outline-none transition-all
+            ${theme === 'dark' 
+              ? 'bg-zinc-900 text-white focus:ring-2 focus:ring-yellow-500' 
+              : 'bg-zinc-100 text-zinc-900 focus:ring-2 focus:ring-yellow-500'}`}
+        />
       </div>
 
-      {/* MOBILE BACKDROP */}
-{isCartOpen && (
-  <div 
-    onClick={() => setIsCartOpen(false)}
-    className="fixed inset-0 bg-black/60 z-[150] lg:hidden"
-  />
-)}
+      {/* Cart Button */}
+      <button 
+        onClick={() => setIsCartOpen(true)} 
+        className="relative w-14 h-14 rounded-2xl bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg shadow-yellow-500/20 active:scale-95 transition-transform"
+      >
+        <ShoppingCart size={24} className="text-black" />
+        {cart.length > 0 && (
+          <span className="absolute -top-1 -right-1 bg-black text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-yellow-500">
+            {cart.length}
+          </span>
+        )}
+      </button>
+
+      {/* Theme Toggle - Tucked neatly at the end */}
+      <div className={`shrink-0 rounded-2xl p-2 border ${theme === 'dark' ? 'bg-zinc-900 border-white/10' : 'bg-zinc-100 border-black/10'}`}>
+        <ThemeToggle />
+      </div>
+    </div>
+  </div>
+
+  {/* MENU GRID */}
+  <div className="pb-24">
+    <StaffOrderMenu onAddItem={addToCart} searchQuery={searchQuery} />
+  </div>
+</div>
+   
 
     </div>
   );
