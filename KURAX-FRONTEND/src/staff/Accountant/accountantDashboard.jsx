@@ -2,38 +2,44 @@ import React, { useState } from "react";
 import { 
   Banknote, Smartphone, CreditCard, Receipt, 
   Share2, Menu, Search, Calculator, Wallet, 
-  CheckCircle2, PlusCircle, RotateCcw 
+  CheckCircle2, PlusCircle, RotateCcw, AlertCircle, Trash2, XCircle 
 } from "lucide-react";
+import { useData } from "../../customer/components/context/DataContext"; 
 import SideBar from "./SideBar"; 
 import logo from "../../customer/assets/images/logo.jpeg";
 import Footer from "../../customer/components/common/Foooter";
 
 export default function AccountantDashboard() {
-  // 1. STATE MANAGEMENT (Duplicates removed)
-  const [activeSection, setActiveSection] = useState("FINANCIconst isPermitted = true;AL_HISTORY");
+  // 1. DATA MANAGEMENT (Global Store)
+  const { orders = [], setOrders } = useData() || {}; 
+  const [activeSection, setActiveSection] = useState("FINANCIAL_HISTORY");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showPettyModal, setShowPettyModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [pettyCashTotal, setPettyCashTotal] = useState(0);
   const [pettyLogs, setPettyLogs] = useState([]);
   const [isShiftClosed, setIsShiftClosed] = useState(false);
+  const [shiftSummary, setShiftSummary] = useState(null);
 
-  const [orders, setOrders] = useState([
-    { id: "#9021", staff: "Alex", amount: 45000, method: "CASH", time: "14:20", status: "ACTIVE" },
-    { id: "#9020", staff: "Sarah", amount: 120000, method: "MOMO", time: "14:15", status: "ACTIVE" },
-    { id: "#9019", staff: "Alex", amount: 35000, method: "CARD", time: "13:50", status: "ACTIVE" },
-  ]);
+  // --- NEW: LIFTED STATE FOR PHYSICAL COUNT ---
+  // This stays alive even when you switch pages
+  const [physicalCounts, setPhysicalCounts] = useState({ cash: 0, momo: 0, card: 0 });
 
   // 2. CALCULATIONS
-  const activeOrders = orders.filter(o => o.status === "ACTIVE");
+ // Find orders that have items marked for voiding
+const voidRequests = orders.filter(order => 
+  order.items?.some(item => item.voidRequested)
+);
+
+  const validPaidOrders = orders.filter(o => o.isPaid && !o.voidRequested);
   
   const systemTotals = {
-    cash: activeOrders.filter(o => o.method === "CASH").reduce((sum, o) => sum + o.amount, 0),
-    momo: activeOrders.filter(o => o.method === "MOMO").reduce((sum, o) => sum + o.amount, 0),
-    card: activeOrders.filter(o => o.method === "CARD").reduce((sum, o) => sum + o.amount, 0),
+    cash: validPaidOrders.filter(o => o.paymentMethod === "Cash").reduce((sum, o) => sum + o.total, 0) - pettyCashTotal,
+    momo: validPaidOrders.filter(o => o.paymentMethod === "Momo").reduce((sum, o) => sum + o.total, 0),
+    card: validPaidOrders.filter(o => o.paymentMethod === "Card").reduce((sum, o) => sum + o.total, 0),
   };
 
-  const totalRevenue = systemTotals.cash + systemTotals.momo + systemTotals.card;
+  const totalRevenue = (systemTotals.cash + pettyCashTotal) + systemTotals.momo + systemTotals.card;
 
   // 3. HANDLERS
   const handleAddPettyCash = (amount, reason) => {
@@ -43,189 +49,190 @@ export default function AccountantDashboard() {
     setShowPettyModal(false);
   };
 
-  const handleVoidOrder = (orderId) => {
-    const reason = window.prompt(`Enter reason for voiding ${orderId}:`);
-    if (reason && reason.trim() !== "") {
-      setOrders(prev => prev.map(o => 
-        o.id === orderId ? { ...o, status: "VOIDED", voidReason: reason } : o
-      ));
+ 
+const approveItemVoid = (orderId, itemIndex) => {
+  setOrders(prev => prev.map(order => {
+    if (order.id === orderId) {
+      const updatedItems = [...order.items];
+      const item = updatedItems[itemIndex];
+      
+      // Update item status instead of deleting (better for audits)
+      updatedItems[itemIndex] = {
+        ...item,
+        voidRequested: false, // Request resolved
+        voidProcessed: true,  // Marked as handled by accountant
+        status: "VOIDED",     // UI status
+        price: 0              // Remove from total cost
+      };
+
+      // Recalculate order total
+      const newTotal = updatedItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+
+      return {
+        ...order,
+        items: updatedItems,
+        total: newTotal
+      };
     }
-  };
+    return order;
+  }));
+};
+
+const rejectItemVoid = (orderId, itemIndex) => {
+  setOrders(prev => prev.map(order => {
+    if (order.id === orderId) {
+      const updatedItems = [...order.items];
+      // Simply remove the request flag to keep the item active
+      updatedItems[itemIndex] = { 
+        ...updatedItems[itemIndex], 
+        voidRequested: false 
+      };
+      return { ...order, items: updatedItems };
+    }
+    return order;
+  }));
+};
+
 
   const handleCloseShift = () => {
-  const summary = {
-    total: totalRevenue,
-    cash: systemTotals.cash,
-    momo: systemTotals.momo,
-    card: systemTotals.card,
-    petty: pettyCashTotal,
-    net: systemTotals.cash - pettyCashTotal,
-    time: new Date().toLocaleTimeString()
+    const summary = {
+      total: totalRevenue,
+      cash: systemTotals.cash,
+      momo: systemTotals.momo,
+      card: systemTotals.card,
+      petty: pettyCashTotal,
+      net: systemTotals.cash,
+      time: new Date().toLocaleTimeString()
+    };
+    setShiftSummary(summary);
+    setIsShiftClosed(true);
+    generateWhatsAppReport();
   };
-  
-  setShiftSummary(summary);
-  setIsShiftClosed(true);
-  generateWhatsAppReport(); // Automatically triggers the report for the Director
-};
 
   const generateWhatsAppReport = () => {
     const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    const netExpectedCash = systemTotals.cash - pettyCashTotal;
-    const report = `*KURAX BISTRO - DAILY AUDIT* 📅 *Date:* ${date}\n----------------------------------\n💰 *REVENUE SUMMARY*\n• Cash Sales: UGX ${systemTotals.cash.toLocaleString()}\n• Momo Sales: UGX ${systemTotals.momo.toLocaleString()}\n• Card Sales: UGX ${systemTotals.card.toLocaleString()}\n*TOTAL REVENUE: UGX ${totalRevenue.toLocaleString()}*\n\n💸 *PETTY CASH/EXPENSES*\n${pettyLogs.length > 0 ? pettyLogs.map(log => `• ${log.reason}: -${log.amount.toLocaleString()}`).join('\n') : '• No petty cash logged today.'}\n*TOTAL PETTY CASH: UGX ${pettyCashTotal.toLocaleString()}*\n\n📉 *FINAL CASH HANDOVER*\n*Expected Cash in Hand: UGX ${netExpectedCash.toLocaleString()}*`;
+    const report = `*KURAX BISTRO - DAILY AUDIT* 📅 *Date:* ${date}\n----------------------------------\n💰 *REVENUE SUMMARY*\n• Cash Sales: UGX ${systemTotals.cash.toLocaleString()}\n• Momo Sales: UGX ${systemTotals.momo.toLocaleString()}\n• Card Sales: UGX ${systemTotals.card.toLocaleString()}\n*TOTAL REVENUE: UGX ${totalRevenue.toLocaleString()}*\n\n💸 *TOTAL PETTY CASH: UGX ${pettyCashTotal.toLocaleString()}*`;
     navigator.clipboard.writeText(report);
-    alert("Dynamic report copied to clipboard!");
+    alert("Report copied to clipboard!");
   };
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-[#0a0a0a] font-[Outfit] text-slate-200">
       <SideBar 
-        activeSection={activeSection} 
-        setActiveSection={setActiveSection}
-        isOpen={mobileMenuOpen}
-        setIsOpen={setMobileMenuOpen}
+        activeSection={activeSection} setActiveSection={setActiveSection}
+        isOpen={mobileMenuOpen} setIsOpen={setMobileMenuOpen}
       />
 
       <div className="flex-1 flex flex-col">
         {/* MOBILE HEADER */}
-<div className="lg:hidden flex justify-between items-center p-4 border-b border-white/5 sticky top-0 bg-black/80 backdrop-blur-md z-[100]">
-  <div className="flex items-center gap-3">
-    <img src={logo} alt="logo" className="w-8 h-8 rounded-full object-cover border border-yellow-500/20" />
-    <div className="flex flex-col justify-center leading-tight">
-      <h1 className="text-[15px] font-black text-white uppercase tracking-tighter">
-        KURAX FOOD LOUNGE & BISTRO
-      </h1>
-      <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest">ACCOUNTANT PANEL</p>
-    </div>
-  </div>
-
-  <div className="flex items-center gap-2">
-    {/* WhatsApp button restored for Mobile */}
-    <button 
-      onClick={generateWhatsAppReport} 
-      className="p-2.5 bg-emerald-600/20 text-emerald-500 rounded-xl border border-emerald-500/20 active:scale-90 transition-transform"
-    >
-      <Share2 size={18} />
-    </button>
-    
-    <button 
-      onClick={() => setMobileMenuOpen(true)} 
-      className="text-yellow-500 p-2.5 bg-zinc-900 rounded-xl border border-white/5"
-    >
-      <Menu size={20} />
-    </button>
-  </div>
-</div>
+        <div className="lg:hidden flex justify-between items-center p-4 border-b border-white/5 sticky top-0 bg-black/80 backdrop-blur-md z-[100]">
+          <div className="flex items-center gap-3">
+            <img src={logo} alt="logo" className="w-8 h-8 rounded-full object-cover border border-yellow-500/20" />
+            <div className="flex flex-col justify-center leading-tight">
+              <h1 className="text-[15px] font-black text-white uppercase tracking-tighter">KURAX FOOD LOUNGE</h1>
+              <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest">ACCOUNTANT PANEL</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={generateWhatsAppReport} className="p-2.5 bg-emerald-600/20 text-emerald-500 rounded-xl border border-emerald-500/20">
+              <Share2 size={18} />
+            </button>
+            <button onClick={() => setMobileMenuOpen(true)} className="text-yellow-500 p-2.5 bg-zinc-900 rounded-xl border border-white/5">
+              <Menu size={20} />
+            </button>
+          </div>
+        </div>
 
         <main className="flex-grow p-4 md:p-10">
-          <div className="flex justify-between items-end mb-10">
-            <div>
-              
-              <h2 className="text-2xl md:text-4xl font-black text-white uppercase italic">
-                {activeSection === "FINANCIAL_HISTORY" ? "My Collections" : activeSection.replace("_", " ")}
-              </h2>
+          {/* TOP ALERT FOR VOID REQUESTS */}
+          {voidRequests.length > 0 && (
+            <div className="mb-8 p-5 bg-rose-500/10 border border-rose-500/20 rounded-[2.5rem] flex items-center justify-between animate-pulse">
+              <div className="flex items-center gap-4">
+                <AlertCircle className="text-rose-500" size={24} />
+                <p className="text-[10px] text-zinc-400 font-bold uppercase">{voidRequests.length} Pending Void Requests</p>
+              </div>
+              <button onClick={() => setActiveSection("LIVE AUDIT")} className="bg-rose-500 text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase italic">Review</button>
             </div>
+          )}
+
+          <div className="flex justify-between items-end mb-10">
+            <h2 className="text-2xl md:text-4xl font-black text-white uppercase italic">{activeSection.replace("_", " ")}</h2>
             <button onClick={generateWhatsAppReport} className="hidden md:flex items-center gap-2 bg-emerald-600/10 text-emerald-500 border border-emerald-500/20 px-5 py-3 rounded-2xl font-black uppercase text-[10px]">
               <Share2 size={14} /> WhatsApp Report
             </button>
           </div>
 
           <div className="space-y-10">
-          {activeSection === "FINANCIAL_HISTORY" && (
-  <section className="animate-in slide-in-from-bottom-4 duration-500">
-    <h3 className="text-yellow-500 font-black uppercase text-xs mb-6 italic tracking-tighter">
-      Daily Revenue Summary
-    </h3>
-    
-    {/* UPDATED GRID CLASSES HERE */}
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-      <AccountantStatCard 
-        label="Expected Cash" 
-        value={systemTotals.cash - pettyCashTotal} 
-        icon={<Banknote size={14} />} 
-        color="text-emerald-500" 
-      />
-      <AccountantStatCard 
-        label="Momo Sales" 
-        value={systemTotals.momo} 
-        icon={<Smartphone size={14} />} 
-        color="text-blue-400" 
-      />
-      <AccountantStatCard 
-        label="Card Sales" 
-        value={systemTotals.card} 
-        icon={<CreditCard size={14} />} 
-        color="text-purple-500" 
-      />
-
-       <AccountantStatCard 
-    label="Total Revenue" 
-    value={totalRevenue} 
-    icon={<Receipt size={14} />} 
-    color="text-black" 
-    bgColor="bg-yellow-400"
-    isDarkText={true}
-  />
-    </div>
-  </section>
-)}
-
-            {activeSection === "PHYSICAL COUNT" && (
+            {activeSection === "FINANCIAL_HISTORY" && (
               <section className="animate-in slide-in-from-bottom-4 duration-500">
-                <DailyReconciliation systemTotals={{...systemTotals, cash: systemTotals.cash - pettyCashTotal}} />
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <AccountantStatCard label="Expected Cash" value={systemTotals.cash} icon={<Banknote size={14} />} color="text-emerald-500" />
+                  <AccountantStatCard label="Momo Sales" value={systemTotals.momo} icon={<Smartphone size={14} />} color="text-blue-400" />
+                  <AccountantStatCard label="Card Sales" value={systemTotals.card} icon={<CreditCard size={14} />} color="text-purple-500" />
+                  <AccountantStatCard label="Total Revenue" value={totalRevenue} icon={<Receipt size={14} />} color="text-black" bgColor="bg-yellow-400" isDarkText={true} />
+                </div>
               </section>
             )}
 
-           {activeSection === "PETTY CASH" && (
+            {/* PHYSICAL COUNT (Now maintaining state) */}
+            {activeSection === "PHYSICAL COUNT" && (
+              <section className="animate-in slide-in-from-bottom-4 duration-500">
+                <DailyReconciliation 
+                  systemTotals={systemTotals} 
+                  counts={physicalCounts} 
+                  setCounts={setPhysicalCounts} 
+                />
+              </section>
+            )}
+
+            {/* END OF SHIFT SECTION */}
+{activeSection === "END OF SHIFT" && (
   <section className="animate-in slide-in-from-bottom-4 duration-500 max-w-4xl">
-    <div className="flex justify-between items-center mb-8">
-      <div>
-        <h3 className="text-yellow-500 font-black uppercase text-xs italic tracking-widest">Expense Management</h3>
-        <p className="text-zinc-500 text-[10px] font-bold uppercase mt-1">Total Spent: UGX {pettyCashTotal.toLocaleString()}</p>
+    <div className="bg-zinc-900/30 border border-white/5 p-8 rounded-[3rem]">
+      <div className="flex justify-between items-center mb-10">
+        <div>
+          <h3 className="text-xl font-black text-white uppercase italic">Shift Conclusion</h3>
+          <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-1">Final reconciliation and report generation</p>
+        </div>
+        <RotateCcw className="text-yellow-500 opacity-20" size={40} />
       </div>
-      <button 
-        onClick={() => setShowPettyModal(true)} 
-        className="bg-yellow-500 hover:bg-yellow-600 text-black px-6 py-3 rounded-2xl font-black uppercase italic text-[10px] transition-all active:scale-95 shadow-lg shadow-yellow-500/10"
-      >
-        <PlusCircle size={14} className="inline mr-2" /> Add New Expense
-      </button>
-    </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
+        <ShiftSummaryRow label="Gross Sales" value={totalRevenue} />
+        <ShiftSummaryRow label="Total Expenses" value={pettyCashTotal} color="text-rose-500" />
+        <ShiftSummaryRow label="Net Cash Handover" value={systemTotals.cash} isBold />
+        <ShiftSummaryRow label="Momo/Card Total" value={systemTotals.momo + systemTotals.card} />
+      </div>
 
-    {/* THE LOGS LIST */}
-    <div className="grid grid-cols-1 gap-3">
-      {pettyLogs.length > 0 ? (
-        pettyLogs.map((log, index) => (
-          <div 
-            key={index} 
-            className="bg-zinc-900/40 border border-white/5 p-5 rounded-3xl flex justify-between items-center group hover:border-yellow-500/20 transition-all"
-          >
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-black rounded-2xl text-rose-500 border border-white/5">
-                <Wallet size={16} />
-              </div>
-              <div>
-                <p className="text-xs font-black text-white uppercase tracking-tight">{log.reason}</p>
-                <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">{log.time}</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-sm font-black text-rose-500 italic">- UGX {log.amount.toLocaleString()}</p>
-              <p className="text-[8px] text-zinc-600 font-black uppercase tracking-tighter">Approved</p>
-            </div>
+      {!isShiftClosed ? (
+        <div className="space-y-4">
+          <div className="p-6 bg-yellow-500/5 border border-yellow-500/10 rounded-2xl flex items-start gap-4">
+            <AlertCircle className="text-yellow-500 shrink-0" size={20} />
+            <p className="text-[11px] text-zinc-400 font-medium leading-relaxed">
+              Closing the shift will generate a final WhatsApp report and lock the daily logs. Ensure all physical reconciliations and petty cash entries are complete.
+            </p>
           </div>
-        ))
-      ) : (
-        /* EMPTY STATE - Shows if pettyLogs array is empty */
-        <div className="py-20 flex flex-col items-center justify-center bg-zinc-900/20 border border-dashed border-white/5 rounded-[3rem]">
-          <div className="p-4 bg-zinc-900 rounded-full text-zinc-700 mb-4">
-            <Receipt size={32} />
-          </div>
-          <p className="text-zinc-500 font-black uppercase text-[10px] tracking-[0.2em]">No expenses logged today</p>
+          
           <button 
-            onClick={() => setShowPettyModal(true)}
-            className="mt-4 text-yellow-500 text-[9px] font-black uppercase underline decoration-2 underline-offset-4"
+            onClick={handleCloseShift}
+            className="w-full bg-yellow-500 hover:bg-yellow-600 text-black py-5 rounded-[2rem] font-black uppercase italic text-sm transition-all shadow-xl shadow-yellow-500/10 flex items-center justify-center gap-3"
           >
-            Log your first petty cash entry
+            <CheckCircle2 size={20} /> Finalize & Close Shift
+          </button>
+        </div>
+      ) : (
+        <div className="text-center py-10 animate-in fade-in zoom-in duration-700">
+          <div className="w-20 h-20 bg-emerald-500/20 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle2 size={40} />
+          </div>
+          <h4 className="text-2xl font-black text-white uppercase italic">Shift Closed</h4>
+          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mt-2">Report has been copied to clipboard</p>
+          
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-8 text-zinc-500 hover:text-white text-[10px] font-black uppercase underline underline-offset-4"
+          >
+            Start New Shift
           </button>
         </div>
       )}
@@ -233,174 +240,174 @@ export default function AccountantDashboard() {
   </section>
 )}
 
-            {activeSection === "AUDIT" && (
-              <section className="animate-in slide-in-from-bottom-4 duration-500">
+            {/* PETTY CASH SECTION */}
+            {activeSection === "PETTY CASH" && (
+              <section className="animate-in slide-in-from-bottom-4 duration-500 max-w-4xl">
                 <div className="flex justify-between items-center mb-8">
-          <div>
-            <h3 className="text-yellow-500 font-black uppercase text-xs italic tracking-widest">Expense Management</h3>
-            <p className="text-zinc-500 text-[10px] font-bold uppercase mt-1">Total Spent: UGX {pettyCashTotal.toLocaleString()}</p>
-          </div>
-          <button 
-            onClick={() => setShowPettyModal(true)} 
-            className="bg-yellow-500 hover:bg-yellow-600 text-black px-6 py-3 rounded-2xl font-black uppercase italic text-[10px] transition-all active:scale-95 shadow-lg shadow-yellow-500/10"
-          >
-            <PlusCircle size={14} className="inline mr-2" /> Add New Expense
-          </button>
-        </div>
-
-        {/* LOGS LIST */}
-        <div className="grid grid-cols-1 gap-3">
-          {pettyLogs.length > 0 ? (
-            pettyLogs.map((log, index) => (
-              <div key={index} className="bg-zinc-900/40 border border-white/5 p-5 rounded-3xl flex justify-between items-center group hover:border-yellow-500/20 transition-all">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-black rounded-2xl text-rose-500 border border-white/5">
-                    <Wallet size={16} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-black text-white uppercase tracking-tight">{log.reason}</p>
-                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">{log.time}</p>
-                  </div>
+                  <h3 className="text-yellow-500 font-black uppercase text-xs italic tracking-widest">Expense Management</h3>
+                  <button onClick={() => setShowPettyModal(true)} className="bg-yellow-500 text-black px-6 py-3 rounded-2xl font-black uppercase italic text-[10px]">
+                    <PlusCircle size={14} className="inline mr-2" /> Add Expense
+                  </button>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-black text-rose-500 italic">- UGX {log.amount.toLocaleString()}</p>
-                  <p className="text-[8px] text-zinc-600 font-black uppercase tracking-tighter">Approved</p>
+                <div className="grid gap-3">
+                  {pettyLogs.map((log, index) => (
+                    <div key={index} className="bg-zinc-900/40 border border-white/5 p-5 rounded-3xl flex justify-between items-center">
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 bg-black rounded-2xl text-rose-500"><Wallet size={16} /></div>
+                        <div><p className="text-xs font-black text-white uppercase">{log.reason}</p><p className="text-[9px] text-zinc-500 uppercase">{log.time}</p></div>
+                      </div>
+                      <p className="text-sm font-black text-rose-500">- UGX {log.amount.toLocaleString()}</p>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))
-          ) : (
-            <div className="py-20 flex flex-col items-center justify-center bg-zinc-900/20 border border-dashed border-white/5 rounded-[3rem]">
-              <div className="p-4 bg-zinc-900 rounded-full text-zinc-700 mb-4">
-                <Receipt size={32} />
-              </div>
-              <p className="text-zinc-500 font-black uppercase text-[10px] tracking-[0.2em]">No expenses logged today</p>
-            </div>
-          )}
-        </div>
-      </section>
-    )}
+              </section>
+            )}
 
-   {activeSection === "END_OF_SHIFT" && (
-  <section className="animate-in zoom-in-95 duration-500 max-w-2xl mx-auto py-6">
-    {!isShiftClosed ? (
-      <div className="bg-zinc-900/40 border border-white/5 p-10 rounded-[3rem] text-center">
-        <div className="w-20 h-20 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-rose-500/20">
-          <RotateCcw size={32} />
-        </div>
-        <h3 className="text-2xl font-black text-white uppercase italic mb-2">Close Daily Shift?</h3>
-        <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest mb-8">
-          This will finalize all collections and notify the Director.
+           
+         {/* LIVE AUDIT - Showing ONLY requested items with Chef & Waiter info */}
+{activeSection === "LIVE AUDIT" && (
+  <section className="space-y-6 animate-in fade-in duration-500">
+    {voidRequests.length === 0 ? (
+      <div className="text-center py-20 border border-dashed border-white/10 rounded-[3rem]">
+        <CheckCircle2 size={40} className="mx-auto text-zinc-800 mb-4" />
+        <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">
+          No pending item void requests
         </p>
-        <button 
-          onClick={handleCloseShift}
-          className="w-full py-5 bg-yellow-400  text-black rounded-2xl font-black uppercase italic text-sm transition-all active:scale-95 shadow-xl shadow-rose-900/20"
-        >
-          Confirm & Send to Director
-        </button>
       </div>
     ) : (
-      <div className="space-y-6">
-        {/* SUCCESS MESSAGE */}
-        <div className="bg-emerald-500 text-black p-6 rounded-[2.5rem] flex items-center gap-4">
-          <CheckCircle2 size={30} />
-          <div>
-            <h3 className="font-black uppercase italic leading-none">Shift Closed Successfully</h3>
-            <p className="text-[9px] font-bold uppercase opacity-70">Report sent to Director at {shiftSummary?.time}</p>
-          </div>
-        </div>
-
-        {/* FINAL SUMMARY TABLE */}
-        <div className="bg-zinc-900 border border-white/5 rounded-[2.5rem] overflow-hidden">
-          <div className="p-6 border-b border-white/5 bg-white/5">
-             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-500">Official Shift Summary</h4>
-          </div>
-          <div className="p-6 space-y-4">
-            <SummaryLine label="Gross Revenue" value={shiftSummary?.total} />
-            <SummaryLine label="Momo/Card Total" value={shiftSummary?.momo + shiftSummary?.card} />
-            <SummaryLine label="Petty Cash Spent" value={shiftSummary?.petty} isNegative />
-            <div className="pt-4 border-t border-white/10">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-black text-white uppercase italic">Final Cash Handover</span>
-                <span className="text-xl font-black text-emerald-500 italic">UGX {shiftSummary?.net.toLocaleString()}</span>
-              </div>
+      voidRequests.map(order => (
+        <div key={order.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem]">
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <p className="text-white font-black uppercase text-sm italic">Table {order.tableName}</p>
+              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Order #{order.id.slice(-6)}</p>
+            </div>
+            <div className="text-right">
+               <p className="text-[9px] text-zinc-500 font-black uppercase">Current Order Total</p>
+               <p className="text-lg text-yellow-500 italic font-black">UGX {order.total.toLocaleString()}</p>
             </div>
           </div>
-        </div>
 
-        <button 
-          onClick={() => window.location.reload()}
-          className="w-full py-4 bg-zinc-900 text-zinc-500 rounded-2xl font-black uppercase text-[10px] border border-white/5"
-        >
-          Start New Shift
-        </button>
-      </div>
+          <div className="space-y-3">
+            {order.items.map((item, idx) => (
+              item.voidRequested && (
+                <div key={idx} className="flex flex-col md:flex-row justify-between items-start md:items-center p-5 bg-rose-500/5 border border-rose-500/10 rounded-2xl gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-rose-500/20 rounded-xl flex items-center justify-center text-rose-500 font-black italic text-xs">
+                      {item.quantity}x
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-white uppercase">{item.name}</p>
+                      
+                      {/* --- NEW: ACCOUNTABILITY BADGES --- */}
+                      <div className="flex gap-2 mt-1.5 mb-2">
+                        <span className="text-[12px] font-black bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded border border-yellow-500/20 uppercase tracking-tighter">
+                          Waiter: {item.requestedBy || "Staff"}
+                        </span>
+                        <span className="text-[12px] font-black bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/20 uppercase tracking-tighter">
+                          Chef: {item.assignedTo || "Not Assigned"}
+                        </span>
+                      </div>
+
+                      <p className="text-[10px] text-zinc-400 font-bold uppercase">
+                        Reason: <span className="text-rose-400 italic">"{item.voidReason || 'No reason provided'}"</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 w-full md:w-auto">
+                    <button 
+                      onClick={() => approveItemVoid(order.id, idx)}
+                      className="flex-1 md:flex-none bg-rose-600 text-white px-5 py-2.5 rounded-xl text-[9px] font-black uppercase italic transition-all hover:bg-rose-500 active:scale-95 shadow-lg shadow-rose-600/20"
+                    >
+                      Approve Void
+                    </button>
+                    
+                    <button 
+                      onClick={() => rejectItemVoid(order.id, idx)}
+                      className="flex-1 md:flex-none bg-zinc-800 text-zinc-400 px-5 py-2.5 rounded-xl text-[9px] font-black uppercase italic border border-white/5 hover:bg-zinc-700 transition-colors"
+                    >
+                      Reject Request
+                    </button>
+                  </div>
+                </div>
+              )
+            ))}
+          </div>
+        </div>
+      ))
     )}
   </section>
 )}
 
-    {/* 4. LIVE AUDIT SECTION (Now properly separated) */}
-    {activeSection === "LIVE AUDIT" && (
-      <section className="bg-zinc-900/30 border border-white/5 rounded-3xl overflow-hidden animate-in fade-in duration-500">
-        <div className="p-6 border-b border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
-          <h3 className="text-sm font-black uppercase italic text-yellow-500">Live Transaction Audit</h3>
-          <div className="relative w-full md:w-72">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search Order ID..." 
-              className="w-full bg-black border border-white/10 p-3 pl-12 rounded-xl text-xs font-bold outline-none focus:border-yellow-500 placeholder:text-zinc-600" 
-              value={searchTerm} 
-              onChange={(e) => setSearchTerm(e.target.value)} 
-            />
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-white/5 text-[10px] font-black uppercase text-zinc-500 tracking-widest">
-                <th className="p-6">Order ID</th>
-                <th className="p-6">Method</th>
-                <th className="p-6 text-right">Amount</th>
-                <th className="p-6 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {orders
-                .filter(o => o.id.toLowerCase().includes(searchTerm.toLowerCase()))
-                .map(order => (
-                  <AuditRow key={order.id} order={order} onVoid={handleVoidOrder} />
-                ))
-              }
-            </tbody>
-          </table>
-          {orders.filter(o => o.id.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
-            <div className="p-20 text-center text-zinc-600 font-black uppercase text-[10px]">
-              No matching orders found
-            </div>
-          )}
-        </div>
-              </section>
-            )}
+
           </div>
         </main>
         <Footer />
       </div>
 
       {showPettyModal && (
-        <PettyCashModal 
-          onClose={() => setShowPettyModal(false)} 
-          onSave={handleAddPettyCash} 
-        />
+        <PettyCashModal onClose={() => setShowPettyModal(false)} onSave={handleAddPettyCash} />
       )}
     </div>
   );
 }
 
+
+// Sub-components: AccountantStatCard & SummaryLine...
+
 // Ensure you include your AccountantStatCard, DailyReconciliation, and PettyCashModal sub-components below!
 // ---------------- SUB-COMPONENTS -----------------
+function ShiftSummaryRow({ label, value, color = "text-white", isBold = false }) {
+  return (
+    <div className="bg-black/20 border border-white/5 p-5 rounded-2xl flex justify-between items-center">
+      <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{label}</span>
+      <span className={`text-sm font-black italic ${color} ${isBold ? 'text-lg text-yellow-500' : ''}`}>
+        UGX {value.toLocaleString()}
+      </span>
+    </div>
+  );
+}
 
+function DailyReconciliation({ systemTotals, counts, setCounts }) {
+  // Logic interpreted from your snippet
+  const variances = {
+    cash: (counts.cash || 0) - systemTotals.cash,
+    momo: (counts.momo || 0) - systemTotals.momo,
+    card: (counts.card || 0) - systemTotals.card
+  };
 
+  const totalVariance = variances.cash + variances.momo + variances.card;
 
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="bg-zinc-900/30 border border-white/5 p-6 md:p-8 rounded-[2rem]">
+        <h3 className="text-[10px] font-black uppercase italic text-yellow-500 mb-6 flex items-center gap-2">
+          <Calculator size={14} /> Physical Input
+        </h3>
+        <div className="space-y-4">
+          <ReconcileInput label="Cash" value={counts.cash} onChange={(v) => setCounts({...counts, cash: v})} />
+          <ReconcileInput label="Momo" value={counts.momo} onChange={(v) => setCounts({...counts, momo: v})} />
+          <ReconcileInput label="Card" value={counts.card} onChange={(v) => setCounts({...counts, card: v})} />
+        </div>
+      </div>
+
+      <div className="bg-zinc-900/30 border border-white/5 p-6 md:p-8 rounded-[2rem]">
+         <div className="space-y-3">
+            <VarianceRow label="Cash Gap" amount={variances.cash} />
+            <VarianceRow label="Momo Gap" amount={variances.momo} />
+            <VarianceRow label="Card Gap" amount={variances.card} />
+         </div>
+         <div className={`mt-6 p-6 rounded-2xl border transition-colors ${totalVariance === 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/20'}`}>
+            <p className="text-[9px] font-black uppercase text-zinc-500 mb-1">Total Variance</p>
+            <h4 className={`text-xl font-black italic ${totalVariance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+              UGX {totalVariance.toLocaleString()}
+            </h4>
+         </div>
+      </div>
+    </div>
+  );
+}
 function AccountantStatCard({ label, value, icon, color, bgColor = "bg-zinc-900/30", isDarkText = false }) {
   return (
     <div className={`${bgColor} border border-white/5 p-4 md:p-6 rounded-2xl md:rounded-3xl transition-all duration-300`}>
@@ -523,73 +530,6 @@ function AuditRow({ order, onVoid }) {
 
 
 
-function DailyReconciliation({ systemTotals }) {
-
-  const [counts, setCounts] = useState({ cash: 0, momo: 0, card: 0 });
-
-  const variances = {
-
-    cash: counts.cash - systemTotals.cash,
-
-    momo: counts.momo - systemTotals.momo,
-
-    card: counts.card - systemTotals.card
-
-  };
-
-  const totalVariance = variances.cash + variances.momo + variances.card;
-
-
-
-  return (
-
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-      <div className="bg-zinc-900/30 border border-white/5 p-6 md:p-8 rounded-[2rem]">
-
-        <h3 className="text-[10px] font-black uppercase italic text-yellow-500 mb-6 flex items-center gap-2">
-
-          <Calculator size={14} className="text-sm font-black uppercase italic text-yellow-500" /> Physical Input
-
-        </h3>
-
-        <div className="space-y-4">
-
-          <ReconcileInput label="Cash" value={counts.cash} onChange={(v) => setCounts({...counts, cash: v})} />
-
-          <ReconcileInput label="Momo" value={counts.momo} onChange={(v) => setCounts({...counts, momo: v})} />
-
-          <ReconcileInput label="Card" value={counts.card} onChange={(v) => setCounts({...counts, card: v})} />
-
-        </div>
-
-      </div>
-
-      <div className="bg-zinc-900/30 border border-white/5 p-6 md:p-8 rounded-[2rem]">
-
-         <div className="space-y-3">
-
-            <VarianceRow label="Cash Gap" amount={variances.cash} />
-
-            <VarianceRow label="Momo Gap" amount={variances.momo} />
-
-            <VarianceRow label="Card Gap" amount={variances.card} />
-
-         </div>
-
-         <div className={`mt-6 p-6 rounded-2xl border ${totalVariance === 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/20'}`}>
-
-            <h4 className="text-xl font-black italic">UGX {totalVariance.toLocaleString()}</h4>
-
-         </div>
-
-      </div>
-
-    </div>
-
-  );
-
-}
 
 
 

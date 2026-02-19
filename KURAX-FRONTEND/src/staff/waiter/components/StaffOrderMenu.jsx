@@ -1,12 +1,11 @@
 import React, { useState } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
-// 1. Import your Theme Context hook
 import { useTheme } from "../../../customer/components/context/ThemeContext";
-import { Plus, SearchX, UtensilsCrossed, Sun, Moon } from "lucide-react";
+// Added Coffee and Wine icons for the tags
+import { Plus, SearchX, UtensilsCrossed, Sun, Moon, Coffee, Wine } from "lucide-react";
 
 export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
   const { menus = [] } = useData() || {};
-  // 2. Access theme and toggle function
   const { theme, toggleTheme } = useTheme();
   
   const [activeCategory, setActiveCategory] = useState("Starters");
@@ -32,10 +31,8 @@ export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
 
   return (
     <div className="space-y-8">
-      {/* HEADER ACTIONS: Category Nav + Theme Toggle */}
+      {/* HEADER ACTIONS */}
       <div className={`flex flex-col md:flex-row items-center justify-between border-b pb-1 gap-6 ${theme === 'dark' ? 'border-white/5' : 'border-black/5'}`}>
-        
-        {/* CENTERED CATEGORY NAV */}
         <div className="flex justify-center items-center flex-1">
           <div className="flex gap-8 md:gap-12 overflow-x-auto no-scrollbar px-4">
             {categories.map((cat) => (
@@ -49,13 +46,12 @@ export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
               >
                 {cat}
                 {activeCategory === cat && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-yellow-500 rounded-full animate-in fade-in slide-in-from-bottom-1 duration-300" />
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-yellow-500 rounded-full" />
                 )}
               </button>
             ))}
           </div>
         </div>
-
       </div>
 
       {/* GRID SECTION */}
@@ -78,6 +74,21 @@ export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
             >
               {/* Image Section */}
               <div className="h-48 md:h-56 bg-zinc-800 relative overflow-hidden">
+                
+                {/* --- NEW: STATION TAG ON WAITER'S SIDE --- */}
+                <div className="absolute top-3 left-3 z-10">
+                  <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border backdrop-blur-md shadow-lg ${
+                    item.station === 'Barista' ? 'bg-amber-900/60 text-amber-200 border-amber-500/30' : 
+                    item.station === 'Barman' ? 'bg-blue-900/60 text-blue-200 border-blue-500/30' : 
+                    'bg-emerald-900/60 text-emerald-200 border-emerald-500/30'
+                  }`}>
+                    {item.station === 'Barista' && <Coffee className="w-3.5 h-3.5" />}
+                    {item.station === 'Barman' && <Wine className="w-3.5 h-3.5" />}
+                    {item.station === 'Kitchen' || !item.station ? <UtensilsCrossed className="w-3.5 h-3.5" /> : null}
+                    {item.station || 'Kitchen'}
+                  </span>
+                </div>
+
                 {item.image ? (
                   <img 
                     src={item.image} 

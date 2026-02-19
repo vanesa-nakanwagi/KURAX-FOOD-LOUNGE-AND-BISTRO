@@ -74,14 +74,14 @@ export default function TopSection({ searchPlaceholder }) {
 </Link>
 
 <Link
-  to="/#menus"
+  to="/menus"
   className="text-black dark:text-white hover:text-yellow-500 transition"
 >
   Menus
 </Link>
 
 <Link
-  to="/#events"
+  to="/events"
   className="text-black dark:text-white hover:text-yellow-500 transition"
 >
   Events
