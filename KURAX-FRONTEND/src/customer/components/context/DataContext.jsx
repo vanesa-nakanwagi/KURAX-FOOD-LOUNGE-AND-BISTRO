@@ -4,15 +4,12 @@ import burger from "../../assets/images/hero4.jpg";
 const DataContext = createContext();
 
 export const DataProvider = ({ children }) => {
-  // --- USER STATE ---
   const [currentUser, setCurrentUser] = useState(null);
 
-  // --- DAILY GOAL STATE ---
   const [dailyGoal, setDailyGoal] = useState(() => {
     return Number(localStorage.getItem('kurax_daily_goal')) || 20;
   });
 
-  // --- MENUS STATE ---
   const [menus, setMenus] = useState(() => {
     const savedMenus = localStorage.getItem('kurax_menus');
     return savedMenus ? JSON.parse(savedMenus) : [
@@ -20,7 +17,6 @@ export const DataProvider = ({ children }) => {
     ];
   });
 
-  // --- EVENTS STATE ---
   const [events, setEvents] = useState(() => {
     const savedEvents = localStorage.getItem('kurax_events');
     return savedEvents ? JSON.parse(savedEvents) : [
@@ -28,13 +24,11 @@ export const DataProvider = ({ children }) => {
     ];
   });
 
-  // --- ORDERS STATE ---
   const [orders, setOrders] = useState(() => {
     const savedOrders = localStorage.getItem('kurax_orders');
     return savedOrders ? JSON.parse(savedOrders) : [];
   });
 
-  // --- STAFF STATE ---
   const [staffList, setStaffList] = useState(() => {
     const savedStaff = localStorage.getItem('kurax_staff');
     return savedStaff ? JSON.parse(savedStaff) : [
@@ -74,13 +68,25 @@ export const DataProvider = ({ children }) => {
     localStorage.setItem('kurax_orders', JSON.stringify(orders));
   }, [menus, events, orders]);
 
-  // --- SYNC ACROSS TABS ---
+  // --- SYNC ACROSS TABS (Crucial for Kitchen/Bar/Barista sync) ---
   useEffect(() => {
     const handleStorageChange = (e) => {
-      if (e.key === 'kurax_orders' && e.newValue) setOrders(JSON.parse(e.newValue));
-      if (e.key === 'kurax_staff' && e.newValue) setStaffList(JSON.parse(e.newValue));
-      if (e.key === 'kurax_daily_goal' && e.newValue) setDailyGoal(Number(e.newValue));
-    };
+  try {
+    if (!e.newValue) return; // Don't process empty updates
+
+    if (e.key === 'kurax_orders') {
+      const newOrders = JSON.parse(e.newValue);
+      // PREVENT LOOP: Only set if the data is actually different
+      setOrders(current => {
+        if (JSON.stringify(current) === e.newValue) return current;
+        return newOrders;
+      });
+    }
+    // ... same for other keys
+  } catch (err) {
+    console.error("Sync Error:", err);
+  }
+};
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);

@@ -3,11 +3,12 @@ import NewOrder from "./NewOrder";
 import OrderHistory from "./OrderHistory";
 import TargetSettings from "./TargetSettings"; 
 import Sidebar from "./Sidebar"; 
-import { Lock, PlusCircle, Receipt } from "lucide-react"; // Added icons for bottom nav
+import { Lock, PlusCircle, Receipt } from "lucide-react"; 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData } from "../../../customer/components/context/DataContext";
 import ShiftReportModal from "./ShiftModal";
 import LiveOrderStatus from "./LiveOrderStatus";
+import LiveTableGrid from "./LiveTableGrid"; 
 
 export default function ManagerLayout() {
   const [activeTab, setActiveTab] = useState("order");
@@ -19,21 +20,29 @@ export default function ManagerLayout() {
   const isPermitted = true; 
 
   const renderContent = () => {
-    if (activeTab === "order" && !isPermitted) {
-      return <LockedView name={currentUser?.name} theme={theme} />;
-    }
+  // 1. Check permissions first
+  if (activeTab === "order" && !isPermitted) {
+    return <LockedView name={currentUser?.name} theme={theme} />;
+  }
 
-    switch (activeTab) {
-      case "order": return <NewOrder />;
-      case "target": return <TargetSettings />;
-      case "history": return <OrderHistory />;
-      case "status": return <LiveOrderStatus />;
-      case "logout": 
-        return <div className="p-10 text-center font-black uppercase italic">Logging out of system...</div>;
-      default: return <NewOrder />;
-    }
-  };
-
+  // 2. Switch based on the ID sent from Sidebar
+  switch (activeTab) {
+    case "order": 
+      return <NewOrder />;
+    case "status": 
+      return <LiveOrderStatus />;
+    case "tables": // <--- This MUST match the ID in Sidebar.js
+      return <LiveTableGrid />; 
+    case "target": 
+      return <TargetSettings />;
+    case "history": 
+      return <OrderHistory />;
+    case "logout": 
+      return <div className="p-10 text-center font-black uppercase italic">Logging out...</div>;
+    default: 
+      return <NewOrder />;
+  }
+};
   const handleTabChange = (tabId) => {
     if (tabId === "shift") {
       setIsShiftModalOpen(true);
@@ -63,15 +72,17 @@ export default function ManagerLayout() {
            </div>
         </div>
 
-        {/* Adjusting padding-bottom so the Bottom Nav doesn't hide content */}
-        <div className={`${(activeTab === "order" || activeTab === "status") ? "pb-28" : ""}`}>
+        {/* Padding adjustment: Added "tables" to the list that needs bottom padding 
+            if you decide to show the nav there, but currently it's cleaner without.
+        */}
+        <div className={`${(activeTab === "order" || activeTab === "status" || activeTab === "tables") ? "pb-28" : ""}`}>
           {renderContent()}
         </div>
       </main>
 
-      {/* BOTTOM NAV: Mirrors Waiter style but for Manager content area */}
+      {/* BOTTOM NAV: Hidden during Live Table management for better focus */}
       {(activeTab === "order" || activeTab === "history") && (
-        <nav className={`fixed bottom-0 left-72 right-0 backdrop-blur-xl border-t px-12 py-4 pb-8 flex justify-around items-center z-[100] transition-all duration-300 ${
+        <nav className={`fixed bottom-0 left-64 right-0 backdrop-blur-xl border-t px-12 py-4 pb-8 flex justify-around items-center z-[100] transition-all duration-300 ${
           theme === 'dark' ? 'bg-zinc-900/80 border-white/5' : 'bg-white/80 border-black/5'
         }`}>
           <NavButton 
@@ -99,7 +110,7 @@ export default function ManagerLayout() {
   );
 }
 
-/* Sub-component for Nav Buttons - Treated exactly like the Waiter version */
+/* Sub-component for Nav Buttons */
 function NavButton({ icon, label, active, onClick, theme }) {
   const inactiveColor = theme === 'dark' ? "text-slate-500" : "text-zinc-400";
 

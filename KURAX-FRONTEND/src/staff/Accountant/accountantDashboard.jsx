@@ -53,25 +53,30 @@ const voidRequests = orders.filter(order =>
 const approveItemVoid = (orderId, itemIndex) => {
   setOrders(prev => prev.map(order => {
     if (order.id === orderId) {
+      // 1. Create a shallow copy of items
       const updatedItems = [...order.items];
-      const item = updatedItems[itemIndex];
       
-      // Update item status instead of deleting (better for audits)
+      // 2. Update ONLY the specific item at that index
       updatedItems[itemIndex] = {
-        ...item,
-        voidRequested: false, // Request resolved
-        voidProcessed: true,  // Marked as handled by accountant
-        status: "VOIDED",     // UI status
-        price: 0              // Remove from total cost
+        ...updatedItems[itemIndex],
+        voidRequested: false, 
+        voidProcessed: true,  
+        status: "VOIDED",     
+        price: 0 // Setting price to 0 keeps the item in the array but removes cost
       };
 
-      // Recalculate order total
-      const newTotal = updatedItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+      // 3. Recalculate total based on ALL items (the voided one is now 0)
+      const newTotal = updatedItems.reduce((sum, i) => {
+        const itemPrice = Number(i.price) || 0;
+        const itemQty = Number(i.quantity) || 1;
+        return sum + (itemPrice * itemQty);
+      }, 0);
 
-      return {
-        ...order,
-        items: updatedItems,
-        total: newTotal
+      // 4. Return the order with the FULL items array intact
+      return { 
+        ...order, 
+        items: updatedItems, 
+        total: newTotal 
       };
     }
     return order;
@@ -264,8 +269,7 @@ const rejectItemVoid = (orderId, itemIndex) => {
             )}
 
            
-         {/* LIVE AUDIT - Showing ONLY requested items with Chef & Waiter info */}
-{activeSection === "LIVE AUDIT" && (
+        {activeSection === "LIVE AUDIT" && (
   <section className="space-y-6 animate-in fade-in duration-500">
     {voidRequests.length === 0 ? (
       <div className="text-center py-20 border border-dashed border-white/10 rounded-[3rem]">
@@ -276,41 +280,60 @@ const rejectItemVoid = (orderId, itemIndex) => {
       </div>
     ) : (
       voidRequests.map(order => (
-        <div key={order.id} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem]">
+        <div key={order?.id || Math.random()} className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem]">
           <div className="flex justify-between items-start mb-6">
             <div>
-              <p className="text-white font-black uppercase text-sm italic">Table {order.tableName}</p>
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Order #{order.id.slice(-6)}</p>
+              <p className="text-white font-black uppercase text-sm italic">Table {order?.tableName ?? "N/A"}</p>
+              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">
+                Order #{order?.id ? order.id.slice(-6) : "000000"}
+              </p>
             </div>
             <div className="text-right">
                <p className="text-[9px] text-zinc-500 font-black uppercase">Current Order Total</p>
-               <p className="text-lg text-yellow-500 italic font-black">UGX {order.total.toLocaleString()}</p>
+               {/* FIX: Ensuring toLocaleString never hits null */}
+               <p className="text-lg text-yellow-500 italic font-black">
+                 UGX {(order?.total ?? 0).toLocaleString()}
+               </p>
             </div>
           </div>
 
           <div className="space-y-3">
-            {order.items.map((item, idx) => (
-              item.voidRequested && (
+            {order?.items?.map((item, idx) => {
+              if (!item?.voidRequested) return null;
+
+              const stationLower = item?.station?.toLowerCase() ?? "";
+              let staffLabel = "Chef"; 
+              let badgeColor = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
+
+              if (stationLower === "barman") {
+                staffLabel = "Barman";
+                badgeColor = "bg-blue-500/10 text-blue-500 border-blue-500/20";
+              } else if (stationLower === "barista" || stationLower === "coffee") {
+                staffLabel = "Barista";
+                badgeColor = "bg-orange-500/10 text-orange-500 border-orange-500/20";
+              }
+
+              return (
                 <div key={idx} className="flex flex-col md:flex-row justify-between items-start md:items-center p-5 bg-rose-500/5 border border-rose-500/10 rounded-2xl gap-4">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 bg-rose-500/20 rounded-xl flex items-center justify-center text-rose-500 font-black italic text-xs">
-                      {item.quantity}x
+                      {item?.quantity ?? 1}x
                     </div>
                     <div>
-                      <p className="text-xs font-black text-white uppercase">{item.name}</p>
+                      <p className="text-xs font-black text-white uppercase">{item?.name ?? "Unknown Item"}</p>
                       
-                      {/* --- NEW: ACCOUNTABILITY BADGES --- */}
-                      <div className="flex gap-2 mt-1.5 mb-2">
-                        <span className="text-[12px] font-black bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded border border-yellow-500/20 uppercase tracking-tighter">
-                          Waiter: {item.requestedBy || "Staff"}
+                      <div className="flex flex-wrap gap-2 mt-1.5 mb-2">
+                        <span className="text-[10px] font-black bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded border border-white/5 uppercase tracking-tighter">
+                          Waiter: {item?.requestedBy || order?.waiterName || "Staff"}
                         </span>
-                        <span className="text-[12px] font-black bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/20 uppercase tracking-tighter">
-                          Chef: {item.assignedTo || "Not Assigned"}
+                        
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase tracking-tighter ${badgeColor}`}>
+                          {staffLabel}: {item?.assignedTo || "Unassigned"}
                         </span>
                       </div>
 
                       <p className="text-[10px] text-zinc-400 font-bold uppercase">
-                        Reason: <span className="text-rose-400 italic">"{item.voidReason || 'No reason provided'}"</span>
+                        Reason: <span className="text-rose-400 italic">"{item?.voidReason || 'No reason provided'}"</span>
                       </p>
                     </div>
                   </div>
@@ -331,14 +354,15 @@ const rejectItemVoid = (orderId, itemIndex) => {
                     </button>
                   </div>
                 </div>
-              )
-            ))}
+              );
+            })}
           </div>
         </div>
       ))
     )}
   </section>
 )}
+
 
 
           </div>

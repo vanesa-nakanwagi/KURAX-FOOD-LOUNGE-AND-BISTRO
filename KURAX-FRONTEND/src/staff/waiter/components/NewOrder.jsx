@@ -94,51 +94,85 @@ const playNotification = () => {
   if (!tableName) return alert("Please select a table");
   if (cart.length === 0) return alert("Cart is empty");
 
-  // 1. Split the cart into Station Groups
-  const kitchenItems = cart.filter(item => item.station === "Kitchen");
-  const barItems = cart.filter(item => item.station === "Barman");
-
-  const processStationOrder = (stationItems, stationTag) => {
-    if (stationItems.length === 0) return null;
-
-    return {
-      id: `ORD-${stationTag.charAt(0)}-${Date.now().toString().slice(-4)}`,
-      tableName: tableName.trim().toUpperCase(),
-      items: stationItems,
-      total: stationItems.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0),
-      status: "Pending",
-      station: stationTag, // THIS IS THE KEY FILTER
-      isPaid: false,
-      timestamp: new Date().toISOString(),
-      waiterName: currentWaiter,
-    };
-  };
-
   setOrders(prev => {
-    // 2. Filter out any old "Unserved" orders for this specific table to replace them with fresh station orders
-    const otherOrders = prev.filter(
-      o => !(o.tableName?.toUpperCase() === tableName.toUpperCase() && o.status !== "Served")
-    );
+    // 1. Create a copy of the current orders to mutate safely
+    let updatedOrders = [...prev];
 
-    const newKitchenOrder = processStationOrder(kitchenItems, "KITCHEN");
-    const newBarOrder = processStationOrder(barItems, "BAR");
+    // 2. Define the stations we need to process
+    const stations = ["Kitchen", "Barman", "Barista"];
 
-    const ordersToUpdate = [newKitchenOrder, newBarOrder].filter(Boolean);
+    stations.forEach(stationTag => {
+      const stationItemsInCart = cart.filter(item => item.station === stationTag);
+      
+      if (stationItemsInCart.length > 0) {
+        // Find if there is an existing, active (unarchived/unserved) docket for this table + station
+        const existingOrderIndex = updatedOrders.findIndex(
+          o => o.tableName?.toUpperCase() === tableName.toUpperCase() && 
+               o.station === stationTag && 
+               !o.isArchived && 
+               o.status !== "Served"
+        );
+
+        if (existingOrderIndex !== -1) {
+          // --- APPEND LOGIC ---
+          const existingOrder = updatedOrders[existingOrderIndex];
+          
+          // Merge items: if item exists, update quantity; if not, push new
+          const mergedItems = [...existingOrder.items];
+          stationItemsInCart.forEach(newItem => {
+            const itemIdx = mergedItems.findIndex(i => i.id === newItem.id);
+            if (itemIdx !== -1) {
+              mergedItems[itemIdx].quantity += newItem.quantity;
+            } else {
+              mergedItems.push(newItem);
+            }
+          });
+
+          // Update the existing docket with merged items and new total
+          updatedOrders[existingOrderIndex] = {
+            ...existingOrder,
+            items: mergedItems,
+            total: mergedItems.reduce((sum, i) => sum + (Number(i.price) * i.quantity), 0),
+            timestamp: new Date().toISOString() // Update time to show latest activity
+          };
+        } else {
+          // --- NEW DOCKET LOGIC ---
+          // If no active docket for this station, create a fresh one
+          const newOrder = {
+            id: `ORD-${stationTag.charAt(0)}-${Date.now().toString().slice(-4)}`,
+            tableName: tableName.trim().toUpperCase(),
+            items: stationItemsInCart,
+            total: stationItemsInCart.reduce((sum, i) => sum + (Number(i.price) * i.quantity), 0),
+            status: "Pending",
+            station: stationTag,
+            isArchived: false,
+            isPaid: false,
+            timestamp: new Date().toISOString(),
+            waiterName: currentWaiter,
+          };
+          updatedOrders.push(newOrder);
+        }
+      }
+    });
 
     playNotification();
-    return [...otherOrders, ...ordersToUpdate];
+    return updatedOrders;
   });
 
   setShowSuccess(true);
+  setCart([]); 
+  setTableName("");
 };
 
 
+// Add this method here
   const clearCart = () => {
-    if (window.confirm("Clear the entire cart?")) {
+    if (window.confirm("Clear the entire cart? This will empty your current selection.")) {
       setCart([]);
       setTableName("");
     }
   };
+
 
   return (
     <div className={`flex flex-col lg:flex-row h-full font-[Outfit] overflow-hidden relative transition-colors duration-300 ${theme === 'dark' ? 'bg-black text-white' : 'bg-white text-black'}`}>
@@ -219,12 +253,16 @@ function CartModal({
 }) {
   const [tableSearch, setTableSearch] = useState("");
 
+  
+
   if (!isOpen) return null;
 
   // Filter active tables based on search input
   const searchedTables = activeTables.filter(t => 
     t.toLowerCase().includes(tableSearch.toLowerCase())
   );
+
+  
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">

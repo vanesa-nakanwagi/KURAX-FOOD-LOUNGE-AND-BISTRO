@@ -1,40 +1,45 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useData } from "../../customer/components/context/DataContext";
 import { 
-  Clock, CheckCircle, User, Play, GlassWater, 
-  AlertCircle, Search, RotateCcw, Trophy, Wine,
-  UserPlus, Martini
+  Clock, CheckCircle, Coffee, Play, 
+  AlertCircle, Search, RotateCcw, Trophy, Bean,
+  UserPlus, ClipboardCheck, User
 } from "lucide-react";
 import Footer from "../../customer/components/common/Foooter";
 
-export default function BarmanDisplay() {
+export default function BaristaDisplay() {
   const { orders = [], setOrders } = useData() || {};
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSummary, setShowSummary] = useState(false);
-  const [shiftStats, setShiftStats] = useState({ totalDrinks: 0, totalOrders: 0 });
+  const [shiftStats, setShiftStats] = useState({ totalBrewed: 0, totalOrders: 0 });
   
-  // State for Barman Assignment
+  // New State for Barista Assignment
   const [assigningItem, setAssigningItem] = useState(null); // { orderId, itemIdx }
 
-  // --- FILTER LOGIC: BARMAN STATION ---
+  // --- FILTER LOGIC ---
   const filteredOrders = (orders || [])
     .filter(order => {
       const isActiveStatus = ["Pending", "Preparing", "Ready"].includes(order.status);
-      const notCleared = !order.clearedByBarman;
-      const hasBarItems = order.items.some(item => item.station === "Barman");
+      const notCleared = !order.clearedByBarista;
+      const hasBaristaItems = order.items.some(item => 
+        item.station?.toLowerCase() === "barista" || item.station?.toLowerCase() === "coffee"
+      );
       const searchLower = searchQuery.toLowerCase();
       const matchesSearch = !searchQuery.trim() || 
                            order.tableName?.toLowerCase().includes(searchLower) || 
                            order.id.toLowerCase().includes(searchLower);
       
-      return isActiveStatus && notCleared && hasBarItems && matchesSearch;
+      return isActiveStatus && notCleared && hasBaristaItems && matchesSearch;
     })
     .map(order => ({
       ...order,
-      items: order.items.filter(item => item.station === "Barman")
+      items: order.items.filter(item => 
+        item.station?.toLowerCase() === "barista" || item.station?.toLowerCase() === "coffee"
+      )
     }))
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  
 
   const prevOrdersLength = useRef(orders.length);
 
@@ -46,15 +51,17 @@ export default function BarmanDisplay() {
   useEffect(() => {
     if (orders.length > prevOrdersLength.current) {
       const latestOrder = orders[orders.length - 1];
-      const hasNewBarItems = latestOrder?.items.some(item => item.station === "Barman");
-      if (latestOrder?.status === "Pending" && hasNewBarItems) playChime();
+      const hasNewCoffee = latestOrder?.items.some(item => 
+        item.station?.toLowerCase() === "barista" || item.station?.toLowerCase() === "coffee"
+      );
+      if (latestOrder?.status === "Pending" && hasNewCoffee) playChime();
     }
     prevOrdersLength.current = orders.length;
   }, [orders]);
 
-  // --- ASSIGN BARMAN FUNCTION ---
-  const handleAssignBarman = (barmanName) => {
-    if (!barmanName) return;
+  // --- NEW: ASSIGN BARISTA FUNCTION ---
+  const handleAssignBarista = (baristaName) => {
+    if (!baristaName) return;
     const { orderId, itemIdx } = assigningItem;
     
     setOrders(prev => prev.map(order => {
@@ -62,7 +69,7 @@ export default function BarmanDisplay() {
         const newItems = [...order.items];
         newItems[itemIdx] = { 
           ...newItems[itemIdx], 
-          assignedTo: barmanName,
+          assignedTo: baristaName,
           assignedAt: new Date().toISOString()
         };
         return { ...order, items: newItems };
@@ -79,16 +86,16 @@ export default function BarmanDisplay() {
   };
 
   const handleShiftReset = () => {
-    const drinkCount = filteredOrders.reduce((sum, o) => sum + o.items.length, 0);
-    setShiftStats({ totalOrders: filteredOrders.length, totalDrinks: drinkCount });
+    const cupCount = filteredOrders.reduce((sum, o) => sum + o.items.length, 0);
+    setShiftStats({ totalOrders: filteredOrders.length, totalBrewed: cupCount });
     setShowSummary(true);
   };
 
   const confirmEndShift = () => {
     setOrders(prev => prev.map(order => {
       const isVisibleHere = ["Pending", "Preparing", "Ready"].includes(order.status) && 
-                            order.items.some(i => i.station === "Barman");
-      if (isVisibleHere) return { ...order, clearedByBarman: true };
+                            order.items.some(i => i.station?.toLowerCase() === "barista" || i.station?.toLowerCase() === "coffee");
+      if (isVisibleHere) return { ...order, clearedByBarista: true };
       return order;
     }));
     setShowSummary(false);
@@ -97,47 +104,44 @@ export default function BarmanDisplay() {
   return (
     <div className="h-screen bg-zinc-950 p-4 md:p-6 overflow-hidden flex flex-col font-[Outfit] relative text-white">
       
-      {/* Audio Permission Overlay with Icon */}
+      {/* Audio Permission Overlay */}
       {!audioEnabled && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center">
           <div>
-            <div className="relative mb-6">
-              <Martini size={60} className="text-blue-500 mx-auto animate-pulse" />
-             
-            </div>
+            <Coffee size={60} className="text-orange-500 mx-auto mb-6 animate-pulse" />
             <button 
               onClick={() => { setAudioEnabled(true); playChime(); }}
-              className="bg-blue-600 text-white px-12 py-5 rounded-2xl font-black uppercase italic hover:scale-105 transition-transform flex items-center gap-3 shadow-2xl shadow-blue-600/20 active:scale-95"
+              className="bg-orange-600 text-white px-12 py-5 rounded-2xl font-black uppercase italic hover:scale-105 transition-transform flex items-center gap-3 shadow-2xl shadow-orange-600/20"
             >
-              <Play fill="currentColor" size={20} /> Open Bar Station
+              <Play fill="currentColor" size={20} /> Open Barista Station
             </button>
           </div>
         </div>
       )}
 
-      {/* BARMAN ASSIGNMENT MODAL */}
+      {/* BARISTA ASSIGNMENT MODAL (By Typing) */}
       {assigningItem && (
         <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-zinc-900 border border-white/10 w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center text-blue-500">
+              <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center text-orange-500">
                 <UserPlus size={20} />
               </div>
-              <h3 className="font-black uppercase italic tracking-tighter text-lg text-white">Assign Mixologist</h3>
+              <h3 className="font-black uppercase italic tracking-tighter text-lg">Assign Barista</h3>
             </div>
             
             <input 
               autoFocus
               type="text"
-              placeholder="Enter Barman Name (e.g. Alex)"
-              onKeyDown={(e) => e.key === 'Enter' && handleAssignBarman(e.target.value)}
-              className="w-full bg-black border border-white/10 rounded-xl py-4 px-5 text-sm font-bold text-white outline-none focus:border-blue-500 mb-4"
-              id="barmanInput"
+              placeholder="Enter Barista Name (e.g. Timo)"
+              onKeyDown={(e) => e.key === 'Enter' && handleAssignBarista(e.target.value)}
+              className="w-full bg-black border border-white/10 rounded-xl py-4 px-5 text-sm font-bold text-white outline-none focus:border-orange-500 mb-4"
+              id="baristaInput"
             />
 
             <button 
-              onClick={() => handleAssignBarman(document.getElementById('barmanInput').value)}
-              className="w-full py-4 bg-blue-600 text-white font-black rounded-xl uppercase italic text-xs mb-2"
+              onClick={() => handleAssignBarista(document.getElementById('baristaInput').value)}
+              className="w-full py-4 bg-orange-600 text-white font-black rounded-xl uppercase italic text-xs mb-2"
             >
               Confirm Assignment
             </button>
@@ -149,12 +153,12 @@ export default function BarmanDisplay() {
       {/* HEADER */}
       <header className="flex flex-col md:flex-row justify-between items-center mb-6 bg-zinc-900 p-5 rounded-[2rem] border border-white/5 shadow-2xl gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
-            <Wine size={24} />
+          <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-orange-600/20">
+            <Coffee size={24} />
           </div>
           <div>
-            <h1 className="text-xl font-black uppercase tracking-tighter leading-none italic">Bar Feed</h1>
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Mixology & Cocktails</p>
+            <h1 className="text-xl font-black uppercase tracking-tighter leading-none italic">Barista Feed</h1>
+            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Head Barista Oversight</p>
           </div>
         </div>
 
@@ -164,7 +168,7 @@ export default function BarmanDisplay() {
             <input 
               type="text" placeholder="Search Table..." value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-950 border border-white/10 rounded-full py-3 pl-12 pr-4 text-xs font-bold text-white outline-none focus:border-blue-500 transition-all"
+              className="w-full bg-zinc-950 border border-white/10 rounded-full py-3 pl-12 pr-4 text-xs font-bold text-white outline-none focus:border-orange-600 transition-all"
             />
           </div>
           <button onClick={handleShiftReset} className="flex items-center gap-2 px-6 py-3 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white transition-all text-[10px] font-black uppercase italic">
@@ -181,9 +185,9 @@ export default function BarmanDisplay() {
           const isReady = order.status === "Ready";
 
           return (
-            <div key={order.id} className={`flex flex-col rounded-[2.5rem] border-2 bg-zinc-900 transition-all duration-500 h-[450px] overflow-hidden ${isReady ? 'opacity-50 grayscale border-transparent' : isDelayed ? 'border-rose-600 animate-pulse-slow' : 'border-white/5'}`}>
+            <div key={order.id} className={`flex flex-col rounded-[2.5rem] border-2 bg-zinc-900 transition-all duration-500 h-[450px] overflow-hidden ${isReady ? 'opacity-50 grayscale border-transparent' : isDelayed ? 'border-orange-600 animate-pulse-slow' : 'border-white/5'}`}>
               
-              <div className={`p-5 shrink-0 ${isReady ? 'bg-zinc-800' : isDelayed ? 'bg-rose-600' : 'bg-blue-600'} text-white`}>
+              <div className={`p-5 shrink-0 ${isReady ? 'bg-zinc-800' : isDelayed ? 'bg-orange-600' : 'bg-orange-950'} text-white`}>
                 <div className="flex justify-between items-start">
                   <h2 className="text-xl font-black italic tracking-tighter uppercase leading-none">T-{order.tableName}</h2>
                   <div className="text-right">
@@ -199,7 +203,7 @@ export default function BarmanDisplay() {
                 {order.items.map((item, idx) => (
                   <div key={idx} className="flex justify-between items-start gap-3">
                     <div className="flex items-start gap-2">
-                        <span className="bg-blue-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded leading-none">{item.quantity}x</span>
+                        <span className="bg-orange-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded leading-none">{item.quantity}x</span>
                         <div>
                             <p className={`font-black text-sm uppercase leading-tight ${isReady ? 'line-through text-zinc-500' : 'text-white'}`}>{item.name}</p>
                             {item.note && <p className="text-[10px] text-rose-400 italic font-bold mt-1 bg-rose-500/5 p-1 rounded">"{item.note}"</p>}
@@ -210,7 +214,7 @@ export default function BarmanDisplay() {
                     <div className="shrink-0">
                       {item.assignedTo ? (
                         <div className="flex flex-col items-end">
-                          <span className="bg-blue-500/10 text-blue-400 text-[8px] font-black px-2 py-1 rounded-full border border-blue-500/20">
+                          <span className="bg-emerald-500/10 text-emerald-500 text-[8px] font-black px-2 py-1 rounded-full border border-emerald-500/20">
                             {item.assignedTo}
                           </span>
                           <button 
@@ -223,9 +227,9 @@ export default function BarmanDisplay() {
                       ) : (
                         <button 
                           onClick={() => setAssigningItem({ orderId: order.id, itemIdx: idx })}
-                          className="bg-zinc-800 text-zinc-400 text-[8px] font-black px-2 py-1 rounded-full border border-white/5 hover:bg-blue-600 hover:text-white transition-all"
+                          className="bg-zinc-800 text-zinc-400 text-[8px] font-black px-2 py-1 rounded-full border border-white/5 hover:bg-orange-600 hover:text-white transition-all"
                         >
-                          + Barman
+                          + Barista
                         </button>
                       )}
                     </div>
@@ -235,8 +239,8 @@ export default function BarmanDisplay() {
 
               <div className="p-4 bg-black/20 border-t border-white/5">
                 {order.status === "Pending" && (
-                  <button onClick={() => updateStatus(order.id, "Preparing")} className="w-full py-4 bg-blue-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 text-[10px] uppercase italic">
-                    <Martini size={16} /> Start Mixing
+                  <button onClick={() => updateStatus(order.id, "Preparing")} className="w-full py-4 bg-orange-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 text-[10px] uppercase italic">
+                    <Bean size={16} /> Start Brewing
                   </button>
                 )}
                 {order.status === "Preparing" && (
@@ -244,9 +248,9 @@ export default function BarmanDisplay() {
                     <CheckCircle size={16} /> Order Ready
                   </button>
                 )}
-                {isReady && (
-                   <button onClick={() => updateStatus(order.id, "Preparing")} className="w-full py-4 bg-zinc-800 text-zinc-400 font-black rounded-2xl flex items-center justify-center gap-2 text-[10px] uppercase italic">
-                    <RotateCcw size={16} /> Recall Order
+                {order.status === "Ready" && (
+                  <button onClick={() => updateStatus(order.id, "Preparing")} className="w-full py-4 bg-zinc-800 text-zinc-400 font-black rounded-2xl flex items-center justify-center gap-2 text-[10px] uppercase italic">
+                    <RotateCcw size={16} /> Return to Queue
                   </button>
                 )}
               </div>
@@ -259,22 +263,22 @@ export default function BarmanDisplay() {
       {showSummary && (
         <div className="fixed inset-0 z-[400] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 text-white">
           <div className="bg-zinc-900 border border-white/10 w-full max-w-sm rounded-[3rem] p-8 text-center shadow-2xl">
-            <div className="w-16 h-16 bg-blue-600/10 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-orange-600/10 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
               <Trophy size={32} />
             </div>
             <h2 className="text-xl font-black uppercase italic mb-2">Shift Ended</h2>
             <div className="grid grid-cols-2 gap-4 mb-8">
               <div className="bg-black/40 p-5 rounded-2xl border border-white/5">
-                <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Tickets</p>
+                <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Dockets</p>
                 <p className="text-2xl font-black">{shiftStats.totalOrders}</p>
               </div>
               <div className="bg-black/40 p-5 rounded-2xl border border-white/5">
-                <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Drinks</p>
-                <p className="text-2xl font-black">{shiftStats.totalDrinks}</p>
+                <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Cups</p>
+                <p className="text-2xl font-black">{shiftStats.totalBrewed}</p>
               </div>
             </div>
             <div className="space-y-3">
-              <button onClick={confirmEndShift} className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl uppercase italic text-xs shadow-lg shadow-blue-600/10 active:scale-95 transition-all">Clear My Feed</button>
+              <button onClick={confirmEndShift} className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl uppercase italic text-xs shadow-lg shadow-orange-600/10 active:scale-95 transition-all">Clear My Feed</button>
               <button onClick={() => setShowSummary(false)} className="w-full py-4 text-zinc-500 font-bold uppercase tracking-widest text-[9px]">Cancel</button>
             </div>
           </div>

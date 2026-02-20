@@ -15,6 +15,7 @@ import DirectorRoutes from "./staff/routes/DirectorRoutes.jsx";
 import AccountantRoutes from "./staff/routes/AccountantRoutes.jsx";
 import ManagerRoutes from "./staff/routes/ManagerRoutes.jsx";
 import BarmanRoutes from "./staff/routes/BarmanRoutes";
+import BaristaRoutes from "./staff/routes/BaristaRoutes"; 
 
 export default function App() {
   return (
@@ -51,6 +52,9 @@ export default function App() {
        
       {/* BARMAN */}
       <Route path="/barman/*" element={<BarmanRoutes />} />
+
+        {/* BARISTA */}
+      <Route path="/barista/*" element={<BaristaRoutes />} />
 
       {/* CONTENT CREATOR (Socials & Menus) */}
       <Route path="/content-creator/*" element={<ContentCreatorRoutes />} />
