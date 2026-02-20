@@ -16,7 +16,7 @@ import AccountantRoutes from "./staff/routes/AccountantRoutes.jsx";
 import ManagerRoutes from "./staff/routes/ManagerRoutes.jsx";
 import BarmanRoutes from "./staff/routes/BarmanRoutes";
 import BaristaRoutes from "./staff/routes/BaristaRoutes"; 
-
+import SupervisorRoutes from "./staff/routes/SupervisorRoutes";
 export default function App() {
   return (
     <>
@@ -44,6 +44,8 @@ export default function App() {
 
       {/* MANAGER (Table Management) */}
       <Route path="/staff/manager/*" element={<ManagerRoutes />} />
+
+      <Route path="/supervisor/*" element={<SupervisorRoutes />} />
 
       <Route path="/accountant/*" element={<AccountantRoutes />} />
 

@@ -1,7 +1,7 @@
 import React from "react";
 import logo from "../../customer/assets/images/logo.jpeg";
 import { 
-  LayoutDashboard, Truck, RotateCcw, LogOut, X 
+  LayoutDashboard, Truck, RotateCcw, LogOut, X, Wallet 
 } from "lucide-react";
 
 export default function SideBar({ 
@@ -14,7 +14,9 @@ export default function SideBar({
   const menuItems = [
     { id: "PENDING", label: "My Collection", icon: <LayoutDashboard size={20} /> },
     { id: "CLOSED", label: "Order Status", icon: <RotateCcw size={20} /> },
+     { id: "PETTY CASH", label: "Log Petty Cash", icon: <Wallet size={20} /> },
     { id: "RIDERS", label: "Riders", icon: <Truck size={20} /> },
+   
   ];
 
   return (
@@ -32,33 +34,31 @@ export default function SideBar({
         xl:relative xl:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         {/* Branding Section */}
-<div className="p-6 border-b border-white/5 flex flex-col gap-4">
-  <div className="flex justify-between items-center w-full">
-    <div className="flex items-center gap-3">
-      <img src={logo} alt="logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
-      <div className="flex flex-col">
-        <h1 className="text-[20px] font-black text-white uppercase tracking-tighter leading-tight">
-          KURAX FOOD LOUNGE & BISTRO
-        </h1>
-        <p className="text-yellow-500 text-[9px] font-bold uppercase tracking-widest leading-tight">
-          Cashier Panel
-        </p>
-      </div>
-    </div>
-    
-    {/* Close button for mobile */}
-    <button 
-      onClick={() => setIsOpen(false)} 
-      className="xl:hidden p-2 text-zinc-500 hover:text-white transition-colors"
-    >
-      <X size={20}/>
-    </button>
-  </div>
-</div>
+        <div className="p-6 border-b border-white/5 flex flex-col gap-4">
+          <div className="flex justify-between items-center w-full">
+            <div className="flex items-center gap-3">
+              <img src={logo} alt="logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
+              <div className="flex flex-col">
+                <h1 className="text-[14px] font-black text-white uppercase tracking-tighter leading-tight">
+                  KURAX BISTRO
+                </h1>
+                <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest leading-tight">
+                  Cashier Panel
+                </p>
+              </div>
+            </div>
+            
+            <button 
+              onClick={() => setIsOpen(false)} 
+              className="xl:hidden p-2 text-zinc-500 hover:text-white transition-colors"
+            >
+              <X size={20}/>
+            </button>
+          </div>
+        </div>
 
-        {/* Navigation */}
+        {/* Navigation Area */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          
           {menuItems.map((item) => (
             <button
               key={item.id}
@@ -73,20 +73,23 @@ export default function SideBar({
               {item.label}
             </button>
           ))}
+
+          {/* Action Divider & End Shift Button */}
+          <div className="pt-4 mt-4 border-t border-white/5">
+            <button 
+              onClick={onEndShift}
+              className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl bg-rose-500/5 text-rose-500 border border-rose-500/10 font-bold uppercase text-[11px] tracking-widest hover:bg-rose-500 hover:text-white transition-all group"
+            >
+              <RotateCcw size={18} className="group-hover:rotate-180 transition-transform duration-500" /> 
+              End Shift
+            </button>
+          </div>
         </nav>
 
-        {/* Bottom Actions */}
-        <div className="p-4 border-t border-white/5 space-y-2">
-          <button 
-            onClick={onEndShift}
-            className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl bg-zinc-900/50 text-rose-500 border border-rose-500/10 font-bold uppercase text-[11px] tracking-widest hover:bg-rose-500 hover:text-white transition-all group"
-          >
-            <RotateCcw size={20} className="group-hover:rotate-180 transition-transform duration-500" /> 
-            End Shift
-          </button>
-          
-          <button className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-zinc-500 font-bold uppercase text-[11px] tracking-widest hover:bg-white/5 transition-all">
-            <LogOut size={20} /> 
+        {/* Bottom Utility Area */}
+        <div className="p-4 border-t border-white/5">
+          <button className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-zinc-700 font-bold uppercase text-[11px] tracking-widest hover:text-zinc-400 transition-all">
+            <LogOut size={18} /> 
             Logout
           </button>
         </div>

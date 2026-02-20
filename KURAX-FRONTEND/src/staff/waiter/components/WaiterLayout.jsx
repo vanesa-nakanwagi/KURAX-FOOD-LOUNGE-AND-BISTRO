@@ -1,22 +1,18 @@
 import React, { useState } from "react";
 import NewOrder from "./NewOrder";
 import OrderHistory from "./OrderHistory";
-import { PlusCircle, Receipt, LogOut, Clock, Printer, X } from "lucide-react"; // Added new icons
+import { PlusCircle, Receipt, LogOut, Clock, Printer, X } from "lucide-react"; 
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../../customer/components/context/ThemeContext"; 
-import { useData } from "../../../customer/components/context/DataContext"; // Added to get order data
+import { useData } from "../../../customer/components/context/DataContext"; 
 
 export default function WaiterLayout() {
   const [activeTab, setActiveTab] = useState("order");
-  const [showShiftModal, setShowShiftModal] = useState(false); // Modal State
+  const [showShiftModal, setShowShiftModal] = useState(false); 
   const { theme } = useTheme();
-  const { orders = [] } = useData() || {}; // Get global orders
-
-  // Configuration (Matches your OrderHistory logic)
+  const { orders = [] } = useData() || {}; 
   const waiterName = "John Doe"; 
   const today = new Date().toISOString().split('T')[0];
-
-  // Logic to calculate shift totals
   const dailyOrders = orders.filter(order => {
     const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
     return order.waiterName === waiterName && orderDate === today;

@@ -5,7 +5,7 @@ import {
   Clock, 
   LogOut, 
   Flag,
-  LayoutDashboard // Added for the Live Tables icon
+  LayoutDashboard 
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData } from "../../../customer/components/context/DataContext";
@@ -19,9 +19,6 @@ export default function Sidebar({ activeTab, setActiveTab }) {
   const menuItems = [
     { id: "order", label: "TAKE ORDER", icon: <ClipboardList size={20} /> },
     { id: "status", label: "VIEW ORDER STATUS", icon: <Clock size={20} /> },
-    // --- NEW: MANAGER SPECIFIC ITEM ---
-    { id: "tables", label: "LIVE TABLES", icon: <LayoutDashboard size={20} /> },
-    { id: "target", label: "SET TARGET", icon: <Target size={20} /> },
     { id: "shift", label: "END SHIFT", icon: <Flag size={20} /> },
   ];
 

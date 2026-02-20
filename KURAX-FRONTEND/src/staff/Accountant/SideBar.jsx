@@ -9,7 +9,6 @@ export default function SideBar({ activeSection, setActiveSection, isOpen, setIs
   const menuItems = [
     { key: "FINANCIAL_HISTORY", label: "My Collections", icon: <Receipt size={20} /> },
     { key: "PHYSICAL COUNT", label: "Physical Finances", icon: <Calculator size={20} /> },
-    { key: "PETTY CASH", label: "Log Petty Cash", icon: <Wallet size={20} /> },
     { key: "LIVE AUDIT", label: "Live Audit", icon: <CheckCircle2 size={20} /> },
     { key: "END OF SHIFT", label: "End of Shift", icon: <RotateCcw size={20} /> },
   ];
