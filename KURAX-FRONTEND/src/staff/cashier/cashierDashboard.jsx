@@ -66,7 +66,8 @@ export default function CashierDashboard() {
       if (order.method === "CARD") setTotalViaCard(prev => prev + order.total);
       
       setAnimatingIds((prev) => prev.filter((id) => id !== order.id));
-      setProcessingOrder(null);
+      setProcessingOrder(null);ts(6133)
+      
       setMomoTransactionId("");
     }, 500);
   };
@@ -163,10 +164,80 @@ export default function CashierDashboard() {
               </div>
             )}
 
-            {/* PETTY CASH, RIDERS, AND CLOSED VIEWS REMAIN UNCHANGED */}
-            {activeSection === "PETTY CASH" && (
-                <PettyCashManager pettyLogs={pettyLogs} setPettyLogs={setPettyLogs} onTotalChange={(val) => setPettyCashTotal(val)} />
-            )}
+            {activeSection === "RIDERS" && (
+  <div className="space-y-6 animate-in fade-in duration-500">
+    {/* HEADER WITH ADD BUTTON */}
+    <div className="flex justify-between items-center mb-8">
+      <div>
+        <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">Delivery Riders</h2>
+        <p className="text-yellow-500 text-[10px] font-bold uppercase tracking-widest mt-2">Manage external delivery settlements</p>
+      </div>
+      
+      {/* THIS CALLS YOUR FUNCTION */}
+      <button 
+        onClick={addNewRider}
+        className="flex items-center gap-2 bg-yellow-500 text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase italic shadow-lg shadow-yellow-500/10 hover:scale-105 transition-transform"
+      >
+        <PlusCircle size={16} />
+        Add New Rider
+      </button>
+    </div>
+
+    {/* RIDER LIST */}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {riders.length > 0 ? riders.map(rider => (
+        <RiderCard 
+          key={rider.id} 
+          rider={rider} 
+          onReconcile={(data) => handleRiderSettlement({ ...rider, ...data })} 
+        />
+      )) : (
+        <div className="col-span-full py-20 text-center opacity-20 text-[10px] font-black uppercase tracking-[0.2em]">
+          No riders registered today
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
+            {/* --- PETTY CASH MANAGEMENT SECTION --- */}
+{activeSection === "PETTY CASH" && (
+  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    
+    {/* Header & Context */}
+    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div>
+        <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-tighter italic">
+          Petty Cash Logs
+        </h2>
+        <p className="text-yellow-600 text-[15px] font-bold mt-2">
+          Expenditure tracking & Drawer reconciliation
+        </p>
+      </div>
+
+      {/* Real-time Expense Summary Badge */}
+      <div className=" px-6 py-4 rounded-[2rem] flex items-center gap-4">
+        <div className="p-2 bg-rose-500 rounded-lg text-white">
+          <Wallet size={16} />
+        </div>
+        <div>
+          <p className="text-[8px] font-black text-rose-500 uppercase tracking-widest leading-none mb-1">Total Outflow</p>
+          <p className="text-sm font-black text-white italic">UGX {pettyCashTotal.toLocaleString()}</p>
+        </div>
+      </div>
+    </div>
+
+   
+      <PettyCashManager 
+        pettyLogs={pettyLogs} 
+        setPettyLogs={setPettyLogs} 
+        onTotalChange={(val) => setPettyCashTotal(val)} 
+      />
+    
+
+    
+  </div>
+)}
             
             {activeSection === "RIDERS" && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -400,34 +471,43 @@ function OrderCard({ order, onConfirm, isAnimating }) {
   return (
     <div className={`bg-zinc-900/40 border border-white/5 p-6 rounded-[2.5rem] flex items-center justify-between transition-all ${isAnimating ? "opacity-50 scale-95" : ""}`}>
       <div className="flex items-center gap-6">
-        {/* ICON WITH FLOATING TABLE BADGE */}
-        <div className="relative">
-            <div className={`p-4 rounded-2xl bg-black/40 border border-white/5 ${order.method === 'CASH' ? 'text-green-500' : 'text-yellow-500'}`}>
-                {order.method === 'CASH' ? <Banknote size={20}/> : <Smartphone size={20}/>}
-            </div>
-            {/* Table Badge */}
-            <div className="absolute -top-2 -right-2 bg-yellow-500 text-black text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase border-2 border-black">
-                {order.table}
-            </div>
+        {/* ICON SECTION */}
+        <div className={`p-4 rounded-2xl bg-black/40 border border-white/5 ${order.method === 'CASH' ? 'text-green-500' : 'text-yellow-500'}`}>
+          {order.method === 'CASH' ? <Banknote size={20}/> : <Smartphone size={20}/>}
         </div>
-        
+
         <div>
-          <h4 className="font-black text-white italic uppercase tracking-tighter">Order #{order.id}</h4>
-          <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-1">
-             Waiter: {order.waiter} • {order.time}
+          {/* THE REQUESTED FORMAT: TABLE X-ORD#XXXX */}
+          <div className="flex items-center gap-1.5 mb-1">
+            <h4 className="font-black text-white italic uppercase tracking-tighter text-sm">
+              TABLE {order.table?.replace('T-', '').replace('TABLE ', '') || "0"}
+            </h4>
+            <span className="text-zinc-700 font-black">-</span>
+            <h4 className="font-black text-yellow-500 italic uppercase tracking-tighter text-sm">
+              ORD#{order.id}
+            </h4>
+          </div>
+
+          <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">
+            WAITER: {order.waiter} • {order.time}
           </p>
         </div>
       </div>
-      
-      {/* REST OF THE CARD (PRICE & CONFIRM BUTTON) */}
+
       <div className="flex items-center gap-8">
         <div className="text-right">
-          <p className="text-[10px] font-black text-white italic">UGX {order.total.toLocaleString()}</p>
+          <p className="text-[11px] font-black text-white italic tracking-tight">
+            UGX {order.total.toLocaleString()}
+          </p>
+          <span className={`text-[8px] font-black uppercase ${order.status === 'DELAYED' ? 'text-rose-500' : 'text-zinc-500'}`}>
+            {order.status}
+          </span>
         </div>
+
         {onConfirm && (
           <button 
             onClick={() => onConfirm(order)}
-            className="bg-yellow-500 text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase italic"
+            className="bg-yellow-500 text-black px-6 py-3 rounded-2xl text-[10px] font-black uppercase italic shadow-lg shadow-yellow-500/5 hover:scale-105 transition-transform active:scale-95"
           >
             Confirm
           </button>

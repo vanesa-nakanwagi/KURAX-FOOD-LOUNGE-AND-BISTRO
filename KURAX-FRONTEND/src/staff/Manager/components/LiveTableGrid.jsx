@@ -138,47 +138,69 @@ export default function LiveTableGrid() {
 }
 
 function TableCard({ table, theme, onClear, timeLabel }) {
+  const isDark = theme === 'dark';
+  
+  const displayTitle = table.name.toUpperCase().includes('TABLE') 
+    ? table.name.toUpperCase() 
+    : `TABLE ${table.name}`;
+
   return (
-    <div className={`group relative rounded-[2.5rem] p-1 transition-all duration-300 ${
-      theme === 'dark' ? 'bg-white/5 hover:bg-yellow-500' : 'bg-zinc-100 hover:bg-yellow-500'
-    }`}>
-      <div className={`h-full w-full rounded-[2.3rem] p-6 flex flex-col transition-colors duration-300 ${
-        theme === 'dark' ? 'bg-zinc-900' : 'bg-white'
-      }`}>
+    <div className="group relative rounded-[2.5rem] transition-all duration-300">
+      <div className={`h-full w-full rounded-[2.3rem] p-7 flex flex-col transition-colors duration-300 
+        /* ADDED BORDER LOGIC HERE */
+        border border-black 
+        ${isDark ? 'bg-zinc-900 shadow-xl' : 'bg-white shadow-md'}`}>
+        
+        {/* HEADER SECTION */}
         <div className="flex justify-between items-start mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-yellow-500 flex items-center justify-center text-black font-black text-xl italic shadow-lg shadow-yellow-500/20">
-            {table.name}
+          <div className="flex flex-col">
+            <h3 className={`font-black text-2xl italic tracking-tighter leading-none ${
+              isDark ? 'text-white' : 'text-zinc-900'
+            }`}>
+              {displayTitle}
+            </h3>
+            <div className="flex items-center gap-1.5 mt-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Active Session</span>
+            </div>
           </div>
+
           <div className="text-right">
-            <div className="flex items-center justify-end gap-1 text-[10px] font-black text-rose-500 uppercase tracking-tighter whitespace-nowrap italic">
+            <div className="flex items-center justify-end gap-1 text-[10px] font-black text-rose-500 uppercase tracking-tighter italic whitespace-nowrap">
               <Timer size={12} /> {timeLabel}
             </div>
-            <p className="text-[8px] font-bold text-zinc-500 uppercase mt-0.5">Waiter: {table.waiter}</p>
+            <p className="text-[8px] font-bold text-zinc-500 uppercase mt-1">STF: {table.waiter}</p>
           </div>
         </div>
 
+        {/* DETAILS SECTION */}
         <div className="space-y-4 mb-8">
-           <div className="flex justify-between items-center border-b border-dashed border-zinc-500/20 pb-2">
-              <span className="text-[10px] font-black text-zinc-500 uppercase">Total Items</span>
+           <div className={`flex justify-between items-center border-b border-dashed pb-2 ${
+             isDark ? 'border-zinc-500/10' : 'border-zinc-500/20'
+           }`}>
+              <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Total Items</span>
               <span className="text-xs font-black italic">{table.count} Units</span>
            </div>
+           
            <div>
-              <span className="text-[9px] font-black text-yellow-600 uppercase tracking-widest">Total Bill</span>
-              <div className="text-2xl font-black italic tracking-tighter text-yellow-500">
-                UGX {table.total.toLocaleString()}
+              <span className="text-[9px] font-black text-yellow-600 uppercase tracking-widest block mb-1">Current Bill</span>
+              <div className="text-3xl font-black italic tracking-tighter text-yellow-500 flex items-baseline gap-1">
+                <span className="text-xs opacity-60">UGX</span>
+                {table.total.toLocaleString()}
               </div>
            </div>
         </div>
 
+        {/* ACTION BUTTON */}
         <button 
           onClick={() => onClear(table.fullName, table.ids)}
-          className={`w-full py-4 rounded-2xl font-black uppercase italic text-[10px] tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
-            theme === 'dark' 
-              ? 'bg-white/5 hover:bg-emerald-500 hover:text-white' 
-              : 'bg-zinc-100 hover:bg-emerald-500 hover:text-white'
+          className={`w-full py-4 rounded-2xl font-black uppercase italic text-[10px] tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 border border-black/10 ${
+            isDark 
+              ? 'bg-white/5 text-white hover:bg-yellow-400 hover:text-black' 
+              : 'bg-zinc-100 text-black hover:bg-yellow-400'
           }`}
         >
-          <CheckCircle2 size={14} /> Close & Clear Table
+          <CheckCircle2 size={14} /> Close Table
         </button>
       </div>
     </div>

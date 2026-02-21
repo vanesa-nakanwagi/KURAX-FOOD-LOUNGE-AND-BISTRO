@@ -9,6 +9,7 @@ import { useData } from "../../../customer/components/context/DataContext";
 import ShiftReportModal from "./ShiftModal";
 import LiveOrderStatus from "./LiveOrderStatus";
 import LiveTableGrid from "./LiveTableGrid"; 
+import PerformanceReports from "./PerformanceReports";
 
 export default function ManagerLayout() {
   const [activeTab, setActiveTab] = useState("order");
@@ -37,6 +38,8 @@ export default function ManagerLayout() {
       return <TargetSettings />;
     case "history": 
       return <OrderHistory />;
+    case "reports": 
+        return <PerformanceReports />;
     case "logout": 
       return <div className="p-10 text-center font-black uppercase italic">Logging out...</div>;
     default: 

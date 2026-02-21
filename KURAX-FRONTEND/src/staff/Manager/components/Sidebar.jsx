@@ -5,22 +5,30 @@ import {
   Clock, 
   LogOut, 
   Flag,
-  LayoutDashboard // Added for the Live Tables icon
+  LayoutDashboard,
+  BarChart3, // Added for Reports
+  UserCheck  // Added for Staff Performance
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 
-export default function Sidebar({ activeTab, setActiveTab }) {
+// Note: Ensure your Dashboard parent component passes 'debtorCount' if needed
+export default function Sidebar({ activeTab, setActiveTab, debtorCount = 0 }) {
   const { theme } = useTheme();
   const { currentUser } = useData();
 
-  // Updated navigation items to include LIVE TABLES
+  // Updated navigation items to include REPORTS and TARGETS
   const menuItems = [
     { id: "order", label: "TAKE ORDER", icon: <ClipboardList size={20} /> },
     { id: "status", label: "VIEW ORDER STATUS", icon: <Clock size={20} /> },
-    // --- NEW: MANAGER SPECIFIC ITEM ---
-    { id: "tables", label: "LIVE TABLES", icon: <LayoutDashboard size={20} /> },
+    { 
+      id: "tables", 
+      label: "LIVE TABLES", 
+      icon: <LayoutDashboard size={20} />,
+      badge: debtorCount > 0 ? debtorCount : null // Added notification badge logic
+    },
+    { id: "reports", label: "SALES REPORTS", icon: <BarChart3 size={20} /> },
     { id: "target", label: "SET TARGET", icon: <Target size={20} /> },
     { id: "shift", label: "END SHIFT", icon: <Flag size={20} /> },
   ];
@@ -39,7 +47,6 @@ export default function Sidebar({ activeTab, setActiveTab }) {
         <div className="flex items-center gap-3">
           <div className="relative">
              <img src={logo} alt="Logo" className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20" />
-             
           </div>
           <div className="flex flex-col">
             <h1 className={`text-[11px] font-black uppercase tracking-tight leading-none ${
@@ -60,7 +67,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
           <button
             key={item.id}
             onClick={() => handleTabClick(item.id)}
-            className={`w-full flex items-center gap-4 px-5 py-4 rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border
+            className={`w-full flex items-center justify-between px-5 py-4 rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border
               ${activeTab === item.id 
                 ? "bg-yellow-500 text-black border-yellow-500 shadow-xl shadow-yellow-500/20 scale-[1.02]" 
                 : theme === 'dark' 
@@ -68,15 +75,26 @@ export default function Sidebar({ activeTab, setActiveTab }) {
                   : "text-zinc-600 bg-transparent border-transparent hover:bg-black/5 hover:text-black"
               }`}
           >
-            <span className={activeTab === item.id ? "text-black" : "text-yellow-500"}>
-              {item.icon}
-            </span>
-            {item.label}
+            <div className="flex items-center gap-4">
+              <span className={activeTab === item.id ? "text-black" : "text-yellow-500"}>
+                {item.icon}
+              </span>
+              {item.label}
+            </div>
+
+            {/* Notification Badge for Debtors/Active items */}
+            {item.badge && (
+              <span className={`px-2 py-0.5 rounded-full text-[8px] font-black ${
+                activeTab === item.id ? "bg-black text-yellow-500" : "bg-rose-500 text-white"
+              }`}>
+                {item.badge}
+              </span>
+            )}
           </button>
         ))}
       </nav>
 
-      {/* Logout Button at the Bottom */}
+      {/* Logout Button */}
       <div className={`p-4 border-t ${theme === 'dark' ? 'border-white/5' : 'border-black/5'}`}>
         <button
           onClick={() => handleTabClick("logout")}
@@ -89,7 +107,6 @@ export default function Sidebar({ activeTab, setActiveTab }) {
           Log Out
         </button>
       </div>
-
     </div>
   );
 }

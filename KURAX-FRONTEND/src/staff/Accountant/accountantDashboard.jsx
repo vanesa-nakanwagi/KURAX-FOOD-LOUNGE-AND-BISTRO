@@ -178,7 +178,7 @@ export default function AccountantDashboard() {
                       <div>
                         <p className="text-white font-black uppercase text-sm italic">Table {order?.tableName ?? "N/A"}</p>
                         <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">
-                          Order #{order?.id ? order.id.slice(-6) : "000000"}
+                          ORD#{order?.id ? order.id.slice(-6) : "000000"}
                         </p>
                       </div>
                       <div className="text-right">
@@ -273,8 +273,6 @@ export default function AccountantDashboard() {
   );
 }
 
-// Sub-components as defined in your previous logic...
-// (Keep AccountantStatCard, DailyReconciliation, PettyCashModal etc.)
 function ShiftSummaryRow({ label, value, color = "text-white", isBold = false }) {
   return (
     <div className="bg-black/20 border border-white/5 p-5 rounded-2xl flex justify-between items-center">

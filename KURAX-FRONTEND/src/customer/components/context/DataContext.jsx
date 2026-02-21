@@ -6,6 +6,13 @@ const DataContext = createContext();
 export const DataProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
 
+  // --- TARGETS STATE ---
+  const [monthlyTargets, setMonthlyTargets] = useState(() => {
+    const saved = localStorage.getItem('kurax_monthly_targets');
+    // Default structure: { "2026-05": { revenue: 50000000, waiterQuota: 1000000 } }
+    return saved ? JSON.parse(saved) : {};
+  });
+
   const [dailyGoal, setDailyGoal] = useState(() => {
     return Number(localStorage.getItem('kurax_daily_goal')) || 20;
   });
@@ -36,6 +43,38 @@ export const DataProvider = ({ children }) => {
     ];
   });
 
+  // --- NEW: REPORTING LOGIC ---
+  const getDailyReport = (dateString) => {
+    // Expects dateString format "YYYY-MM-DD"
+    const filtered = orders.filter(order => {
+      // Ensure your orders have a 'date' property like "2026-05-05"
+      return order.date === dateString && order.status === "CLOSED";
+    });
+
+    const totalSales = filtered.reduce((sum, order) => sum + (order.total || 0), 0);
+    
+    // Grouping by Waiter Name found in the order logs
+    const waiterPerformance = filtered.reduce((acc, order) => {
+      const name = order.waiter || "Unknown";
+      acc[name] = (acc[name] || 0) + (order.total || 0);
+      return acc;
+    }, {});
+
+    return {
+      orders: filtered,
+      totalSales,
+      waiterPerformance
+    };
+  };
+
+  // --- NEW: TARGET SETTING LOGIC ---
+  const updateMonthlyTarget = (monthKey, revenue, waiterQuota) => {
+    setMonthlyTargets(prev => ({
+      ...prev,
+      [monthKey]: { revenue, waiterQuota }
+    }));
+  };
+
   // --- PERFORMANCE LOGIC ---
   const updateStaffPerformance = (staffName, shiftTotal) => {
     setStaffList(prev => {
@@ -63,30 +102,34 @@ export const DataProvider = ({ children }) => {
   }, [dailyGoal]);
 
   useEffect(() => {
+    localStorage.setItem('kurax_monthly_targets', JSON.stringify(monthlyTargets));
+  }, [monthlyTargets]);
+
+  useEffect(() => {
     localStorage.setItem('kurax_menus', JSON.stringify(menus));
     localStorage.setItem('kurax_events', JSON.stringify(events));
     localStorage.setItem('kurax_orders', JSON.stringify(orders));
   }, [menus, events, orders]);
 
-  // --- SYNC ACROSS TABS (Crucial for Kitchen/Bar/Barista sync) ---
+  // --- SYNC ACROSS TABS ---
   useEffect(() => {
     const handleStorageChange = (e) => {
-  try {
-    if (!e.newValue) return; // Don't process empty updates
-
-    if (e.key === 'kurax_orders') {
-      const newOrders = JSON.parse(e.newValue);
-      // PREVENT LOOP: Only set if the data is actually different
-      setOrders(current => {
-        if (JSON.stringify(current) === e.newValue) return current;
-        return newOrders;
-      });
-    }
-    // ... same for other keys
-  } catch (err) {
-    console.error("Sync Error:", err);
-  }
-};
+      try {
+        if (!e.newValue) return;
+        if (e.key === 'kurax_orders') {
+          const newOrders = JSON.parse(e.newValue);
+          setOrders(current => {
+            if (JSON.stringify(current) === e.newValue) return current;
+            return newOrders;
+          });
+        }
+        if (e.key === 'kurax_monthly_targets') {
+            setMonthlyTargets(JSON.parse(e.newValue));
+        }
+      } catch (err) {
+        console.error("Sync Error:", err);
+      }
+    };
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
@@ -100,6 +143,8 @@ export const DataProvider = ({ children }) => {
       staffList, setStaffList,
       currentUser, setCurrentUser,
       dailyGoal, setDailyGoal,
+      monthlyTargets, updateMonthlyTarget,
+      getDailyReport,                      
       updateStaffPerformance 
     }}>
       {children}

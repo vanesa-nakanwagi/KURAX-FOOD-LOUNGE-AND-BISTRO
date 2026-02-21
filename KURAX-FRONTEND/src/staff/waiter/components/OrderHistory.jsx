@@ -174,7 +174,7 @@ const handleRequestVoid = (reasonText) => {
                   {currentOpenOrder.tableName} Details
                 </h2>
                 <p className="text-zinc-500 text-[10px] font-bold uppercase mt-1">
-                  Order #{currentOpenOrder.displayId}
+                  ORD# {currentOpenOrder.displayId}
                 </p>
               </div>
               <button onClick={() => setSelectedOrderId(null)} className="p-3 bg-white/5 rounded-full text-zinc-400 hover:text-white">

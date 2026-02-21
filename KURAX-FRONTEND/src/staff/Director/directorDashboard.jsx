@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { 
   Users, BarChart3, Wallet, Bell, Plus, ShieldCheck, 
   ArrowUpRight, ArrowDownRight, TrendingUp, Settings, 
-  LogOut, LayoutDashboard, History, Banknote, Smartphone, 
+  LogOut, LayoutDashboard, History, Banknote, Smartphone, Target,
   CreditCard, Clock, Menu, X, Eye, EyeOff, Flame, Search, ShieldAlert
 } from "lucide-react";
 
@@ -11,6 +11,7 @@ import Logo from "../../customer/assets/images/logo.jpeg";
 import Footer from "../../customer/components/common/Foooter";
 import { RevenueChart } from "./charts";
 import { useData } from "../../customer/components/context/DataContext";
+import DirectorTargetView from "./DirectorTargetView";
 
 export default function DirectorDashboard() {
   const [activeTab, setActiveTab] = useState("OVERVIEW"); 
@@ -75,6 +76,7 @@ export default function DirectorDashboard() {
           <NavBtn icon={<Users size={18}/>} label="Staff Management" active={activeTab === "STAFF"} onClick={() => {setActiveTab("STAFF"); setIsSidebarOpen(false);}} />
           <NavBtn icon={<BarChart3 size={18}/>} label="Financials" active={activeTab === "FINANCES"} onClick={() => {setActiveTab("FINANCES"); setIsSidebarOpen(false);}} />
           <NavBtn icon={<History size={18}/>} label="System History" active={activeTab === "HISTORY"} onClick={() => {setActiveTab("HISTORY"); setIsSidebarOpen(false);}} />
+          <NavBtn icon={<Target size={18}/>}  label="Target Oversight" active={activeTab === "TARGETS"} onClick={() => {setActiveTab("TARGETS"); setIsSidebarOpen(false);}}/>
         </nav>
 
         <div className="mt-auto border-t border-white/5 pt-6">
@@ -121,6 +123,13 @@ export default function DirectorDashboard() {
     onViewRegistry={() => setActiveTab("HISTORY")} 
   />
 )}
+
+{/* NEW TARGETS SECTION CASE */}
+  {activeTab === "TARGETS" && (
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+       <DirectorTargetView />
+    </div>
+  )}
         {activeTab === "STAFF" && (
   <StaffSection 
   currentUser={currentUser}
