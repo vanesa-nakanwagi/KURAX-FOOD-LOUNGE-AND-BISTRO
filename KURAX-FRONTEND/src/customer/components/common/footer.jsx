@@ -193,12 +193,18 @@ export default function FooterGlobal () {
           </div>
         </div>
 
-        {/* Copyright and Bottom Info (Bottom Row) */}
-        <div className="flex flex-col items-center justify-center pt-6 text-xs text-white/50 text-center">
-          <p>
-            © 2026 Kurax Food Lounge & Bistro. All rights reserved. | Designed to elevate your dining experience.
-          </p>
-        </div>
+       {/* Copyright and Bottom Info (Bottom Row) */}
+<div className="flex flex-col items-center justify-center pt-6 text-xs text-white/50 text-center">
+  <p>
+    © 2026 Kurax Food Lounge & Bistro. All rights reserved. | Designed to elevate your{" "}
+    <a 
+      href="/staff/login" 
+      className="hover:text-white/60 transition-colors duration-500 cursor-default"
+    >
+      dining experience
+    </a>.
+  </p>
+</div>
       </div>
     </footer>
   );

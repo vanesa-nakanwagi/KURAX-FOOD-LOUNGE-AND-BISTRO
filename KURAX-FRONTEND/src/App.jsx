@@ -17,6 +17,7 @@ import ManagerRoutes from "./staff/routes/ManagerRoutes.jsx";
 import BarmanRoutes from "./staff/routes/BarmanRoutes";
 import BaristaRoutes from "./staff/routes/BaristaRoutes"; 
 import SupervisorRoutes from "./staff/routes/SupervisorRoutes";
+import StaffRoutes from './staff/routes/StaffLoginRoutes';
 export default function App() {
   return (
     <>
@@ -29,6 +30,9 @@ export default function App() {
       <Route path="/reservations" element={<ReservationsPage />} />
 
       {/* --- STAFF DIRECT URL ACCESS --- */}
+
+      {/* Staff Section - This matches /staff/login */}
+        <Route path="/staff/login/*" element={<StaffRoutes />} />
       
 
       {/* --- ROLE-BASED STAFF ROUTES --- */}

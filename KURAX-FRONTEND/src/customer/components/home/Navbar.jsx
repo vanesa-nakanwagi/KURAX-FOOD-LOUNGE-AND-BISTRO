@@ -62,39 +62,7 @@ export default function Navbar() {
           ))}
         </nav>
 
-        {/* Action Icons (Profile for Testing) */}
-        <div className="flex items-center gap-4">
-          {/* 2. Content Creator Profile Link */}
-          <Link 
-            to="/staff/waiter" 
-            className="flex items-center gap-2 group p-1"
-            title="Staff Dashboard (Test)"
-          >
-            <UserCircle className="w-6 h-6 md:w-7 md:h-7 text-white group-hover:text-yellow-500 transition-colors" />
-            
-          </Link>
-
-          {/* Mobile Toggle */}
-          <button
-            onClick={() => setOpen(!open)}
-            className="md:hidden text-white p-1"
-          >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              {open ? (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
-          </button>
         </div>
-      </div>
 
       {/* Mobile Menu */}
       {open && (

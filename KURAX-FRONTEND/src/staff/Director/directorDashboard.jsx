@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from "react"; 
+import { useNavigate } from "react-router-dom";
 import { 
   Users, BarChart3, Wallet, Bell, Plus, ShieldCheck, 
   ArrowUpRight, ArrowDownRight, TrendingUp, Settings, 
@@ -14,31 +15,42 @@ import { useData } from "../../customer/components/context/DataContext";
 import DirectorTargetView from "./DirectorTargetView";
 
 export default function DirectorDashboard() {
+  const navigate = useNavigate(); // Add this import
   const [activeTab, setActiveTab] = useState("OVERVIEW"); 
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { staffList, setStaffList, orders, currentUser } = useData() || { staffList: [], setStaffList: () => {}, orders: [] };
- 
-  const [user] = useState({ name: "Essah", role: "Director" });
+  const { staffList, setStaffList, orders } = useData() || { staffList: [], setStaffList: () => {}, orders: [] };
+
+ const [currentUser, setCurrentUser] = useState(null);
+
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
+  useEffect(() => {
+  const savedUser = localStorage.getItem('user');
+  if (!savedUser) {
+    navigate('/staff/login');
+    return;
+  }
+  const parsedUser = JSON.parse(savedUser);
+  
+  if (parsedUser.role !== 'director') {
+    navigate('/staff/login');
+  } else {
+    // Make sure we set 'currentUser' here
+    setCurrentUser(parsedUser);
+  }
+}, [navigate]);
 
-  const [editingStaff, setEditingStaff] = useState(null);
-  const handleSaveStaff = (staffData) => {
-    const exists = staffList.find(s => s.id === staffData.id);
 
-    if (exists) {
-      // Update existing
-      setStaffList(staffList.map(s => s.id === staffData.id ? staffData : s));
-    } else {
-      // Add new
-      setStaffList([...staffList, staffData]);
-    }
-    
-    setShowCreateAccount(false);
-    setEditingStaff(null); // Reset after saving
+const handleLogout = () => {
+    // Clear the database session from the browser
+    localStorage.removeItem('user');
+    // Redirect back to the luxury login page we built
+    navigate('/staff/login');
   };
 
+// AND CHANGE THIS CHECK:
+if (!currentUser) return <div className="h-screen bg-black"></div>;
 
 
   return (
@@ -80,9 +92,12 @@ export default function DirectorDashboard() {
         </nav>
 
         <div className="mt-auto border-t border-white/5 pt-6">
-          <button className="flex items-center gap-3 text-zinc-500 hover:text-rose-500 transition-colors font-bold text-sm w-full">
-            <LogOut size={18} /> Logout Session
-          </button>
+          <button 
+    onClick={handleLogout}
+    className="flex items-center gap-3 text-zinc-500 hover:text-rose-500 transition-colors font-bold text-sm w-full"
+  >
+    <LogOut size={18} /> Logout Session
+  </button>
         </div>
       </aside>
 
@@ -97,7 +112,7 @@ export default function DirectorDashboard() {
             </button>
             <div>
               <h2 className="text-lg md:text-xl font-black uppercase italic tracking-tight">
-                Welcome, <span className="text-yellow-500">{user.name}</span>
+                     Welcome, <span className="text-yellow-500">{currentUser?.name}</span>
               </h2>
               <p className="hidden md:block text-xs text-zinc-500 font-bold uppercase tracking-widest">
                 {new Date().toDateString()}
