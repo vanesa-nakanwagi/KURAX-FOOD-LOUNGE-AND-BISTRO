@@ -8,14 +8,22 @@ import { useData } from "../../../customer/components/context/DataContext";
 
 export default function WaiterLayout() {
   const [activeTab, setActiveTab] = useState("order");
-  const [showShiftModal, setShowShiftModal] = useState(false); 
+  const [showShiftModal, setShowShiftModal] = useState(false);
   const { theme } = useTheme();
-  const { orders = [] } = useData() || {}; 
-  const waiterName = "John Doe"; 
+  const { orders = [] } = useData() || {};
+
+  // 1. PULL LOGGED-IN USER FROM STORAGE
+  const savedUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const waiterName = savedUser.name || "Staff Member";
+  const waiterId = savedUser.id;
+
   const today = new Date().toISOString().split('T')[0];
+
+  // 2. FILTER ORDERS BY THIS SPECIFIC WAITER ID
   const dailyOrders = orders.filter(order => {
     const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
-    return order.waiterName === waiterName && orderDate === today;
+    // Use ID for better accuracy than Name
+    return order.waiterId === waiterId && orderDate === today;
   });
 
   const shiftTotals = dailyOrders.reduce((acc, order) => {

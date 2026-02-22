@@ -22,16 +22,29 @@ const StaffLogin = () => {
       const data = await response.json();
 
       if (response.ok) {
+        // Essential: storing the user session from the live DB
         localStorage.setItem('user', JSON.stringify(data.user));
-        if(data.user.role === 'director') navigate('/director/dashboard');
-        else navigate('/staff/dashboard');
+        
+        // Normalize role to uppercase to match DB consistency
+        const role = data.user.role.toUpperCase(); 
+
+        if (role === 'DIRECTOR') {
+          navigate('/director/dashboard');
+        } else if (role === 'WAITER') {
+          navigate('/staff/waiter');
+        } else if (role === 'CHEF') {
+          navigate('/kitchen/display');
+        } else {
+          navigate('/staff/dashboard'); 
+        }
       } else {
         setError(data.error || 'Access Denied');
       }
     } catch (err) {
       setError('System Error. Please try again later.');
+      console.error("Login connection error:", err);
     }
-  };
+  }; 
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white font-[Outfit] px-4 relative overflow-hidden">

@@ -5,7 +5,7 @@ import {
   Users, BarChart3, Wallet, Bell, Plus, ShieldCheck, 
   ArrowUpRight, ArrowDownRight, TrendingUp, Settings, 
   LogOut, LayoutDashboard, History, Banknote, Smartphone, Target,
-  CreditCard, Clock, Menu, X, Eye, EyeOff, Flame, Search, ShieldAlert
+  CreditCard, Clock, Menu, X, Eye, EyeOff, Flame, RefreshCcw, Search, ShieldAlert, Mail, Trash2
 } from "lucide-react";
 
 import Logo from "../../customer/assets/images/logo.jpeg";
@@ -22,9 +22,45 @@ export default function DirectorDashboard() {
   const { staffList, setStaffList, orders } = useData() || { staffList: [], setStaffList: () => {}, orders: [] };
 
  const [currentUser, setCurrentUser] = useState(null);
+ const [staffStats, setStaffStats] = useState({});
+   
+
+
+ // Inside DirectorDashboard function
+useEffect(() => {
+    const pullStaffMembers = async () => {
+        try {
+            const response = await fetch('http://localhost:5000/api/staff');
+            if (response.ok) {
+                const data = await response.json();
+                // Hydrate the staffList state with real data from Postgres
+                setStaffList(Array.isArray(data) ? data : []);
+            }
+        } catch (err) {
+            console.error("Database Pull Failed:", err);
+        }
+    };
+
+    pullStaffMembers();
+}, [setStaffList]);
+
+
+useEffect(() => {
+    const savedUser = localStorage.getItem('user');
+    if (!savedUser) {
+      navigate('/staff/login');
+      return;
+    }
+    const parsedUser = JSON.parse(savedUser);
+    if (parsedUser.role !== 'director') {
+      navigate('/staff/login');
+    } else {
+      setCurrentUser(parsedUser);
+    }
+  }, [navigate]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-
+  const [editingStaff, setEditingStaff] = useState(null);
   useEffect(() => {
   const savedUser = localStorage.getItem('user');
   if (!savedUser) {
@@ -41,6 +77,74 @@ export default function DirectorDashboard() {
   }
 }, [navigate]);
 
+const handleSaveStaff = async (payload) => {
+    try {
+        const response = await fetch('http://localhost:5000/api/staff/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.staff) {
+            // Update the list with the full data from the server
+            setStaffList(prev => [...prev, result.staff]); 
+            setShowCreateAccount(false); 
+        } else {
+            alert(result.error || "Failed to update UI. Please refresh.");
+        }
+    } catch (err) {
+        console.error("Save Error:", err);
+    }
+};
+
+const handleTerminateStaff = async (staffId, staffName) => {
+    if (!window.confirm(`Are you sure you want to terminate ${staffName}? Access will be revoked immediately.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`http://localhost:5000/api/staff/terminate/${staffId}`, {
+            method: 'DELETE',
+        });
+
+        if (response.ok) {
+            // Remove the card from the UI instantly
+            setStaffList(prev => prev.filter(staff => staff.id !== staffId));
+            alert(`${staffName} has been removed from Kurax.`);
+        }
+    } catch (err) {
+        alert("Error: Could not terminate account.");
+    }
+};
+
+const handleTogglePermission = async (staffId, currentStatus) => {
+  try {
+    // 1. Tell the backend to flip the status in the DB
+    const response = await fetch(`http://localhost:5000/api/staff/toggle-permission/${staffId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_permitted: !currentStatus })
+    });
+
+    if (response.ok) {
+      // 2. Update the UI state locally so it changes instantly
+      // We look through the staffList and only change the 'is_permitted' for the one we clicked
+      setStaffList(prevList => prevList.map(staff => 
+        staff.id === staffId 
+          ? { ...staff, is_permitted: !currentStatus } 
+          : staff
+      ));
+    } else {
+      const errorData = await response.json();
+      alert(`Error: ${errorData.error || 'Could not update permission'}`);
+    }
+  } catch (error) {
+    console.error("Failed to toggle permission:", error);
+    alert("Connection error: Could not reach the server.");
+  }
+};
 
 const handleLogout = () => {
     // Clear the database session from the browser
@@ -51,6 +155,9 @@ const handleLogout = () => {
 
 // AND CHANGE THIS CHECK:
 if (!currentUser) return <div className="h-screen bg-black"></div>;
+
+
+
 
 
   return (
@@ -157,6 +264,7 @@ if (!currentUser) return <div className="h-screen bg-black"></div>;
       setShowCreateAccount(true); // Open the same modal
     }}
     staffList={staffList} 
+    staffStats={staffStats}
     setStaffList={setStaffList}
     orders={orders}
   />
@@ -238,91 +346,6 @@ function OverviewSection({ onViewRegistry }){
       </div>
     </div>
   );
-}
-
-
-
-function StaffSection({ onAdd, staffList, setStaffList, orders, onEdit, currentUser }) {
-    const [searchTerm, setSearchTerm] = useState("");
-    const today = new Date().toISOString().split('T')[0];
-    const DAILY_GOAL = 20;
-
-const filteredStaff = (staffList || []).filter(staff => {
-        const matchesSearch = staff.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                              staff.role.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        const isNotMe = staff.id !== currentUser?.id; // Hide the logged-in director
-
-        return matchesSearch && isNotMe;
-    });
-
-    const togglePermission = (id) => {
-        const updatedStaff = staffList.map(s => 
-            s.id === id ? { ...s, isPermitted: !s.isPermitted } : s
-        );
-        setStaffList(updatedStaff); 
-    };
-
-    const deleteStaff = (id, name) => {
-        if(window.confirm(`Terminate ${name}'s access?`)) {
-            setStaffList(staffList.filter(s => s.id !== id));
-        }
-    };
-
-    const getStaffDailyStats = (staffName) => {
-        const staffOrders = (orders || []).filter(order => {
-            const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
-            return order.waiterName === staffName && orderDate === today;
-        });
-
-        return staffOrders.reduce((acc, curr) => {
-            acc.totalOrders += 1;
-            acc.totalRevenue += curr.total;
-            acc[curr.paymentMethod] = (acc[curr.paymentMethod] || 0) + curr.total;
-            return acc;
-        }, { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 });
-    };
-
-    return (
-        <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-5 md:p-8">
-            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-10">
-                <div>
-                    <h3 className="text-xl font-black uppercase italic text-white">Staff Ecosystem</h3>
-                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Live Performance & Access Control</p>
-                </div>
-
-                <div className="flex flex-col md:flex-row gap-4 w-full xl:w-auto">
-                    <div className="relative group flex-1 md:min-w-[300px]">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-yellow-500 transition-colors" size={18} />
-                        <input 
-                            type="text" 
-                            placeholder="Search by name or role..." 
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-black/50 border border-white/5 p-3.5 pl-12 rounded-2xl text-sm font-bold text-white focus:border-yellow-500/50 outline-none transition-all"
-                        />
-                    </div>
-                    <button onClick={onAdd} className="bg-yellow-500 text-black px-6 py-3.5 rounded-2xl font-black uppercase italic text-xs flex items-center justify-center gap-2">
-                        <Plus size={16}/> Create Account
-                    </button>
-                </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {filteredStaff.map(staff => (
-                    <StaffCard 
-        key={staff.id} 
-        staff={staff}
-        // Only calculate stats if they aren't a Director
-        stats={staff.role === "DIRECTOR" ? null : getStaffDailyStats(staff.name)}
-        onTogglePermission={() => togglePermission(staff.id)}
-        onDelete={() => deleteStaff(staff.id, staff.name)}
-        onEdit={() => onEdit(staff)}
-    />
-                ))}
-            </div>
-        </div>
-    );
 }
 
 // --- 4. HISTORY SECTION (Scrollable Table for Mobile) ---
@@ -535,53 +558,76 @@ function OrderRow({ id, waiter, method, amount, time, status }) {
 }
 
 function StaffCard({ staff, stats, onTogglePermission, onDelete, onEdit }) {
-    // 1. Expanded Logic for Director
+    // 1. Expanded Logic for Roles
     const isDirector = staff.role === "DIRECTOR";
-    const canTakeOrdersRole = staff.role === "MANAGER" || staff.role === "SUPERVISOR";
     const isWaiter = staff.role === "WAITER";
+    const isManagement = ["MANAGER", "SUPERVISOR"].includes(staff.role);
     const isChef = staff.role === "CHEF";
     const DAILY_GOAL = 20;
 
-    // 2. Safe Stats (Fallback to 0 if stats is null/undefined)
+    // 2. Safe Stats (Fallback)
     const safeStats = stats || { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 };
 
     return (
-        <div className="bg-black/60 border border-white/5 p-6 rounded-[2rem] flex flex-col gap-6 hover:border-white/10 transition-all">
+        <div className="bg-black/60 border border-white/5 p-6 rounded-[2rem] flex flex-col gap-6 hover:border-white/10 transition-all group">
             <div className="flex justify-between items-start">
                 <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-white border border-white/5 uppercase ${isDirector ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30' : 'bg-zinc-800'}`}>
-                        {staff.name[0]}
+                    {/* Avatar with Initials */}
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg border transition-colors ${
+                        isDirector 
+                        ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30' 
+                        : 'bg-zinc-900 text-white border-white/5'
+                    }`}>
+                        {staff.name ? staff.name[0].toUpperCase() : "?"}
                     </div>
                     <div>
-                        <p className="text-sm font-black text-white italic tracking-tight">{staff.name}</p>
-                        <p className={`text-[9px] font-bold uppercase tracking-widest ${
-                            isDirector ? 'text-rose-500' : isChef ? 'text-blue-400' : 'text-yellow-500'
-                        }`}>
-                            {staff.role}
+                        <p className="text-sm font-black text-white italic tracking-tight uppercase">
+                            {staff.name}
                         </p>
+                        <div className="flex flex-col gap-0.5">
+                            <p className={`text-[9px] font-bold uppercase tracking-widest ${
+                                isDirector ? 'text-rose-500' : isChef ? 'text-blue-400' : 'text-yellow-500'
+                            }`}>
+                                {staff.role}
+                            </p>
+                            <p className="text-[8px] font-medium text-zinc-500 lowercase flex items-center gap-1">
+                                <Mail size={8} /> {staff.email}
+                            </p>
+                        </div>
                     </div>
                 </div>
-                 {/* Hide the toggle if it's a Director, show it for Managers/Supervisors */}
-{(canTakeOrdersRole && !isDirector) && (
-    <button 
-        onClick={onTogglePermission}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all ${
-            staff.isPermitted 
-            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
-            : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
-        }`}
-    >
-        {staff.isPermitted ? <ShieldCheck size={12}/> : <EyeOff size={12}/>}
-        <span className="text-[8px] font-black uppercase">
-            {staff.isPermitted ? "Permitted" : "Locked"}
-        </span>
-    </button>
-)}
+
+                {/* --- IMPROVED PERMISSIONS SECTION --- */}
+                {!isDirector && (
+                    <>
+                        {isWaiter ? (
+                            /* Waiters: No toggle, just a permanent 'Active' badge */
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/10 bg-emerald-500/5 text-emerald-500/50">
+                                <ShieldCheck size={12}/>
+                                <span className="text-[8px] font-black uppercase tracking-tighter">Always Active</span>
+                            </div>
+                        ) : isManagement ? (
+                            /* Management: Busy Day Toggle */
+                            <button 
+                                onClick={onTogglePermission}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all ${
+                                    staff.is_permitted // Updated to match DB column name
+                                    ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500 shadow-lg shadow-yellow-500/5' 
+                                    : 'bg-zinc-500/10 border-zinc-500/20 text-zinc-500'
+                                }`}
+                            >
+                                {staff.is_permitted ? <Flame size={12}/> : <EyeOff size={12}/>}
+                                <span className="text-[8px] font-black uppercase">
+                                    {staff.is_permitted ? "Busy Day Mode" : "Standard Mode"}
+                                </span>
+                            </button>
+                        ) : null}
+                    </>
+                )}
             </div>
 
             {/* STATS SECTION */}
             {isDirector ? (
-                // DIRECTOR VIEW: Administrative Info
                 <div className="bg-zinc-900/80 p-6 rounded-2xl border border-yellow-500/10 text-center flex flex-col items-center justify-center gap-2">
                     <div className="p-2 bg-yellow-500/10 rounded-full text-yellow-500">
                         <ShieldAlert size={20} />
@@ -590,7 +636,6 @@ function StaffCard({ staff, stats, onTogglePermission, onDelete, onEdit }) {
                     <p className="text-[8px] font-bold text-zinc-600 uppercase">No Sales Tracking for this role</p>
                 </div>
             ) : isChef ? (
-                // CHEF VIEW
                 <div className="bg-zinc-900/50 p-6 rounded-2xl border border-white/5 text-center flex flex-col items-center justify-center gap-2">
                     <div className="p-2 bg-blue-500/10 rounded-full text-blue-400">
                         <Flame size={20} />
@@ -598,17 +643,16 @@ function StaffCard({ staff, stats, onTogglePermission, onDelete, onEdit }) {
                     <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kitchen Operations Only</p>
                 </div>
             ) : (
-                // ORDER-TAKERS VIEW (Waiters, Managers, Supervisors)
                 <>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="bg-zinc-900/50 p-3 rounded-2xl border border-white/5 text-center">
                             <p className="text-[8px] font-black text-zinc-500 uppercase mb-1">Orders Taken</p>
-                            <p className="text-lg font-black italic">
+                            <p className="text-lg font-black italic text-white">
                                 {safeStats.totalOrders} 
                                 <span className="text-xs text-zinc-600 not-italic ml-1">/ {DAILY_GOAL}</span>
                             </p>
                         </div>
-                        <div className="bg-yellow-500 p-3 rounded-2xl text-black text-center">
+                        <div className="bg-yellow-500 p-3 rounded-2xl text-black text-center shadow-lg shadow-yellow-500/5">
                             <p className="text-[8px] font-black text-black uppercase mb-1">Total Revenue</p>
                             <p className="text-sm font-black italic">
                                 UGX {safeStats.totalRevenue.toLocaleString()}
@@ -624,20 +668,25 @@ function StaffCard({ staff, stats, onTogglePermission, onDelete, onEdit }) {
                 </>
             )}
 
-            <div className="flex gap-4 pt-2 mt-auto">
+            {/* ACTION FOOTER */}
+            <div className="flex items-center justify-between pt-4 border-t border-white/5 mt-auto">
                 <button 
                     onClick={onEdit}
-                    className="text-[9px] font-black uppercase text-zinc-600 hover:text-white transition-colors"
+                    className="flex items-center gap-2 text-[9px] font-black uppercase text-zinc-500 hover:text-white transition-colors"
                 >
+                    <Settings size={12} />
                     Edit Profile
                 </button>
-                {/* Prevent deleting Directors easily? (Optional safety) */}
-                <button 
-                    onClick={onDelete} 
-                    className="text-[9px] font-black uppercase text-zinc-600 hover:text-rose-500 transition-colors"
-                >
-                    Terminate
-                </button>
+                
+                {!isDirector && (
+                    <button 
+                        onClick={onDelete} 
+                        className="flex items-center gap-2 text-[9px] font-black uppercase text-zinc-600 hover:text-rose-500 transition-colors"
+                    >
+                        <Trash2 size={12} />
+                        Terminate
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -688,15 +737,15 @@ function ShiftMiniCard({ staff, cash, momo, card, time, type, status }) {
         </div>
     );
 }
-
-// 1. Add 'initialData' to the destructured props
-function CreateStaffModal({ onClose, onSave, initialData}, staffList) {
+function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
     const [showPin, setShowPin] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     
-    // 2. Initialize state based on whether we are editing or creating
+    // 1. Updated State to include Email
     const [formData, setFormData] = useState({
-        id: initialData?.id || null, // Keep existing ID if editing
+        id: initialData?.id || null,
         name: initialData?.name || "",
+        email: initialData?.email || "", // Added Email
         role: initialData?.role || "SELECT ROLE",
         pin: initialData?.pin || ""
     });
@@ -706,74 +755,83 @@ function CreateStaffModal({ onClose, onSave, initialData}, staffList) {
             setFormData({
                 id: initialData.id,
                 name: initialData.name,
+                email: initialData.email || "",
                 role: initialData.role,
                 pin: initialData.pin
             });
         } else {
-            // Reset to empty if we are creating a new account
-            setFormData({ id: null, name: "", role: "SELECT ROLE", pin: "" });
+            setFormData({ id: null, name: "", email: "", role: "SELECT ROLE", pin: "" });
         }
     }, [initialData]);
 
-    const handleActivate = () => {
-    // 1. Basic Validation
-    if (!formData.name || formData.role === "SELECT ROLE" || !formData.pin) {
+    // 2. PIN Generator Function
+    const generateRandomPin = () => {
+        const random = Math.floor(1000 + Math.random() * 9000).toString();
+        setFormData({ ...formData, pin: random });
+        setShowPin(true); // Show it so the director can see what was generated
+    };
+
+    const handleActivate = async () => { // 1. Added 'async'
+    // Start loading
+    setIsSubmitting(true);
+
+    // Validation checks...
+    if (!formData.name || !formData.email || formData.role === "SELECT ROLE" || !formData.pin) {
         alert("Please fill in all fields!");
-        return;
+        setIsSubmitting(false); // 2. MUST reset loading if we stop early
+        return; 
     }
 
-    // 2. PIN Length Validation
     if (formData.pin.length !== 4) {
         alert("The Access PIN must be exactly 4 digits.");
+        setIsSubmitting(false); // 2. Reset loading
         return;
     }
 
-    const safeStaffArray = Array.isArray(staffList) 
-        ? staffList 
-        : Object.values(staffList || {});
-
+    // PIN Collision check...
     const currentStaff = Array.isArray(staffList) ? staffList : [];
-
-    const isPinTaken = currentStaff.find(staff => {
-        // We use String() to make sure we are comparing text to text
-        // This fixes the "1234" vs 1234 problem
-        const existingPin = String(staff.pin);
-        const newPin = String(formData.pin);
-        
-        return existingPin === newPin && staff.id !== formData.id;
-    });
+    const isPinTaken = currentStaff.find(staff => 
+        String(staff.pin) === String(formData.pin) && staff.id !== formData.id
+    );
 
     if (isPinTaken) {
         alert(`ACCESS DENIED: PIN ${formData.pin} is already assigned to ${isPinTaken.name}.`);
+        setIsSubmitting(false); // 2. Reset loading
         return;
     }
 
-    
-
     const staffPayload = {
-    ...(initialData || {}),
-    id: formData.id || Date.now(),
-    name: formData.name,
-    role: formData.role,
-    pin: formData.pin,
-    status: initialData?.status || "OFF-DUTY",
-    isPermitted: formData.role === "DIRECTOR" 
-        ? true 
-        : (initialData ? initialData.isPermitted : formData.role === "WAITER"),
-};
+        name: formData.name,
+        email: formData.email,
+        role: formData.role,
+        pin: formData.pin,
+    };
 
-    onSave(staffPayload);
+    try {
+        // 3. WAIT for the save to actually finish
+        await onSave(staffPayload); 
+        
+        // 4. If we reach here, it worked! Close the modal or reset the form
+        // (If your parent component handles closing the modal, ensure it happens inside onSave)
+        
+    } catch (error) {
+        console.error("Save failed:", error);
+        alert("Something went wrong on the server.");
+    } finally {
+        // 5. STOP the spinner no matter what
+        setIsSubmitting(false);
+    }
 };
-
     return (
         <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
             <div className="w-full max-w-md bg-zinc-900 border border-white/10 rounded-[2.5rem] p-6 md:p-10 shadow-2xl">
-                {/* 4. Dynamic Heading */}
+                
                 <h2 className="text-xl md:text-2xl font-black italic uppercase text-yellow-500 mb-6 md:mb-8">
                     {initialData ? "Edit Staff Account" : "Create Staff Account"}
                 </h2>
                 
                 <div className="space-y-4">
+                    {/* Name Input */}
                     <input 
                         type="text" 
                         placeholder="FULL NAME" 
@@ -781,7 +839,20 @@ function CreateStaffModal({ onClose, onSave, initialData}, staffList) {
                         onChange={(e) => setFormData({...formData, name: e.target.value})}
                         className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none" 
                     />
+
+                    {/* Email Input - CRITICAL FOR ACTIVATION */}
+                    <div className="relative">
+                        <input 
+                            type="email" 
+                            placeholder="STAFF EMAIL ADDRESS" 
+                            value={formData.email}
+                            onChange={(e) => setFormData({...formData, email: e.target.value})}
+                            className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none pl-12" 
+                        />
+                        <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" />
+                    </div>
                     
+                    {/* Role Selection */}
                     <select 
                         value={formData.role}
                         onChange={(e) => setFormData({...formData, role: e.target.value})}
@@ -792,12 +863,10 @@ function CreateStaffModal({ onClose, onSave, initialData}, staffList) {
                         <option value="CASHIER">CASHIER</option>
                         <option value="CHEF">CHEF</option>
                         <option value="MANAGER">MANAGER</option>
-                        <option value="SUPERVISOR">SUPERVISOR</option>
                         <option value="DIRECTOR">DIRECTOR</option>
-                        <option value="ACCOUNTANT">ACCOUNTANT</option>
-                        <option value="CONTENT-MANAGER">CONTENT MANAGER</option>
                     </select>
 
+                    {/* PIN Input with Auto-Generate Button */}
                     <div className="relative">
                         <input 
                             type={showPin ? "text" : "password"} 
@@ -805,16 +874,33 @@ function CreateStaffModal({ onClose, onSave, initialData}, staffList) {
                             value={formData.pin}
                             maxLength={4}
                             onChange={(e) => setFormData({...formData, pin: e.target.value})}
-                            className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none pr-12" 
+                            className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none pr-24" 
                         />
-                        <button 
-                            type="button"
-                            onClick={() => setShowPin(!showPin)}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-yellow-500 transition-colors"
-                        >
-                            {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                            <button 
+                                type="button"
+                                onClick={generateRandomPin}
+                                title="Generate Random PIN"
+                                className="p-2 text-zinc-500 hover:text-yellow-500 transition-colors"
+                            >
+                                <RefreshCcw size={18} />
+                            </button>
+                            <button 
+                                type="button"
+                                onClick={() => setShowPin(!showPin)}
+                                className="p-2 text-zinc-500 hover:text-yellow-500 transition-colors"
+                            >
+                                {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
+                        </div>
                     </div>
+
+                    {/* Bottom Security Note */}
+                    {!initialData && (
+                        <p className="text-[10px] text-zinc-500 italic px-2">
+                            * Upon activation, an email will be sent to the staff with their login details and security instructions.
+                        </p>
+                    )}
 
                     <div className="flex gap-3 pt-6">
                         <button 
@@ -824,14 +910,167 @@ function CreateStaffModal({ onClose, onSave, initialData}, staffList) {
                             Cancel
                         </button>
                         <button 
-                            onClick={handleActivate}
-                            className="flex-[2] py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase italic text-sm transition-transform active:scale-95 shadow-lg shadow-yellow-500/10"
-                        >
-                            {initialData ? "Update Profile" : "Activate Account"}
-                        </button>
+    type="button"
+    disabled={isSubmitting}
+    onClick={handleActivate}
+    className={`flex-[2] py-4 rounded-2xl font-black uppercase italic text-sm transition-all active:scale-95 shadow-lg 
+        ${isSubmitting ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : 'bg-yellow-500 text-black shadow-yellow-500/10'}`}
+>
+    {isSubmitting ? (
+        "Processing..." 
+    ) : (
+        initialData ? "Update Profile" : "Activate Account"
+    )}
+</button>
                     </div>
                 </div>
             </div>
+        </div>
+    );
+}
+// Add staffStats here in the curly braces
+function StaffSection({ onAdd, staffList, setStaffList, orders, onEdit, currentUser, staffStats }) {
+    const [searchTerm, setSearchTerm] = useState("");
+    const today = new Date().toISOString().split('T')[0];
+    const DAILY_GOAL = 20;
+
+  const filteredStaff = (staffList || []).filter(staff => {
+    // 1. Add '?' after staff and name to prevent crashes if data is missing
+    const name = staff?.name || ""; 
+    const role = staff?.role || "";
+
+    const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          role.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // 2. Ensure staff exists before checking ID
+    const isNotMe = staff?.id !== currentUser?.id; 
+
+    return matchesSearch && isNotMe;
+});
+
+   const handleTogglePermission = async (id, currentStatus) => {
+    try {
+        const response = await fetch(`http://localhost:5000/api/staff/toggle-permission/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            // CHANGE: Use is_permitted (underscore) to match the DB/Backend
+            body: JSON.stringify({ is_permitted: !currentStatus }) 
+        });
+
+        if (response.ok) {
+            // Update local state
+            const updatedStaff = staffList.map(s => 
+                // CHANGE: Ensure we update the correct property name here too
+                s.id === id ? { ...s, is_permitted: !currentStatus } : s
+            );
+            setStaffList(updatedStaff); 
+        } else {
+            // Amicable Debugging: Let's see what the server actually said
+            const errorText = await response.text();
+            console.error("Server Error Detail:", errorText);
+            alert("Server failed to update permissions.");
+        }
+    } catch (err) {
+        console.error("Permission Error:", err);
+        alert("Network error: Could not connect to backend.");
+    }
+};
+
+    // 3. Terminate Staff (Backend Sync)
+    const deleteStaff = async (id, name) => {
+        if(window.confirm(`🚨 TERMINATE ACCESS: Are you sure you want to remove ${name}? This action is permanent.`)) {
+            try {
+                const response = await fetch(`http://localhost:5000/api/staff/terminate/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    // Remove card from UI
+                    setStaffList(staffList.filter(s => s.id !== id));
+                    alert(`${name} has been removed from the Kurax system.`);
+                } else {
+                    alert("Failed to delete staff member from database.");
+                }
+            } catch (err) {
+                console.error("Termination Error:", err);
+                alert("Network error: Could not reach server.");
+            }
+        }
+    };
+
+    // 4. Performance Metrics Calculation
+    const getStaffDailyStats = (staffName) => {
+        const staffOrders = (orders || []).filter(order => {
+            const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
+            return order.waiterName === staffName && orderDate === today;
+        });
+
+        return staffOrders.reduce((acc, curr) => {
+            acc.totalOrders += 1;
+            acc.totalRevenue += curr.total;
+            acc[curr.paymentMethod] = (acc[curr.paymentMethod] || 0) + curr.total;
+            return acc;
+        }, { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 });
+    };
+
+    return (
+        <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-5 md:p-8">
+            {/* Header & Controls */}
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-10">
+                <div>
+                    <h3 className="text-xl font-black uppercase italic text-white">Staff Ecosystem</h3>
+                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Live Performance & Access Control</p>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-4 w-full xl:w-auto">
+                    <div className="relative group flex-1 md:min-w-[300px]">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-yellow-500 transition-colors" size={18} />
+                        <input 
+                            type="text" 
+                            placeholder="Search by name or role..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full bg-black/50 border border-white/5 p-3.5 pl-12 rounded-2xl text-sm font-bold text-white focus:border-yellow-500/50 outline-none transition-all"
+                        />
+                    </div>
+                    <button onClick={onAdd} className="bg-yellow-500 text-black px-6 py-3.5 rounded-2xl font-black uppercase italic text-xs flex items-center justify-center gap-2 hover:bg-yellow-400 transition-colors">
+                        <Plus size={16}/> Create Account
+                    </button>
+                </div>
+            </div>
+            
+            {/* Staff Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+               
+                   {filteredStaff.map(staff => {
+        // 🛡️ THE SAFETY SHIELD
+        // If staff is null, or somehow missing an ID, we skip it.
+        if (!staff || !staff.id) return null;
+
+        return (
+            <StaffCard 
+                key={staff.id} // Now we are 100% sure id exists
+                staff={staff}
+                stats={staffStats && staffStats[staff.id] ? staffStats[staff.id] : { 
+                    totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 
+                }} 
+                onEdit={() => onEdit(staff)}
+                onDelete={() => deleteStaff(staff.id, staff.name)}
+                onTogglePermission={() => handleTogglePermission(staff.id, staff.is_permitted)}
+            />
+        );
+    })}
+               
+            </div>
+
+            {/* Empty State */}
+            {filteredStaff.length === 0 && (
+                <div className="py-20 text-center border border-dashed border-white/5 rounded-[2rem]">
+                    <p className="text-zinc-600 font-black uppercase italic text-[10px] tracking-[0.2em]">
+                        No Staff Members Found
+                    </p>
+                </div>
+            )}
         </div>
     );
 }
