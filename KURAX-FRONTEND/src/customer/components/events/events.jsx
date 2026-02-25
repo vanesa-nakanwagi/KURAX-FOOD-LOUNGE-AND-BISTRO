@@ -1,126 +1,186 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import axios from "axios";
+import { Calendar, Sparkles, ArrowRight } from "lucide-react";
+import { Link } from "react-router-dom";
+
+// Components
 import TopSection from "../common/topSection.jsx";
-import terrace from "../../assets/images/terrace.jpg";
 import EventCard from "../events/EventCard.jsx";
 import BookingModal from "../events/BookingModal.jsx";
-import { events } from "../../data/events.jsx";
-import gallery5 from "../../assets/images/occasion.jpeg"; 
+
+// Utils & Assets
+import { getImageSrc } from "../../../utils/imageHelper.js";
+import terrace from "../../assets/images/terrace.jpg";
+
+// Static Gallery Assets
 import gallery1 from "../../assets/images/hero1.jpg";
 import gallery2 from "../../assets/images/hero2.jpg";
 import gallery3 from "../../assets/images/hero3.jpg";
 import gallery4 from "../../assets/images/hero4.jpg";
+import gallery5 from "../../assets/images/occasion.jpeg"; 
 import gallery6 from "../../assets/images/wine.jpg";
+
 export default function Events() {
   const [showModal, setShowModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [dbEvents, setDbEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Carousel Logic State
+  const [activeIndex, setActiveIndex] = useState(0);
+  const galleryImages = [gallery1, gallery2, gallery3, gallery4, gallery5, gallery6];
+
+  // Auto-play the image transition every 4 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveIndex((prev) => (prev + 1) % galleryImages.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [galleryImages.length]);
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const response = await axios.get("http://localhost:5000/api/events");
+        // FIX: Only retrieve items where status is 'live'
+        const liveItems = response.data.filter(event => event.status === 'live');
+        setDbEvents(liveItems);
+      } catch (error) {
+        console.error("Error fetching events:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchEvents();
+  }, []);
 
   const handleBook = (event) => {
     setSelectedEvent(event);
     setShowModal(true);
   };
 
-  const galleryImages = [gallery1, gallery2, gallery3, gallery4, gallery5, gallery6]; // Add all gallery images here
-
   return (
-    <div className="bg-white dark:bg-black text-black dark:text-white font-[Outfit] transition-colors duration-300">
-      {/* ================= HEADER ================= */}
-      <TopSection searchPlaceholder="Search events..." />
+    <div className="bg-[#FAFAF9] dark:bg-[#050505] text-zinc-900 dark:text-white font-['Outfit'] transition-colors duration-500 overflow-x-hidden">
+      
+      <TopSection searchPlaceholder="Search upcoming experiences..." />
 
-      {/* ================= HERO ================= */}
-      <section className="relative h-[60vh] min-h-[500px] flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 z-0">
-          <img src={terrace} alt="Kurax Events" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-black/50 dark:bg-black/60" />
+      {/* ── HERO SECTION ── */}
+      <section className="relative h-[65vh] min-h-[500px] flex items-center justify-center overflow-hidden">
+        <div className="absolute inset-0 z-0 bg-zinc-900">
+          <img src={terrace} alt="Kurax Terrace" className="w-full h-full object-cover scale-105 opacity-60 dark:opacity-40 animate-pulse-slow" />
+          <div className="absolute inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-[1px]" />
         </div>
-        <div className="relative z-10 text-center max-w-4xl mx-auto px-6">
-          <h1 className="font-serif text-5xl md:text-7xl font-bold mb-6 text-white dark:text-yellow-400 text-balance">
-            Unforgettable
-            <br />
-            <span className="text-yellow-400 dark:text-yellow-400">Experiences</span>
+        <div className="relative z-10 text-center max-w-5xl mx-auto px-6 space-y-6">
+          <h1 className="font-serif text-5xl md:text-8xl font-light text-white leading-none tracking-tighter">
+            Unforgettable <br />
+            <span className="italic text-yellow-400 opacity-90 text-4xl md:text-7xl">Experiences</span>
           </h1>
-          <p className="text-xl md:text-2xl text-white/90 dark:text-white/80 mb-8 text-pretty">
-            Live music, themed dinners, and exclusive events on our rooftop terrace
-          </p>
         </div>
       </section>
 
-      {/* ================= EVENTS GRID ================= */}
-      <section className="py-16 px-6 max-w-7xl mx-auto">
-        <div className="text-center mb-12">
-          <h2 className="text-4xl font-serif font-bold mb-4 text-black dark:text-white">
-            Upcoming Events
+      {/* ── UPCOMING EVENTS GRID ── */}
+      <section className="py-24 px-6 max-w-7xl mx-auto">
+        <header className="mb-16 flex flex-col items-center text-center">
+          <h2 className="text-4xl md:text-5xl font-serif font-medium tracking-tight mb-4">
+            Upcoming <span className="italic text-zinc-400">Schedule</span>
           </h2>
-          <p className="text-gray-700 dark:text-gray-400 text-lg max-w-2xl mx-auto">
-            From live entertainment to exclusive dining experiences, there's always something special happening at Kurax
+          <div className="h-1 w-20 bg-yellow-500 mb-6" />
+          <p className="text-zinc-500 dark:text-zinc-400 max-w-2xl text-base md:text-lg font-light leading-relaxed italic">
+            "From soul-stirring live bands and high-stakes quiz nights to exclusive rooftop gatherings—discover your next unforgettable moment at Kurax."
           </p>
+        </header>
+
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="h-[450px] bg-zinc-100 dark:bg-zinc-900 rounded-[2.5rem] animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            {dbEvents.map((event) => (
+              <EventCard 
+                key={event.id} 
+                event={{
+                  ...event,
+                  image: getImageSrc(event.image_url),
+                  // FIX: Cleans "weird" date formatting
+                  date: event.date ? event.date.split('T')[0] : "Date TBD" 
+                }} 
+                onBook={() => handleBook(event)} 
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── THE AMBIANCE SECTION (Kurax Gallery) ── */}
+      <section className="relative w-full min-h-[600px] flex flex-col md:flex-row border-y border-zinc-200 dark:border-zinc-800 bg-black overflow-hidden">
+        
+        {/* LEFT: Smooth Cross-Fade Slider (Flash-Free) */}
+        <div className="w-full md:w-1/2 relative h-[450px] md:h-auto overflow-hidden bg-black">
+          {galleryImages.map((img, index) => (
+            <div
+              key={index}
+              className={`absolute inset-0 transition-all duration-[1500ms] ease-in-out ${
+                index === activeIndex 
+                  ? "opacity-100 scale-100" 
+                  : "opacity-0 scale-110"
+              }`}
+            >
+              <img src={img} className="w-full h-full object-cover" alt="Kurax Vibe" />
+              <div className="absolute inset-0 bg-black/40" />
+            </div>
+          ))}
+          
+          <div className="absolute bottom-10 left-10 z-20 flex gap-2">
+            {galleryImages.map((_, i) => (
+              <div key={i} className="h-1 w-8 bg-white/20 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full bg-yellow-500 transition-all duration-[4000ms] ease-linear ${i === activeIndex ? 'w-full' : 'w-0'}`} 
+                />
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Event Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {events.map((event) => (
-            <EventCard key={event.id} event={event} onBook={() => handleBook(event)} />
-          ))}
+        {/* RIGHT: Adaptive Content Section */}
+        <div className="w-full md:w-1/2 flex items-center justify-center p-8 md:p-20 bg-[#FAFAF9] dark:bg-[#0A0A0A] transition-colors duration-500">
+          <div className="relative z-10 space-y-8 max-w-lg">
+            <div className="flex items-center gap-4">
+               <div className="w-10 h-[2px] bg-yellow-600" />
+               <span className="text-yellow-600 text-xs font-black uppercase tracking-[0.4em]">CURATED CULTURE</span>
+               <ArrowRight className="w-4 h-4 text-yellow-600" />
+            </div>
+
+            <h2 className="text-4xl md:text-6xl font-serif text-zinc-900 dark:text-white leading-tight">
+              The <span className="italic text-yellow-600 dark:text-yellow-500">Kurax Gallery</span>
+            </h2>
+
+            <p className="text-zinc-600 dark:text-zinc-400 text-base md:text-lg font-light leading-relaxed">
+              Kurax is the heartbeat of the community. From the electric energy of live bands and quiz nights to intimate rooftop gatherings, we don’t just host events—we curate moments. Connect, compete, or unwind in an atmosphere designed to spark conversation and engage every sense.
+            </p>
+
+            <Link 
+              to="/reservations" 
+              className="inline-block px-10 py-4 border border-zinc-900 dark:border-yellow-600 text-zinc-900 dark:text-yellow-500 text-[10px] font-black uppercase tracking-[0.3em] hover:bg-zinc-900 hover:text-white dark:hover:bg-yellow-600 dark:hover:text-black transition-all duration-500"
+            >
+              Reserve a Spot
+            </Link>
+          </div>
         </div>
       </section>
 
-     
-
-{/* ================= KURAX GALLERY ================= */}
-<section className="py-16 px-4 md:px-6 relative overflow-hidden bg-gray-100 dark:bg-black">
-  {/* Centered text */}
-  <div className="text-center mb-12 max-w-5xl mx-auto px-2">
-    <p className="text-yellow-800 uppercase mb-2 tracking-wide text-sm sm:text-base">
-      LIVE MOMENTS
-    </p>
-    <h2 className="text-2xl sm:text-3xl md:text-5xl font-bold mb-4">
-      KURAX GALLERY
-    </h2>
-    <p className="text-sm sm:text-base md:text-lg max-w-2xl mx-auto mb-8">
-      Dive into the essence of Kurax! Our gallery captures moments of joy, elegance, and unforgettable experiences, scroll through to feel the vibe.
-    </p>
-  </div>
-
-  {/* Container for images */}
-  <div className="relative flex flex-col md:flex-row justify-start items-start gap-6 md:gap-8 px-2 md:px-12">
-
-    {/* Left Column */}
-    <div className="flex flex-col gap-4 md:gap-6 z-10 w-full md:w-auto">
-      {[0, 1, 3, 5].map((index) => (
-        <div
-          key={index}
-          className="w-full md:w-96 h-48 sm:h-64 md:h-80 rounded-none overflow-hidden shadow-lg"
-        >
-          <img
-            src={galleryImages[index]}
-            alt={`Gallery ${index + 1}`}
-            className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-          />
-        </div>
-      ))}
-    </div>
-
-    {/* Right Column (flexible width) */}
-    <div className="w-full md:flex-grow h-64 sm:h-80 md:h-[150%] rounded-none overflow-hidden shadow-lg z-10">
-      <img
-        src={galleryImages[4]}
-        alt="Gallery 5"
-        className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-      />
-    </div>
-  </div>
-</section>
-
-
-<div className="w-full h-[2px] bg-yellow-900  dark:bg-yellow-900"></div>
-
-      {/* ================= BOOKING MODAL ================= */}
+      {/* ── MODAL ── */}
       {showModal && (
-        <BookingModal
-          show={showModal}
-          onClose={() => setShowModal(false)}
-          eventTitle={selectedEvent.title}
+        <BookingModal 
+          show={showModal} 
+          onClose={() => setShowModal(false)} 
+          eventTitle={selectedEvent?.title || selectedEvent?.name} 
         />
       )}
+      
+      <div className="h-24 bg-[#FAFAF9] dark:bg-black" />
     </div>
   );
 }

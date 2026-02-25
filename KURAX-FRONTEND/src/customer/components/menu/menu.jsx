@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { Plus, Sparkles, ChevronRight } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Plus, Sparkles } from "lucide-react";
 import CartModal from "./cart/CartModal.jsx";
 import TopSection from "../common/topSection.jsx";
 import { useCart } from "../context/CartContext.jsx";
@@ -8,21 +7,18 @@ import axios from "axios";
 import { getImageSrc } from "../../../utils/imageHelper.js";
 
 /* =========================
-   MENU CARD
+   MENU CARD COMPONENT
 ========================= */
-function MenuCard({ item, onOrder, index }) {
+function MenuCard({ item, onOrder }) {
   const [imgLoaded, setImgLoaded] = useState(false);
 
   return (
-    <div
-      className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-transparent hover:border-yellow-500/20 shadow-sm hover:shadow-xl"
-    >
-      {/* IMAGE - Removed Category Badge */}
+    <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-transparent hover:border-yellow-500/20 shadow-sm hover:shadow-xl">
+      {/* IMAGE CONTAINER */}
       <div className="relative h-48 md:h-56 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
         {!imgLoaded && (
           <div className="absolute inset-0 bg-zinc-200 dark:bg-zinc-800 animate-pulse" />
         )}
-
         <img
           src={getImageSrc(item.image_url)}
           alt={item.name}
@@ -34,24 +30,21 @@ function MenuCard({ item, onOrder, index }) {
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
       </div>
 
-      {/* CONTENT */}
+      {/* CONTENT SECTION */}
       <div className="p-5 md:p-6 flex-1 flex flex-col gap-3 md:gap-4">
         <div className="flex items-start justify-between gap-2">
           <h4 className="text-xl md:text-2xl font-semibold text-zinc-900 dark:text-white leading-tight">
             {item.name}
           </h4>
-
           <div className="text-right shrink-0">
             <span className="text-base md:text-lg text-yellow-600 dark:text-yellow-400 font-bold">
               {Number(item.price).toLocaleString()}
             </span>
-            <div className="text-[8px] md:text-[9px] tracking-widest text-zinc-400 uppercase">
-              UGX
-            </div>
+            <div className="text-[8px] md:text-[9px] tracking-widest text-zinc-400 uppercase">UGX</div>
           </div>
         </div>
 
-        <p className="text-xs md:text-[13px] text-zinc-500 dark:text-zinc-400 italic line-clamp-2 leading-relaxed">
+        <p className="text-xs md:text-[13px] text-zinc-800 dark:text-zinc-400 line-clamp-2 leading-relaxed">
           {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
         </p>
 
@@ -68,7 +61,7 @@ function MenuCard({ item, onOrder, index }) {
 }
 
 /* =========================
-   MAIN MENU
+   MAIN MENU COMPONENT
 ========================= */
 export default function Menu() {
   const [dbMenus, setDbMenus] = useState([]);
@@ -81,11 +74,17 @@ export default function Menu() {
     totalAmount, checkoutStep, setCheckoutStep, customerDetails, setCustomerDetails,
   } = useCart();
 
+  // FETCH & FILTER LOGIC
   useEffect(() => {
     const fetchMenus = async () => {
       try {
         const res = await axios.get("http://localhost:5000/api/menus");
-        setDbMenus(res.data);
+        
+        // IMPROVEMENT: Filter out any items not marked as 'live'
+        // This ensures the public only sees finalized content
+        const liveItems = res.data.filter(item => item.status === 'live');
+        
+        setDbMenus(liveItems);
       } catch (err) {
         console.error("Fetch Error:", err);
       } finally {
@@ -96,6 +95,8 @@ export default function Menu() {
   }, []);
 
   const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
+  
+  // Apply category filtering to the already filtered live list
   const filteredMenus = dbMenus.filter((item) => item.category === selectedCategory);
 
   const handleCategoryChange = (cat) => {
@@ -106,87 +107,74 @@ export default function Menu() {
   return (
     <div className="font-['Outfit'] bg-[#F9F9F7] dark:bg-[#080808] text-zinc-900 dark:text-white min-h-screen transition-colors duration-500">
       
-      {/* NAVBAR */}
+      {/* STICKY NAVIGATION */}
       <div className="sticky top-0 z-50 bg-[#F9F9F7]/90 dark:bg-[#080808]/90 backdrop-blur-xl border-b border-zinc-200/50 dark:border-zinc-800/50">
         <TopSection searchPlaceholder="Search flavors..." />
 
-        {/* MOBILE FRIENDLY CATEGORY SCROLL */}
-        <div className="flex justify-start md:justify-center gap-4 md:gap-12 px-4 md:px-6 py-4 overflow-x-auto no-scrollbar scroll-smooth">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => handleCategoryChange(cat)}
-              className={`relative text-[10px] md:text-[11px] font-bold uppercase tracking-[0.2em] md:tracking-[0.25em] pb-2 whitespace-nowrap transition-all ${
-                selectedCategory === cat
-                  ? "text-zinc-900 dark:text-white scale-105"
-                  : "text-zinc-400 dark:text-zinc-600"
-              }`}
-            >
-              {cat}
-              {selectedCategory === cat && (
-                <span className="absolute bottom-0 left-0 w-full h-[2px] bg-yellow-500 rounded-full" />
-              )}
-            </button>
-          ))}
+        
+       {/* CATEGORY SELECTOR - Increased size and padding */}
+<div className="flex justify-start md:justify-center gap-6 md:gap-16 px-6 md:px-10 py-6 md:py-8 overflow-x-auto no-scrollbar scroll-smooth">
+  {categories.map((cat) => (
+    <button
+      key={cat}
+      onClick={() => handleCategoryChange(cat)}
+      className={`relative text-[12px] md:text-[14px] font-bold  pb-3 transition-all ${
+        selectedCategory === cat
+          ? "text-zinc-900 dark:text-white scale-110"
+          : "text-zinc-400 dark:text-zinc-600 hover:text-zinc-500"
+      }`}
+    >
+      {cat}
+      {selectedCategory === cat && (
+        <span className="absolute bottom-0 left-0 w-full h-[3px] bg-yellow-500 rounded-full" />
+      )}
+    </button>
+  ))}
+</div>
+      </div>
+
+      {/* HERO / HEADER SECTION */}
+      <header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 md:pt-16 pb-8 md:pb-12">
+        <div className="flex flex-row items-end justify-between gap-2 border-b border-zinc-100 dark:border-zinc-900 pb-8">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-yellow-500">
+              <Sparkles size={12} />
+              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.4em]">Explore Menu</span>
+            </div>
+            <h2 className="text-3xl md:text-7xl font-serif tracking-tight">
+              {selectedCategory}
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-3 pl-4 h-fit">
+            <div className="text-right">
+              <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-400">Selection</p>
+              <p className="text-xl md:text-2xl font-semibold leading-none">
+                {filteredMenus.length} <span className="text-[10px] font-normal opacity-60">Items</span>
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      </header>
 
-      {/* ── HERO SECTION ── */}
-<header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 md:pt-16 pb-8 md:pb-12">
-  {/* Changed flex-col to flex-row and items-end for mobile alignment */}
-  <div className="flex flex-row items-end justify-between gap-2">
-    
-    {/* Left Side: Explore & Category Title */}
-    <div className="space-y-1">
-      <div className="flex items-center gap-2 text-yellow-500">
-        <Sparkles size={12} />
-        <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] md:tracking-[0.4em]">
-          Explore Menu
-        </span>
-      </div>
-
-      {/* Reduced mobile text size slightly (text-2xl) to ensure it fits in one row */}
-      <h2 className="text-2xl md:text-7xl font-light tracking-tight whitespace-nowrap">
-        {selectedCategory.split(' ')[0]} 
-        <span className="italic opacity-50 hidden sm:inline ml-2">
-          {selectedCategory.split(' ').slice(1).join(' ')}
-        </span>
-      </h2>
-    </div>
-
-    {/* Right Side: Available Selection Count */}
-    {/* Removed hidden md:block to keep it visible on mobile same row */}
-    <div className="flex items-center gap-3 border-l border-zinc-200 dark:border-zinc-800 pl-4 h-fit">
-      <div className="text-right">
-        <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-400">
-          Selection
-        </p>
-        <p className="text-lg md:text-2xl font-semibold leading-none">
-          {filteredMenus.length} <span className="text-[10px] font-normal opacity-60">Dishes</span>
-        </p>
-      </div>
-    </div>
-
-  </div>
-</header>
-
-      {/* MAIN GRID - Optimized for small screens (1 column on tiny phones, 2 on phablets) */}
+      {/* MENU GRID */}
       <main className="max-w-7xl mx-auto px-5 md:px-12 pb-24 md:pb-32">
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
-            {[...Array(4)].map((_, i) => <div key={i} className="h-80 bg-zinc-100 dark:bg-zinc-900 rounded-[2rem] animate-pulse" />)}
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-80 bg-zinc-100 dark:bg-zinc-900 rounded-[2rem] animate-pulse" />
+            ))}
           </div>
         ) : filteredMenus.length === 0 ? (
           <div className="py-20 text-center border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-[2.5rem]">
-            <p className="italic text-zinc-400">Chef is preparing more...</p>
+            <p className="italic text-zinc-400">Our chefs are preparing something new for this category...</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
-            {filteredMenus.map((item, i) => (
+            {filteredMenus.map((item) => (
               <MenuCard
                 key={item.id}
                 item={item}
-                index={i}
                 onOrder={(it) => {
                   setActiveDish({ ...it, quantity: 1 });
                   setIsCartOpen(true);
@@ -197,7 +185,7 @@ export default function Menu() {
         )}
       </main>
 
-      {/* MODAL */}
+      {/* CART MODAL */}
       {(activeDish || isCartOpen) && (
         <CartModal
           isCartOpen={isCartOpen}

@@ -1,88 +1,90 @@
-import { Calendar, Clock, MapPin, Tag } from "lucide-react"; // Added Tag icon
+import { Calendar, Clock, MapPin, Tag, Plus } from "lucide-react";
 import { useState } from "react";
-import BookingModal from "./BookingModal.jsx"; 
+import BookingModal from "./BookingModal.jsx";
 
 export default function EventCard({ event }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
-  <>
-    <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden shadow-md hover:shadow-2xl transition-shadow duration-300 border-2 border-transparent group flex flex-col">
-      
-      {/* Image Container */}
-      <div className="relative h-56 overflow-hidden">
-        <img
-          src={event.image || (event.image_file ? URL.createObjectURL(event.image_file) : '/placeholder.jpg')}
-          alt={event.name} // Changed from title to name to match your Event admin data
-          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-        />
+    <>
+      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2.5rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-transparent hover:border-yellow-500/20 shadow-sm hover:shadow-2xl">
+        
+        {/* IMAGE SECTION */}
+        <div className="relative h-64 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
+          <img
+            src={event.image || '/placeholder.jpg'}
+            alt={event.name || event.title}
+            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+          />
 
-        {/* TAG FUNCTIONALITY ADDED HERE */}
-        <div className="absolute top-4 left-4 flex flex-col gap-2">
-          {/* Main Category Badge (Keep if you still use categories) */}
-          <div className="bg-yellow-400 text-black px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 shadow-lg">
-            {event.category || "Event"}
+          {/* Overlay for better tag readability */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent opacity-60" />
+
+          {/* FLOATING TAGS */}
+          <div className="absolute top-5 left-5 flex flex-col gap-2 items-start">
+            
+
+            {/* Dynamic Tags from DB */}
+            {event.tags && event.tags.map((tag, index) => (
+              <div 
+                key={index} 
+                className="bg-black/40 backdrop-blur-md text-white/90 px-3 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border border-white/10 flex items-center gap-1.5"
+              >
+                <Tag className="w-2.5 h-2.5 text-yellow-400" />
+                {tag}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* CONTENT SECTION */}
+        <div className="p-8 flex flex-col flex-1 gap-4">
+          <div className="space-y-2">
+            <h3 className="font-serif text-3xl font-medium text-zinc-900 dark:text-white leading-tight italic">
+              {event.name || event.title}
+            </h3>
+            <p className="text-[13px] text-zinc-500 dark:text-zinc-400 leading-relaxed font-light line-clamp-3">
+              {event.description || "Join us for an exclusive experience at Kurax Food Lounge & Bistro."}
+            </p>
           </div>
 
-          {/* Mapping through multiple tags */}
-          {event.tags && event.tags.map((tag, index) => (
-            <div 
-              key={index} 
-              className="bg-black/60 backdrop-blur-md text-white px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-widest border border-white/10 flex items-center gap-1 w-fit"
-            >
-              <Tag className="w-2.5 h-2.5 text-yellow-400" />
-              {tag}
+          {/* EVENT METADATA */}
+          <div className="grid grid-cols-1 gap-2.5 py-4 border-y border-zinc-100 dark:border-zinc-800/50">
+            <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
+              <Calendar className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
+              <span className="font-medium">{event.date}</span>
             </div>
-          ))}
+            <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
+              <Clock className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
+              <span className="font-medium">{event.time}</span>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
+              <MapPin className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
+              <span className="font-medium">{event.location || "Kurax Rooftop"}</span>
+            </div>
+          </div>
+
+          {/* CTA BUTTON */}
+          <div className="mt-auto pt-2">
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="w-full py-4 bg-yellow-400 dark:bg-yellow-400 text-black dark:text-zinc-900 rounded-2xl text-[10px] font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-95  hover:text-white"
+            >
+              <Plus size={14} strokeWidth={3} />
+              Book Now
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="p-6 flex flex-col flex-1">
-        <h3 className="font-serif text-2xl font-bold mb-3 text-black dark:text-white">
-          {event.name || event.title}
-        </h3>
-
-        <p className="text-gray-700 dark:text-gray-400 mb-4 flex-1">
-          {event.description}
-        </p>
-
-        {/* Info */}
-        <div className="space-y-2 mb-4 text-sm text-gray-600 dark:text-gray-300">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-yellow-400" />
-            {event.date}
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-yellow-400" />
-            {event.time}
-          </div>
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-yellow-400" />
-            {event.location}
-          </div>
-        </div>
-
-        {/* Button */}
-        <div className="mt-auto">
-          <button
-            className="w-full py-4 bg-yellow-400 text-black rounded-2xl text-xs font-black flex items-center justify-center gap-3 transition-all uppercase italic shadow-lg active:scale-95"
-            onClick={() => setIsModalOpen(true)}
-          >
-            Book Now
-          </button>
-        </div>
-      </div>
-    </div>
-
-    {/* Booking Modal */}
-    {isModalOpen && (
-      <BookingModal
-        show={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        eventTitle={event.name || event.title}
-      />
-    )}
-  </>
-);
+      {/* MODAL */}
+      {isModalOpen && (
+        <BookingModal
+          show={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          eventTitle={event.name || event.title}
+        />
+      )}
+    </>
+  );
 }
