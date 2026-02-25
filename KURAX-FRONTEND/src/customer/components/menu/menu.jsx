@@ -1,209 +1,209 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Search, ShoppingBag, Sparkles } from "lucide-react";
+import { Plus, Sparkles, ChevronRight } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import CartModal from "./cart/CartModal.jsx";
-import ThemeToggle from "../context/ThemeToggle"; 
+import TopSection from "../common/topSection.jsx";
 import { useCart } from "../context/CartContext.jsx";
 import axios from "axios";
 import { getImageSrc } from "../../../utils/imageHelper.js";
-import logo from "../../assets/images/logo.jpeg";
 
-const StyleInjector = () => {
-  useEffect(() => {
-    if (document.getElementById("kurax-menu-styles")) return;
-    const link = document.createElement("link");
-    link.id = "kurax-menu-styles";
-    link.rel = "stylesheet";
-    // Loading Outfit specifically for your categories
-    link.href = "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Outfit:wght@300;400;600;700;900&display=swap";
-    document.head.appendChild(link);
-
-    const style = document.createElement("style");
-    style.id = "kurax-menu-css";
-    style.textContent = `
-      .kurax-card { transition: transform 0.45s cubic-bezier(0.23,1,0.32,1), box-shadow 0.45s cubic-bezier(0.23,1,0.32,1); }
-      .kurax-card:hover { transform: translateY(-8px) scale(1.01); box-shadow: 0 32px 64px rgba(0,0,0,0.18), 0 0 0 1px rgba(234,179,8,0.15); }
-      .kurax-img { transition: transform 0.7s cubic-bezier(0.23,1,0.32,1); }
-      .kurax-card:hover .kurax-img { transform: scale(1.08); }
-      /* DNA for the Outfit Category Font */
-      .category-font { 
-        font-family: 'Outfit', sans-serif; 
-        font-weight: 700; 
-        letter-spacing: 0.15em; 
-        text-transform: uppercase; 
-      }
-      .kurax-title-font { font-family: 'Cormorant Garamond', serif; }
-      .no-scrollbar::-webkit-scrollbar { display: none; }
-      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    `;
-    document.head.appendChild(style);
-  }, []);
-  return null;
-};
-
-function MenuCard({ item, onOrder }) {
+/* =========================
+   MENU CARD
+========================= */
+function MenuCard({ item, onOrder, index }) {
   const [imgLoaded, setImgLoaded] = useState(false);
+
   return (
-    <div className="kurax-card group relative bg-white dark:bg-[#111111] rounded-3xl overflow-hidden flex flex-col shadow-sm border border-zinc-100/50 dark:border-zinc-900/50">
-      <div className="relative h-56 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
+    <div
+      className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-transparent hover:border-yellow-500/20 shadow-sm hover:shadow-xl"
+    >
+      {/* IMAGE - Removed Category Badge */}
+      <div className="relative h-48 md:h-56 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
+        {!imgLoaded && (
+          <div className="absolute inset-0 bg-zinc-200 dark:bg-zinc-800 animate-pulse" />
+        )}
+
         <img
           src={getImageSrc(item.image_url)}
           alt={item.name}
           onLoad={() => setImgLoaded(true)}
-          className="kurax-img w-full h-full object-cover"
-          style={{ opacity: imgLoaded ? 1 : 0 }}
+          className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 ${
+            imgLoaded ? "opacity-100" : "opacity-0"
+          }`}
         />
-        <div className="absolute top-4 left-4">
-          <span className="category-font text-[10px] px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md text-white/90 border border-white/10">
-            {item.category}
-          </span>
-        </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
       </div>
-      <div className="p-6 flex-1 flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <h4 className="kurax-title-font text-2xl font-semibold text-zinc-900 dark:text-white leading-tight italic">{item.name}</h4>
-          <div className="text-right">
-            <span className="kurax-title-font text-2xl text-amber-500 italic font-medium">{Number(item.price).toLocaleString()}</span>
-            <div className="category-font text-zinc-400 text-[9px] -mt-1">UGX</div>
+
+      {/* CONTENT */}
+      <div className="p-5 md:p-6 flex-1 flex flex-col gap-3 md:gap-4">
+        <div className="flex items-start justify-between gap-2">
+          <h4 className="text-xl md:text-2xl font-semibold text-zinc-900 dark:text-white leading-tight">
+            {item.name}
+          </h4>
+
+          <div className="text-right shrink-0">
+            <span className="text-base md:text-lg text-yellow-600 dark:text-yellow-400 font-bold">
+              {Number(item.price).toLocaleString()}
+            </span>
+            <div className="text-[8px] md:text-[9px] tracking-widest text-zinc-400 uppercase">
+              UGX
+            </div>
           </div>
         </div>
-        <p className="text-sm text-zinc-400 font-light line-clamp-2 italic leading-relaxed">{item.description}</p>
-        <button onClick={() => onOrder(item)} className="mt-auto w-full py-4 rounded-2xl bg-yellow-400 text-black category-font text-[11px] flex items-center justify-center gap-2 active:scale-95 transition-transform">
-          <Plus size={16} strokeWidth={3} /> Add to Order
+
+        <p className="text-xs md:text-[13px] text-zinc-500 dark:text-zinc-400 italic line-clamp-2 leading-relaxed">
+          {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
+        </p>
+
+        <button
+          onClick={() => onOrder(item)}
+          className="mt-2 md:mt-auto w-full py-3.5 md:py-4 rounded-xl md:rounded-2xl bg-yellow-400 dark:bg-white text-black dark:text-zinc-900 text-[10px] md:text-xs font-bold uppercase tracking-[0.15em] flex items-center justify-center gap-2 transition-all active:scale-95"
+        >
+          <Plus size={14} strokeWidth={3} />
+          Add to Order
         </button>
       </div>
     </div>
   );
 }
 
+/* =========================
+   MAIN MENU
+========================= */
 export default function Menu() {
   const [dbMenus, setDbMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("Starters");
-  const [searchQuery, setSearchQuery] = useState("");
 
   const {
     cart, isCartOpen, setIsCartOpen, activeDish, setActiveDish,
+    handleAddToCart, handleRemoveFromCart, handleQuantityChange,
     totalAmount, checkoutStep, setCheckoutStep, customerDetails, setCustomerDetails,
   } = useCart();
 
   useEffect(() => {
     const fetchMenus = async () => {
       try {
-        const response = await axios.get("http://localhost:5000/api/menus");
-        setDbMenus(response.data);
-      } catch (error) { console.error(error); } finally { setLoading(false); }
+        const res = await axios.get("http://localhost:5000/api/menus");
+        setDbMenus(res.data);
+      } catch (err) {
+        console.error("Fetch Error:", err);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchMenus();
   }, []);
 
   const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
-  const categoryTitles = {
-    "Starters": "Crafted Starters",
-    "Local Foods": "Local Cuisine",
-    "Drinks & Cocktails": "Signature Drinks"
+  const filteredMenus = dbMenus.filter((item) => item.category === selectedCategory);
+
+  const handleCategoryChange = (cat) => {
+    setSelectedCategory(cat);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const filteredMenus = useMemo(() => {
-    return dbMenus.filter(item => 
-      item.category === selectedCategory && 
-      item.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [dbMenus, selectedCategory, searchQuery]);
-
   return (
-    <>
-      <StyleInjector />
-      <div className="bg-[#FAFAF8] dark:bg-[#0C0C0C] min-h-screen transition-colors duration-500">
-        
-        {/* ── HEADER ── */}
-        <div className="sticky top-0 z-50 bg-[#FAFAF8]/95 dark:bg-[#0C0C0C]/95 backdrop-blur-2xl border-b border-zinc-100 dark:border-zinc-900 px-6 md:px-12 lg:px-20">
-          <div className="grid grid-cols-1 md:grid-cols-3 items-center py-6">
-            
-            {/* 1. BRANDING (Left) */}
-            <div className="flex items-center gap-4">
-              <img src={logo} alt="Logo" className="w-14 h-14 md:w-16 md:h-16 rounded-full border-2 border-yellow-500/30 shadow-xl" />
-              <div className="hidden xl:block font-[Outfit]">
-                <h1 className="text-lg font-black tracking-tight text-zinc-900 dark:text-white uppercase leading-none">KURAX FOOD LOUNGE</h1>
-                <h1 className="text-lg font-black tracking-tight text-zinc-900 dark:text-white uppercase leading-none">& BISTRO</h1>
-               <p className="text-[10px] md:text-[11px] font-[Outfit] text-yellow-900 tracking-[0.15em] opacity-90">
-  Luxury dining, signature drinks & rooftop vibes
-</p>
-              </div>
-            </div>
+    <div className="font-['Outfit'] bg-[#F9F9F7] dark:bg-[#080808] text-zinc-900 dark:text-white min-h-screen transition-colors duration-500">
+      
+      {/* NAVBAR */}
+      <div className="sticky top-0 z-50 bg-[#F9F9F7]/90 dark:bg-[#080808]/90 backdrop-blur-xl border-b border-zinc-200/50 dark:border-zinc-800/50">
+        <TopSection searchPlaceholder="Search flavors..." />
 
-            {/* 2. CATEGORIES (Center - OUTFIT FONT) */}
-            <div className="flex items-center justify-center gap-10 overflow-x-auto no-scrollbar py-2">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`category-font text-[15px] pb-1.5 transition-all whitespace-nowrap ${
-                    selectedCategory === cat 
-                      ? "text-zinc-900 dark:text-white border-b-[3px] border-yellow-500" 
-                      : "text-zinc-400 hover:text-zinc-600"
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+        {/* MOBILE FRIENDLY CATEGORY SCROLL */}
+        <div className="flex justify-start md:justify-center gap-4 md:gap-12 px-4 md:px-6 py-4 overflow-x-auto no-scrollbar scroll-smooth">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => handleCategoryChange(cat)}
+              className={`relative text-[10px] md:text-[11px] font-bold uppercase tracking-[0.2em] md:tracking-[0.25em] pb-2 whitespace-nowrap transition-all ${
+                selectedCategory === cat
+                  ? "text-zinc-900 dark:text-white scale-105"
+                  : "text-zinc-400 dark:text-zinc-600"
+              }`}
+            >
+              {cat}
+              {selectedCategory === cat && (
+                <span className="absolute bottom-0 left-0 w-full h-[2px] bg-yellow-500 rounded-full" />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
 
-            {/* 3. ACTIONS (Right) */}
-            <div className="flex items-center justify-end gap-4">
-              <div className="relative hidden sm:block md:w-48 lg:w-64">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                <input 
-                  type="text" 
-                  placeholder="Search flavors..." 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl py-3 pl-11 pr-4 text-[10px] category-font outline-none focus:ring-2 focus:ring-yellow-500/20"
-                />
-              </div>
-              <ThemeToggle />
-              <button onClick={() => setIsCartOpen(true)} className="relative h-[50px] aspect-square bg-yellow-500 rounded-2xl flex items-center justify-center text-black shadow-xl shadow-yellow-500/20">
-                <ShoppingBag size={20} strokeWidth={2.5} />
-                {cart.length > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 bg-black text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-yellow-500">
-                    {cart.length}
-                  </span>
-                )}
-              </button>
-            </div>
+      {/* HERO SECTION - Responsive text sizes */}
+      <header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 md:pt-16 pb-8 md:pb-12 flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-8">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-yellow-500">
+            <Sparkles size={12} />
+            <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] md:tracking-[0.4em]">
+              Explore Menu
+            </span>
           </div>
+
+          <h2 className="text-4xl md:text-7xl font-light tracking-tight">
+            {selectedCategory.split(' ')[0]} <span className="italic opacity-50">{selectedCategory.split(' ').slice(1).join(' ')}</span>
+          </h2>
         </div>
 
-       
-        {/* ── CONTENT ── */}
-        <main className="px-6 md:px-16 lg:px-24 py-12">
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-              {[1,2,3,4].map(n => <div key={n} className="h-80 bg-zinc-100 dark:bg-zinc-900 rounded-3xl animate-pulse" />)}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-12">
-              {filteredMenus.map((item) => (
-                <MenuCard key={item.id} item={item} onOrder={(it) => { setActiveDish({...it, quantity:1}); setIsCartOpen(true); }} />
-              ))}
-            </div>
-          )}
-        </main>
+        <div className="flex items-center gap-4 border-l border-zinc-200 dark:border-zinc-800 pl-5 md:pl-6 h-fit">
+          <div className="text-right">
+            <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-400">
+             Available  Selection
+            </p>
+            <p className="text-xl md:text-2xl font-semibold">
+              {filteredMenus.length} Dishes
+            </p>
+          </div>
+          <ChevronRight className="text-zinc-300 dark:text-zinc-700 hidden md:block" />
+        </div>
+      </header>
 
-        {(activeDish || isCartOpen) && (
-          <CartModal
-            isCartOpen={isCartOpen}
-            onClose={() => setIsCartOpen(false)}
-            activeDish={activeDish}
-            setActiveDish={setActiveDish}
-            cart={cart}
-            totalAmount={totalAmount}
-            checkoutStep={checkoutStep}
-            setCheckoutStep={setCheckoutStep}
-            customerDetails={customerDetails}
-            setCustomerDetails={setCustomerDetails}
-          />
+      {/* MAIN GRID - Optimized for small screens (1 column on tiny phones, 2 on phablets) */}
+      <main className="max-w-7xl mx-auto px-5 md:px-12 pb-24 md:pb-32">
+        {loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
+            {[...Array(4)].map((_, i) => <div key={i} className="h-80 bg-zinc-100 dark:bg-zinc-900 rounded-[2rem] animate-pulse" />)}
+          </div>
+        ) : filteredMenus.length === 0 ? (
+          <div className="py-20 text-center border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-[2.5rem]">
+            <p className="italic text-zinc-400">Chef is preparing more...</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
+            {filteredMenus.map((item, i) => (
+              <MenuCard
+                key={item.id}
+                item={item}
+                index={i}
+                onOrder={(it) => {
+                  setActiveDish({ ...it, quantity: 1 });
+                  setIsCartOpen(true);
+                }}
+              />
+            ))}
+          </div>
         )}
-      </div>
-    </>
+      </main>
+
+      {/* MODAL */}
+      {(activeDish || isCartOpen) && (
+        <CartModal
+          isCartOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          activeDish={activeDish}
+          setActiveDish={setActiveDish}
+          cart={cart}
+          handleAddToCart={handleAddToCart}
+          handleRemoveFromCart={handleRemoveFromCart}
+          handleQuantityChange={handleQuantityChange}
+          totalAmount={totalAmount}
+          checkoutStep={checkoutStep}
+          setCheckoutStep={setCheckoutStep}
+          customerDetails={customerDetails}
+          setCustomerDetails={setCustomerDetails}
+        />
+      )}
+    </div>
   );
 }
