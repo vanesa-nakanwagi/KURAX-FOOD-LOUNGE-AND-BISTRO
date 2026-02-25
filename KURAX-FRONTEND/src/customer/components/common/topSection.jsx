@@ -63,41 +63,6 @@ export default function TopSection({ searchPlaceholder }) {
           <ThemeToggle />
         </div>
       </div>
-
-      {/* Navigation */}
-      <nav className="flex justify-center gap-6 py-4 text-sm md:text-base transition-colors duration-300">
-        <Link
-  to="/#hero"
-  className="text-black dark:text-white hover:text-yellow-500 transition"
->
-  Home
-</Link>
-
-<Link
-  to="/menus"
-  className="text-black dark:text-white hover:text-yellow-500 transition"
->
-  Menus
-</Link>
-
-<Link
-  to="/events"
-  className="text-black dark:text-white hover:text-yellow-500 transition"
->
-  Events
-</Link>
-
-<Link
-  to="/#reservations"
-  className="text-black dark:text-white hover:text-yellow-500 transition"
->
-  Reservations
-</Link>
-
-
-
-        
-      </nav>
     </header>
   );
 }
