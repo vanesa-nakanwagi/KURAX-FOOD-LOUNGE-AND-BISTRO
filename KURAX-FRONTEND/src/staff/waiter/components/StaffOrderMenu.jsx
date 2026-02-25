@@ -114,7 +114,7 @@ const filteredMenus = items.filter((item) => {
               {/* Details Section */}
               <div className="p-6 flex-1 flex flex-col">
                 <div className="flex justify-between items-start gap-4 mb-2">
-                  <h4 className={`text-base md:text-lg font-black uppercase tracking-tight leading-tight transition-colors ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                  <h4 className={`text-base md:text-lg font-medium uppercase tracking-tight leading-tight transition-colors ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
                     {item.name}
                   </h4>
                   <p className="text-yellow-600 text-sm md:text-base font-black tracking-tighter whitespace-nowrap">
@@ -122,7 +122,7 @@ const filteredMenus = items.filter((item) => {
                   </p>
                 </div>
                 
-                <p className={`text-[11px] line-clamp-2 mb-6 italic leading-relaxed transition-colors ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                <p className={`text-[11px] line-clamp-2 mb-6  leading-relaxed transition-colors ${theme === 'dark' ? 'text-white' : 'text-zinc-800'}`}>
                   {item.description || `Delicious ${item.name} prepared fresh at Kurax.`}
                 </p>
 

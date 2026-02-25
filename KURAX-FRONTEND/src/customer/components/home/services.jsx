@@ -43,10 +43,9 @@ export default function Services() {
 PREMIUM SERVICES
 
 </p>
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-900 mb-6">
-            Come. Live. Enjoy.
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-medium text-slate-900 mb-6">
+            Savor Every Moment
           </h2>
-          <div className="w-20 h-1.5 bg-yellow-500 mx-auto rounded-full mb-8"></div>
           <p className="text-slate-600 max-w-2xl mx-auto text-base sm:text-lg leading-relaxed">
             Experience exceptional dining, entertainment, and hospitality crafted
             to give you comfort, quality, and unforgettable moments.

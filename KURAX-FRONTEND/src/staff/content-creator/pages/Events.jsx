@@ -85,8 +85,7 @@ const handleSubmit = async (e) => {
   setIsSaving(true);
 
   // --- 1. THE CATCHER ---
-  // Create a fresh array of tags. If there's text in the input box 
-  // that hasn't been "Entered" yet, we add it manually here.
+  // Ensure we grab the tag currently being typed even if Enter wasn't pressed
   let currentTags = [...formData.tags];
   const pendingTag = tagInput.trim();
   if (pendingTag && !currentTags.includes(pendingTag)) {
@@ -95,14 +94,12 @@ const handleSubmit = async (e) => {
 
   const data = new FormData();
   data.append('name', formData.name);
-  data.append('description', formData.description || '');
+  // Ensure description is sent (default to empty string if null)
+  data.append('description', formData.description || ''); 
   data.append('date', formData.date);
   data.append('time', formData.time);
   data.append('location', formData.location);
   data.append('published', formData.published);
-  
-  // --- 2. THE FIX ---
-  // We send the currentTags array we just built, NOT the potentially stale formData.tags
   data.append('tags', JSON.stringify(currentTags));
   
   if (formData.image_file) {
@@ -123,21 +120,27 @@ const handleSubmit = async (e) => {
     if (response.ok) {
       const result = await response.json();
       
-      // --- 3. THE UI REFRESH ---
-      // Parse the tags coming back from the server so the UI sees an array immediately
+      // --- 2. THE UI REFRESH (CORRECTED) ---
+      // We combine the result from the server with the local formData 
+      // This ensures 'description' stays visible even if the server response is missing it.
       const sanitizedEvent = {
         ...result,
+        description: result.description || formData.description, // <--- THE FIX
         tags: typeof result.tags === 'string' ? JSON.parse(result.tags) : (result.tags || [])
       };
 
       if (editingEvent) {
-        setEvents(prev => prev.map(event => event.id === editingEvent.id ? sanitizedEvent : event));
+        setEvents(prev => prev.map(event => 
+          event.id === editingEvent.id ? sanitizedEvent : event
+        ));
         showToast("Event updated successfully!");
       } else {
         setEvents(prev => [sanitizedEvent, ...prev]);
         showToast("Event created successfully!");
       }
       resetForm(); 
+    } else {
+      showToast("Server error occurred.", "error");
     }
   } catch (err) {
     console.error("Save failed:", err);
@@ -179,6 +182,7 @@ const handleEdit = (event) => {
   setFormData({ 
     ...event, 
     date: cleanDate,
+    description: event.description || '',
     tags: getParsedTags(event.tags), 
     image_file: null // Don't set a file yet, we keep the old one unless they pick a new one
   });
@@ -235,6 +239,19 @@ const handleEdit = (event) => {
                     <input type="text" name="location" value={formData.location} onChange={handleChange} required className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-white" />
                   </div>
                 </div>
+
+                {/* NEW DESCRIPTION FIELD ADDED HERE */}
+<div className="space-y-1.5">
+  <label className="text-xs font-bold text-slate-400 uppercase">Event Description</label>
+  <textarea 
+    name="description" 
+    value={formData.description} 
+    onChange={handleChange} 
+    placeholder="Describe the vibe, special offers, or guest performers..."
+    rows="3"
+    className="w-full bg-zinc-800 border border-slate-700 p-3 rounded-xl focus:border-yellow-500 outline-none text-white resize-none"
+  />
+</div>
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Tags (Press Enter)</label>
@@ -314,6 +331,10 @@ const handleEdit = (event) => {
 
                 <div className="p-5 md:p-6 flex-1 flex flex-col">
                   <h2 className="text-lg md:text-xl font-bold text-white mb-1.5 truncate group-hover:text-yellow-500 transition-colors">{event.name}</h2>
+  
+  <p className="text-[12px] text-slate-400 mb-4 line-clamp-2  leading-relaxed">
+    {event.description || "No description provided."}
+  </p>
                   <div className="space-y-2 mb-6 text-[13px] text-slate-300">
                     <div className="flex items-center gap-2.5">
                       <Calendar className="w-3.5 h-3.5 text-yellow-500" /> 

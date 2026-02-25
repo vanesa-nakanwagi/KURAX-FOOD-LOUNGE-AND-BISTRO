@@ -165,7 +165,7 @@ export default function NewOrder() {
         <div className={`p-6 border-b ${theme === 'dark' ? 'bg-black/80 border-white/5' : 'bg-white border-black/5'}`}>
           <div className="flex items-center gap-3 mb-6">
             <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
-            <h2 className="text-3xl font-black uppercase italic tracking-tighter">Explore Menu</h2>
+            <h2 className="text-3xl font-medium uppercase tracking-widest">Explore Menu</h2>
           </div>
 
           <div className="flex items-center gap-3 w-full">
@@ -182,7 +182,7 @@ export default function NewOrder() {
             <ThemeToggle />
             <button 
               onClick={() => setIsCartOpen(true)} 
-              className="relative w-14 h-14 rounded-2xl bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg active:scale-95 transition-transform"
+              className="relative w-12 h-12 rounded-full bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg active:scale-95 transition-transform"
             >
               <ShoppingCart size={24} className="text-black" />
               {cart.length > 0 && (

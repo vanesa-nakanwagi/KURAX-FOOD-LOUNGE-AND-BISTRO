@@ -62,7 +62,7 @@ export default function WaiterLayout() {
         <div className="flex items-center gap-3">
           <img src={logo} alt="Logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
           <div className="flex flex-col justify-center leading-tight">
-            <h1 className={`text-sm md:text-lg font-black uppercase tracking-tighter leading-none ${
+            <h1 className={`text-sm md:text-lg font-medium uppercase tracking-tighter leading-none ${
               theme === 'dark' ? 'text-white' : 'text-zinc-900'
             }`}>
               KURAX FOOD LOUNGE & BISTRO

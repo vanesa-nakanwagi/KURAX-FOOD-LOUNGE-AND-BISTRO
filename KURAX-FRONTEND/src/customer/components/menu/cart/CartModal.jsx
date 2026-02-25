@@ -1,5 +1,6 @@
 import CheckoutForm from "../checkout/CheckoutForm.jsx";
 import { Trash2, Plus } from "lucide-react";
+import { getImageSrc } from "../../../../utils/imageHelper.js";
 export default function CartModal({
   isCartOpen,
   onClose,
@@ -44,10 +45,11 @@ export default function CartModal({
 
                 <div className="flex flex-col md:flex-row gap-4">
                   <img
-                    src={activeDish.image}
-                    alt={activeDish.name}
-                    className="w-full md:w-1/3 h-48 object-cover rounded-none border border-gray-200 dark:border-gray-700"
-                  />
+  // Check for .image first, then fall back to .image_url
+  src={activeDish.image || getImageSrc(activeDish.image_url)}
+  alt={activeDish.name}
+  className="w-full md:w-1/3 h-48 object-cover rounded-none border border-gray-200 dark:border-gray-700"
+/>
 
                   <div className="flex-1 flex flex-col gap-3">
                     <h3 className="font-semibold text-lg text-gray-900 dark:text-white">

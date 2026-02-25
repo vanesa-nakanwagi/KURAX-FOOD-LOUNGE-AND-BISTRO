@@ -7,7 +7,7 @@ export default function EventCard({ event }) {
 
   return (
     <>
-      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2.5rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-transparent hover:border-yellow-500/20 shadow-sm hover:shadow-2xl">
+      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2.5rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 hover:border-yellow-500/20 shadow-sm hover:shadow-2xl">
         
         {/* IMAGE SECTION */}
         <div className="relative h-64 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
@@ -40,7 +40,7 @@ export default function EventCard({ event }) {
         {/* CONTENT SECTION */}
         <div className="p-8 flex flex-col flex-1 gap-4">
           <div className="space-y-2">
-            <h3 className="font-serif text-3xl font-medium text-zinc-900 dark:text-white leading-tight italic">
+            <h3 className="font-serif text-3xl font-medium text-zinc-900 dark:text-white leading-tight">
               {event.name || event.title}
             </h3>
             <p className="text-[13px] text-zinc-500 dark:text-zinc-400 leading-relaxed font-light line-clamp-3">
@@ -49,7 +49,7 @@ export default function EventCard({ event }) {
           </div>
 
           {/* EVENT METADATA */}
-          <div className="grid grid-cols-1 gap-2.5 py-4 border-y border-zinc-100 dark:border-zinc-800/50">
+          <div className="grid grid-cols-1 gap-2.5 py-4 border-y border-zinc-300 dark:border-zinc-800/50">
             <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
               <Calendar className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
               <span className="font-medium">{event.date}</span>
