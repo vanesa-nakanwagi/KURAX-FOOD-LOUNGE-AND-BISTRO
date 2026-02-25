@@ -1,155 +1,126 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import burger from "../../assets/images/hero4.jpg";
+import React, { createContext, useState, useContext, useEffect, useCallback, useMemo } from 'react';
 
 const DataContext = createContext();
 
 export const DataProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(null);
-
-  // --- TARGETS STATE ---
-  const [monthlyTargets, setMonthlyTargets] = useState(() => {
-    const saved = localStorage.getItem('kurax_monthly_targets');
-    // Default structure: { "2026-05": { revenue: 50000000, waiterQuota: 1000000 } }
-    return saved ? JSON.parse(saved) : {};
+  // --- STATE ---
+  const [staffList, setStaffList] = useState([]); 
+  const [orders, setOrders] = useState([]);       
+  const [menus, setMenus] = useState([]);         
+  const [events, setEvents] = useState([]);       
+  const [dailyGoal, setDailyGoal] = useState(20);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const [currentUser, setCurrentUser] = useState(() => {
+    const savedUser = localStorage.getItem('kurax_user');
+    return savedUser ? JSON.parse(savedUser) : null;
   });
 
-  const [dailyGoal, setDailyGoal] = useState(() => {
-    return Number(localStorage.getItem('kurax_daily_goal')) || 20;
-  });
-
-  const [menus, setMenus] = useState(() => {
-    const savedMenus = localStorage.getItem('kurax_menus');
-    return savedMenus ? JSON.parse(savedMenus) : [
-      { id: 1, name: 'Spring Menu 2024', price: 25000, image: burger, published: true, category: "Starters" }
-    ];
-  });
-
-  const [events, setEvents] = useState(() => {
-    const savedEvents = localStorage.getItem('kurax_events');
-    return savedEvents ? JSON.parse(savedEvents) : [
-      { id: 1, name: 'Live Jazz Night', date: '2026-02-14', published: true }
-    ];
-  });
-
-  const [orders, setOrders] = useState(() => {
-    const savedOrders = localStorage.getItem('kurax_orders');
-    return savedOrders ? JSON.parse(savedOrders) : [];
-  });
-
-  const [staffList, setStaffList] = useState(() => {
-    const savedStaff = localStorage.getItem('kurax_staff');
-    return savedStaff ? JSON.parse(savedStaff) : [
-        { id: 101, name: "Essah", role: "MANAGER", status: "ACTIVE", isPermitted: true, totalSales: 0, lastShiftTotal: 0 }
-    ];
-  });
-
-  // --- NEW: REPORTING LOGIC ---
-  const getDailyReport = (dateString) => {
-    // Expects dateString format "YYYY-MM-DD"
-    const filtered = orders.filter(order => {
-      // Ensure your orders have a 'date' property like "2026-05-05"
-      return order.date === dateString && order.status === "CLOSED";
-    });
-
-    const totalSales = filtered.reduce((sum, order) => sum + (order.total || 0), 0);
+  // --- 1. THE "LIVE SYNC" ENGINE ---
+  const refreshData = useCallback(async (isInitialLoad = false) => {
+    if (isInitialLoad) setIsLoading(true);
     
-    // Grouping by Waiter Name found in the order logs
-    const waiterPerformance = filtered.reduce((acc, order) => {
-      const name = order.waiter || "Unknown";
-      acc[name] = (acc[name] || 0) + (order.total || 0);
-      return acc;
-    }, {});
+    try {
+      // Promise.allSettled ensures one crashed route doesn't break the whole app
+      const [staffRes, orderRes, menuRes, eventRes] = await Promise.allSettled([
+        fetch('http://localhost:5000/api/staff'),
+        fetch('http://localhost:5000/api/orders'),
+        fetch('http://localhost:5000/api/menus'),
+        fetch('http://localhost:5000/api/events')
+      ]);
 
-    return {
-      orders: filtered,
-      totalSales,
-      waiterPerformance
-    };
-  };
-
-  // --- NEW: TARGET SETTING LOGIC ---
-  const updateMonthlyTarget = (monthKey, revenue, waiterQuota) => {
-    setMonthlyTargets(prev => ({
-      ...prev,
-      [monthKey]: { revenue, waiterQuota }
-    }));
-  };
-
-  // --- PERFORMANCE LOGIC ---
-  const updateStaffPerformance = (staffName, shiftTotal) => {
-    setStaffList(prev => {
-      const updatedList = prev.map(staff => 
-        staff.name === staffName 
-          ? { 
-              ...staff, 
-              lastShiftTotal: shiftTotal, 
-              totalSales: (Number(staff.totalSales) || 0) + shiftTotal,
-              lastShiftDate: new Date().toISOString()
-            } 
-          : staff
-      );
-      return updatedList;
-    });
-  };
-
-  // --- PERSISTENCE ---
-  useEffect(() => {
-    localStorage.setItem('kurax_staff', JSON.stringify(staffList));
-  }, [staffList]);
-
-  useEffect(() => {
-    localStorage.setItem('kurax_daily_goal', dailyGoal.toString());
-  }, [dailyGoal]);
-
-  useEffect(() => {
-    localStorage.setItem('kurax_monthly_targets', JSON.stringify(monthlyTargets));
-  }, [monthlyTargets]);
-
-  useEffect(() => {
-    localStorage.setItem('kurax_menus', JSON.stringify(menus));
-    localStorage.setItem('kurax_events', JSON.stringify(events));
-    localStorage.setItem('kurax_orders', JSON.stringify(orders));
-  }, [menus, events, orders]);
-
-  // --- SYNC ACROSS TABS ---
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      try {
-        if (!e.newValue) return;
-        if (e.key === 'kurax_orders') {
-          const newOrders = JSON.parse(e.newValue);
-          setOrders(current => {
-            if (JSON.stringify(current) === e.newValue) return current;
-            return newOrders;
-          });
-        }
-        if (e.key === 'kurax_monthly_targets') {
-            setMonthlyTargets(JSON.parse(e.newValue));
-        }
-      } catch (err) {
-        console.error("Sync Error:", err);
+      // Update Staff (Director's view)
+      if (staffRes.status === 'fulfilled' && staffRes.value.ok) {
+        setStaffList(await staffRes.value.json());
       }
-    };
 
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+      // Update Orders (Real-time Table Management)
+      if (orderRes.status === 'fulfilled' && orderRes.value.ok) {
+        setOrders(await orderRes.value.json());
+      }
+
+      // Update Menus
+      if (menuRes.status === 'fulfilled' && menuRes.value.ok) {
+        setMenus(await menuRes.value.json());
+      }
+
+      // Update Events with Tag Sanitization
+      if (eventRes.status === 'fulfilled' && eventRes.value.ok) {
+        const rawEvents = await eventRes.value.json();
+        const sanitizedEvents = rawEvents.map(event => ({
+          ...event,
+          tags: typeof event.tags === 'string' ? JSON.parse(event.tags) : (event.tags || [])
+        }));
+        setEvents(sanitizedEvents);
+      }
+      
+    } catch (err) {
+      console.error("Sync Error:", err.message);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
+  // --- 2. THE POLLING EFFECT ---
+  useEffect(() => {
+    // Initial fetch
+    refreshData(true);
+
+    // Live polling every 5 seconds for snappy table management
+    const interval = setInterval(() => {
+      refreshData(false);
+    }, 5000); 
+
+    return () => clearInterval(interval);
+  }, [refreshData]);
+
+  // --- 3. STAFF PERFORMANCE LOGIC ---
+  // Memoized so it only recalculates if orders or staffList change
+  const getStaffStats = useCallback((staffId) => {
+    if (!orders.length) return { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 };
+
+    const staffOrders = orders.filter(o => Number(o.staff_id) === Number(staffId));
+    
+    return staffOrders.reduce((acc, o) => {
+      const amt = Number(o.total || 0);
+      acc.totalOrders += 1;
+      acc.totalRevenue += amt;
+      
+      const method = (o.payment_method || 'CASH').toUpperCase();
+      if (acc[method] !== undefined) {
+        acc[method] += amt;
+      } else {
+        acc[method] = amt;
+      }
+      
+      return acc;
+    }, { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 });
+  }, [orders]);
+
+  // --- 4. EXPORTED VALUE ---
+  const value = { 
+    staffList, setStaffList,
+    orders, setOrders,
+    menus, setMenus,     
+    events, setEvents,  
+    currentUser, setCurrentUser,
+    getStaffStats, 
+    refreshData,   
+    dailyGoal, setDailyGoal,
+    isLoading
+  };
+
   return (
-    <DataContext.Provider value={{ 
-      menus, setMenus, 
-      events, setEvents, 
-      orders, setOrders,
-      staffList, setStaffList,
-      currentUser, setCurrentUser,
-      dailyGoal, setDailyGoal,
-      monthlyTargets, updateMonthlyTarget,
-      getDailyReport,                      
-      updateStaffPerformance 
-    }}>
+    <DataContext.Provider value={value}>
       {children}
     </DataContext.Provider>
   );
 };
 
-export const useData = () => useContext(DataContext);
+export const useData = () => {
+  const context = useContext(DataContext);
+  if (!context) {
+    throw new Error("useData must be used within a DataProvider");
+  }
+  return context;
+};

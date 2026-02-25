@@ -19,10 +19,12 @@ export default function DirectorDashboard() {
   const [activeTab, setActiveTab] = useState("OVERVIEW"); 
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { staffList, setStaffList, orders } = useData() || { staffList: [], setStaffList: () => {}, orders: [] };
+ // const { staffList, setStaffList, orders } = useData() || { staffList: [], setStaffList: () => {}, orders: [] };
 
  const [currentUser, setCurrentUser] = useState(null);
  const [staffStats, setStaffStats] = useState({});
+ const { staffList } = useData(); // Your live staff from Postgres
+ const { orders = [] } = useData(); // Your live orders from Postgres
    
 
 
@@ -565,8 +567,8 @@ function StaffCard({ staff, stats, onTogglePermission, onDelete, onEdit }) {
     const isChef = staff.role === "CHEF";
     const DAILY_GOAL = 20;
 
-    // 2. Safe Stats (Fallback)
-    const safeStats = stats || { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 };
+    // Ensure this matches the prop name coming from the parent
+const safeStats = stats || { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 };
 
     return (
         <div className="bg-black/60 border border-white/5 p-6 rounded-[2rem] flex flex-col gap-6 hover:border-white/10 transition-all group">
@@ -1047,13 +1049,21 @@ function StaffSection({ onAdd, staffList, setStaffList, orders, onEdit, currentU
         // If staff is null, or somehow missing an ID, we skip it.
         if (!staff || !staff.id) return null;
 
+        const staffOrders = orders.filter(o => o.staff_id === staff.id);
+        
+        const liveStats = {
+          totalOrders: staffOrders.length,
+          totalRevenue: staffOrders.reduce((sum, o) => sum + Number(o.total || 0), 0),
+          CASH: staffOrders.filter(o => o.payment_method === 'CASH').reduce((sum, o) => sum + Number(o.total || 0), 0),
+          MOMO: staffOrders.filter(o => o.payment_method === 'MOMO').reduce((sum, o) => sum + Number(o.total || 0), 0),
+          CARD: staffOrders.filter(o => o.payment_method === 'CARD').reduce((sum, o) => sum + Number(o.total || 0), 0),
+        };
+
         return (
             <StaffCard 
                 key={staff.id} // Now we are 100% sure id exists
                 staff={staff}
-                stats={staffStats && staffStats[staff.id] ? staffStats[staff.id] : { 
-                    totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 
-                }} 
+                stats={liveStats} 
                 onEdit={() => onEdit(staff)}
                 onDelete={() => deleteStaff(staff.id, staff.name)}
                 onTogglePermission={() => handleTogglePermission(staff.id, staff.is_permitted)}

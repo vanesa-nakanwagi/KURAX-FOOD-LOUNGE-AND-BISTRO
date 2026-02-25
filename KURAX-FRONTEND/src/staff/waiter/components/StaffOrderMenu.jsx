@@ -3,15 +3,16 @@ import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 // Added Coffee and Wine icons for the tags
 import { Plus, SearchX, UtensilsCrossed, Sun, Moon, Coffee, Wine } from "lucide-react";
+import { getImageSrc } from "../../../utils/imageHelper";
 
-export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
+export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = "" }) {
   const { menus = [] } = useData() || {};
   const { theme, toggleTheme } = useTheme();
   
   const [activeCategory, setActiveCategory] = useState("Starters");
   const categories = ["Starters", "Local Foods", "Drinks and Cocktails"];
 
-  const filteredMenus = menus.filter((item) => {
+const filteredMenus = items.filter((item) => {
     const query = searchQuery.toLowerCase();
     const matchesSearch = 
       item.name.toLowerCase().includes(query) || 
@@ -21,13 +22,15 @@ export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
     return matchesSearch && matchesCategory;
   });
 
-  if (!menus || menus.length === 0) {
+  // 3. Update the "Empty" check to look at 'items'
+  if (!items || items.length === 0) {
     return (
       <div className={`col-span-full py-20 text-center border-2 border-dashed rounded-3xl ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-200'}`}>
-        <p className="text-zinc-500 text-xs font-black uppercase tracking-widest">Database is empty</p>
+        <p className="text-zinc-500 text-xs font-black uppercase tracking-widest">No Menu Items Available</p>
       </div>
     );
   }
+
 
   return (
     <div className="space-y-8">
@@ -89,17 +92,23 @@ export default function StaffOrderMenu({ onAddItem, searchQuery = "" }) {
                   </span>
                 </div>
 
-                {item.image ? (
-                  <img 
-                    src={item.image} 
-                    alt={item.name} 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
-                  />
-                ) : (
-                  <div className={`w-full h-full flex items-center justify-center ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
-                    <UtensilsCrossed className="text-zinc-400" size={30} />
-                  </div>
-                )}
+                {/* Change item.image to item.image_url */}
+{item.image_url ? (
+  <img 
+    
+  src={getImageSrc(item.image_url)} 
+    alt={item.name}
+    className="w-full h-full object-cover" // Fixed height to fill the container
+    onError={(e) => {
+      // If the link is broken, show the placeholder
+      e.target.src = "https://via.placeholder.com/150?text=No+Image";
+    }}
+  />
+) : (
+  <div className={`w-full h-full flex items-center justify-center ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
+    <UtensilsCrossed className="text-zinc-400" size={30} />
+  </div>
+)}
               </div>
 
               {/* Details Section */}

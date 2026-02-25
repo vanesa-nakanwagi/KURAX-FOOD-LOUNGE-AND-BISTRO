@@ -32,6 +32,20 @@ const StaffLogin = () => {
           navigate('/director/dashboard');
         } else if (role === 'WAITER') {
           navigate('/staff/waiter');
+        } else if (role === 'CASHIER') {
+          navigate('/staff/cashier');
+        } else if (role === 'BARISTA') {
+          navigate('/staff/barista');
+        } else if (role === 'BARMAN') {
+          navigate('/staff/barman');
+        }  else if (role === 'ACCOUNTANT') {
+          navigate('/staff/accountant');
+        } else if (role === 'CONTENT-MANAGER') {
+          navigate('/staff/content-manager');
+        } else if (role === 'MANAGER') {
+          navigate('/staff/manager');
+        } else if (role === 'SUPERVISOR') {
+          navigate('/staff/supervisor');
         } else if (role === 'CHEF') {
           navigate('/kitchen/display');
         } else {
