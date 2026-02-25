@@ -131,33 +131,44 @@ export default function Menu() {
         </div>
       </div>
 
-      {/* HERO SECTION - Responsive text sizes */}
-      <header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 md:pt-16 pb-8 md:pb-12 flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-8">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-yellow-500">
-            <Sparkles size={12} />
-            <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] md:tracking-[0.4em]">
-              Explore Menu
-            </span>
-          </div>
+      {/* ── HERO SECTION ── */}
+<header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 md:pt-16 pb-8 md:pb-12">
+  {/* Changed flex-col to flex-row and items-end for mobile alignment */}
+  <div className="flex flex-row items-end justify-between gap-2">
+    
+    {/* Left Side: Explore & Category Title */}
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 text-yellow-500">
+        <Sparkles size={12} />
+        <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] md:tracking-[0.4em]">
+          Explore Menu
+        </span>
+      </div>
 
-          <h2 className="text-4xl md:text-7xl font-light tracking-tight">
-            {selectedCategory.split(' ')[0]} <span className="italic opacity-50">{selectedCategory.split(' ').slice(1).join(' ')}</span>
-          </h2>
-        </div>
+      {/* Reduced mobile text size slightly (text-2xl) to ensure it fits in one row */}
+      <h2 className="text-2xl md:text-7xl font-light tracking-tight whitespace-nowrap">
+        {selectedCategory.split(' ')[0]} 
+        <span className="italic opacity-50 hidden sm:inline ml-2">
+          {selectedCategory.split(' ').slice(1).join(' ')}
+        </span>
+      </h2>
+    </div>
 
-        <div className="flex items-center gap-4 border-l border-zinc-200 dark:border-zinc-800 pl-5 md:pl-6 h-fit">
-          <div className="text-right">
-            <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-400">
-             Available  Selection
-            </p>
-            <p className="text-xl md:text-2xl font-semibold">
-              {filteredMenus.length} Dishes
-            </p>
-          </div>
-          <ChevronRight className="text-zinc-300 dark:text-zinc-700 hidden md:block" />
-        </div>
-      </header>
+    {/* Right Side: Available Selection Count */}
+    {/* Removed hidden md:block to keep it visible on mobile same row */}
+    <div className="flex items-center gap-3 border-l border-zinc-200 dark:border-zinc-800 pl-4 h-fit">
+      <div className="text-right">
+        <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-400">
+          Selection
+        </p>
+        <p className="text-lg md:text-2xl font-semibold leading-none">
+          {filteredMenus.length} <span className="text-[10px] font-normal opacity-60">Dishes</span>
+        </p>
+      </div>
+    </div>
+
+  </div>
+</header>
 
       {/* MAIN GRID - Optimized for small screens (1 column on tiny phones, 2 on phablets) */}
       <main className="max-w-7xl mx-auto px-5 md:px-12 pb-24 md:pb-32">
