@@ -193,24 +193,26 @@ export default function Home() {
      
 
    {/* ── UPCOMING EVENTS GRID ── */}
-<section className="py-24 px-6 max-w-7xl mx-auto">
-  <header className="mb-16 flex flex-col items-center text-center">
-    <h2 className="text-4xl md:text-5xl font-serif font-medium tracking-tight mb-4 text-zinc-900 dark:text-white">
+<section className="py-12 md:py-24 px-6 max-w-7xl mx-auto">
+  {/* Header: Tightened margins for mobile so the title is visible immediately */}
+  <header className="mb-10 md:mb-16 flex flex-col items-center text-center">
+    <h2 className="text-3xl md:text-5xl font-serif font-medium tracking-tight mb-4 text-zinc-900 dark:text-white block">
       Upcoming Schedule
     </h2>
-    <p className="text-zinc-500 dark:text-zinc-400 max-w-2xl text-base md:text-lg font-light leading-relaxed">
+    <p className="text-zinc-500 dark:text-zinc-400 max-w-2xl text-sm md:text-lg font-light leading-relaxed">
       From soul-stirring live bands and high-stakes quiz nights to exclusive rooftop gatherings, discover your next unforgettable moment at Kurax.
     </p>
   </header>
 
-  {/* FIXED: Changed loadingEvents to loading to match your useState */}
-  {loadingEvents? (
+  {/* Skeleton Loading State */}
+  {loadingEvents ? (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
       {[1, 2, 3].map((n) => (
-        <div key={n} className="h-[450px] bg-zinc-100 dark:bg-zinc-900 rounded-[2.5rem] animate-pulse" />
+        <div key={n} className="h-[400px] md:h-[450px] bg-zinc-100 dark:bg-zinc-900 rounded-[2.5rem] animate-pulse" />
       ))}
     </div>
-  ) : (
+  ) : dbEvents && dbEvents.length > 0 ? (
+    /* Actual Content State */
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
       {dbEvents.map((event) => (
         <div key={event.id} className="relative group">
@@ -241,13 +243,20 @@ export default function Home() {
         </div>
       ))}
     </div>
+  ) : (
+    /* Empty State: Shows if the database fetch returns nothing */
+    <div className="text-center py-20 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-[2.5rem]">
+      <p className="text-zinc-400 uppercase tracking-[0.2em] text-xs font-medium">
+        No events currently scheduled
+      </p>
+    </div>
   )}
 
-  {/* ── RESTORED EXPLORE BUTTON ── */}
-  <div className="mt-16 text-center">
+  {/* ── EXPLORE BUTTON ── */}
+  <div className="mt-12 md:mt-16 text-center">
     <Link 
       to="/events" 
-      className="inline-flex items-center gap-3 px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-white font-medium uppercase tracking-[0.2em] text-[15px] hover:bg-yellow-400 hover:text-black transition-all rounded-none group"
+      className="inline-flex items-center gap-3 px-8 md:px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-white font-medium uppercase tracking-[0.2em] text-[13px] md:text-[15px] hover:bg-yellow-400 hover:text-black transition-all rounded-none group"
     >
       Explore Events
       <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
