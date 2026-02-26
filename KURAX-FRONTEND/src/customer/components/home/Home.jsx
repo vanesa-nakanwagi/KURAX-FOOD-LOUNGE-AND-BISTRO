@@ -21,6 +21,7 @@ import Services from "./services.jsx";
 import { useCart } from "../context/CartContext.jsx";
 import CartModal from "../menu/cart/CartModal.jsx";
 import BookingModal from "../events/BookingModal.jsx"; 
+import API_URL from "../../../config/api";
 
 const heroImages = [hero1, hero12, hero3, terrace];
 
@@ -40,77 +41,65 @@ export default function Home() {
     activeDish, setActiveDish, handleAddToCart, handleRemoveFromCart,
     handleQuantityChange, totalAmount, customerDetails, setCustomerDetails,
   } = useCart();
-// --- DATA FETCHING ---
-useEffect(() => {
-  const fetchRecentData = async () => {
-    try {
-      // ✅ FIX: Use environment variable
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      
-      // Fetch Menus
-      const menuRes = await axios.get(`${API_URL}/api/menus`);
-      const recentMenus = menuRes.data
-        .filter(item => item.status === 'live')
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .slice(0, 4);
-      setDbMenus(recentMenus);
-      setLoadingMenus(false);
 
-      // Fetch Events
-      const eventRes = await axios.get(`${API_URL}/api/events`);
-      const recentEvents = eventRes.data
-        .filter(event => event.status === 'live')
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .slice(0, 3);
-      setDbEvents(recentEvents);
-      setLoadingEvents(false);
-    } catch (err) {
-      console.error("❌ HOME FETCH ERROR:", err);
-      setLoadingMenus(false);
-      setLoadingEvents(false);
-    }
+  // --- DATA FETCHING ---
+  useEffect(() => {
+    const fetchRecentData = async () => {
+      try {
+        // Fetch Menus
+        const menuRes = await axios.get(`${API_URL}/api/menus`);
+        const recentMenus = menuRes.data
+          .filter(item => item.status === 'live')
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .slice(0, 4);
+        setDbMenus(recentMenus);
+        setLoadingMenus(false);
+
+        // Fetch Events
+        const eventRes = await axios.get(`${API_URL}/api/events`);
+        const recentEvents = eventRes.data
+          .filter(event => event.status === 'live')
+          .sort((a, b) => new Date(b.date) - new Date(a.date)) // Sort by upcoming date
+          .slice(0, 3);
+        setDbEvents(recentEvents);
+        setLoadingEvents(false);
+      } catch (err) {
+        console.error("❌ HOME FETCH ERROR:", err);
+      }
+    };
+    fetchRecentData();
+  }, []);
+
+  // --- NAVIGATION & HANDLERS ---
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrent((prev) => (prev + 1) % heroImages.length);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleOrder = (item) => {
+    setActiveDish({
+      ...item,
+      image: getImageSrc(item.image_url),
+      quantity: 1,
+      instructions: "",
+    });
+    setIsCartOpen(true);
   };
-  fetchRecentData();
-}, []);
 
-// --- NAVIGATION & HANDLERS ---
-useEffect(() => {
-  const interval = setInterval(() => {
-    setCurrent((prev) => (prev + 1) % heroImages.length);
-  }, 6000);
-  return () => clearInterval(interval);
-}, [heroImages.length]); // ✅ FIX: Add dependency
+  const openBooking = (title) => {
+    setSelectedEventTitle(title);
+    setIsModalOpen(true);
+  };
 
-const handleOrder = (item) => {
-  setActiveDish({
-    ...item,
-    image: getImageSrc(item.image_url),
-    quantity: 1,
-    instructions: "",
-  });
-  setIsCartOpen(true);
-};
-
-const openBooking = (title) => {
-  setSelectedEventTitle(title);
-  setIsModalOpen(true);
-};
-
-const isNewItem = (createdAt) => {
+  const isNewItem = (createdAt) => {
   if (!createdAt) return false;
-  try {
-    const createdDate = new Date(createdAt);
-    const now = new Date();
-    // ✅ FIX: Check if date is valid
-    if (isNaN(createdDate.getTime())) return false;
-    const diffInHours = (now - createdDate) / (1000 * 60 * 60);
-    return diffInHours <= 48; // Returns true if uploaded in the last 48 hours
-  } catch (err) {
-    console.error("Date parsing error:", err);
-    return false;
-  }
+  const createdDate = new Date(createdAt);
+  const now = new Date();
+  const diffInHours = (now - createdDate) / (1000 * 60 * 60);
+  return diffInHours <= 48; // Returns true if uploaded in the last 48 hours
 };
-
   return (
     <section id="hero" className="scroll-mt-32 relative min-h-screen bg-white font-['Outfit']">
       <Navbar />
@@ -244,14 +233,19 @@ const isNewItem = (createdAt) => {
           </div>
           
           <EventCard 
-            event={{
-              ...event,
-              image: getImageSrc(event.image_url),
-              description: event.description, 
-              date: event.date ? event.date.split('T')[0] : "Date TBD" 
-            }} 
-            onBook={() => handleBook(event)} 
-          />
+  event={{
+    ...event,
+    image: getImageSrc(event.image_url), // Make sure getImageSrc uses API_URL
+    date: event.date 
+      ? new Date(event.date).toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric', 
+          year: 'numeric' 
+        })
+      : "Date TBD"
+  }} 
+  onBook={() => handleBook(event)} 
+/>
         </div>
       ))}
     </div>
@@ -299,7 +293,10 @@ function HomeMenuCard({ item, onOrder }) {
           <div className="absolute inset-0 bg-zinc-200 dark:bg-zinc-800 animate-pulse" />
         )}
         <img
-          src={getImageSrc(item.image_url)}
+          src={item.image_url?.startsWith('http') 
+    ? item.image_url 
+    : `${API_URL}${item.image_url}`
+  } 
           alt={item.name}
           onLoad={() => setImgLoaded(true)}
           className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 ${
