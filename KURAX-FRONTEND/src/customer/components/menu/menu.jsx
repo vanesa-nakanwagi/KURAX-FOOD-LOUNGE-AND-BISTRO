@@ -123,31 +123,32 @@ export default function Menu() {
   return (
     <div className="font-['Outfit'] bg-[#F9F9F7] dark:bg-[#080808] text-zinc-900 dark:text-white min-h-screen transition-colors duration-500">
       
-      {/* STICKY NAVIGATION */}
-      <div className="sticky top-0 z-50 bg-[#F9F9F7]/90 dark:bg-[#080808]/90 backdrop-blur-xl border-b border-zinc-200/50 dark:border-zinc-800/50">
-        <TopSection searchPlaceholder="Search flavors..." />
+     
+<div className="sticky top-0 z-50 bg-[#F9F9F7]/90 dark:bg-[#080808]/90 backdrop-blur-xl border-b border-zinc-200/50 dark:border-zinc-800/50">
+  <TopSection searchPlaceholder="Search flavors..." />
 
-        <div className="w-full flex justify-center border-b border-zinc-200/50 dark:border-zinc-800/50">
-          <div className="flex justify-start sm:justify-center gap-6 md:gap-16 px-6 py-3 md:py-4 overflow-x-auto no-scrollbar mx-auto">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => handleCategoryChange(cat)}
-                className={`relative text-[12px] md:text-[14px] font-bold pb-2 transition-all whitespace-nowrap ${
-                  selectedCategory === cat
-                    ? "text-zinc-900 dark:text-white scale-110"
-                    : "text-zinc-400 dark:text-zinc-600 hover:text-zinc-500"
-                }`}
-              >
-                {cat}
-                {selectedCategory === cat && (
-                  <span className="absolute bottom-0 left-0 w-full h-[3px] bg-yellow-500 rounded-full" />
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+  <div className="w-full flex justify-center border-b border-zinc-200/50 dark:border-zinc-800/50">
+    <div className="flex justify-start sm:justify-center gap-6 md:gap-16 px-6 py-3 md:py-4 overflow-x-auto no-scrollbar mx-auto">
+      {categories.map((cat) => (
+        <button
+          key={cat}
+          onClick={() => handleCategoryChange(cat)}
+          
+          className={`relative text-[10px] md:text-[12px] font-bold pb-2 transition-all whitespace-nowrap uppercase tracking-[0.25em] ${
+            selectedCategory === cat
+              ? "text-zinc-900 dark:text-white"
+              : "text-zinc-400 dark:text-zinc-600 hover:text-zinc-500"
+          }`}
+        >
+          {cat}
+          {selectedCategory === cat && (
+            <span className="absolute bottom-0 left-0 w-full h-[3px] bg-yellow-500 rounded-full" />
+          )}
+        </button>
+      ))}
+    </div>
+  </div>
+</div>
 
       {/* HEADER SECTION */}
 <header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 pb-4">
