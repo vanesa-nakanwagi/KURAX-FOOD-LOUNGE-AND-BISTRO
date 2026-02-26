@@ -11,6 +11,7 @@ import { getImageSrc } from "../../../utils/imageHelper.js";
 ========================= */
 function MenuCard({ item, onOrder, isNew }) {
   const [imgLoaded, setImgLoaded] = useState(false);
+  const API_URL = import.meta.env.VITE_API_URL;
 
   return (
     <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-zinc-800 hover:border-yellow-500/30 shadow-sm hover:shadow-xl">
@@ -76,6 +77,7 @@ export default function Menu() {
   const [dbMenus, setDbMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("Starters");
+  const API_URL = import.meta.env.VITE_API_URL;
 
   const {
     cart, isCartOpen, setIsCartOpen, activeDish, setActiveDish,
@@ -87,7 +89,7 @@ export default function Menu() {
   useEffect(() => {
     const fetchMenus = async () => {
       try {
-        const res = await axios.get("http://localhost:5000/api/menus");
+        const res = await axios.get(`${API_URL}/api/menus`);
         
         // Filter live items and ensure latest items are first
         const sortedLiveItems = res.data
