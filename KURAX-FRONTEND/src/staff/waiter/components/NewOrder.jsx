@@ -132,13 +132,16 @@ export default function NewOrder() {
       alert("Network error. Check if backend is running.");
     }
   };
-
-  const activeMenus = useMemo(() => (menus || []).filter(item => {
-    const isPublished = item.published === true || item.published === 't';
-    const isCorrectCategory = item.category === activeCategory;
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return isPublished && isCorrectCategory && matchesSearch;
-  }), [menus, activeCategory, searchQuery]);
+const activeMenus = useMemo(() => (menus || []).filter(item => {
+  // Check for 'live' status OR various boolean formats
+  const isLive = item.status === 'live' || item.published === true || item.published === 't';
+  
+  // Normalize strings (trim and lowercase) to avoid "Local Foods" vs "local foods"
+  const itemCat = item.category?.toLowerCase().trim() || "";
+  const activeCat = activeCategory?.toLowerCase().trim() || "";
+  
+  return isLive && itemCat === activeCat && item.name.toLowerCase().includes(searchQuery.toLowerCase());
+}), [menus, activeCategory, searchQuery]);
 
   return (
     <div className={`flex flex-col lg:flex-row h-screen font-[Outfit] overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'bg-black text-white' : 'bg-gray-50 text-black'}`}>

@@ -9,11 +9,20 @@ import { getImageSrc } from "../../../utils/imageHelper.js";
 /* =========================
    MENU CARD COMPONENT
 ========================= */
-function MenuCard({ item, onOrder }) {
+function MenuCard({ item, onOrder, isNew }) {
   const [imgLoaded, setImgLoaded] = useState(false);
 
   return (
-    <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-300 hover:border-yellow-500/20 shadow-sm hover:shadow-xl">
+    <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-zinc-800 hover:border-yellow-500/30 shadow-sm hover:shadow-xl">
+      
+      {/* INSIDE BADGE: Glassmorphism style with Sparkles */}
+      {isNew && (
+        <div className="absolute top-4 right-4 z-30 bg-yellow-500/90 backdrop-blur-md text-black text-[10px] font-black px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 uppercase tracking-tighter border border-white/20">
+          <Sparkles size={12} className=" text-black" />
+          NEW
+        </div>
+      )}
+
       {/* IMAGE CONTAINER */}
       <div className="relative h-48 md:h-56 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
         {!imgLoaded && (
@@ -40,17 +49,17 @@ function MenuCard({ item, onOrder }) {
             <span className="text-base md:text-lg text-yellow-600 dark:text-yellow-400 font-bold">
               {Number(item.price).toLocaleString()}
             </span>
-            <div className="text-[8px] md:text-[9px] tracking-widest text-zinc-800 uppercase">UGX</div>
+            <div className="text-[8px] md:text-[9px] tracking-widest text-zinc-500 uppercase">UGX</div>
           </div>
         </div>
 
-        <p className="text-xs md:text-[13px] text-zinc-800 dark:text-zinc-400 line-clamp-2 leading-relaxed">
+        <p className="text-xs md:text-[13px] text-zinc-600 dark:text-zinc-400 line-clamp-2 leading-relaxed font-light">
           {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
         </p>
 
         <button
           onClick={() => onOrder(item)}
-          className="mt-2 md:mt-auto w-full py-3.5 md:py-4 rounded-xl md:rounded-2xl bg-yellow-400 dark:bg-white text-black dark:text-zinc-900 text-[10px] md:text-xs font-bold uppercase tracking-[0.15em] flex items-center justify-center gap-2 transition-all active:scale-95"
+          className="mt-2 md:mt-auto w-full py-3.5 md:py-4 rounded-xl md:rounded-2xl bg-yellow-400 text-black text-[10px] md:text-xs font-bold uppercase tracking-[0.15em] flex items-center justify-center gap-2 transition-all active:scale-95 hover:bg-black hover:text-yellow-400"
         >
           <Plus size={14} strokeWidth={3} />
           Add to Order
@@ -80,11 +89,12 @@ export default function Menu() {
       try {
         const res = await axios.get("http://localhost:5000/api/menus");
         
-        // IMPROVEMENT: Filter out any items not marked as 'live'
-        // This ensures the public only sees finalized content
-        const liveItems = res.data.filter(item => item.status === 'live');
+        // Filter live items and ensure latest items are first
+        const sortedLiveItems = res.data
+          .filter(item => item.status === 'live')
+          .sort((a, b) => b.id - a.id);
         
-        setDbMenus(liveItems);
+        setDbMenus(sortedLiveItems);
       } catch (err) {
         console.error("Fetch Error:", err);
       } finally {
@@ -96,7 +106,6 @@ export default function Menu() {
 
   const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
   
-  // Apply category filtering to the already filtered live list
   const filteredMenus = dbMenus.filter((item) => item.category === selectedCategory);
 
   const handleCategoryChange = (cat) => {
@@ -111,52 +120,57 @@ export default function Menu() {
       <div className="sticky top-0 z-50 bg-[#F9F9F7]/90 dark:bg-[#080808]/90 backdrop-blur-xl border-b border-zinc-200/50 dark:border-zinc-800/50">
         <TopSection searchPlaceholder="Search flavors..." />
 
-        
-       {/* CATEGORY SELECTOR - Increased size and padding */}
         <div className="w-full flex justify-center border-b border-zinc-200/50 dark:border-zinc-800/50">
-  <div className="flex justify-start sm:justify-center gap-6 md:gap-16 px-6 py-3 md:py-4 overflow-x-auto no-scrollbar scroll-smooth mx-auto">
-    {categories.map((cat) => (
-      <button
-        key={cat}
-        onClick={() => handleCategoryChange(cat)}
-        className={`relative text-[12px] md:text-[14px] font-bold pb-2 transition-all whitespace-nowrap ${
-          selectedCategory === cat
-            ? "text-zinc-900 dark:text-white scale-110"
-            : "text-zinc-400 dark:text-zinc-600 hover:text-zinc-500"
-        }`}
-      >
-        {cat}
-        {selectedCategory === cat && (
-          <span className="absolute bottom-0 left-0 w-full h-[3px] bg-yellow-500 rounded-full" />
-        )}
-      </button>
-    ))}
-  </div>
-</div>
-      </div>
-
-      {/* HERO / HEADER SECTION */}
-      <header className="max-w-7xl mx-auto px-5 md:px-12 pt-4 md:pt-6 pb-4 md:pb-4">
-        <div className="flex flex-row items-end justify-between gap-2 border-b border-zinc-100 dark:border-zinc-900 pb-8">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3 mb-6">
-            <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
-            <h2 className="text-3xl font-medium uppercase tracking-widest">Explore Menu</h2>
-          </div>
-            
-          </div>
-
-          <div className="flex items-center gap-3 pl-4 h-fit">
-            <div className="text-right">
-              <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-400">Selection</p>
-              <p className="text-xl md:text-2xl font-semibold leading-none">
-                {filteredMenus.length} <span className="text-[10px] font-normal opacity-60">Items</span>
-              </p>
-            </div>
+          <div className="flex justify-start sm:justify-center gap-6 md:gap-16 px-6 py-3 md:py-4 overflow-x-auto no-scrollbar mx-auto">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => handleCategoryChange(cat)}
+                className={`relative text-[12px] md:text-[14px] font-bold pb-2 transition-all whitespace-nowrap ${
+                  selectedCategory === cat
+                    ? "text-zinc-900 dark:text-white scale-110"
+                    : "text-zinc-400 dark:text-zinc-600 hover:text-zinc-500"
+                }`}
+              >
+                {cat}
+                {selectedCategory === cat && (
+                  <span className="absolute bottom-0 left-0 w-full h-[3px] bg-yellow-500 rounded-full" />
+                )}
+              </button>
+            ))}
           </div>
         </div>
-      </header>
+      </div>
 
+      {/* HEADER SECTION */}
+<header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 pb-4">
+  {/* Changed items-end to items-center for better mobile row alignment */}
+  <div className="flex flex-row items-center justify-between gap-2 border-b border-zinc-100 dark:border-zinc-900 pb-8">
+    
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 md:gap-3">
+        {/* Adjusted height slightly for better vertical centering with text */}
+        <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
+        <h2 className="text-lg md:text-2xl font-medium uppercase tracking-widest text-zinc-900 dark:text-white whitespace-nowrap">
+          Explore Menu
+        </h2>
+      </div>
+    </div>
+
+    {/* Ensure this container doesn't shrink and stays right-aligned */}
+    <div className="flex items-center gap-3 pl-4 h-fit text-right shrink-0">
+      <div>
+        <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-400">
+          Available in {selectedCategory}
+        </p>
+        <p className="text-lg md:text-2xl font-semibold leading-none">
+          {filteredMenus.length} <span className="text-[10px] font-normal opacity-60">Dishes</span>
+        </p>
+      </div>
+    </div>
+
+  </div>
+</header>
       {/* MENU GRID */}
       <main className="max-w-7xl mx-auto px-5 md:px-12 pb-24 md:pb-32">
         {loading ? (
@@ -171,27 +185,34 @@ export default function Menu() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
-            {filteredMenus.map((item) => (
-              <MenuCard
-                key={item.id}
-  item={item}
-  onOrder={(it) => {
-    // FIX: Map image_url to image and use getImageSrc
-    setActiveDish({ 
-      ...it, 
-      image: getImageSrc(it.image_url), 
-      quantity: 1,
-      instructions: "" // Ensure instructions isn't undefined
-    });
-    setIsCartOpen(true);
-  }}
-              />
-            ))}
+            {filteredMenus.map((item) => {
+              // --- DYNAMIC 48-HOUR LOGIC ---
+              const createdDate = new Date(item.created_at);
+              const now = new Date();
+              const isNew = (now - createdDate) / (1000 * 60 * 60) <= 48;
+
+              return (
+                <MenuCard
+                  key={item.id}
+                  item={item}
+                  isNew={isNew} // Passed to card for internal rendering
+                  onOrder={(it) => {
+                    setActiveDish({ 
+                      ...it, 
+                      image: getImageSrc(it.image_url), 
+                      quantity: 1,
+                      instructions: "" 
+                    });
+                    setIsCartOpen(true);
+                  }}
+                />
+              );
+            })}
           </div>
         )}
       </main>
 
-      {/* CART MODAL */}
+      {/* CART MODAL (unchanged) */}
       {(activeDish || isCartOpen) && (
         <CartModal
           isCartOpen={isCartOpen}

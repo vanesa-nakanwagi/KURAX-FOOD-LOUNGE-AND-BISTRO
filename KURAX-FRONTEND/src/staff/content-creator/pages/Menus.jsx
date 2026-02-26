@@ -8,7 +8,7 @@ import { getImageSrc } from "../../../utils/imageHelper";
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
 
-const CATEGORIES = ["Starters", "Local Foods", "Drinks and Cocktails"];
+const CATEGORIES = ["Starters", "Local Foods", "Drinks & Cocktails"];
 
 // NEW: Station routing options
 const STATIONS = [

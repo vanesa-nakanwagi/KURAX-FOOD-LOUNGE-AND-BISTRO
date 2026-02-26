@@ -81,44 +81,61 @@ export default function Events() {
         </div>
       </section>
 
-      {/* ── UPCOMING EVENTS GRID ── */}
-      <section className="py-24 px-6 max-w-7xl mx-auto">
-        <header className="mb-16 flex flex-col items-center text-center">
-          <h2 className="text-4xl md:text-5xl font-serif font-medium tracking-tight mb-4">
-            Upcoming Schedule
-          </h2>
-          <p className="text-zinc-500 dark:text-zinc-400 max-w-2xl text-base md:text-lg font-light leading-relaxed">
-            From soul-stirring live bands and high-stakes quiz nights to exclusive rooftop gatherings, discover your next unforgettable moment at Kurax.
-          </p>
-        </header>
+   {/* ── UPCOMING EVENTS GRID ── */}
+<section className="py-24 px-6 max-w-7xl mx-auto">
+  <header className="mb-16 flex flex-col items-center text-center">
+    <h2 className="text-4xl md:text-5xl font-serif font-medium tracking-tight mb-4 text-zinc-900 dark:text-white">
+      Upcoming Schedule
+    </h2>
+    <p className="text-zinc-500 dark:text-zinc-400 max-w-2xl text-base md:text-lg font-light leading-relaxed">
+      From soul-stirring live bands and high-stakes quiz nights to exclusive rooftop gatherings, discover your next unforgettable moment at Kurax.
+    </p>
+  </header>
 
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-            {[1, 2, 3].map((n) => (
-              <div key={n} className="h-[450px] bg-zinc-100 dark:bg-zinc-900 rounded-[2.5rem] animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-            {dbEvents.map((event, index) => (
-              <div key={event.id} className="relative group">
-                
-                
-                <EventCard 
-                  event={{
-                    ...event,
-                    image: getImageSrc(event.image_url),
-                    // Ensures description is passed to the card
-                    description: event.description, 
-                    date: event.date ? event.date.split('T')[0] : "Date TBD" 
-                  }} 
-                  onBook={() => handleBook(event)} 
-                />
+  {loading ? (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+      {[1, 2, 3].map((n) => (
+        <div key={n} className="h-[450px] bg-zinc-100 dark:bg-zinc-900 rounded-[2.5rem] animate-pulse" />
+      ))}
+    </div>
+  ) : (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+      {dbEvents.map((event) => (
+        <div key={event.id} className="relative group">
+          
+          {/* 1. OVERLAY FIRST - Now sits behind the tags */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent z-0 pointer-events-none rounded-[2.5rem]" />
+
+          {/* 2. TAGS AFTER OVERLAY WITH z-10 - Now sits on top */}
+          <div className="absolute top-6 left-6 z-10 flex flex-col items-start gap-2 pointer-events-none">
+            {event.tags && Array.isArray(event.tags) && event.tags.map((tag, idx) => (
+              <div 
+                key={idx} 
+                className="bg-black/80 dark:bg-black/90 backdrop-blur-md px-4 py-1.5 rounded-r-full rounded-l-[4px] shadow-xl border-l-4 border-yellow-500 transition-all duration-300 group-hover:translate-x-1"
+              >
+                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-white">
+                  {tag}
+                </p>
               </div>
             ))}
           </div>
-        )}
-      </section>
+          
+          <EventCard 
+            event={{
+              ...event,
+              image: getImageSrc(event.image_url),
+              description: event.description, 
+              date: event.date ? event.date.split('T')[0] : "Date TBD" 
+            }} 
+            onBook={() => handleBook(event)} 
+          />
+        </div>
+      ))}
+    </div>
+  )}
+
+  
+</section>
 
       {/* ── THE AMBIANCE SECTION ── */}
       <section className="relative w-full min-h-[600px] flex flex-col md:flex-row border-y border-zinc-200 dark:border-zinc-800 bg-black overflow-hidden">

@@ -1,4 +1,4 @@
-import { Calendar, Clock, MapPin, Tag, Plus } from "lucide-react";
+import { Calendar, Clock, MapPin, Plus } from "lucide-react"; // Removed Tag icon
 import { useState } from "react";
 import BookingModal from "./BookingModal.jsx";
 
@@ -7,7 +7,7 @@ export default function EventCard({ event }) {
 
   return (
     <>
-      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2.5rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 hover:border-yellow-500/20 shadow-sm hover:shadow-2xl">
+      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2.5rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 hover:border-yellow-500/20 shadow-sm hover:shadow-2xl h-full">
         
         {/* IMAGE SECTION */}
         <div className="relative h-64 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
@@ -16,25 +16,11 @@ export default function EventCard({ event }) {
             alt={event.name || event.title}
             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
           />
-
-          {/* Overlay for better tag readability */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent opacity-60" />
-
-          {/* FLOATING TAGS */}
-          <div className="absolute top-5 left-5 flex flex-col gap-2 items-start">
-            
-
-            {/* Dynamic Tags from DB */}
-            {event.tags && event.tags.map((tag, index) => (
-              <div 
-                key={index} 
-                className="bg-black/40 backdrop-blur-md text-white/90 px-3 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border border-white/10 flex items-center gap-1.5"
-              >
-                <Tag className="w-2.5 h-2.5 text-yellow-400" />
-                {tag}
-              </div>
-            ))}
-          </div>
+          
+          {/* CLEANUP: 
+              We removed the internal tags and overlay from here 
+              because they are now handled by the parent 'Events.jsx' 
+          */}
         </div>
 
         {/* CONTENT SECTION */}
@@ -56,7 +42,7 @@ export default function EventCard({ event }) {
             </div>
             <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
               <Clock className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
-              <span className="font-medium">{event.time}</span>
+              <span className="font-medium">{event.time || "TBD"}</span>
             </div>
             <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
               <MapPin className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
@@ -68,7 +54,7 @@ export default function EventCard({ event }) {
           <div className="mt-auto pt-2">
             <button
               onClick={() => setIsModalOpen(true)}
-              className="w-full py-4 bg-yellow-400 dark:bg-yellow-400 text-black dark:text-zinc-900 rounded-2xl text-[10px] font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-95  hover:text-white"
+              className="w-full py-4 bg-yellow-400 text-black dark:text-zinc-900 rounded-2xl text-[10px] font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-95 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black"
             >
               <Plus size={14} strokeWidth={3} />
               Book Now

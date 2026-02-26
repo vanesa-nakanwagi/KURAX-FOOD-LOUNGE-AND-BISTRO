@@ -3,7 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { getImageSrc } from "../../../utils/imageHelper.js";
 import Navbar from "./Navbar.jsx";
-import { Calendar, Clock, MapPin, Plus, Sparkles, Tag } from "lucide-react";
+import { Calendar, Clock, MapPin, Plus, Sparkles, ArrowRight } from "lucide-react";
+import EventCard from "../events/EventCard.jsx"
 
 // Local Hero Assets
 import hero1 from "../../assets/images/hero1.jpg";
@@ -91,6 +92,13 @@ export default function Home() {
     setIsModalOpen(true);
   };
 
+  const isNewItem = (createdAt) => {
+  if (!createdAt) return false;
+  const createdDate = new Date(createdAt);
+  const now = new Date();
+  const diffInHours = (now - createdDate) / (1000 * 60 * 60);
+  return diffInHours <= 48; // Returns true if uploaded in the last 48 hours
+};
   return (
     <section id="hero" className="scroll-mt-32 relative min-h-screen bg-white font-['Outfit']">
       <Navbar />
@@ -116,13 +124,13 @@ export default function Home() {
             Luxury dining, signature drinks & rooftop vibes
           </p>
           <div className="mt-8 flex gap-4">
-            <button onClick={() => navigate("/menus")} className="px-8 py-3 border-2 border-yellow-600 text-yellow-500 font-bold hover:bg-yellow-600 hover:text-black transition uppercase tracking-widest">Our Menu</button>
-            <button onClick={() => navigate("/reservations")} className="px-8 py-3 bg-yellow-600 text-black font-bold hover:bg-yellow-500 transition uppercase tracking-widest">Reserve Table</button>
+            <button onClick={() => navigate("/menus")} className="px-8 py-3 border-2 border-yellow-600 text-yellow-500 font-bold hover:bg-yellow-600 hover:text-black transition uppercase tracking-widest">Menu</button>
+            <button onClick={() => navigate("/reservations")} className="px-8 py-3 bg-yellow-600 text-black font-bold hover:bg-yellow-500 transition uppercase tracking-widest">Reserve</button>
           </div>
         </div>
       </div>
 
-    {/* SIGNATURE DISHES (RECENT 4) */}
+  {/* SIGNATURE DISHES (RECENT 4) */}
 <section id="menus" className="py-24 px-4 sm:px-8 bg-white dark:bg-[#080808]">
   <div className="max-w-7xl mx-auto text-center">
     <p className="text-yellow-700 uppercase tracking-[0.3em] font-bold text-xs mb-3">
@@ -140,118 +148,110 @@ export default function Home() {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
       {loadingMenus ? (
         [...Array(4)].map((_, i) => (
-          <div key={i} className="h-80 bg-zinc-100 dark:bg-zinc-900 animate-pulse rounded-[2rem]" />
+          <div key={i} className="h-80 bg-zinc-100 dark:bg-zinc-900 animate-pulse rounded-[2.5rem]" />
         ))
       ) : (
-        dbMenus.map((item) => (
-          <HomeMenuCard 
-            key={item.id} 
-            item={item} 
-            onOrder={handleOrder} 
-          />
-        ))
+        dbMenus.slice(0, 4).map((item) => {
+          // Time-based check (48 hours)
+          const createdDate = new Date(item.created_at);
+          const now = new Date();
+          const isNew = (now - createdDate) / (1000 * 60 * 60) <= 48;
+
+          return (
+            /* The parent container with rounded corners and overflow hidden */
+            <div key={item.id} className="relative group overflow-hidden rounded-[2.5rem]">
+              
+              {/* INSIDE BADGE: Sparkling Glass Style */}
+              {isNew && (
+                <div className="absolute top-4 right-4 z-30 bg-yellow-500/90 backdrop-blur-md text-black text-[10px] font-black px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 uppercase tracking-tighter border border-white/20">
+                  <Sparkles size={12} className="animate-pulse" />
+                  NEW
+                </div>
+              )}
+
+              <HomeMenuCard 
+                item={item} 
+                onOrder={handleOrder} 
+              />
+            </div>
+          );
+        })
       )}
     </div>
 
-    <div className="mt-16">
-      <Link 
-        to="/menus" 
-        className="inline-block px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-white font-bold uppercase tracking-widest hover:bg-yellow-400 hover:text-black transition-all rounded-none"
-      >
-        Explore Menu
-      </Link>
-    </div>
+  <div className="mt-16 text-center">
+    <Link 
+      to="/menus" 
+      className="inline-flex items-center gap-3 px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-white font-medium uppercase tracking-[0.2em] text-[15px] hover:bg-yellow-400 hover:text-black transition-all rounded-none group"
+    >
+      Explore Menu
+      <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+    </Link>
+  </div>
   </div>
 </section>
+     
 
-     {/* FEATURED EVENTS (RECENT 3) */}
-<section id="events" className="py-24 px-4 sm:px-8 bg-zinc-50 dark:bg-[#0c0c0c]">
-  <div className="max-w-7xl mx-auto text-center">
-    <p className="text-yellow-700 uppercase tracking-[0.3em] font-bold text-xs mb-3">
-      Upcoming Experiences
-    </p>
-    
-    <h2 className="text-4xl md:text-5xl font-medium mb-4 text-zinc-900 dark:text-white">
-      Featured Events
+   {/* ── UPCOMING EVENTS GRID ── */}
+<section className="py-24 px-6 max-w-7xl mx-auto">
+  <header className="mb-16 flex flex-col items-center text-center">
+    <h2 className="text-4xl md:text-5xl font-serif font-medium tracking-tight mb-4 text-zinc-900 dark:text-white">
+      Upcoming Schedule
     </h2>
-
-    <p className="text-zinc-600 dark:text-zinc-400 max-w-2xl mx-auto mb-12 text-sm md:text-base leading-relaxed">
-      From vibrant rooftop afrobeats to cozy live acoustic sessions, discover the pulse of Kurax nightlife and culture.
+    <p className="text-zinc-500 dark:text-zinc-400 max-w-2xl text-base md:text-lg font-light leading-relaxed">
+      From soul-stirring live bands and high-stakes quiz nights to exclusive rooftop gatherings, discover your next unforgettable moment at Kurax.
     </p>
+  </header>
 
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-      {loadingEvents ? (
-        [...Array(3)].map((_, i) => (
-          <div key={i} className="h-96 bg-zinc-200 dark:bg-zinc-800 animate-pulse rounded-[2rem]" />
-        ))
-      ) : (
-        dbEvents.map((event) => (
-          <div 
-            key={event.id} 
-            className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2.5rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-zinc-800 hover:border-yellow-500/50 shadow-sm hover:shadow-2xl"
-          >
-            {/* Image Container */}
-            <div className="h-64 relative overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-              <img 
-                src={getImageSrc(event.image_url)} 
-                alt={event.name} 
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-            </div>
-
-            {/* Content Section */}
-            <div className="p-8 text-left flex-1 flex flex-col">
-              <h3 className="text-2xl font-semibold mb-3 text-zinc-900 dark:text-white">
-                {event.name || event.title}
-              </h3>
-              
-              {/* FIXED DESCRIPTION LOGIC */}
-              <p className="text-zinc-600 dark:text-zinc-400 text-[13px] mb-6 line-clamp-3 leading-relaxed font-light">
-                {event.description || event.event_description || "Join us for an exclusive experience at Kurax Food Lounge & Bistro."}
-              </p>
-
-              {/* Event Details */}
-              <div className="space-y-3 mb-8 py-4 border-y border-zinc-200 dark:border-zinc-800/50 text-sm text-zinc-700 dark:text-zinc-300">
-                <div className="flex items-center gap-3">
-                  <Calendar size={16} className="text-yellow-600 dark:text-yellow-400" strokeWidth={2}/> 
-                  <span className="font-medium">{event.date}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Clock size={16} className="text-yellow-600 dark:text-yellow-400" strokeWidth={2}/> 
-                  <span className="font-medium">{event.time}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <MapPin size={16} className="text-yellow-600 dark:text-yellow-400" strokeWidth={2}/> 
-                  <span className="font-medium">{event.location}</span>
-                </div>
+  {/* FIXED: Changed loadingEvents to loading to match your useState */}
+  {loadingEvents? (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+      {[1, 2, 3].map((n) => (
+        <div key={n} className="h-[450px] bg-zinc-100 dark:bg-zinc-900 rounded-[2.5rem] animate-pulse" />
+      ))}
+    </div>
+  ) : (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+      {dbEvents.map((event) => (
+        <div key={event.id} className="relative group">
+          
+          {/* --- PERMANENT DYNAMIC TAGS (STACKED ON IMAGE) --- */}
+          <div className="absolute top-6 left-6 z-20 flex flex-col items-start gap-2 pointer-events-none">
+            {event.tags && Array.isArray(event.tags) && event.tags.map((tag, idx) => (
+              <div 
+                key={idx} 
+                className="bg-black/80 dark:bg-black/90 backdrop-blur-md px-4 py-1.5 rounded-r-full rounded-l-[4px] shadow-xl border-l-4 border-yellow-500 transition-all duration-300 group-hover:translate-x-1"
+              >
+                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-white">
+                  {tag}
+                </p>
               </div>
-
-              {/* CTA BUTTON */}
-              <div className="mt-auto">
-                <button
-                  onClick={() => openBooking(event.name || event.title)}
-                  className="w-full py-4 bg-yellow-400 text-black rounded-2xl text-[10px] font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-95  hover:text-yellow-400"
-                >
-                  <Plus size={14} strokeWidth={3} />
-                  Book Now
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
-        ))
-      )}
+          
+          <EventCard 
+            event={{
+              ...event,
+              image: getImageSrc(event.image_url),
+              description: event.description, 
+              date: event.date ? event.date.split('T')[0] : "Date TBD" 
+            }} 
+            onBook={() => handleBook(event)} 
+          />
+        </div>
+      ))}
     </div>
+  )}
 
-    {/* View All Button */}
-    <div className="mt-16">
-      <Link 
-        to="/events" 
-        className="inline-block px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-white font-bold uppercase tracking-widest hover:bg-yellow-400 hover:text-black transition-all rounded-none"
-      >
-        Explore Events
-      </Link>
-    </div>
+  {/* ── RESTORED EXPLORE BUTTON ── */}
+  <div className="mt-16 text-center">
+    <Link 
+      to="/events" 
+      className="inline-flex items-center gap-3 px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-white font-medium uppercase tracking-[0.2em] text-[15px] hover:bg-yellow-400 hover:text-black transition-all rounded-none group"
+    >
+      Explore Events
+      <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+    </Link>
   </div>
 </section>
 
