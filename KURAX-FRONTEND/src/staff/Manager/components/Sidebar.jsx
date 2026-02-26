@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom"; // 1. Import useNavigate
 import { 
   ClipboardList, 
   Target, 
@@ -6,19 +7,18 @@ import {
   LogOut, 
   Flag,
   LayoutDashboard,
-  BarChart3, // Added for Reports
-  UserCheck  // Added for Staff Performance
+  BarChart3,
+  UserCheck  
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 
-// Note: Ensure your Dashboard parent component passes 'debtorCount' if needed
 export default function Sidebar({ activeTab, setActiveTab, debtorCount = 0 }) {
   const { theme } = useTheme();
   const { currentUser } = useData();
+  const navigate = useNavigate(); // 2. Initialize navigate
 
-  // Updated navigation items to include REPORTS and TARGETS
   const menuItems = [
     { id: "order", label: "TAKE ORDER", icon: <ClipboardList size={20} /> },
     { id: "status", label: "VIEW ORDER STATUS", icon: <Clock size={20} /> },
@@ -26,7 +26,7 @@ export default function Sidebar({ activeTab, setActiveTab, debtorCount = 0 }) {
       id: "tables", 
       label: "LIVE TABLES", 
       icon: <LayoutDashboard size={20} />,
-      badge: debtorCount > 0 ? debtorCount : null // Added notification badge logic
+      badge: debtorCount > 0 ? debtorCount : null 
     },
     { id: "reports", label: "SALES REPORTS", icon: <BarChart3 size={20} /> },
     { id: "target", label: "SET TARGET", icon: <Target size={20} /> },
@@ -35,6 +35,14 @@ export default function Sidebar({ activeTab, setActiveTab, debtorCount = 0 }) {
 
   const handleTabClick = (tabId) => {
     setActiveTab(tabId);
+  };
+
+  // 3. Define the Logout Function
+  const handleLogout = () => {
+    // Clear the user session from localStorage
+    localStorage.removeItem('user');
+    // Redirect to the login page
+    navigate('/staff/login'); 
   };
 
   return (
@@ -62,7 +70,7 @@ export default function Sidebar({ activeTab, setActiveTab, debtorCount = 0 }) {
       </div>
 
       {/* Main Sidebar Buttons */}
-      <nav className="flex-1 p-4 space-y-3 mt-6">
+      <nav className="flex-1 p-4 space-y-3 mt-6 overflow-y-auto">
         {menuItems.map((item) => (
           <button
             key={item.id}
@@ -82,7 +90,6 @@ export default function Sidebar({ activeTab, setActiveTab, debtorCount = 0 }) {
               {item.label}
             </div>
 
-            {/* Notification Badge for Debtors/Active items */}
             {item.badge && (
               <span className={`px-2 py-0.5 rounded-full text-[8px] font-black ${
                 activeTab === item.id ? "bg-black text-yellow-500" : "bg-rose-500 text-white"
@@ -97,7 +104,7 @@ export default function Sidebar({ activeTab, setActiveTab, debtorCount = 0 }) {
       {/* Logout Button */}
       <div className={`p-4 border-t ${theme === 'dark' ? 'border-white/5' : 'border-black/5'}`}>
         <button
-          onClick={() => handleTabClick("logout")}
+          onClick={handleLogout} // 4. Attach the real logout function
           className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all
             ${theme === 'dark' 
               ? "text-rose-500 hover:bg-rose-500/10" 

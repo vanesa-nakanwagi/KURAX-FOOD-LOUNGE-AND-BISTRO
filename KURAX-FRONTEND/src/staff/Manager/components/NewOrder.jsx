@@ -1,65 +1,84 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import StaffOrderMenu from "./StaffOrderMenu";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { 
-  Plus, Minus, Trash2, Send, X, RefreshCcw, ChevronLeft, 
-   ShoppingCart, UtensilsCrossed, Check, Printer, QrCode, History, Search, LayoutGrid,
-  Clock, Flame, CheckCircle
+  Plus, Minus, Trash2, Send, X, RefreshCcw, 
+  ShoppingCart, UtensilsCrossed, Check, Printer, Search, LayoutGrid
 } from "lucide-react";
 import ThemeToggle from "../../../customer/components/context/ThemeToggle";
+import { getImageSrc } from "../../../utils/imageHelper";
 
 export default function NewOrder() {
-  const { orders = [], setOrders } = useData() || { setOrders: () => {}, orders: [] };
+  const { orders = [], setOrders, menus = [], currentUser } = useData() || { setOrders: () => {}, orders: [], menus: [] };
   const { theme } = useTheme();
-  const currentManager = "Debby"; 
 
-  const [tableName, setTableName] = useState("");
-  const [cart, setCart] = useState([]);
+  // --- 1. DYNAMIC STORAGE KEYS ---
+  // This ensures the Manager's cart doesn't "bleed" into the Waiter's cart
+  const CART_KEY = useMemo(() => 
+    currentUser ? `kurax_cart_${currentUser.id}` : "kurax_staff_cart_guest"
+  , [currentUser]);
+
+  const TABLE_KEY = useMemo(() => 
+    currentUser ? `kurax_table_${currentUser.id}` : "kurax_table_name_guest"
+  , [currentUser]);
+  
+  // --- 2. PERSISTENT STATE INITIALIZATION ---
+  const [tableName, setTableName] = useState(() => {
+    return localStorage.getItem(TABLE_KEY) || "";
+  });
+  
+  const [cart, setCart] = useState(() => {
+    const savedCart = localStorage.getItem(CART_KEY);
+    return savedCart ? JSON.parse(savedCart) : [];
+  });
+
   const [searchQuery, setSearchQuery] = useState("");
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("Starters");
 
-  // --- FIXED: Define cartTotal in the main component body so it is accessible everywhere ---
-  const cartTotal = cart.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
+  // --- 3. SYNC LOGIC ---
+  // Re-sync state when the user changes (e.g., Logout -> Login as different staff)
+  useEffect(() => {
+    const savedCart = localStorage.getItem(CART_KEY);
+    const savedTable = localStorage.getItem(TABLE_KEY);
+    setCart(savedCart ? JSON.parse(savedCart) : []);
+    setTableName(savedTable || "");
+  }, [CART_KEY, TABLE_KEY]);
 
-  const activeTables = [...new Set(orders
-    .filter(o => o.status !== "Served")
-    .map(o => o.tableName))].filter(Boolean);
+  // Persist local state to LocalStorage
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(CART_KEY, JSON.stringify(cart));
+      localStorage.setItem(TABLE_KEY, tableName);
+    }
+  }, [cart, tableName, CART_KEY, TABLE_KEY, currentUser]);
 
- const handleSelectTable = (name) => {
-  const upperName = name.toUpperCase();
-  setTableName(upperName);
-  
-  const existingOrder = orders.find(
-    o => o.tableName?.toUpperCase() === upperName && o.status !== "Served"
-  );
-  
-  if (existingOrder) {
-    // We merge: Existing items + whatever is currently in the waiter's cart
-    setCart(prevCart => {
-      const merged = [...existingOrder.items];
-      
-      prevCart.forEach(newItem => {
-        const existingItemIndex = merged.findIndex(i => i.id === newItem.id);
-        if (existingItemIndex !== -1) {
-          // If item exists in both, update quantity
-          merged[existingItemIndex].quantity += newItem.quantity;
-        } else {
-          // If it's a new item (like the Burger), add it to the list
-          merged.push(newItem);
-        }
-      });
-      return merged;
-    });
-  }
-};
+  // --- 4. CALCULATIONS ---
+  const cartTotal = useMemo(() => 
+    cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0)
+  , [cart]);
 
-const playNotification = () => {
-  const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
-  audio.play().catch(err => console.log("Audio play blocked", err));
-};
+  const activeTables = useMemo(() => [
+    ...new Set(orders
+      .filter(o => o.status !== "Served" && o.status !== "Paid")
+      .map(o => o.tableName?.toUpperCase()))
+  ].filter(Boolean), [orders]);
 
+  // --- 5. HANDLERS ---
+  const handleSelectTable = (name) => {
+    const upperName = name.toUpperCase();
+    setTableName(upperName);
+    
+    const existingOrder = orders.find(
+      o => o.tableName?.toUpperCase() === upperName && !["Served", "Paid"].includes(o.status)
+    );
+    
+    if (existingOrder && cart.length === 0) {
+      setCart(existingOrder.items.map(item => ({ ...item, fromPrevious: true })));
+    }
+  };
 
   const addToCart = (item) => {
     setCart(prev => {
@@ -77,8 +96,6 @@ const playNotification = () => {
     });
   };
 
-  const removeFromCart = (id) => setCart(prev => prev.filter(item => item.id !== id));
-
   const updateQuantity = (id, delta) => {
     setCart(prev => prev.map(item => {
       if (item.id === id) return { ...item, quantity: Math.max(1, item.quantity + delta) };
@@ -86,128 +103,86 @@ const playNotification = () => {
     }));
   };
 
-  const updateNote = (id, note) => {
-    setCart(prev => prev.map(item => item.id === id ? { ...item, note } : item));
-  };
-
- const handleProcessOrder = () => {
-  if (!tableName) return alert("Please select a table");
-  if (cart.length === 0) return alert("Cart is empty");
-
-  
-
-  setOrders(prev => {
-    // 1. Create a copy of the current orders to mutate safely
-    let updatedOrders = [...prev];
-
-    // 2. Define the stations we need to process
-    const stations = ["Kitchen", "Barman", "Barista"];
-
-    stations.forEach(stationTag => {
-      const stationItemsInCart = cart.filter(item => item.station === stationTag);
-      
-      if (stationItemsInCart.length > 0) {
-        // Find if there is an existing, active (unarchived/unserved) docket for this table + station
-        const existingOrderIndex = updatedOrders.findIndex(
-          o => o.tableName?.toUpperCase() === tableName.toUpperCase() && 
-               o.station === stationTag && 
-               !o.isArchived && 
-               o.status !== "Served"
-        );
-
-        if (existingOrderIndex !== -1) {
-          // --- APPEND LOGIC ---
-          const existingOrder = updatedOrders[existingOrderIndex];
-          
-          // Merge items: if item exists, update quantity; if not, push new
-          const mergedItems = [...existingOrder.items];
-          stationItemsInCart.forEach(newItem => {
-            const itemIdx = mergedItems.findIndex(i => i.id === newItem.id);
-            if (itemIdx !== -1) {
-              mergedItems[itemIdx].quantity += newItem.quantity;
-            } else {
-              mergedItems.push(newItem);
-            }
-          });
-
-          // Update the existing docket with merged items and new total
-          updatedOrders[existingOrderIndex] = {
-            ...existingOrder,
-            items: mergedItems,
-            total: mergedItems.reduce((sum, i) => sum + (Number(i.price) * i.quantity), 0),
-            timestamp: new Date().toISOString() // Update time to show latest activity
-          };
-        } else {
-          // --- NEW DOCKET LOGIC ---
-          // If no active docket for this station, create a fresh one
-          const newOrder = {
-            id: `ORD-${stationTag.charAt(0)}-${Date.now().toString().slice(-4)}`,
-            tableName: tableName.trim().toUpperCase(),
-            items: stationItemsInCart,
-            total: stationItemsInCart.reduce((sum, i) => sum + (Number(i.price) * i.quantity), 0),
-            status: "Pending",
-            station: stationTag,
-            isArchived: false,
-            isPaid: false,
-            timestamp: new Date().toISOString(),
-            managerName: currentManager
-          };
-          updatedOrders.push(newOrder);
-        }
-      }
-    });
-
-    playNotification();
-    return updatedOrders;
-  });
-
-  setShowSuccess(true);
-  setCart([]); 
-  setTableName("");
-};
-
-
-// Add this method here
   const clearCart = () => {
-    if (window.confirm("Clear the entire cart? This will empty your current selection.")) {
+    if (window.confirm("Clear the entire cart and table selection?")) {
       setCart([]);
       setTableName("");
+      localStorage.removeItem(CART_KEY);
+      localStorage.removeItem(TABLE_KEY);
     }
   };
 
+  const handleProcessOrder = async () => {
+    if (!tableName) return alert("Please assign a table name/number.");
+    if (cart.length === 0) return alert("Cart is empty.");
+
+    const orderData = {
+      staffId: currentUser?.id || 1,
+      tableName: tableName.toUpperCase(),
+      items: cart,
+      total: cartTotal,
+      paymentMethod: "Cash"
+    };
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setOrders(prev => [data, ...prev]);
+        setShowSuccess(true);
+        // Clear User-specific Storage on success
+        setCart([]); 
+        setTableName("");
+        localStorage.removeItem(CART_KEY);
+        localStorage.removeItem(TABLE_KEY);
+      } else {
+        alert(data.error || "Order failed to sync.");
+      }
+    } catch (err) {
+      console.error("Transmission Error:", err);
+      alert("Network error. Check if backend is running.");
+    }
+  };
+
+  const activeMenus = useMemo(() => (menus || []).filter(item => {
+    const isLive = item.status === 'live' || item.published === true || item.published === 't';
+    const itemCat = item.category?.toLowerCase().trim() || "";
+    const activeCat = activeCategory?.toLowerCase().trim() || "";
+    return isLive && itemCat === activeCat && item.name.toLowerCase().includes(searchQuery.toLowerCase());
+  }), [menus, activeCategory, searchQuery]);
 
   return (
-    <div className={`flex flex-col lg:flex-row h-full font-[Outfit] overflow-hidden relative transition-colors duration-300 ${theme === 'dark' ? 'bg-black text-white' : 'bg-white text-black'}`}>
+    <div className={`flex flex-col lg:flex-row h-screen font-[Outfit] overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'bg-black text-white' : 'bg-gray-50 text-black'}`}>
 
       <CartModal 
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
         cart={cart}
         updateQuantity={updateQuantity}
-        updateNote={updateNote}
-        removeFromCart={removeFromCart}
+        updateNote={(id, note) => setCart(prev => prev.map(i => i.id === id ? { ...i, note } : i))}
+        removeFromCart={(id) => setCart(prev => prev.filter(i => i.id !== id))}
         clearCart={clearCart}
         tableName={tableName}
         handleSelectTable={handleSelectTable}
-        cartTotal={cartTotal} // Passed correctly here
+        cartTotal={cartTotal}
         handleProcessOrder={handleProcessOrder}
         activeTables={activeTables}
         theme={theme}
       />
 
       <SuccessOrderModal isOpen={showSuccess} onClose={() => setShowSuccess(false)} theme={theme} />
-      
-      {!isCartOpen && (
-        <button onClick={() => setIsCartOpen(true)} className="lg:hidden fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-yellow-500 text-black py-6 px-1.5 rounded-l-xl shadow-2xl flex flex-col items-center">
-          <ChevronLeft size={16} />
-        </button>
-      )}
 
-      <div className={`flex-1 px-4 md:px-6 py-6 overflow-y-auto ${theme === 'dark' ? 'bg-black' : 'bg-white'}`}>
-        <div className="flex flex-col gap-6 mb-8">
-          <div className="flex items-center gap-3">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className={`p-6 border-b ${theme === 'dark' ? 'bg-black/80 border-white/5' : 'bg-white border-black/5'}`}>
+          <div className="flex items-center gap-3 mb-6">
             <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
-            <h2 className="text-3xl font-black uppercase italic tracking-tighter">Explore Menu</h2>
+            <h2 className="text-3xl font-medium uppercase tracking-widest">Explore Menu</h2>
           </div>
 
           <div className="flex items-center gap-3 w-full">
@@ -216,37 +191,42 @@ const playNotification = () => {
               <input 
                 type="text" placeholder="Search items..." value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={`w-full border-none rounded-full py-4 pl-12 pr-4 text-sm font-bold outline-none ${theme === 'dark' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-900'}`}
+                className={`w-full border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-bold outline-none transition-all ${
+                  theme === 'dark' ? 'bg-zinc-900 text-white focus:ring-1 ring-yellow-500/50' : 'bg-zinc-100 text-zinc-900 focus:ring-1 ring-yellow-500'
+                }`}
               />
             </div>
-            <button onClick={() => setIsCartOpen(true)} className="relative w-14 h-14 rounded-full bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg">
-              <ShoppingCart size={24} className="text-black" />
-              {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-black text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-yellow-500">{cart.length}</span>}
-            </button>
             <ThemeToggle />
+            <button 
+              onClick={() => setIsCartOpen(true)} 
+              className="relative w-12 h-12 rounded-full bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg active:scale-95 transition-transform"
+            >
+              <ShoppingCart size={24} className="text-black" />
+              {cart.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-black text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-yellow-500">
+                  {cart.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
-        <div className="pb-24"><StaffOrderMenu onAddItem={addToCart} searchQuery={searchQuery} /></div>
+
+        <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 custom-scrollbar">
+          <StaffOrderMenu 
+            onAddItem={addToCart} 
+            searchQuery={searchQuery}
+            activeCategory={activeCategory}
+            setActiveCategory={setActiveCategory}
+            items={activeMenus} 
+          />
+        </div>
       </div>
     </div>
   );
 }
 
-// --- Sub-Components (StatusBadge, SuccessOrderModal, CartModal) remain the same ---
-
-function StatusBadge({ status }) {
-  const configs = {
-    Pending: { color: "bg-zinc-500", icon: <Clock size={10} />, label: "In Queue" },
-    Preparing: { color: "bg-blue-500", icon: <Flame size={10} />, label: "Cooking" },
-    Ready: { color: "bg-emerald-500", icon: <CheckCircle size={10} />, label: "Ready" },
-  };
-  const config = configs[status] || configs.Pending;
-  return (
-    <div className={`${config.color} text-white text-[8px] font-black uppercase px-2 py-1 rounded-md flex items-center gap-1 mt-1`}>
-      {config.icon} {config.label}
-    </div>
-  );
-}
+// --- CART MODAL & SUCCESS MODAL SUB-COMPONENTS REMAIN THE SAME ---
+// (Refer to previous code for those UI components)
 
 function CartModal({ 
   isOpen, onClose, cart, updateQuantity, updateNote, removeFromCart, 
@@ -254,180 +234,111 @@ function CartModal({
   handleProcessOrder, activeTables, theme 
 }) {
   const [tableSearch, setTableSearch] = useState("");
-
-  
-
   if (!isOpen) return null;
 
-  // Filter active tables based on search input
-  const searchedTables = activeTables.filter(t => 
-    t.toLowerCase().includes(tableSearch.toLowerCase())
-  );
-
-  
+  const searchedTables = activeTables.filter(t => t.toLowerCase().includes(tableSearch.toLowerCase()));
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className={`w-full max-w-2xl h-[85vh] overflow-hidden flex flex-col rounded-[3rem] shadow-2xl transition-all ${
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
+      <div className={`w-full max-w-2xl h-[90vh] overflow-hidden flex flex-col rounded-[3rem] shadow-2xl transition-all ${
         theme === 'dark' ? 'bg-zinc-900 border border-white/10 text-white' : 'bg-white text-zinc-900'
       }`}>
         
-        {/* --- HEADER: Control Center --- */}
-        <div className="p-6 border-b border-zinc-500/10 shrink-0 space-y-4">
-          <div className="flex justify-between items-center">
+        <div className="p-8 border-b border-zinc-500/10 shrink-0">
+          <div className="flex justify-between items-center mb-6">
              <div className="flex items-center gap-4">
-                <h2 className="text-xl font-black uppercase italic text-yellow-500 tracking-tighter">Table Manager</h2>
-                <button 
-                  onClick={clearCart} 
-                  className="flex items-center gap-2 text-[10px] font-black px-4 py-2 rounded-full border border-rose-500/20 text-rose-500 hover:bg-rose-500/10 transition-all active:scale-95"
-                >
-                  <RefreshCcw size={12} strokeWidth={3} /> NEW CUSTOMER
+                <h2 className="text-2xl font-black uppercase italic text-yellow-500 tracking-tighter">Current Order</h2>
+                <button onClick={clearCart} className="text-[10px] font-black px-4 py-2 rounded-full border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 transition-all">
+                  <RefreshCcw size={12} className="inline mr-1" /> RESET
                 </button>
              </div>
-             <button onClick={onClose} className="p-2 rounded-full bg-zinc-500/10 hover:bg-zinc-500/20 transition-colors">
-                <X size={24} />
-             </button>
+             <button onClick={onClose} className="p-3 rounded-2xl bg-zinc-500/10 hover:bg-zinc-500/20"><X size={24} /></button>
           </div>
 
-          {/* SEARCH BAR: Find existing tables */}
           <div className="relative">
-            <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all ${
-              theme === 'dark' ? 'bg-black/40 border-white/10' : 'bg-zinc-100 border-black/5'
-            } focus-within:border-yellow-500/50`}>
-              <Search size={16} className="text-zinc-500" />
+            <div className={`flex items-center gap-3 px-5 py-4 rounded-2xl border transition-all ${theme === 'dark' ? 'bg-black/40 border-white/10' : 'bg-zinc-50 border-black/5'}`}>
+              <Search size={18} className="text-zinc-500" />
               <input 
-                type="text" 
-                placeholder="Quick search active tables..." 
-                value={tableSearch}
-                onChange={(e) => setTableSearch(e.target.value)}
-                className="bg-transparent outline-none flex-1 text-xs font-bold uppercase italic placeholder:text-zinc-500"
+                type="text" placeholder="Quick find active tables..." 
+                value={tableSearch} onChange={(e) => setTableSearch(e.target.value)}
+                className="bg-transparent outline-none flex-1 text-sm font-bold uppercase italic"
               />
             </div>
-            
-            {/* Search Dropdown Results */}
             {tableSearch && (
-              <div className={`absolute top-full left-0 right-0 z-[310] mt-2 p-2 rounded-2xl shadow-2xl border animate-in fade-in zoom-in-95 duration-200 ${
-                theme === 'dark' ? 'bg-zinc-800 border-white/10' : 'bg-white border-black/10'
-              }`}>
-                {searchedTables.length > 0 ? (
-                  searchedTables.map(t => (
-                    <button 
-                      key={t}
-                      onClick={() => {
-                        handleSelectTable(t);
-                        setTableSearch(""); 
-                      }}
-                      className="w-full text-left p-3 hover:bg-yellow-500 hover:text-black rounded-xl text-[10px] font-black uppercase transition-all flex justify-between items-center group"
-                    >
-                      {t}
-                      <span className="opacity-0 group-hover:opacity-100 text-[8px] italic">Load Order</span>
-                    </button>
-                  ))
-                ) : (
-                  <div className="p-3 text-[10px] font-black text-zinc-500 uppercase italic">No matching table found</div>
-                )}
+              <div className={`absolute top-full left-0 right-0 z-[310] mt-2 p-3 rounded-2xl shadow-2xl border animate-in slide-in-from-top-2 ${theme === 'dark' ? 'bg-zinc-800 border-white/10' : 'bg-white border-black/10'}`}>
+                {searchedTables.length > 0 ? searchedTables.map(t => (
+                  <button key={t} onClick={() => { handleSelectTable(t); setTableSearch(""); }} className="w-full text-left p-4 hover:bg-yellow-500 hover:text-black rounded-xl text-xs font-black uppercase italic transition-colors">
+                    {t}
+                  </button>
+                )) : <div className="p-4 text-xs font-black text-zinc-500 uppercase italic">No active table matching "{tableSearch}"</div>}
               </div>
             )}
           </div>
         </div>
 
-        {/* --- MIDDLE: Scrollable Item List --- */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-8 space-y-4 custom-scrollbar">
           {cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-30">
-               <div className="w-16 h-16 bg-zinc-500/10 rounded-full flex items-center justify-center">
-                  <LayoutGrid className="text-zinc-500" size={32} />
-               </div>
-               <div className="text-center">
-                 <p className="italic font-black uppercase text-[10px] tracking-widest">Cart is Empty</p>
-                 <p className="text-[9px] font-bold uppercase mt-1">Search or Type Table below to start</p>
-               </div>
+            <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-20">
+               <LayoutGrid className="text-zinc-500" size={64} />
+               <p className="italic font-black uppercase text-xs tracking-widest">Your cart is empty</p>
             </div>
           ) : (
-            cart.map((item) => {
-              const canDelete = item.status !== "Preparing" && item.status !== "Ready";
-              return (
-                <div key={item.id} className={`p-4 rounded-[2rem] border transition-all ${
-                  theme === 'dark' ? 'bg-black/40 border-white/5' : 'bg-zinc-50 border-black/5'
-                } ${!canDelete ? 'opacity-80' : ''}`}>
-                  <div className="flex gap-4">
-                    <div className="relative shrink-0">
-                      <img src={item.image} className="w-16 h-16 rounded-2xl object-cover" alt={item.name} />
-                      <span className="absolute -top-2 -right-2 bg-yellow-500 text-black text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase">
-                        {item.station}
-                      </span>
+            cart.map((item) => (
+              <div key={item.id} className={`p-5 rounded-[2.5rem] border ${theme === 'dark' ? 'bg-black/40 border-white/5' : 'bg-zinc-50 border-black/5'}`}>
+                <div className="flex gap-5">
+                  <img 
+                    src={getImageSrc(item.image_url)} 
+                    className="w-20 h-20 rounded-3xl object-cover shadow-lg" alt={item.name} 
+                    onError={(e) => e.target.src = "https://via.placeholder.com/150"}
+                  />
+                  <div className="flex-1">
+                    <div className="flex justify-between items-start">
+                      <h4 className="font-black uppercase text-base tracking-tight">{item.name}</h4>
+                      <button onClick={() => removeFromCart(item.id)} className="text-zinc-400 hover:text-rose-500 transition-colors"><Trash2 size={20} /></button>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-black uppercase text-sm leading-tight">{item.name}</h4>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className={`w-1.5 h-1.5 rounded-full ${item.status === 'Ready' ? 'bg-emerald-500' : 'bg-yellow-500 animate-pulse'}`} />
-                            <span className="text-[8px] font-black uppercase tracking-tighter opacity-60 italic">{item.status}</span>
-                          </div>
-                        </div>
-                        {canDelete && (
-                          <button onClick={() => removeFromCart(item.id)} className="text-zinc-400 hover:text-rose-600 transition-colors">
-                            <Trash2 size={18} />
-                          </button>
-                        )}
+                    <div className="flex items-center gap-4 mt-4">
+                      <div className="flex items-center gap-4 px-3 py-2 rounded-xl bg-zinc-500/10">
+                        <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-yellow-500"><Minus size={16}/></button>
+                        <span className="text-base font-black w-6 text-center">{item.quantity}</span>
+                        <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-yellow-500"><Plus size={16}/></button>
                       </div>
-                      
-                      <div className="flex flex-col sm:flex-row items-center gap-3 mt-4">
-                        <div className={`flex items-center gap-3 p-1 rounded-xl ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`}>
-                          <button onClick={() => updateQuantity(item.id, -1)} disabled={!canDelete} className="p-1 disabled:opacity-20"><Minus size={14}/></button>
-                          <span className="text-sm font-black w-6 text-center">{item.quantity}</span>
-                          <button onClick={() => updateQuantity(item.id, 1)} disabled={!canDelete} className="p-1 disabled:opacity-20"><Plus size={14}/></button>
-                        </div>
-                        <input 
-                          type="text" placeholder="Add specific notes..." value={item.note || ""}
-                          onChange={(e) => updateNote(item.id, e.target.value)}
-                          className={`flex-1 text-[11px] py-2 px-4 rounded-xl border outline-none italic transition-all ${
-                            theme === 'dark' ? 'bg-zinc-950 border-white/5 focus:border-yellow-500/50' : 'bg-white border-black/5 focus:border-yellow-500/50'
-                          }`}
-                        />
-                      </div>
+                      <input 
+                        type="text" placeholder="Add kitchen note..." value={item.note || ""}
+                        onChange={(e) => updateNote(item.id, e.target.value)}
+                        className="flex-1 text-xs py-2 px-4 rounded-xl border bg-transparent outline-none italic border-zinc-500/20 focus:border-yellow-500/50"
+                      />
                     </div>
                   </div>
                 </div>
-              );
-            })
+              </div>
+            ))
           )}
         </div>
 
-        {/* --- FOOTER: Fixed Action Area --- */}
-        <div className={`p-6 border-t shrink-0 ${theme === 'dark' ? 'bg-black/50 border-white/10' : 'bg-zinc-50 border-black/10'}`}>
-          <div className="flex flex-col md:flex-row gap-6 items-center mb-6">
-            <div className="w-full md:flex-1 relative">
-              <label className="text-[9px] font-black uppercase text-zinc-500 mb-1 ml-2 block">Assigned Table</label>
-              <div className={`flex items-center gap-3 px-5 py-4 rounded-2xl border-2 transition-all ${
-                theme === 'dark' ? 'bg-zinc-900 border-white/5' : 'bg-white border-black/5'
-              } focus-within:border-yellow-500`}>
-                <UtensilsCrossed size={18} className="text-yellow-500" />
+        <div className={`p-8 border-t ${theme === 'dark' ? 'bg-black/60 border-white/10' : 'bg-zinc-50 border-black/10'}`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center mb-8">
+            <div className="w-full">
+              <label className="text-[10px] font-black uppercase text-zinc-500 ml-2 mb-2 block">Table Allocation</label>
+              <div className={`flex items-center gap-4 px-6 py-5 rounded-2xl border-2 transition-all ${tableName ? 'border-yellow-500 bg-yellow-500/5' : 'border-zinc-500/20'}`}>
+                <UtensilsCrossed size={20} className={tableName ? 'text-yellow-500' : 'text-zinc-500'} />
                 <input 
-                  type="text" 
-                  placeholder="TYPE TABLE NAME" 
-                  value={tableName}
-                  onChange={(e) => handleSelectTable(e.target.value)}
-                  className="bg-transparent outline-none flex-1 font-black uppercase text-sm italic placeholder:opacity-20"
+                  type="text" placeholder="NAME OR NUMBER" 
+                  value={tableName} onChange={(e) => handleSelectTable(e.target.value)}
+                  className="bg-transparent outline-none flex-1 font-black uppercase text-base italic placeholder:text-zinc-600"
                 />
               </div>
             </div>
-
-            <div className="text-right w-full md:w-auto shrink-0">
-              <span className="text-[10px] font-black text-zinc-500 uppercase block">Running Total</span>
-              <div className="text-2xl font-black tracking-tighter text-yellow-500">UGX {cartTotal.toLocaleString()}</div>
+            <div className="text-right">
+              <span className="text-xs font-black text-zinc-500 uppercase tracking-[0.2em]">Total Amount</span>
+              <div className="text-3xl font-black text-yellow-500 mt-1">UGX {cartTotal.toLocaleString()}</div>
             </div>
           </div>
-
           <button 
             onClick={handleProcessOrder}
             disabled={cart.length === 0 || !tableName}
-            className={`w-full py-6 font-black rounded-2xl flex items-center justify-center gap-3 uppercase italic shadow-2xl transition-all active:scale-95 ${
-              (cart.length === 0 || !tableName) ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed' : 'bg-yellow-500 text-black hover:bg-yellow-400 shadow-yellow-500/10'
-            }`}
+            className="w-full py-7 font-black rounded-3xl flex items-center justify-center gap-4 uppercase italic tracking-tighter text-lg bg-yellow-500 text-black shadow-xl shadow-yellow-500/20 active:scale-[0.98] transition-all disabled:opacity-20 disabled:grayscale"
           >
-            <Send size={20} strokeWidth={3} /> {activeTables.includes(tableName) ? "Update Existing Order" : "Send to Stations"}
+            <Send size={24} /> Sync Order to Stations
           </button>
         </div>
       </div>
@@ -438,17 +349,19 @@ function CartModal({
 function SuccessOrderModal({ isOpen, onClose, theme }) {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-      <div className={`w-full max-w-sm rounded-[3rem] p-8 text-center ${theme === 'dark' ? 'bg-zinc-900 border border-white/10' : 'bg-white'}`}>
-        <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-emerald-500/20">
-          <Check size={32} strokeWidth={3} />
+    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl animate-in fade-in duration-500">
+      <div className={`w-full max-w-md rounded-[3.5rem] p-12 text-center shadow-2xl ${theme === 'dark' ? 'bg-zinc-900 border border-white/10' : 'bg-white'}`}>
+        <div className="w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center text-white mx-auto mb-8 shadow-xl shadow-emerald-500/30">
+          <Check size={48} strokeWidth={4} />
         </div>
-        <h2 className={`text-xl font-black uppercase tracking-tighter mb-6 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>Order Synchronized</h2>
-        <div className="space-y-3">
-          <button onClick={() => window.print()} className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-3 hover:bg-black transition-all">
-            <Printer size={18} /> Print Voucher
+        <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-4">Transmission Successful</h2>
+        <p className="text-zinc-500 text-sm mb-10 font-bold uppercase tracking-widest">Kitchen & Bar tickets generated</p>
+        
+        <div className="space-y-4">
+          <button onClick={() => window.print()} className="w-full py-5 bg-zinc-900 text-white dark:bg-white dark:text-black rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-3 hover:opacity-90 transition-opacity">
+            <Printer size={20} /> Print Duplicate Voucher
           </button>
-          <button onClick={onClose} className="w-full py-4 text-yellow-500 font-black uppercase text-[10px]">Back to Menu</button>
+          <button onClick={onClose} className="w-full py-5 text-yellow-500 font-black uppercase text-xs tracking-widest hover:bg-yellow-500/5 rounded-2xl transition-colors">Return to Menu</button>
         </div>
       </div>
     </div>

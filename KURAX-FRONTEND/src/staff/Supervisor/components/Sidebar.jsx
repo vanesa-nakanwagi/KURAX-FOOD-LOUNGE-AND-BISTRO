@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom"; // 1. Import useNavigate
 import { 
   ClipboardList, 
   Target, 
@@ -14,8 +15,8 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 export default function Sidebar({ activeTab, setActiveTab }) {
   const { theme } = useTheme();
   const { currentUser } = useData();
+  const navigate = useNavigate(); // 2. Initialize navigate
 
-  // Updated navigation items to include LIVE TABLES
   const menuItems = [
     { id: "order", label: "TAKE ORDER", icon: <ClipboardList size={20} /> },
     { id: "status", label: "VIEW ORDER STATUS", icon: <Clock size={20} /> },
@@ -24,6 +25,15 @@ export default function Sidebar({ activeTab, setActiveTab }) {
 
   const handleTabClick = (tabId) => {
     setActiveTab(tabId);
+  };
+
+  // 3. Define the real logout logic
+  const handleLogout = () => {
+    // Clear the user session from storage
+    localStorage.removeItem('user'); 
+    
+    // Redirect the user back to the staff login page
+    navigate('/staff/login'); 
   };
 
   return (
@@ -36,7 +46,6 @@ export default function Sidebar({ activeTab, setActiveTab }) {
         <div className="flex items-center gap-3">
           <div className="relative">
              <img src={logo} alt="Logo" className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20" />
-             
           </div>
           <div className="flex flex-col">
             <h1 className={`text-[11px] font-black uppercase tracking-tight leading-none ${
@@ -73,10 +82,10 @@ export default function Sidebar({ activeTab, setActiveTab }) {
         ))}
       </nav>
 
-      {/* Logout Button at the Bottom */}
+      {/* Logout Button - Now Functional */}
       <div className={`p-4 border-t ${theme === 'dark' ? 'border-white/5' : 'border-black/5'}`}>
         <button
-          onClick={() => handleTabClick("logout")}
+          onClick={handleLogout} // 4. Attach the real logout function
           className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all
             ${theme === 'dark' 
               ? "text-rose-500 hover:bg-rose-500/10" 

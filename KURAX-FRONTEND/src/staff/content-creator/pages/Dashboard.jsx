@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Sidebar from "../components/Sidebar";
@@ -7,29 +7,39 @@ import { useData } from "../../../customer/components/context/DataContext";
 import Footer from "../../../customer/components/common/Foooter";
 import {
   BarChart3, Utensils, Search, Heart, Eye, 
-  Calendar, Clock, X, MapPin, Edit3, ArrowRight
+  Calendar, Clock, X, MapPin, Edit3, ArrowRight, Power
 } from "lucide-react";
 
 export default function Dashboard() {
-  const { menus, events, currentUser, orders } = useData();
+  const { menus, events, orders } = useData(); // Removed currentUser from context if it's not syncing
   const navigate = useNavigate();
   
+  // --- FIX: FETCH LOGGED IN USER FROM LOCAL STORAGE ---
+  const loggedInUser = useMemo(() => {
+    const saved = localStorage.getItem('user');
+    return saved ? JSON.parse(saved) : null;
+  }, []);
+
+  const userName = loggedInUser?.name || "Administrator";
+
   // States
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedItem, setSelectedItem] = useState(null);
   const [dailyVisits, setDailyVisits] = useState(0);
-  
-  const userName = currentUser?.name || "User";
+
+  // --- LOGOUT HANDLER ---
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    navigate('/staff/login');
+  };
 
   /**
    * 1. FETCH LIVE STATS
-   * Fetches the actual visit count from the database and refreshes every minute
    */
   useEffect(() => {
     const fetchLiveStats = async () => {
       try {
         const response = await axios.get("http://localhost:5000/api/visits/today");
-        // Update state with the count from our site_visits table
         setDailyVisits(response.data.totalVisits || 0);
       } catch (err) {
         console.error("Dashboard Stats Error:", err);
@@ -37,13 +47,12 @@ export default function Dashboard() {
     };
 
     fetchLiveStats();
-    const interval = setInterval(fetchLiveStats, 60000); // Live refresh every 60s
+    const interval = setInterval(fetchLiveStats, 60000); 
     return () => clearInterval(interval);
   }, []);
 
   /**
    * 2. ACTIVITY LOGIC
-   * Combines menus and events into one timeline
    */
   const allActivity = [...(menus || []), ...(events || [])].sort((a, b) => {
     const dateA = new Date(a.created_at || 0);
@@ -57,7 +66,6 @@ export default function Dashboard() {
 
   /**
    * 3. DYNAMIC STATS CONFIGURATION
-   * Replaces hardcoded strings with live database counts
    */
   const stats = [
     { 
@@ -99,17 +107,28 @@ export default function Dashboard() {
         <main className="p-4 md:p-8 pt-20 lg:pt-8 max-w-5xl mx-auto w-full"> 
           
           {/* Header Section */}
-          <div className="mb-10">
-            <div className="flex items-center gap-3 mb-2">
-                <div className="w-1 h-6 bg-yellow-500 rounded-full" />
-                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-yellow-500/80">Management Overview</h4>
+          <div className="mb-10 flex justify-between items-end">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                  <div className="w-1 h-6 bg-yellow-500 rounded-full" />
+                  <h4 className="text-xs font-black uppercase tracking-[0.2em] text-yellow-500/80">Management Overview</h4>
+              </div>
+              <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+                Welcome back, <span className="text-yellow-400 capitalize">{userName}</span>
+              </h2>
             </div>
-            <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-              Welcome back, <span className="text-yellow-400 capitalize">{userName}</span>
-            </h2>
+
+            {/* Added a quick logout for the creator side too */}
+            <button 
+              onClick={handleLogout}
+              className="p-3 bg-zinc-900 border border-slate-800 rounded-2xl text-slate-500 hover:text-rose-500 hover:border-rose-500/30 transition-all"
+              title="Logout"
+            >
+              <Power size={20} />
+            </button>
           </div>
 
-          {/* Stats Grid - Now fully dynamic */}
+          {/* Stats Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-12">
             {stats.map((stat, index) => <StatsCard key={index} {...stat} />)}
           </div>

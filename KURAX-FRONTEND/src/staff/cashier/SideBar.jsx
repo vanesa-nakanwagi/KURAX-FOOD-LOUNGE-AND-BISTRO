@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom"; // Import useNavigate
 import logo from "../../customer/assets/images/logo.jpeg";
 import { 
   LayoutDashboard, Truck, RotateCcw, LogOut, X, Wallet 
@@ -11,13 +12,20 @@ export default function SideBar({
   setIsOpen, 
   onEndShift 
 }) {
+  const navigate = useNavigate(); // Initialize navigate
+
   const menuItems = [
     { id: "PENDING", label: "My Collection", icon: <LayoutDashboard size={20} /> },
     { id: "CLOSED", label: "Order Status", icon: <RotateCcw size={20} /> },
-     { id: "PETTY CASH", label: "Log Petty Cash", icon: <Wallet size={20} /> },
+    { id: "PETTY CASH", label: "Log Petty Cash", icon: <Wallet size={20} /> },
     { id: "RIDERS", label: "Riders", icon: <Truck size={20} /> },
-   
   ];
+
+  // Logic to clear session and redirect
+  const handleLogout = () => {
+    localStorage.removeItem('user'); // Clear the session
+    navigate('/staff/login'); // Send back to login page
+  };
 
   return (
     <>
@@ -40,10 +48,10 @@ export default function SideBar({
               <img src={logo} alt="logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
               <div className="flex flex-col">
                 <h1 className="text-[14px] font-black text-white uppercase tracking-tighter leading-tight">
-                  KURAX BISTRO
+                  KURAX FOOD LOUNG & BISTRO
                 </h1>
                 <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest leading-tight">
-                  Cashier Panel
+                  Staff Panel
                 </p>
               </div>
             </div>
@@ -88,7 +96,10 @@ export default function SideBar({
 
         {/* Bottom Utility Area */}
         <div className="p-4 border-t border-white/5">
-          <button className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-zinc-700 font-bold uppercase text-[11px] tracking-widest hover:text-zinc-400 transition-all">
+          <button 
+            onClick={handleLogout} // Attached handleLogout here
+            className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-zinc-700 font-bold uppercase text-[11px] tracking-widest hover:text-zinc-400 transition-all"
+          >
             <LogOut size={18} /> 
             Logout
           </button>

@@ -23,19 +23,22 @@ export default function DirectorDashboard() {
 
  const [currentUser, setCurrentUser] = useState(null);
  const [staffStats, setStaffStats] = useState({});
- const { staffList } = useData(); // Your live staff from Postgres
- const { orders = [] } = useData(); // Your live orders from Postgres
+ const { staffList, setStaffList, orders = [] } = useData();
+
+ const [editingStaff, setEditingStaff] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+ const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+ 
    
 
-
- // Inside DirectorDashboard function
 useEffect(() => {
     const pullStaffMembers = async () => {
         try {
             const response = await fetch('http://localhost:5000/api/staff');
             if (response.ok) {
                 const data = await response.json();
-                // Hydrate the staffList state with real data from Postgres
+                // This will now work because setStaffList is defined above
                 setStaffList(Array.isArray(data) ? data : []);
             }
         } catch (err) {
@@ -44,40 +47,33 @@ useEffect(() => {
     };
 
     pullStaffMembers();
-}, [setStaffList]);
+}, [setStaffList]); // setStaffList is now available
 
 
 useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (!savedUser) {
-      navigate('/staff/login');
-      return;
-    }
-    const parsedUser = JSON.parse(savedUser);
-    if (parsedUser.role !== 'director') {
-      navigate('/staff/login');
-    } else {
-      setCurrentUser(parsedUser);
-    }
-  }, [navigate]);
-
-  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const [editingStaff, setEditingStaff] = useState(null);
-  useEffect(() => {
   const savedUser = localStorage.getItem('user');
+  
   if (!savedUser) {
     navigate('/staff/login');
     return;
   }
-  const parsedUser = JSON.parse(savedUser);
   
-  if (parsedUser.role !== 'director') {
+  try {
+    const parsedUser = JSON.parse(savedUser);
+    
+    // FIX: Case-insensitive role check
+    if (parsedUser.role.toUpperCase() !== 'DIRECTOR') {
+      console.log('Access denied: User role is', parsedUser.role);
+      navigate('/staff/login');
+    } else {
+      setCurrentUser(parsedUser);
+    }
+  } catch (err) {
+    console.error('Error parsing user data:', err);
     navigate('/staff/login');
-  } else {
-    // Make sure we set 'currentUser' here
-    setCurrentUser(parsedUser);
   }
 }, [navigate]);
+
 
 const handleSaveStaff = async (payload) => {
     try {
@@ -567,6 +563,8 @@ function StaffCard({ staff, stats, onTogglePermission, onDelete, onEdit }) {
     const isChef = staff.role === "CHEF";
     const DAILY_GOAL = 20;
 
+    const hasPendingRequest = staff.is_requesting === true;
+
     // Ensure this matches the prop name coming from the parent
 const safeStats = stats || { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, CARD: 0 };
 
@@ -597,6 +595,16 @@ const safeStats = stats || { totalOrders: 0, totalRevenue: 0, CASH: 0, MOMO: 0, 
                             </p>
                         </div>
                     </div>
+
+                    {/* --- PENDING REQUEST BADGE --- */}
+                {hasPendingRequest && !isDirector && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500 animate-pulse shadow-lg shadow-yellow-500/20">
+                        <Smartphone size={10} className="text-black" />
+                        <span className="text-[8px] font-black uppercase text-black">Requesting Access</span>
+                    </div>
+                )}
+        
+
                 </div>
 
                 {/* --- IMPROVED PERMISSIONS SECTION --- */}
@@ -866,6 +874,11 @@ function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
                         <option value="CHEF">CHEF</option>
                         <option value="MANAGER">MANAGER</option>
                         <option value="DIRECTOR">DIRECTOR</option>
+                         <option value="CONTENT-MANAGER">CONTENT-MANAGER</option>
+                        <option value="ACCOUNTANT">ACCOUNTANT</option>
+                        <option value="BARISTA">BARISTA</option>
+                        <option value="BARMAN">BARMAN</option>
+                        <option value="SUPERVISOR">SUPERVISOR</option>
                     </select>
 
                     {/* PIN Input with Auto-Generate Button */}

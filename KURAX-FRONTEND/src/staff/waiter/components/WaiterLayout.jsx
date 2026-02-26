@@ -1,7 +1,8 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom"; // Add this for redirection
 import NewOrder from "./NewOrder";
 import OrderHistory from "./OrderHistory";
-import { PlusCircle, Receipt, LogOut, Clock, Printer, X } from "lucide-react"; 
+import { PlusCircle, Receipt, LogOut, Clock, Printer, X, Power } from "lucide-react"; 
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../../customer/components/context/ThemeContext"; 
 import { useData } from "../../../customer/components/context/DataContext"; 
@@ -11,18 +12,26 @@ export default function WaiterLayout() {
   const [showShiftModal, setShowShiftModal] = useState(false);
   const { theme } = useTheme();
   const { orders = [] } = useData() || {};
+  const navigate = useNavigate(); // Hook for navigation
 
-  // 1. PULL LOGGED-IN USER FROM STORAGE
+  // 1. PULL LOGGED-IN USER
   const savedUser = JSON.parse(localStorage.getItem('user') || '{}');
   const waiterName = savedUser.name || "Staff Member";
   const waiterId = savedUser.id;
 
   const today = new Date().toISOString().split('T')[0];
 
-  // 2. FILTER ORDERS BY THIS SPECIFIC WAITER ID
+  // 2. LOGOUT LOGIC
+  const handleLogout = () => {
+    // Clear the session
+    localStorage.removeItem('user');
+    // Redirect to login
+    navigate('/staff/login'); 
+  };
+
+  // 3. FILTER ORDERS
   const dailyOrders = orders.filter(order => {
     const orderDate = new Date(order.timestamp).toISOString().split('T')[0];
-    // Use ID for better accuracy than Name
     return order.waiterId === waiterId && orderDate === today;
   });
 
@@ -79,32 +88,40 @@ export default function WaiterLayout() {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className={`fixed bottom-0 left-0 right-0 backdrop-blur-xl border-t px-8 py-3 pb-6 flex justify-around items-center z-[100] transition-colors duration-300 ${
+      <nav className={`fixed bottom-0 left-0 right-0 backdrop-blur-xl border-t px-6 py-3 pb-6 flex justify-between items-center z-[100] transition-colors duration-300 ${
         theme === 'dark' ? 'bg-zinc-900/80 border-white/5' : 'bg-white/80 border-black/5'
       }`}>
         
         <NavButton 
           active={activeTab === "order"} 
           onClick={() => setActiveTab("order")}
-          icon={<PlusCircle size={24} />}
-          label="New Order"
+          icon={<PlusCircle size={22} />}
+          label="Order"
           theme={theme}
         />
 
         <NavButton 
           active={activeTab === "history"} 
           onClick={() => setActiveTab("history")}
-          icon={<Receipt size={24} />}
+          icon={<Receipt size={22} />}
           label="History"
           theme={theme}
         />
 
-        {/* NEW END SHIFT BUTTON */}
         <NavButton 
           active={false} 
           onClick={() => setShowShiftModal(true)}
-          icon={<LogOut size={24} />}
-          label="End Shift"
+          icon={<LogOut size={22} />}
+          label="Shift"
+          theme={theme}
+        />
+
+        {/* LOGOUT BUTTON */}
+        <NavButton 
+          active={false} 
+          onClick={handleLogout}
+          icon={<Power size={22} />}
+          label="Logout"
           theme={theme}
           isDanger={true}
         />

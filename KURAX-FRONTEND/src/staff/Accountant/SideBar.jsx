@@ -1,10 +1,18 @@
-
+import React from "react";
+import { useNavigate } from "react-router-dom"; // 1. Import useNavigate
 import { 
   Receipt, Calculator, Wallet, CheckCircle2, X, LogOut, RotateCcw 
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
 
 export default function SideBar({ activeSection, setActiveSection, isOpen, setIsOpen }) {
+  const navigate = useNavigate(); // 2. Initialize navigate
+
+  // 3. Logout Logic
+  const handleLogout = () => {
+    localStorage.removeItem('user'); // Clear session
+    navigate('/staff/login'); // Redirect to login
+  };
   
   const menuItems = [
     { key: "FINANCIAL_HISTORY", label: "My Collections", icon: <Receipt size={20} /> },
@@ -44,7 +52,10 @@ export default function SideBar({ activeSection, setActiveSection, isOpen, setIs
         </div>
 
         <div className="mt-auto p-8 border-t border-white/5">
-          <button className="flex items-center gap-3 text-zinc-600 font-black uppercase text-[10px] tracking-widest hover:text-rose-500 transition-colors">
+          <button 
+            onClick={handleLogout} // 4. Attach to Desktop Logout
+            className="flex items-center gap-3 text-zinc-600 font-black uppercase text-[10px] tracking-widest hover:text-rose-500 transition-colors"
+          >
             <LogOut size={16} /> Logout
           </button>
         </div>
@@ -59,7 +70,7 @@ export default function SideBar({ activeSection, setActiveSection, isOpen, setIs
               <X size={20} />
             </button>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 flex-1">
             {menuItems.map((item) => (
               <button
                 key={item.key}
@@ -76,6 +87,16 @@ export default function SideBar({ activeSection, setActiveSection, isOpen, setIs
                 {item.label}
               </button>
             ))}
+          </div>
+
+          {/* Added Logout for Mobile too */}
+          <div className="mt-auto pt-6 border-t border-white/5">
+            <button 
+              onClick={handleLogout} 
+              className="flex items-center gap-4 w-full p-5 rounded-2xl font-black uppercase text-xs tracking-widest text-rose-500 bg-rose-500/5 border border-rose-500/10"
+            >
+              <LogOut size={20} /> Logout
+            </button>
           </div>
         </div>
       )}

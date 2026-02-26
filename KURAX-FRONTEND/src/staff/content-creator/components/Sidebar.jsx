@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import logo from "../../../customer/assets/images/logo.jpeg";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom"; // Added useNavigate
 import {
   LayoutDashboard,
   UtensilsCrossed,
@@ -12,6 +12,7 @@ import {
 
 export default function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate(); // Initialize navigate
   const [isOpen, setIsOpen] = useState(false);
 
   const navItems = [
@@ -19,6 +20,13 @@ export default function Sidebar() {
     { icon: UtensilsCrossed, label: "Menus", path: "/content-creator/menus" },
     { icon: Calendar, label: "Events", path: "/content-creator/events" },
   ];
+
+  // --- LOGOUT FUNCTION ---
+  const handleLogout = () => {
+    localStorage.removeItem('user'); // Clears the session
+    navigate('/staff/login'); // Redirects to login page
+    setIsOpen(false); // Closes mobile drawer if open
+  };
 
   const NavLinks = () => (
     <nav className="flex-1 flex flex-col space-y-2">
@@ -49,10 +57,9 @@ export default function Sidebar() {
       <div className="lg:hidden fixed top-0 left-0 w-full bg-zinc-900 border-b border-slate-800 p-4 flex items-center justify-between z-[60]">
         <div className="flex items-center gap-2">
           <img src={logo} alt="Logo" className="w-8 h-8 rounded-full" />
-          {/* Optional: Add a short version of the name here if you want it on the bar itself */}
           <span className="text-sm sm:text-base font-black text-white uppercase tracking-tight lg:hidden ml-1">
-  Kurax Staff Panel
-</span>
+            Kurax Staff Panel
+          </span>
         </div>
         <button 
           onClick={() => setIsOpen(true)}
@@ -72,20 +79,16 @@ export default function Sidebar() {
           
           <div className="absolute top-0 left-0 w-72 h-full bg-zinc-900 border-r border-slate-800 p-6 flex flex-col animate-in slide-in-from-left duration-300">
             <div className="flex justify-between items-start mb-8 pb-6 border-b border-slate-800">
-              {/* FIXED: Added the brand text here for mobile users */}
               <div className="flex items-center gap-3">
                 <img src={logo} alt="Logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
-               <div className="flex flex-col justify-center leading-tight">
-  {/* Main Brand Name */}
-  <h1 className="text-sm md:text-lg font-black text-white uppercase tracking-tighter leading-none">
-    KURAX FOOD LOUNGE & BISTRO
-  </h1>
-  
-  {/* Staff Panel Subtitle */}
-  <h1 className="text-[10px] md:text-xs font-bold text-yellow-500 uppercase tracking-[0.2em] mt-0.5">
-    STAFF PANEL
-  </h1>
-</div>
+                <div className="flex flex-col justify-center leading-tight">
+                  <h1 className="text-sm font-black text-white uppercase tracking-tighter leading-none">
+                    KURAX FOOD LOUNGE
+                  </h1>
+                  <h1 className="text-[10px] font-bold text-yellow-500 uppercase tracking-[0.2em] mt-0.5">
+                    STAFF PANEL
+                  </h1>
+                </div>
               </div>
               <button onClick={() => setIsOpen(false)} className="text-slate-400 p-1 hover:text-white">
                 <X className="w-6 h-6" />
@@ -95,7 +98,10 @@ export default function Sidebar() {
             <NavLinks />
 
             <div className="pt-6 border-t border-slate-800">
-              <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors">
+              <button 
+                onClick={handleLogout} // Hooked up the function here
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
+              >
                 <LogOut className="w-5 h-5" />
                 <span className="font-medium text-sm">Logout</span>
               </button>
@@ -110,7 +116,7 @@ export default function Sidebar() {
           <div className="flex items-center gap-3">
             <img src={logo} alt="Kurax Logo" className="w-12 h-12 rounded-full object-cover border border-yellow-500/20" />
             <div className="leading-tight">
-              <h1 className="text-sm font-bold text-white uppercase tracking-tighter">KURAX FOOD LOUNGE & BISTRO</h1>
+              <h1 className="text-sm font-bold text-white uppercase tracking-tighter">KURAX BISTRO</h1>
               <h1 className="text-xs font-medium text-yellow-500 uppercase">STAFF PANEL</h1>
             </div>
           </div>
@@ -119,7 +125,10 @@ export default function Sidebar() {
         <NavLinks />
 
         <div className="pt-6 border-t border-slate-800">
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all">
+          <button 
+            onClick={handleLogout} // Hooked up the function here
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all"
+          >
             <LogOut className="w-5 h-5" />
             <span className="font-medium text-sm">Logout</span>
           </button>

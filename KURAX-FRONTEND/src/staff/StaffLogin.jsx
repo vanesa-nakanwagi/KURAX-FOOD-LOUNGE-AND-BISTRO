@@ -8,57 +8,71 @@ const StaffLogin = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
+  const [isLoading, setIsLoading] = useState(false);
 
-    try {
-      const response = await fetch('http://localhost:5000/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, pin }),
-      });
+const handleLogin = async (e) => {
+  e.preventDefault();
+  
+  // Prevent multiple submissions
+  if (isLoading) return;
+  
+  setError('');
+  setIsLoading(true);
 
-      const data = await response.json();
+  try {
+    console.log('🔐 Starting login...');
+    
+    const response = await fetch('http://localhost:5000/api/staff/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, pin }),
+    });
 
-      if (response.ok) {
-        // Essential: storing the user session from the live DB
-        localStorage.setItem('user', JSON.stringify(data.user));
-        
-        // Normalize role to uppercase to match DB consistency
-        const role = data.user.role.toUpperCase(); 
+    const data = await response.json();
+    console.log('📦 Response data:', data);
 
-        if (role === 'DIRECTOR') {
-          navigate('/director/dashboard');
-        } else if (role === 'WAITER') {
-          navigate('/staff/waiter');
-        } else if (role === 'CASHIER') {
-          navigate('/staff/cashier');
-        } else if (role === 'BARISTA') {
-          navigate('/staff/barista');
-        } else if (role === 'BARMAN') {
-          navigate('/staff/barman');
-        }  else if (role === 'ACCOUNTANT') {
-          navigate('/staff/accountant');
-        } else if (role === 'CONTENT-MANAGER') {
-          navigate('/staff/content-manager');
-        } else if (role === 'MANAGER') {
-          navigate('/staff/manager');
-        } else if (role === 'SUPERVISOR') {
-          navigate('/staff/supervisor');
-        } else if (role === 'CHEF') {
-          navigate('/kitchen/display');
-        } else {
-          navigate('/staff/dashboard'); 
-        }
+    if (response.ok) {
+      console.log('✅ Login successful, storing user...');
+      localStorage.setItem('user', JSON.stringify(data.user));
+      
+      const role = data.user.role.toUpperCase();
+      console.log('👤 User role:', role);
+      console.log('🚀 Navigating to dashboard...');
+
+      if (role === 'DIRECTOR') {
+        navigate('/director/dashboard');
+      } else if (role === 'WAITER') {
+        navigate('/staff/waiter');
+      } else if (role === 'CASHIER') {
+        navigate('/cashier');
+      } else if (role === 'BARISTA') {
+        navigate('/barista');
+      } else if (role === 'BARMAN') {
+        navigate('/barman');
+      } else if (role === 'ACCOUNTANT') {
+        navigate('/accountant');
+      } else if (role === 'CONTENT-MANAGER') {
+        navigate('/content-creator');
+      } else if (role === 'MANAGER') {
+        navigate('/staff/manager');
+      } else if (role === 'SUPERVISOR') {
+        navigate('/supervisor');
+      } else if (role === 'CHEF') {
+        navigate('/kitchen');
       } else {
-        setError(data.error || 'Access Denied');
+        navigate('/staff/dashboard');
       }
-    } catch (err) {
-      setError('System Error. Please try again later.');
-      console.error("Login connection error:", err);
+    } else {
+      console.log('❌ Login failed:', data.error);
+      setError(data.error || 'Access Denied');
     }
-  }; 
+  } catch (err) {
+    console.error('🚨 Login error:', err);
+    setError('System Error. Please try again later.');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white font-[Outfit] px-4 relative overflow-hidden">

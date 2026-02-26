@@ -1,51 +1,71 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { 
+  Lock, PlusCircle, Receipt, ShieldAlert, 
+  ShieldCheck, RefreshCcw, LayoutDashboard, 
+  Users, BarChart3, Target, History, Smartphone 
+} from "lucide-react"; 
+
+// Component Imports (Adjust paths as necessary)
 import NewOrder from "./NewOrder";
 import OrderHistory from "./OrderHistory";
 import TargetSettings from "./TargetSettings"; 
 import Sidebar from "./Sidebar"; 
-import { Lock, PlusCircle, Receipt } from "lucide-react"; 
-import { useTheme } from "../../../customer/components/context/ThemeContext";
-import { useData } from "../../../customer/components/context/DataContext";
 import ShiftReportModal from "./ShiftModal";
 import LiveOrderStatus from "./LiveOrderStatus";
 import LiveTableGrid from "./LiveTableGrid"; 
 import PerformanceReports from "./PerformanceReports";
+
+import { useTheme } from "../../../customer/components/context/ThemeContext";
+import { useData } from "../../../customer/components/context/DataContext";
 
 export default function ManagerLayout() {
   const [activeTab, setActiveTab] = useState("order");
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   
   const { theme } = useTheme();
-  const { currentUser } = useData();
+  const { currentUser, isGranted } = useData();
 
-  const isPermitted = true; 
-
+  /**
+   * Content Resolver
+   * Allows full access to all tabs EXCEPT "order", 
+   * which shows a lock screen if is_permitted is false.
+   */
   const renderContent = () => {
-  // 1. Check permissions first
-  if (activeTab === "order" && !isPermitted) {
-    return <LockedView name={currentUser?.name} theme={theme} />;
-  }
+    switch (activeTab) {
+      case "order": 
+        if (!isGranted) {
+          return (
+            <LockedView 
+              name={currentUser?.name} 
+              role={currentUser?.role} 
+              theme={theme} 
+            />
+          );
+        }
+        return <NewOrder />;
 
-  // 2. Switch based on the ID sent from Sidebar
-  switch (activeTab) {
-    case "order": 
-      return <NewOrder />;
-    case "status": 
-      return <LiveOrderStatus />;
-    case "tables": // <--- This MUST match the ID in Sidebar.js
-      return <LiveTableGrid />; 
-    case "target": 
-      return <TargetSettings />;
-    case "history": 
-      return <OrderHistory />;
-    case "reports": 
+      case "status": 
+        return <LiveOrderStatus />;
+      case "tables": 
+        return <LiveTableGrid />; 
+      case "target": 
+        return <TargetSettings />;
+      case "history": 
+        return <OrderHistory />;
+      case "reports": 
         return <PerformanceReports />;
-    case "logout": 
-      return <div className="p-10 text-center font-black uppercase italic">Logging out...</div>;
-    default: 
-      return <NewOrder />;
-  }
-};
+      case "logout": 
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            <div className="w-12 h-12 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+            <p className="font-black uppercase tracking-widest italic text-zinc-500">Signing out...</p>
+          </div>
+        );
+      default: 
+        return <NewOrder />;
+    }
+  };
+
   const handleTabChange = (tabId) => {
     if (tabId === "shift") {
       setIsShiftModalOpen(true);
@@ -59,46 +79,45 @@ export default function ManagerLayout() {
       theme === 'dark' ? 'bg-black text-slate-100' : 'bg-zinc-50 text-zinc-900'
     }`}>
       
-      {/* SIDEBAR */}
+      {/* SIDEBAR - Always visible */}
       <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} />
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 h-full overflow-y-auto relative">
-        <div className="absolute top-4 right-6 z-50">
-           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest ${
-             isPermitted 
+        
+        {/* LIVE STATUS BADGE */}
+        <div className="absolute top-6 right-8 z-50">
+           <div className={`flex items-center gap-2 px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.1em] shadow-lg transition-all duration-500 ${
+             isGranted 
               ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
-              : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+              : 'bg-rose-500/10 border-rose-500/20 text-rose-500 animate-pulse'
            }`}>
-             <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${isPermitted ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-             {isPermitted ? 'System Access Granted' : 'System Locked'}
+             <div className={`w-2 h-2 rounded-full ${isGranted ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+             {isGranted ? 'Ordering Active' : 'Ordering Restricted'}
            </div>
         </div>
 
-        {/* Padding adjustment: Added "tables" to the list that needs bottom padding 
-            if you decide to show the nav there, but currently it's cleaner without.
-        */}
-        <div className={`${(activeTab === "order" || activeTab === "status" || activeTab === "tables") ? "pb-28" : ""}`}>
+        <div className={`${(activeTab === "order" || activeTab === "history") ? "pb-32" : ""}`}>
           {renderContent()}
         </div>
       </main>
 
-      {/* BOTTOM NAV: Hidden during Live Table management for better focus */}
+      {/* BOTTOM NAVIGATION - Always visible for quick access */}
       {(activeTab === "order" || activeTab === "history") && (
-        <nav className={`fixed bottom-0 left-64 right-0 backdrop-blur-xl border-t px-12 py-4 pb-8 flex justify-around items-center z-[100] transition-all duration-300 ${
-          theme === 'dark' ? 'bg-zinc-900/80 border-white/5' : 'bg-white/80 border-black/5'
+        <nav className={`fixed bottom-0 left-64 right-0 backdrop-blur-md border-t px-12 py-4 pb-8 flex justify-around items-center z-[100] transition-all duration-500 ${
+          theme === 'dark' ? 'bg-zinc-900/90 border-white/5' : 'bg-white/80 border-black/5'
         }`}>
           <NavButton 
             active={activeTab === "order"} 
             onClick={() => setActiveTab("order")}
-            icon={<PlusCircle size={24} />}
-            label="New Order"
+            icon={<PlusCircle size={26} />}
+            label="Take Order"
             theme={theme}
           />
           <NavButton 
             active={activeTab === "history"} 
             onClick={() => setActiveTab("history")}
-            icon={<Receipt size={24} />}
+            icon={<Receipt size={26} />}
             label="History"
             theme={theme}
           />
@@ -113,39 +132,116 @@ export default function ManagerLayout() {
   );
 }
 
-/* Sub-component for Nav Buttons */
-function NavButton({ icon, label, active, onClick, theme }) {
-  const inactiveColor = theme === 'dark' ? "text-slate-500" : "text-zinc-400";
+/**
+ * NEW IMPROVED LOCKED VIEW
+ * Includes Permission Request Logic
+ */
+function LockedView({ name, role, theme }) {
+  const { currentUser } = useData();
+  const [requestSent, setRequestSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Check if a request was already sent in this session
+  useEffect(() => {
+    const sent = localStorage.getItem(`perm_req_${currentUser?.id}`);
+    if (sent) setRequestSent(true);
+  }, [currentUser?.id]);
+
+  const handleRequestPermission = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/staff/request-permission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          staffId: currentUser.id, 
+          staffName: currentUser.name 
+        })
+      });
+
+      if (response.ok) {
+        setRequestSent(true);
+        localStorage.setItem(`perm_req_${currentUser?.id}`, 'true');
+      }
+    } catch (err) {
+      console.error("Request failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const displayRole = role ? role.charAt(0).toUpperCase() + role.slice(1).toLowerCase() : "Staff Member";
 
   return (
-    <button 
-      onClick={onClick}
-      className={`flex flex-col items-center gap-1 transition-all duration-300 ${
-        active ? "text-yellow-500 scale-110" : inactiveColor
-      }`}
-    >
-      <div className={`${active ? "drop-shadow-[0_0_8px_rgba(234,179,8,0.4)]" : ""}`}>
-        {icon}
+    <div className="flex flex-col items-center justify-center h-full min-h-[80vh] p-12 text-center gap-6 animate-in fade-in zoom-in duration-500">
+      <div className="relative">
+        <div className={`w-24 h-24 rounded-full flex items-center justify-center border transition-all duration-700 ${
+          requestSent 
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
+            : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+        }`}>
+          {requestSent ? <ShieldCheck size={48} className="animate-bounce" /> : <Lock size={48} />}
+        </div>
+        <div className="absolute -bottom-2 -right-2 bg-white dark:bg-black p-1 rounded-full">
+           <ShieldAlert className={requestSent ? "text-emerald-500" : "text-rose-500"} size={24} />
+        </div>
       </div>
-      <span className="text-[10px] font-black uppercase tracking-tighter">{label}</span>
-    </button>
+      
+      <div className="space-y-2">
+        <h2 className="text-3xl font-black uppercase tracking-tighter text-zinc-900 dark:text-white">
+          {requestSent ? "Request Pending" : "Ordering Locked"}
+        </h2>
+        <p className="text-zinc-500 max-w-[360px] leading-relaxed text-sm">
+          {requestSent 
+            ? `We've notified the Director that you are ready to take orders. Please wait for activation.`
+            : `Hey ${name}, your access as a ${displayRole} allows dashboard oversight, but ordering requires Director approval.`
+          }
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3 w-full max-w-[280px]">
+        {!requestSent ? (
+          <button 
+            onClick={handleRequestPermission}
+            disabled={loading}
+            className="px-6 py-4 bg-yellow-500 text-black rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2"
+          >
+            {loading ? <RefreshCcw size={14} className="animate-spin" /> : <Smartphone size={14} />}
+            Request Ordering Power
+          </button>
+        ) : (
+          <div className="px-6 py-4 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2">
+            <ShieldCheck size={14} /> Notification Sent
+          </div>
+        )}
+        
+        <button 
+          onClick={() => window.location.reload()}
+          className="text-[9px] text-zinc-400 uppercase font-black tracking-widest hover:text-zinc-600 transition-colors"
+        >
+          Refresh Status
+        </button>
+      </div>
+    </div>
   );
 }
 
-/* Locked View Component */
-function LockedView({ name, theme }) {
+/**
+ * NavButton Helper
+ */
+function NavButton({ icon, label, active, onClick, theme }) {
+  const inactiveColor = theme === 'dark' ? "text-slate-500" : "text-zinc-400";
   return (
-    <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-4 bg-transparent">
-      <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center text-rose-500 border border-rose-500/20">
-        <Lock size={40} />
+    <button 
+      onClick={onClick}
+      className={`flex flex-col items-center gap-1.5 transition-all duration-300 group ${
+        active ? "text-yellow-500 scale-110" : `${inactiveColor} hover:text-zinc-600 dark:hover:text-slate-300`
+      }`}
+    >
+      <div className={`${active ? "drop-shadow-[0_0_12px_rgba(234,179,8,0.5)]" : "group-hover:scale-110 transition-transform"}`}>
+        {icon}
       </div>
-      <h2 className="text-2xl font-black uppercase tracking-tighter text-zinc-900 dark:text-white">Access Restricted</h2>
-      <p className="text-sm text-zinc-500 max-w-[300px] leading-relaxed">
-        Sorry <span className={`${theme === 'dark' ? 'text-white' : 'text-black'} font-bold`}>{name}</span>, your management profile is currently locked by the Director.
-      </p>
-      <button className="mt-4 px-6 py-3 bg-zinc-900 text-white rounded-2xl border border-white/5 text-[10px] font-black uppercase tracking-widest hover:bg-zinc-800 transition-all">
-        Contact Admin for Permission
-      </button>
-    </div>
+      <span className="text-[11px] font-black uppercase tracking-tight">{label}</span>
+    </button>
   );
 }

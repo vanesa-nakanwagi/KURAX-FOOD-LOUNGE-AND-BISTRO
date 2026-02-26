@@ -5,25 +5,46 @@ import { Target, ArrowUpRight, TrendingUp } from "lucide-react";
 
 export default function DirectorTargetView() {
   const { theme } = useTheme();
-  const { orders, monthlyTargets } = useData();
+  // Ensure we provide default empty arrays/objects to prevent 'undefined' crashes
+  const { orders = [], monthlyTargets = {}, loading } = useData();
 
-  // 1. Get current month key
+  // 1. Get current month key (e.g., "2026-02")
   const currentMonthKey = new Date().toISOString().substring(0, 7);
-  const target = monthlyTargets[currentMonthKey] || { revenue: 0 };
+  
+  // SAFETY: Use optional chaining ?. and provide a default object
+  const target = monthlyTargets?.[currentMonthKey] || { revenue: 0 };
 
- const actualSales = orders
+  // 2. Calculate Actual Sales
+  const actualSales = (orders || [])
     .filter(o => {
-      // Safety check: ensure 'o' exists, 'o.date' exists and is a string
-      return o && typeof o.date === 'string' && o.date.startsWith(currentMonthKey) && o.status === "CLOSED";
+      // Safety check: ensure 'o' exists, 'o.date' exists and matches current month
+      return (
+        o && 
+        typeof o.date === 'string' && 
+        o.date.startsWith(currentMonthKey) && 
+        o.status === "CLOSED"
+      );
     })
     .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
 
-  // 3. Calculate percentage
-  const progress = target.revenue > 0 ? (actualSales / target.revenue) * 100 : 0;
+  // 3. Calculate percentage (Prevent Division by Zero)
+  const targetRevenue = Number(target.revenue) || 0;
+  const progress = targetRevenue > 0 ? (actualSales / targetRevenue) * 100 : 0;
   const isDark = theme === 'dark';
 
+  // 4. Loading State UI
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center h-full">
+        <p className="text-zinc-500 font-black animate-pulse uppercase tracking-widest text-xs">
+          Synchronizing Live Targets...
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-8 space-y-6 animate-in fade-in duration-700">
       <div className="flex justify-between items-end mb-4">
         <div>
           <h2 className="text-3xl font-black uppercase italic tracking-tighter">Manager's Goal</h2>
@@ -31,7 +52,9 @@ export default function DirectorTargetView() {
         </div>
         <div className="text-right">
           <p className="text-[10px] font-black text-yellow-500 uppercase">Current Month</p>
-          <p className="text-xl font-black italic">{new Date().toLocaleString('default', { month: 'long', year: 'numeric' }).toUpperCase()}</p>
+          <p className="text-xl font-black italic">
+            {new Date().toLocaleString('default', { month: 'long', year: 'numeric' }).toUpperCase()}
+          </p>
         </div>
       </div>
 
@@ -42,8 +65,8 @@ export default function DirectorTargetView() {
             <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-2">Target Set by Manager</p>
             <div className="flex items-baseline gap-2">
               <span className="text-sm font-black text-zinc-500 uppercase">UGX</span>
-              <h3 className="text-5xl font-black italic tracking-tighter text-white">
-                {target.revenue.toLocaleString()}
+              <h3 className={`text-5xl font-black italic tracking-tighter ${isDark ? 'text-white' : 'text-black'}`}>
+                {targetRevenue.toLocaleString()}
               </h3>
             </div>
           </div>
@@ -79,19 +102,19 @@ export default function DirectorTargetView() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <InsightCard 
           label="Remaining Balance" 
-          value={`UGX ${Math.max(0, target.revenue - actualSales).toLocaleString()}`} 
+          value={`UGX ${Math.max(0, targetRevenue - actualSales).toLocaleString()}`} 
           icon={<ArrowUpRight size={18}/>}
           isDark={isDark}
         />
         <InsightCard 
           label="Daily Required Pace" 
-          value={`UGX ${Math.round((target.revenue - actualSales) / 10).toLocaleString()}`} 
+          value={`UGX ${Math.round((targetRevenue - actualSales) / 10).toLocaleString()}`} 
           icon={<TrendingUp size={18}/>}
           isDark={isDark}
         />
         <InsightCard 
           label="Target Integrity" 
-          value="VERIFIED" 
+          value={targetRevenue > 0 ? "VERIFIED" : "NOT SET"} 
           icon={<Target size={18}/>}
           isDark={isDark}
         />
@@ -102,7 +125,7 @@ export default function DirectorTargetView() {
 
 function InsightCard({ label, value, icon, isDark }) {
   return (
-    <div className={`p-6 rounded-3xl border flex items-center gap-4 ${isDark ? 'bg-zinc-900/40 border-white/5' : 'bg-white border-black/5'}`}>
+    <div className={`p-6 rounded-3xl border flex items-center gap-4 transition-all hover:scale-105 ${isDark ? 'bg-zinc-900/40 border-white/5' : 'bg-white border-black/5 shadow-sm'}`}>
       <div className="p-3 bg-zinc-800 rounded-2xl text-yellow-500">{icon}</div>
       <div>
         <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">{label}</p>
