@@ -131,7 +131,7 @@ export default function Home() {
         </div>
       </div>
 
-  {/* SIGNATURE DISHES (RECENT 4) */}
+ {/* SIGNATURE DISHES (RECENT 4) */}
 <section id="menus" className="py-24 px-4 sm:px-8 bg-white dark:bg-[#080808]">
   <div className="max-w-7xl mx-auto text-center">
     <p className="text-yellow-700 uppercase tracking-[0.3em] font-bold text-xs mb-3">
@@ -143,26 +143,26 @@ export default function Home() {
     </h2>
 
     <p className="text-zinc-600 dark:text-zinc-400 max-w-2xl mx-auto mb-12 text-sm md:text-base leading-relaxed">
-      A curated selection of our most celebrated flavors, where traditional Ugandan heritage meets modern culinary artistry.
+      A curated selection of our most celebrated flavors...
     </p>
 
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+    {/* FIX 1: Added 'pb-8' and 'p-2' to the grid to prevent shadow clipping */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 pb-8 p-2">
       {loadingMenus ? (
         [...Array(4)].map((_, i) => (
           <div key={i} className="h-80 bg-zinc-100 dark:bg-zinc-900 animate-pulse rounded-[2.5rem]" />
         ))
       ) : (
         dbMenus.slice(0, 4).map((item) => {
-          // Time-based check (48 hours)
           const createdDate = new Date(item.created_at);
           const now = new Date();
           const isNew = (now - createdDate) / (1000 * 60 * 60) <= 48;
 
           return (
-            /* The parent container with rounded corners and overflow hidden */
-            <div key={item.id} className="relative group overflow-hidden rounded-[2.5rem]">
+            /* FIX 2: Removed 'overflow-hidden' from this wrapper to allow shadows to show 
+               The rounding should be handled INSIDE HomeMenuCard */
+            <div key={item.id} className="relative group h-full">
               
-              {/* INSIDE BADGE: Sparkling Glass Style */}
               {isNew && (
                 <div className="absolute top-4 right-4 z-30 bg-yellow-500/90 backdrop-blur-md text-black text-[10px] font-black px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 uppercase tracking-tighter border border-white/20">
                   <Sparkles size={12} className="animate-pulse" />

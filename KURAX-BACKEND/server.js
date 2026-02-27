@@ -2,11 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
-// Removed: import path from 'path'; (Since it wasn't being used below)
-
 import pool from './db.js';
 
-// 1. ROUTE IMPORTS (Make sure these files exist in your /routes folder)
+// ROUTE IMPORTS
 import menuRoutes from './routes/menuRoutes.js';
 import staffRoutes from './routes/staffRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
@@ -15,41 +13,61 @@ import siteVisits from './routes/siteVisits.js';
 
 dotenv.config();
 const app = express();
+const allowedOrigins = [
+  'http://localhost:5173',                   // Local Development
+  'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app/',    // Your main Vercel Production URL
+  /\.vercel\.app$/                           // Optional: Allows all Vercel preview deployments
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    
+    const isAllowed = allowedOrigins.some((allowed) => {
+      if (allowed instanceof RegExp) return allowed.test(origin);
+      return allowed === origin;
+    });
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.log("CORS Blocked for Origin:", origin); // Helpful for debugging
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 
 // 2. MIDDLEWARE
 app.use(helmet({
   crossOriginResourcePolicy: false,
-  crossOriginEmbedderPolicy: false, // Add this line to stop the black-box effect
+  crossOriginEmbedderPolicy: false, 
 }));
-app.use(cors());
 app.use(express.json());
 
-// Serving the uploads folder as a static route
+// Serving the uploads folder
 app.use('/uploads', express.static('uploads'));
 
+// 3. ROUTES
 app.use('/api/visits', siteVisits);
-
-// 3. DATABASE VERIFICATION
-const verifyDB = async () => {
-  try {
-    await pool.query('SELECT NOW()');
-    console.log('✅ Database connected');
-  } catch (err) {
-    console.error('❌ DB Error:', err.message);
-  }
-};
-
-// 4. ROUTE REDIRECTS
 app.use('/api/menus', menuRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/events', eventRoutes);
 
-// 5. START SERVER
+// 4. DATABASE VERIFICATION
+const verifyDB = async () => {
+  try {
+    await pool.query('SELECT NOW()');
+    console.log('✅ Database connected to Neon');
+  } catch (err) {
+    console.error('❌ DB Error:', err.message);
+  }
+};
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log('-------------------------------------------');
-  console.log(`🚀 Kurax Server: http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
   verifyDB();
-  console.log('-------------------------------------------');
 });
