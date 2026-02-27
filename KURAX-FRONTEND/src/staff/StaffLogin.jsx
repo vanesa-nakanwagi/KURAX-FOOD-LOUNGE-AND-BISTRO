@@ -6,73 +6,69 @@ const StaffLogin = () => {
   const [email, setEmail] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false); // Add loading state
   const navigate = useNavigate();
 
-  const [isLoading, setIsLoading] = useState(false);
-
-const handleLogin = async (e) => {
-  e.preventDefault();
-  
-  // Prevent multiple submissions
-  if (isLoading) return;
-  
-  setError('');
-  setIsLoading(true);
-
-  try {
-    console.log('🔐 Starting login...');
+  const handleLogin = async (e) => {
+    e.preventDefault();
     
-    const response = await fetch('http://localhost:5000/api/staff/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, pin }),
-    });
+    // Prevent multiple submissions
+    if (isLoading) return;
+    
+    setError('');
+    setIsLoading(true);
 
-    const data = await response.json();
-    console.log('📦 Response data:', data);
-
-    if (response.ok) {
-      console.log('✅ Login successful, storing user...');
-      localStorage.setItem('user', JSON.stringify(data.user));
+    try {
+      console.log('🔐 Starting login...');
       
-      const role = data.user.role.toUpperCase();
-      console.log('👤 User role:', role);
-      console.log('🚀 Navigating to dashboard...');
+      // Use environment variable
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      console.log('🌐 API URL:', API_URL);
+      
+      const response = await fetch(`${API_URL}/api/staff/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, pin }),
+      });
 
-      if (role === 'DIRECTOR') {
-        navigate('/director/dashboard');
-      } else if (role === 'WAITER') {
-        navigate('/staff/waiter');
-      } else if (role === 'CASHIER') {
-        navigate('/cashier');
-      } else if (role === 'BARISTA') {
-        navigate('/barista');
-      } else if (role === 'BARMAN') {
-        navigate('/barman');
-      } else if (role === 'ACCOUNTANT') {
-        navigate('/accountant');
-      } else if (role === 'CONTENT-MANAGER') {
-        navigate('/content-creator');
-      } else if (role === 'MANAGER') {
-        navigate('/staff/manager');
-      } else if (role === 'SUPERVISOR') {
-        navigate('/supervisor');
-      } else if (role === 'CHEF') {
-        navigate('/kitchen');
+      const data = await response.json();
+      console.log('📦 Response data:', data);
+
+      if (response.ok) {
+        console.log('✅ Login successful, storing user...');
+        localStorage.setItem('user', JSON.stringify(data.user));
+        
+        const role = data.user.role.toUpperCase();
+        console.log('👤 User role:', role);
+        console.log('🚀 Navigating to dashboard...');
+
+        // Role-based navigation
+        const roleRoutes = {
+          'DIRECTOR': '/director/dashboard',
+          'WAITER': '/staff/waiter',
+          'CASHIER': '/cashier',
+          'BARISTA': '/barista',
+          'BARMAN': '/barman',
+          'ACCOUNTANT': '/accountant',
+          'CONTENT-MANAGER': '/content-creator',
+          'MANAGER': '/staff/manager',
+          'SUPERVISOR': '/supervisor',
+          'CHEF': '/kitchen'
+        };
+
+        const route = roleRoutes[role] || '/staff/dashboard';
+        navigate(route);
       } else {
-        navigate('/staff/dashboard');
+        console.log('❌ Login failed:', data.error);
+        setError(data.error || 'Access Denied');
       }
-    } else {
-      console.log('❌ Login failed:', data.error);
-      setError(data.error || 'Access Denied');
+    } catch (err) {
+      console.error('🚨 Login error:', err);
+      setError('Network error. Please check your connection.');
+    } finally {
+      setIsLoading(false);
     }
-  } catch (err) {
-    console.error('🚨 Login error:', err);
-    setError('System Error. Please try again later.');
-  } finally {
-    setIsLoading(false);
-  }
-};
+  }; 
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white font-[Outfit] px-4 relative overflow-hidden">
@@ -81,13 +77,11 @@ const handleLogin = async (e) => {
       <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-yellow-500/5 rounded-full blur-[100px]"></div>
       <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-yellow-500/5 rounded-full blur-[100px]"></div>
 
-      {/* Slimmed Down Container: max-w-sm is narrower than max-w-md */}
       <div className="relative max-w-sm w-full">
         <div className="bg-white rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
           
           {/* Branding Section */}
           <div className="text-center mb-8">
-            {/* mix-blend-mode: multiply removes the white/black box from the image */}
             <img 
               src={kuraxLogo} 
               alt="Kurax Logo" 
@@ -120,6 +114,7 @@ const handleLogin = async (e) => {
                 placeholder="director@kurax.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={isLoading}
               />
             </div>
 
@@ -135,17 +130,21 @@ const handleLogin = async (e) => {
                 placeholder="****"
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
+                disabled={isLoading}
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-4 bg-black hover:bg-yellow-500 text-yellow-500 hover:text-black font-black rounded-xl transition-all duration-300 uppercase tracking-widest text-xs flex items-center justify-center"
+              disabled={isLoading}
+              className="w-full py-4 bg-black hover:bg-yellow-500 text-yellow-500 hover:text-black font-black rounded-xl transition-all duration-300 uppercase tracking-widest text-xs flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Unlock Portal
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
+              {isLoading ? 'Authenticating...' : 'Unlock Portal'}
+              {!isLoading && (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              )}
             </button>
           </form>
 

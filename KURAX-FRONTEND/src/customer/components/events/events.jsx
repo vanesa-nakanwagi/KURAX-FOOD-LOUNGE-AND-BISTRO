@@ -29,7 +29,8 @@ export default function Events() {
   // Carousel Logic State
   const [activeIndex, setActiveIndex] = useState(0);
   const galleryImages = [gallery1, gallery2, gallery3, gallery4, gallery5, gallery6];
-
+   const API_URL = import.meta.env.VITE_API_URL;
+   
   useEffect(() => {
     const timer = setInterval(() => {
       setActiveIndex((prev) => (prev + 1) % galleryImages.length);
@@ -40,7 +41,7 @@ export default function Events() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const response = await axios.get("http://localhost:5000/api/events");
+        const response = await axios.get(`${API_URL}/api/events`);
         
         // IMPROVEMENT: Filter live items AND Sort by ID descending (Latest First)
         const sortedLiveItems = response.data
