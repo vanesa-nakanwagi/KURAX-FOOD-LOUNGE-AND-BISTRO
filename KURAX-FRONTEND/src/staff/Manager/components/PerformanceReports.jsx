@@ -2,175 +2,257 @@ import React, { useState, useMemo } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { 
-  Calendar, 
-  Download, 
-  TrendingUp, 
-  Users, 
-  ChevronRight, 
-  FileText,
-  Target
+  Calendar, Download, TrendingUp, Users, FileText, Target
 } from "lucide-react";
 
 export default function PerformanceReports() {
   const { theme } = useTheme();
-  const { orders, monthlyTargets } = useData();
+  const { orders = [], monthlyTargets = {} } = useData();
   
-  // 1. Default to today's date (YYYY-MM-DD)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // 2. Logic to filter and calculate report data
-  const reportData = useMemo(() => {
-    const dailyOrders = orders.filter(order => 
-      order.date === selectedDate && order.status === "CLOSED"
-    );
+  const isDark = theme === 'dark';
 
-    const totalSales = dailyOrders.reduce((sum, order) => sum + (order.total || 0), 0);
-    
-    // Group sales by Waiter name
+  // --- CORE DATA: Flexible date matching + no status filter ---
+  const reportData = useMemo(() => {
+    const dailyOrders = orders.filter(order => {
+      const orderDate = new Date(order.timestamp || order.date)
+        .toISOString()
+        .split('T')[0];
+      return orderDate === selectedDate;
+    });
+
+    const totalSales = dailyOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+
     const waiterStats = dailyOrders.reduce((acc, order) => {
-      const name = order.waiter || "Unknown Waiter";
-      acc[name] = (acc[name] || 0) + (order.total || 0);
+      const name = order.waiter_name || order.waiterName || order.waiter || "Unknown";
+      acc[name] = (acc[name] || 0) + Number(order.total || 0);
       return acc;
     }, {});
 
     return { orders: dailyOrders, totalSales, waiterStats };
   }, [orders, selectedDate]);
 
-  // 3. Get targets for the selected month
-  const currentMonthKey = selectedDate.substring(0, 7); // Result: "2026-05"
-  // Add a check to ensure monthlyTargets exists first
-const monthTarget = (monthlyTargets && monthlyTargets[currentMonthKey]) 
-  || { revenue: 0, waiterQuota: 0 };
+  // --- MONTHLY TARGET: reads from same context TargetSettings writes to ---
+  const currentMonthKey = selectedDate.substring(0, 7); // e.g. "2026-02"
+  const monthTarget = monthlyTargets[currentMonthKey] || { revenue: 0, waiterQuota: 0 };
 
-  // 4. CSV Download Function
+  // --- CSV DOWNLOAD ---
   const handleDownload = () => {
+    if (reportData.orders.length === 0) {
+      alert("No transactions found for this date.");
+      return;
+    }
+
     const csvRows = [
-      ["Order ID", "Table", "Waiter", "Amount", "Time", "Payment Method"], // Headers
+      [`KURAX FOOD LOUNGE & BISTRO — DAILY REPORT`],
+      [`Date: ${selectedDate}`],
+      [`Generated: ${new Date().toLocaleString()}`],
+      [],
+      [`Total Transactions`, reportData.orders.length],
+      [`Total Revenue`, `UGX ${reportData.totalSales.toLocaleString()}`],
+      [],
+      [`Order ID`, `Waiter`, `Table`, `Amount (UGX)`, `Payment Method`, `Time`],
       ...reportData.orders.map(o => [
-        o.id, 
-        o.name || o.table, 
-        o.waiter, 
-        o.total, 
-        o.time, 
-        o.paymentMethod || "CASH"
+        o.id,
+        o.waiter_name || o.waiterName || o.waiter || "—",
+        o.table_name || o.tableName || o.name || "—",
+        Number(o.total || 0).toLocaleString(),
+        o.payment_method || o.paymentMethod || "—",
+        o.timestamp
+          ? new Date(o.timestamp).toLocaleTimeString()
+          : (o.time || "—")
       ])
     ];
 
-    const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = "data:text/csv;charset=utf-8," +
+      csvRows.map(row => row.join(",")).join("\n");
+
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", encodeURI(csvContent));
     link.setAttribute("download", `Kurax_Report_${selectedDate}.csv`);
     document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   };
 
-  const isDark = theme === 'dark';
+  // Progress percentage toward monthly revenue goal
+  const progressPercent = monthTarget.revenue > 0
+    ? Math.min((reportData.totalSales / monthTarget.revenue) * 100, 100).toFixed(1)
+    : 0;
 
   return (
-    <div className="p-8 space-y-8 animate-in fade-in duration-700">
+    <div className="p-4 md:p-8 space-y-6 md:space-y-8 animate-in fade-in duration-700">
       
-      {/* HEADER & DATE SELECTOR */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+      {/* HEADER */}
+      <div className="flex justify-between items-start gap-4">
         <div>
-          <h1 className="text-5xl font-black italic uppercase tracking-tighter leading-none">
+          <h1 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter leading-none">
             Analytics
           </h1>
-          <p className="text-yellow-500 text-[10px] font-bold tracking-[0.3em] uppercase mt-2 italic">
-            Daily Performance & Audit logs
+          <p className="text-yellow-500 text-[10px] font-bold tracking-[0.2em] md:tracking-[0.3em] uppercase mt-1 md:mt-2 italic">
+            Daily Performance & Audit Logs
           </p>
-        </div>
-
-        <div className={`flex items-center gap-4 p-4 rounded-[2rem] border transition-all ${
-          isDark ? 'bg-zinc-900 border-white/5' : 'bg-white border-black/5 shadow-sm'
-        }`}>
-          <Calendar className="text-yellow-500" size={20} />
-          <input 
-            type="date" 
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="bg-transparent font-black uppercase text-xs outline-none text-zinc-500 focus:text-yellow-500 transition-colors cursor-pointer"
-          />
         </div>
       </div>
 
       {/* TOP LEVEL STATS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
         <StatCard 
           label="Gross Revenue" 
           value={`UGX ${reportData.totalSales.toLocaleString()}`} 
-          icon={<TrendingUp size={24} />} 
+          icon={<TrendingUp size={20} />} 
           isDark={isDark} 
         />
         <StatCard 
           label="Transactions" 
           value={reportData.orders.length} 
-          icon={<FileText size={24} />} 
+          icon={<FileText size={20} />} 
           isDark={isDark} 
         />
+        {/* MONTHLY GOAL — now live from TargetSettings context */}
         <StatCard 
           label="Monthly Revenue Goal" 
-          value={`UGX ${monthTarget.revenue.toLocaleString()}`} 
-          icon={<Target size={24} />} 
+          value={
+            monthTarget.revenue > 0 
+              ? `UGX ${monthTarget.revenue.toLocaleString()}` 
+              : "No Goal Set"
+          }
+          icon={<Target size={20} />} 
           isDark={isDark} 
-          subText={`${((reportData.totalSales / (monthTarget.revenue || 1)) * 100).toFixed(1)}% of Target`}
+          subText={
+            monthTarget.revenue > 0 
+              ? `${progressPercent}% of target reached` 
+              : "Set a goal in Performance Hub"
+          }
+          subTextColor={
+            Number(progressPercent) >= 100 
+              ? "text-emerald-500" 
+              : Number(progressPercent) >= 50 
+                ? "text-yellow-500" 
+                : "text-zinc-500"
+          }
         />
       </div>
 
+      {/* MONTHLY GOAL PROGRESS BAR */}
+      {monthTarget.revenue > 0 && (
+        <div className={`rounded-2xl md:rounded-3xl border p-4 md:p-6 ${
+          isDark ? 'bg-zinc-900/40 border-white/5' : 'bg-white border-black/5'
+        }`}>
+          <div className="flex justify-between items-center mb-3">
+            <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
+              Monthly Progress — {currentMonthKey}
+            </p>
+            <p className={`text-[10px] font-black uppercase tracking-widest ${
+              Number(progressPercent) >= 100 ? 'text-emerald-500' : 'text-yellow-500'
+            }`}>
+              {progressPercent}%
+            </p>
+          </div>
+          <div className={`w-full h-2.5 rounded-full overflow-hidden ${
+            isDark ? 'bg-zinc-800' : 'bg-zinc-100'
+          }`}>
+            <div 
+              className={`h-full rounded-full transition-all duration-700 ${
+                Number(progressPercent) >= 100 
+                  ? 'bg-emerald-500' 
+                  : 'bg-yellow-500'
+              }`}
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-2">
+            <p className="text-[9px] text-zinc-600 font-bold uppercase">
+              UGX {reportData.totalSales.toLocaleString()} earned today
+            </p>
+            <p className="text-[9px] text-zinc-600 font-bold uppercase">
+              Goal: UGX {monthTarget.revenue.toLocaleString()}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* WAITER LEADERBOARD */}
-      <div className={`rounded-[3rem] border p-8 ${
+      <div className={`rounded-[2rem] md:rounded-[3rem] border p-5 md:p-8 ${
         isDark ? 'bg-zinc-900/40 border-white/5' : 'bg-white border-black/5'
       }`}>
-        <div className="flex justify-between items-center mb-10">
+        {/* Section Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 md:mb-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-yellow-500 flex items-center justify-center text-black">
-              <Users size={20} />
+            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl md:rounded-2xl bg-yellow-500 flex items-center justify-center text-black shrink-0">
+              <Users size={18} />
             </div>
-            <h2 className="text-lg font-black italic uppercase tracking-tighter">Staff Performance</h2>
+            <h2 className="text-base md:text-lg font-black italic uppercase tracking-tighter">
+              Staff Performance
+            </h2>
           </div>
           
           <button 
             onClick={handleDownload}
             disabled={reportData.orders.length === 0}
-            className="flex items-center gap-2 bg-yellow-500 text-black px-8 py-4 rounded-2xl font-black text-[10px] uppercase italic tracking-widest hover:bg-white hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale"
+            className="flex items-center justify-center gap-2 bg-yellow-500 text-black px-5 py-3 md:px-8 md:py-4 rounded-2xl font-black text-[10px] uppercase italic tracking-widest hover:bg-white hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale w-full sm:w-auto"
           >
-            <Download size={16} /> Export CSV
+            <Download size={14} /> 
+            {reportData.orders.length === 0 
+              ? "No Data to Export" 
+              : `Export CSV — ${reportData.orders.length} Orders`
+            }
           </button>
         </div>
 
-        <div className="space-y-4">
+        {/* Staff List */}
+        <div className="space-y-3 md:space-y-4">
           {Object.entries(reportData.waiterStats).length > 0 ? (
-            Object.entries(reportData.waiterStats).map(([name, total]) => (
-              <div key={name} className={`flex items-center justify-between p-6 rounded-3xl border ${
-                isDark ? 'bg-black/20 border-white/5' : 'bg-zinc-50 border-black/5'
-              }`}>
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black italic text-sm ${
-                    isDark ? 'bg-zinc-800 text-white' : 'bg-white text-zinc-900 border border-black/5'
-                  }`}>
-                    {name.charAt(0)}
+            Object.entries(reportData.waiterStats)
+              .sort(([, a], [, b]) => b - a) // Sort highest earner first
+              .map(([name, total], index) => (
+                <div key={name} className={`flex items-center justify-between p-4 md:p-6 rounded-2xl md:rounded-3xl border gap-3 ${
+                  isDark ? 'bg-black/20 border-white/5' : 'bg-zinc-50 border-black/5'
+                }`}>
+                  {/* Left: Rank + Avatar + Name */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`text-[10px] font-black w-5 shrink-0 ${
+                      index === 0 ? 'text-yellow-500' : 'text-zinc-600'
+                    }`}>
+                      #{index + 1}
+                    </span>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black italic text-sm shrink-0 ${
+                      isDark ? 'bg-zinc-800 text-white' : 'bg-white text-zinc-900 border border-black/5'
+                    }`}>
+                      {name.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-black italic uppercase text-xs md:text-sm tracking-tight truncate">{name}</p>
+                      <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Waitstaff</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-black italic uppercase text-sm tracking-tight">{name}</p>
-                    <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Waitstaff Member</p>
-                  </div>
-                </div>
 
-                <div className="text-right">
-                  <p className="text-lg font-black text-emerald-500 italic leading-none">
-                    UGX {total.toLocaleString()}
-                  </p>
-                  <p className={`text-[9px] font-black uppercase mt-1 ${
-                    total >= monthTarget.waiterQuota ? 'text-yellow-500' : 'text-zinc-500'
-                  }`}>
-                    {total >= monthTarget.waiterQuota ? '★ QUOTA ACHIEVED' : `GOAL: UGX ${monthTarget.waiterQuota.toLocaleString()}`}
-                  </p>
+                  {/* Right: Revenue + Quota */}
+                  <div className="text-right shrink-0">
+                    <p className="text-sm md:text-lg font-black text-emerald-500 italic leading-none">
+                      UGX {total.toLocaleString()}
+                    </p>
+                    <p className={`text-[9px] font-black uppercase mt-1 ${
+                      monthTarget.waiterQuota > 0 && total >= monthTarget.waiterQuota 
+                        ? 'text-yellow-500' 
+                        : 'text-zinc-500'
+                    }`}>
+                      {monthTarget.waiterQuota > 0
+                        ? total >= monthTarget.waiterQuota 
+                          ? '★ QUOTA HIT' 
+                          : `GOAL: UGX ${monthTarget.waiterQuota.toLocaleString()}`
+                        : "No quota set"
+                      }
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))
+              ))
           ) : (
-            <div className="text-center py-20 border-2 border-dashed border-zinc-800 rounded-[2rem]">
-              <p className="text-zinc-500 font-black italic uppercase text-xs tracking-widest">No transaction data for this date</p>
+            <div className="text-center py-12 md:py-20 border-2 border-dashed border-zinc-800 rounded-[2rem]">
+              <p className="text-zinc-500 font-black italic uppercase text-xs tracking-widest px-4">
+                No transaction data for {selectedDate}
+              </p>
             </div>
           )}
         </div>
@@ -179,19 +261,22 @@ const monthTarget = (monthlyTargets && monthlyTargets[currentMonthKey])
   );
 }
 
-// Internal Stat Card Component
-function StatCard({ label, value, icon, isDark, subText }) {
+function StatCard({ label, value, icon, isDark, subText, subTextColor = "text-emerald-500" }) {
   return (
-    <div className={`p-8 rounded-[2.5rem] border flex flex-col gap-6 transition-all hover:scale-[1.02] ${
+    <div className={`p-5 md:p-8 rounded-[2rem] md:rounded-[2.5rem] border flex flex-row md:flex-col items-center md:items-start gap-4 md:gap-6 transition-all hover:scale-[1.02] ${
       isDark ? 'bg-zinc-900/60 border-white/5' : 'bg-white border-black/5 shadow-sm'
     }`}>
-      <div className="w-12 h-12 rounded-2xl bg-yellow-500/10 flex items-center justify-center text-yellow-500 border border-yellow-500/20">
+      <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-yellow-500/10 flex items-center justify-center text-yellow-500 border border-yellow-500/20 shrink-0">
         {icon}
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-1">{label}</p>
-        <p className="text-3xl font-black italic tracking-tighter leading-none">{value}</p>
-        {subText && <p className="text-[8px] font-bold text-emerald-500 uppercase mt-3 tracking-widest leading-none">{subText}</p>}
+        <p className="text-xl md:text-3xl font-black italic tracking-tighter leading-none truncate">{value}</p>
+        {subText && (
+          <p className={`text-[8px] font-bold uppercase mt-2 tracking-widest ${subTextColor}`}>
+            {subText}
+          </p>
+        )}
       </div>
     </div>
   );
