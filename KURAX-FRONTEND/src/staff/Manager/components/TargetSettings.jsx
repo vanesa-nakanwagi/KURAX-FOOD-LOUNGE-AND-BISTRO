@@ -18,20 +18,23 @@ export default function TargetSettings() {
 
   // 2. Logic for new Monthly Sales Target (Manager)
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
-  const [revenueGoal, setRevenueGoal] = useState(monthlyTargets[selectedMonth]?.revenue || 0);
+  const [revenueGoal, setRevenueGoal] = useState(
+  (monthlyTargets && monthlyTargets[selectedMonth]?.revenue) || 0
+);
 
-  const handleMonthChange = (e) => {
-    const month = e.target.value;
-    setSelectedMonth(month);
-    setRevenueGoal(monthlyTargets[month]?.revenue || 0);
-  };
+const handleMonthChange = (e) => {
+  const month = e.target.value;
+  setSelectedMonth(month);
+  // 2. Safe update for revenueGoal
+  setRevenueGoal((monthlyTargets && monthlyTargets[month]?.revenue) || 0);
+};
 
-  const handleSaveMonthly = () => {
-    // We update the monthly revenue while keeping the waiterQuota from the context
-    const currentQuota = monthlyTargets[selectedMonth]?.waiterQuota || 0;
-    updateMonthlyTarget(selectedMonth, Number(revenueGoal), currentQuota);
-    alert(`Monthly Revenue Goal for ${selectedMonth} updated!`);
-  };
+const handleSaveMonthly = () => {
+  // 3. Safe check for currentQuota
+  const currentQuota = (monthlyTargets && monthlyTargets[selectedMonth]?.waiterQuota) || 0;
+  updateMonthlyTarget(selectedMonth, Number(revenueGoal), currentQuota);
+  alert(`Monthly Revenue Goal for ${selectedMonth} updated!`);
+};
 
   const isDark = theme === 'dark';
 

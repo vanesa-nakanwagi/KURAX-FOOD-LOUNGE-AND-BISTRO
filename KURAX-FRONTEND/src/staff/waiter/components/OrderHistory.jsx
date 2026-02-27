@@ -107,25 +107,15 @@ export default function OrderHistory() {
             <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
             <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em]">Session Active</p>
           </div>
-          <h1 className="text-4xl font-black uppercase tracking-tighter italic leading-none">
+          <h1 className="text-2xl font-black uppercase tracking-tighter  leading-none">
             {currentStaffName.split(' ')[0]}'s <span className="text-yellow-500">Dashboard</span>
           </h1>
-          <p className="text-zinc-400 text-[10px] font-bold uppercase mt-2 tracking-widest">
+          <p className="text-yellow-900 text-[10px] font-medium  mt-2 tracking-widest">
             Tracking {dailyStaffOrders.length} orders for today
           </p>
         </div>
 
-        <div className={`flex items-center gap-4 px-6 py-4 rounded-[2.5rem] border-2 transition-all hover:scale-105 ${
-          theme === 'dark' ? 'bg-zinc-900/50 border-white/5 shadow-2xl' : 'bg-white border-black/5 shadow-sm'
-        }`}>
-          <div className="text-right">
-            <p className="text-[9px] font-black text-zinc-500 uppercase leading-none mb-1">Authenticated as</p>
-            <p className="text-xs font-black uppercase italic text-yellow-500">{currentStaffName}</p>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-yellow-500 flex items-center justify-center text-black font-black text-xl border-b-4 border-yellow-700 shadow-lg shadow-yellow-500/20">
-            {userInitials[0]}
-          </div>
-        </div>
+        
       </div>
 
       {/* STATS CARDS */}

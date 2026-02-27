@@ -38,7 +38,9 @@ export default function PerformanceReports() {
 
   // 3. Get targets for the selected month
   const currentMonthKey = selectedDate.substring(0, 7); // Result: "2026-05"
-  const monthTarget = monthlyTargets[currentMonthKey] || { revenue: 0, waiterQuota: 0 };
+  // Add a check to ensure monthlyTargets exists first
+const monthTarget = (monthlyTargets && monthlyTargets[currentMonthKey]) 
+  || { revenue: 0, waiterQuota: 0 };
 
   // 4. CSV Download Function
   const handleDownload = () => {
