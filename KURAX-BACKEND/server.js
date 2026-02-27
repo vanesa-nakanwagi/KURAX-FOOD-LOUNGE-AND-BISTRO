@@ -15,7 +15,7 @@ dotenv.config();
 const app = express();
 const allowedOrigins = [
   'http://localhost:5173',                   // Local Development
-  'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app/',    // Your main Vercel Production URL
+  'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app',    // Your main Vercel Production URL
   /\.vercel\.app$/                           // Optional: Allows all Vercel preview deployments
 ];
 
@@ -65,6 +65,11 @@ const verifyDB = async () => {
     console.error('❌ DB Error:', err.message);
   }
 };
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', message: 'Backend working' });
+});
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

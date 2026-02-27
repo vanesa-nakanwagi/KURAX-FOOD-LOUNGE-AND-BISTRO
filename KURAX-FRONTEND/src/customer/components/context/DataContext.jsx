@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-
+import API_URL from "../../../config/api";
 const DataContext = createContext();
 
 export const DataProvider = ({ children }) => {
@@ -27,14 +27,14 @@ export const DataProvider = ({ children }) => {
       // Add the permission check to the parallel fetch
       // We pass the currentUser.id to check if THIS specific manager is allowed
       const permissionUrl = currentUser 
-        ? `http://localhost:5000/api/permissions/${currentUser.id}`
+        ? `${API_URL}/api/permissions/${currentUser.id}`
         : null;
 
       const [staffRes, orderRes, menuRes, eventRes, permRes] = await Promise.allSettled([
-        fetch('http://localhost:5000/api/staff'),
-        fetch('http://localhost:5000/api/orders'),
-        fetch('http://localhost:5000/api/menus'),
-        fetch('http://localhost:5000/api/events'),
+        fetch(`${API_URL}/api/staff`),
+        fetch(`${API_URL}/api/orders`),
+        fetch(`${API_URL}/api/menus`),
+        fetch(`${API_URL}/api/events`),
         permissionUrl ? fetch(permissionUrl) : Promise.reject('No User')
       ]);
 
