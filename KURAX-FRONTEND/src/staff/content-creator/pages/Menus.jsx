@@ -4,6 +4,7 @@ import { useData } from "../../../customer/components/context/DataContext";
 import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine } from 'lucide-react'
 import Footer from "../../../customer/components/common/Foooter";
 import { getImageSrc } from "../../../utils/imageHelper";
+import API_URL from "../../../config/api";
 
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
@@ -77,8 +78,8 @@ export default function Menus() {
 
   try {
     const url = editingMenu 
-      ? `http://localhost:5000/api/menus/${editingMenu.id}` 
-      : `http://localhost:5000/api/menus`;
+  ? `${API_URL}/api/menus/${editingMenu.id}` 
+  : `${API_URL}/api/menus`;
 
     const response = await fetch(url, {
       method: editingMenu ? 'PUT' : 'POST',
@@ -122,7 +123,7 @@ export default function Menus() {
   if (!window.confirm('Are you sure? This will remove the item for all waiters.')) return;
 
   try {
-    const response = await fetch(`http://localhost:5000/api/menus/${id}`, {
+    const response = await fetch(`${API_URL}/api/menus/${id}`, {
       method: 'DELETE',
     });
 

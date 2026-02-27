@@ -3,6 +3,7 @@ import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
 import { Plus, Calendar, MapPin, Clock, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Loader2 } from 'lucide-react'
 import Footer from "../../../customer/components/common/Foooter";
+import API_URL from "../../../config/api";
 
 export default function Events() {
   const { events = [], setEvents } = useData()
@@ -109,8 +110,8 @@ const handleSubmit = async (e) => {
   }
 
   const url = editingEvent 
-    ? `http://localhost:5000/api/events/${editingEvent.id}` 
-    : `http://localhost:5000/api/events`;
+  ? `${API_URL}/api/events/${editingEvent.id}` 
+  : `${API_URL}/api/events`;
   
   const method = editingEvent ? 'PUT' : 'POST';
 
@@ -155,7 +156,7 @@ const handleDelete = async (id) => {
   if (!window.confirm('Are you sure you want to delete this event? This will also remove the image from the server.')) return;
   
   try {
-    const response = await fetch(`http://localhost:5000/api/events/${id}`, { 
+    const response = await fetch(`${API_URL}/api/events/${id}`, { 
       method: 'DELETE' 
     });
 
@@ -307,7 +308,7 @@ const handleEdit = (event) => {
               <div key={event.id} className="group bg-zinc-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/30 transition-all flex flex-col shadow-lg shadow-black/50">
                 <div className="h-44 md:h-48 bg-zinc-800 flex items-center justify-center relative flex-shrink-0">
                   {event.image_url ? (
-                    <img src={`http://localhost:5000${event.image_url}`} alt={event.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    <img src={`${API_URL}${event.image_url}`} alt={event.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   ) : (
                     <div className="flex flex-col items-center gap-2 text-slate-600"><ImageIcon className="w-10 h-10" /></div>
                   )}

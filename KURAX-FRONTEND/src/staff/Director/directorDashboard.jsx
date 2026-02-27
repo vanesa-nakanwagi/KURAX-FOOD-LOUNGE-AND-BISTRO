@@ -13,6 +13,7 @@ import Footer from "../../customer/components/common/Foooter";
 import { RevenueChart } from "./charts";
 import { useData } from "../../customer/components/context/DataContext";
 import DirectorTargetView from "./DirectorTargetView";
+import API_URL from "../../config/api";
 
 export default function DirectorDashboard() {
   const navigate = useNavigate(); // Add this import
@@ -35,7 +36,7 @@ export default function DirectorDashboard() {
 useEffect(() => {
     const pullStaffMembers = async () => {
         try {
-            const response = await fetch('http://localhost:5000/api/staff');
+            const response = await fetch(`${API_URL}/api/staff`);
             if (response.ok) {
                 const data = await response.json();
                 // This will now work because setStaffList is defined above
@@ -77,7 +78,7 @@ useEffect(() => {
 
 const handleSaveStaff = async (payload) => {
     try {
-        const response = await fetch('http://localhost:5000/api/staff/activate', {
+        const response = await fetch(`${API_URL}/api/staff/activate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -103,7 +104,7 @@ const handleTerminateStaff = async (staffId, staffName) => {
     }
 
     try {
-        const response = await fetch(`http://localhost:5000/api/staff/terminate/${staffId}`, {
+        const response = await fetch(`${API_URL}/api/staff/terminate/${staffId}`, {
             method: 'DELETE',
         });
 
@@ -120,7 +121,7 @@ const handleTerminateStaff = async (staffId, staffName) => {
 const handleTogglePermission = async (staffId, currentStatus) => {
   try {
     // 1. Tell the backend to flip the status in the DB
-    const response = await fetch(`http://localhost:5000/api/staff/toggle-permission/${staffId}`, {
+    const response = await fetch(`${API_URL}/api/staff/toggle-permission/${staffId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_permitted: !currentStatus })
@@ -751,17 +752,19 @@ function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
     const [showPin, setShowPin] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     
-    // 1. Updated State to include Email
+    // Always starts blank — useEffect handles filling for edit mode
     const [formData, setFormData] = useState({
-        id: initialData?.id || null,
-        name: initialData?.name || "",
-        email: initialData?.email || "", // Added Email
-        role: initialData?.role || "SELECT ROLE",
-        pin: initialData?.pin || ""
+        id: null,
+        name: "",
+        email: "",
+        role: "SELECT ROLE",
+        pin: ""
     });
 
+    // Fires whenever modal switches between Create and Edit mode
     useEffect(() => {
         if (initialData) {
+            // EDIT MODE: populate with existing staff data
             setFormData({
                 id: initialData.id,
                 name: initialData.name,
@@ -770,68 +773,66 @@ function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
                 pin: initialData.pin
             });
         } else {
-            setFormData({ id: null, name: "", email: "", role: "SELECT ROLE", pin: "" });
+            // CREATE MODE: always completely blank
+            setFormData({ 
+                id: null, 
+                name: "", 
+                email: "", 
+                role: "SELECT ROLE", 
+                pin: "" 
+            });
         }
     }, [initialData]);
 
-    // 2. PIN Generator Function
     const generateRandomPin = () => {
         const random = Math.floor(1000 + Math.random() * 9000).toString();
-        setFormData({ ...formData, pin: random });
-        setShowPin(true); // Show it so the director can see what was generated
+        setFormData(prev => ({ ...prev, pin: random }));
+        setShowPin(true);
     };
 
-    const handleActivate = async () => { // 1. Added 'async'
-    // Start loading
-    setIsSubmitting(true);
+    const handleActivate = async () => {
+        setIsSubmitting(true);
 
-    // Validation checks...
-    if (!formData.name || !formData.email || formData.role === "SELECT ROLE" || !formData.pin) {
-        alert("Please fill in all fields!");
-        setIsSubmitting(false); // 2. MUST reset loading if we stop early
-        return; 
-    }
+        if (!formData.name || !formData.email || formData.role === "SELECT ROLE" || !formData.pin) {
+            alert("Please fill in all fields!");
+            setIsSubmitting(false);
+            return; 
+        }
 
-    if (formData.pin.length !== 4) {
-        alert("The Access PIN must be exactly 4 digits.");
-        setIsSubmitting(false); // 2. Reset loading
-        return;
-    }
+        if (formData.pin.length !== 4) {
+            alert("The Access PIN must be exactly 4 digits.");
+            setIsSubmitting(false);
+            return;
+        }
 
-    // PIN Collision check...
-    const currentStaff = Array.isArray(staffList) ? staffList : [];
-    const isPinTaken = currentStaff.find(staff => 
-        String(staff.pin) === String(formData.pin) && staff.id !== formData.id
-    );
+        const currentStaff = Array.isArray(staffList) ? staffList : [];
+        const isPinTaken = currentStaff.find(staff => 
+            String(staff.pin) === String(formData.pin) && staff.id !== formData.id
+        );
 
-    if (isPinTaken) {
-        alert(`ACCESS DENIED: PIN ${formData.pin} is already assigned to ${isPinTaken.name}.`);
-        setIsSubmitting(false); // 2. Reset loading
-        return;
-    }
+        if (isPinTaken) {
+            alert(`ACCESS DENIED: PIN ${formData.pin} is already assigned to ${isPinTaken.name}.`);
+            setIsSubmitting(false);
+            return;
+        }
 
-    const staffPayload = {
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        pin: formData.pin,
+        const staffPayload = {
+            name: formData.name,
+            email: formData.email,
+            role: formData.role,
+            pin: formData.pin,
+        };
+
+        try {
+            await onSave(staffPayload); 
+        } catch (error) {
+            console.error("Save failed:", error);
+            alert("Something went wrong on the server.");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    try {
-        // 3. WAIT for the save to actually finish
-        await onSave(staffPayload); 
-        
-        // 4. If we reach here, it worked! Close the modal or reset the form
-        // (If your parent component handles closing the modal, ensure it happens inside onSave)
-        
-    } catch (error) {
-        console.error("Save failed:", error);
-        alert("Something went wrong on the server.");
-    } finally {
-        // 5. STOP the spinner no matter what
-        setIsSubmitting(false);
-    }
-};
     return (
         <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
             <div className="w-full max-w-md bg-zinc-900 border border-white/10 rounded-[2.5rem] p-6 md:p-10 shadow-2xl">
@@ -841,31 +842,28 @@ function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
                 </h2>
                 
                 <div className="space-y-4">
-                    {/* Name Input */}
                     <input 
                         type="text" 
                         placeholder="FULL NAME" 
                         value={formData.name}
-                        onChange={(e) => setFormData({...formData, name: e.target.value})}
+                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                         className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none" 
                     />
 
-                    {/* Email Input - CRITICAL FOR ACTIVATION */}
                     <div className="relative">
                         <input 
                             type="email" 
                             placeholder="STAFF EMAIL ADDRESS" 
                             value={formData.email}
-                            onChange={(e) => setFormData({...formData, email: e.target.value})}
+                            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                             className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none pl-12" 
                         />
                         <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" />
                     </div>
                     
-                    {/* Role Selection */}
                     <select 
                         value={formData.role}
-                        onChange={(e) => setFormData({...formData, role: e.target.value})}
+                        onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
                         className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-zinc-400 focus:border-yellow-500 outline-none"
                     >
                         <option disabled value="SELECT ROLE">SELECT ROLE</option>
@@ -874,21 +872,20 @@ function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
                         <option value="CHEF">CHEF</option>
                         <option value="MANAGER">MANAGER</option>
                         <option value="DIRECTOR">DIRECTOR</option>
-                         <option value="CONTENT-MANAGER">CONTENT-MANAGER</option>
+                        <option value="CONTENT-MANAGER">CONTENT-MANAGER</option>
                         <option value="ACCOUNTANT">ACCOUNTANT</option>
                         <option value="BARISTA">BARISTA</option>
                         <option value="BARMAN">BARMAN</option>
                         <option value="SUPERVISOR">SUPERVISOR</option>
                     </select>
 
-                    {/* PIN Input with Auto-Generate Button */}
                     <div className="relative">
                         <input 
                             type={showPin ? "text" : "password"} 
                             placeholder="ASSIGN ACCESS PIN" 
                             value={formData.pin}
                             maxLength={4}
-                            onChange={(e) => setFormData({...formData, pin: e.target.value})}
+                            onChange={(e) => setFormData(prev => ({ ...prev, pin: e.target.value }))}
                             className="w-full bg-black border border-white/5 p-4 rounded-xl text-sm font-bold text-white focus:border-yellow-500 outline-none pr-24" 
                         />
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -902,7 +899,7 @@ function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
                             </button>
                             <button 
                                 type="button"
-                                onClick={() => setShowPin(!showPin)}
+                                onClick={() => setShowPin(prev => !prev)}
                                 className="p-2 text-zinc-500 hover:text-yellow-500 transition-colors"
                             >
                                 {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -910,7 +907,6 @@ function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
                         </div>
                     </div>
 
-                    {/* Bottom Security Note */}
                     {!initialData && (
                         <p className="text-[10px] text-zinc-500 italic px-2">
                             * Upon activation, an email will be sent to the staff with their login details and security instructions.
@@ -925,18 +921,14 @@ function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
                             Cancel
                         </button>
                         <button 
-    type="button"
-    disabled={isSubmitting}
-    onClick={handleActivate}
-    className={`flex-[2] py-4 rounded-2xl font-black uppercase italic text-sm transition-all active:scale-95 shadow-lg 
-        ${isSubmitting ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : 'bg-yellow-500 text-black shadow-yellow-500/10'}`}
->
-    {isSubmitting ? (
-        "Processing..." 
-    ) : (
-        initialData ? "Update Profile" : "Activate Account"
-    )}
-</button>
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={handleActivate}
+                            className={`flex-[2] py-4 rounded-2xl font-black uppercase italic text-sm transition-all active:scale-95 shadow-lg 
+                                ${isSubmitting ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : 'bg-yellow-500 text-black shadow-yellow-500/10'}`}
+                        >
+                            {isSubmitting ? "Processing..." : (initialData ? "Update Profile" : "Activate Account")}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -965,7 +957,7 @@ function StaffSection({ onAdd, staffList, setStaffList, orders, onEdit, currentU
 
    const handleTogglePermission = async (id, currentStatus) => {
     try {
-        const response = await fetch(`http://localhost:5000/api/staff/toggle-permission/${id}`, {
+        const response = await fetch(`${API_URL}/api/staff/toggle-permission/${id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             // CHANGE: Use is_permitted (underscore) to match the DB/Backend
@@ -995,7 +987,7 @@ function StaffSection({ onAdd, staffList, setStaffList, orders, onEdit, currentU
     const deleteStaff = async (id, name) => {
         if(window.confirm(`🚨 TERMINATE ACCESS: Are you sure you want to remove ${name}? This action is permanent.`)) {
             try {
-                const response = await fetch(`http://localhost:5000/api/staff/terminate/${id}`, {
+                const response = await fetch(`${API_URL}/api/staff/terminate/${id}`, {
                     method: 'DELETE'
                 });
 
