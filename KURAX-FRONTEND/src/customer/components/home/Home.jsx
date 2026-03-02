@@ -183,7 +183,8 @@ export default function Home() {
   <div className="mt-16 text-center">
     <Link 
       to="/menus" 
-      className="inline-flex items-center gap-3 px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-white font-medium uppercase tracking-[0.2em] text-[15px] hover:bg-yellow-400 hover:text-black transition-all rounded-none group"
+      className="inline-flex items-center gap-3 px-8 md:px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-white font-medium uppercase tracking-[0.2em] text-[13px] md:text-[15px] hover:bg-yellow-400  hover:text-white transition-all rounded-none group"
+    
     >
       Explore Menu
       <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
@@ -262,7 +263,7 @@ export default function Home() {
   <div className="mt-12 md:mt-16 text-center">
     <Link 
       to="/events" 
-      className="inline-flex items-center gap-3 px-8 md:px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-white font-medium uppercase tracking-[0.2em] text-[13px] md:text-[15px] hover:bg-yellow-400 hover:text-black transition-all rounded-none group"
+      className="inline-flex items-center gap-3 px-8 md:px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-black font-medium uppercase tracking-[0.2em] text-[13px] md:text-[15px] hover:bg-yellow-400 hover:text-black transition-all rounded-none group"
     >
       Explore Events
       <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />

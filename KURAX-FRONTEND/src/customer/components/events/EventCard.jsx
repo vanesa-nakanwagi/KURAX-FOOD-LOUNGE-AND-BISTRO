@@ -84,7 +84,7 @@ export default function EventCard({ event = {}, onBook }) {
           <div className="mt-auto pt-2">
             <button
               onClick={handleModalOpen}
-              className="w-full py-4 bg-yellow-400 text-black rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-95 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black"
+              className="w-full py-4 bg-yellow-400 text-black rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-95"
             >
               <Plus size={14} strokeWidth={3} />
               Book Now
