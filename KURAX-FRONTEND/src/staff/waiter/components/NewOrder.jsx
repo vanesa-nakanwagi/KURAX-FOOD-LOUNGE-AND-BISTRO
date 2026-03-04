@@ -98,7 +98,7 @@ export default function NewOrder() {
   const handleProcessOrder = async () => {
     if (!tableName) return alert("Please assign a table name/number.");
     if (cart.length === 0) return alert("Cart is empty.");
-    
+
 const orderData = {
       staffId: currentUser?.id || 1,
       staffRole: currentUser?.role || "WAITER", 
@@ -212,119 +212,271 @@ const activeMenus = useMemo(() => (menus || []).filter(item => {
   );
 }
 
-/* ---------------- SUB-COMPONENTS ---------------- */
-
 function CartModal({ 
   isOpen, onClose, cart, updateQuantity, updateNote, removeFromCart, 
   clearCart, tableName, handleSelectTable, cartTotal, 
   handleProcessOrder, activeTables, theme 
 }) {
-  const [tableSearch, setTableSearch] = useState("");
+  const [tableInput, setTableInput] = useState(tableName || "");
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Sync external tableName into local input on open
+  React.useEffect(() => {
+    setTableInput(tableName || "");
+  }, [tableName, isOpen]);
+
   if (!isOpen) return null;
 
-  const searchedTables = activeTables.filter(t => t.toLowerCase().includes(tableSearch.toLowerCase()));
+  const isDark = theme === "dark";
+
+  // Show suggestions only when input has text AND matches existing tables
+  const suggestions = activeTables.filter(t =>
+    t.toLowerCase().includes(tableInput.toLowerCase()) && tableInput.length > 0
+  );
+
+  const handleInputChange = (val) => {
+    setTableInput(val);
+    setShowDropdown(true);
+    // Immediately confirm as table name — waiter can type anything
+    handleSelectTable(val.toUpperCase().trim());
+  };
+
+  const handlePickSuggestion = (t) => {
+    setTableInput(t);
+    setShowDropdown(false);
+    handleSelectTable(t);
+  };
+
+  const handleClear = () => {
+    setTableInput("");
+    setShowDropdown(false);
+    handleSelectTable("");
+  };
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
-      <div className={`w-full max-w-2xl h-[90vh] overflow-hidden flex flex-col rounded-[3rem] shadow-2xl transition-all ${
-        theme === 'dark' ? 'bg-zinc-900 border border-white/10 text-white' : 'bg-white text-zinc-900'
-      }`}>
-        
-        <div className="p-8 border-b border-zinc-500/10 shrink-0">
-          <div className="flex justify-between items-center mb-6">
-             <div className="flex items-center gap-4">
-                <h2 className="text-2xl font-black uppercase italic text-yellow-500 tracking-tighter">Current Order</h2>
-                <button onClick={clearCart} className="text-[10px] font-black px-4 py-2 rounded-full border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 transition-all">
-                  <RefreshCcw size={12} className="inline mr-1" /> RESET
+    <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/90 backdrop-blur-md">
+      <div className={`w-full sm:max-w-lg h-[95dvh] sm:h-[90vh] flex flex-col 
+        rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden
+        ${isDark ? "bg-zinc-900 border border-white/10 text-white" : "bg-white text-zinc-900"}`}>
+
+        {/* ── HEADER ── */}
+        <div className={`shrink-0 px-5 pt-5 pb-4 border-b ${isDark ? "border-white/5" : "border-black/5"}`}>
+
+          {/* Drag handle */}
+          <div className="w-10 h-1 rounded-full bg-zinc-600 mx-auto mb-4 sm:hidden" />
+
+          {/* Title row */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-black uppercase italic text-yellow-500 tracking-tighter leading-none">
+                Current Order
+              </h2>
+              {cart.length > 0 && (
+                <span className="w-6 h-6 rounded-full bg-yellow-500 text-black text-[10px] font-black flex items-center justify-center">
+                  {cart.reduce((s, i) => s + i.quantity, 0)}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {cart.length > 0 && (
+                <button
+                  onClick={clearCart}
+                  className="flex items-center gap-1.5 text-[10px] font-black px-3 py-2 rounded-xl border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 transition-all"
+                >
+                  <RefreshCcw size={11} /> Reset
                 </button>
-             </div>
-             <button onClick={onClose} className="p-3 rounded-2xl bg-zinc-500/10 hover:bg-zinc-500/20"><X size={24} /></button>
+              )}
+              <button
+                onClick={onClose}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all
+                  ${isDark ? "bg-white/5 hover:bg-white/10" : "bg-zinc-100 hover:bg-zinc-200"}`}
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
+          {/* ── TABLE INPUT ── */}
           <div className="relative">
-            <div className={`flex items-center gap-3 px-5 py-4 rounded-2xl border transition-all ${theme === 'dark' ? 'bg-black/40 border-white/10' : 'bg-zinc-50 border-black/5'}`}>
-              <Search size={18} className="text-zinc-500" />
-              <input 
-                type="text" placeholder="Quick find active tables..." 
-                value={tableSearch} onChange={(e) => setTableSearch(e.target.value)}
-                className="bg-transparent outline-none flex-1 text-sm font-bold uppercase italic"
+            <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500 ml-1 mb-1.5 block">
+              Table Name or Number
+            </label>
+
+            <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border-2 transition-all
+              ${tableInput
+                ? "border-yellow-500 bg-yellow-500/5"
+                : isDark ? "bg-black/40 border-white/10" : "bg-zinc-50 border-black/8"}`}>
+
+              <UtensilsCrossed size={15} className={tableInput ? "text-yellow-500" : "text-zinc-500"} />
+
+              <input
+                type="text"
+                placeholder="Type e.g. TABLE 5, VIP, ROOFTOP, WALK-IN..."
+                value={tableInput}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onFocus={() => setShowDropdown(true)}
+                onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                className="bg-transparent outline-none flex-1 text-sm font-black uppercase tracking-wide placeholder:text-zinc-500 placeholder:font-medium placeholder:normal-case"
               />
+
+              {tableInput ? (
+                <button
+                  onClick={handleClear}
+                  className="text-zinc-500 hover:text-rose-400 transition-colors shrink-0"
+                >
+                  <X size={14} />
+                </button>
+              ) : (
+                <Search size={14} className="text-zinc-600 shrink-0" />
+              )}
             </div>
-            {tableSearch && (
-              <div className={`absolute top-full left-0 right-0 z-[310] mt-2 p-3 rounded-2xl shadow-2xl border animate-in slide-in-from-top-2 ${theme === 'dark' ? 'bg-zinc-800 border-white/10' : 'bg-white border-black/10'}`}>
-                {searchedTables.length > 0 ? searchedTables.map(t => (
-                  <button key={t} onClick={() => { handleSelectTable(t); setTableSearch(""); }} className="w-full text-left p-4 hover:bg-yellow-500 hover:text-black rounded-xl text-xs font-black uppercase italic transition-colors">
-                    {t}
-                  </button>
-                )) : <div className="p-4 text-xs font-black text-zinc-500 uppercase italic">No active table matching "{tableSearch}"</div>}
+
+            {/* Suggestions dropdown — only when existing tables match */}
+            {showDropdown && suggestions.length > 0 && (
+              <div className={`absolute top-full left-0 right-0 z-[310] mt-2 rounded-2xl shadow-2xl border overflow-hidden
+                ${isDark ? "bg-zinc-800 border-white/10" : "bg-white border-black/10 shadow-xl"}`}>
+                <p className={`px-4 pt-3 pb-1 text-[9px] font-black uppercase tracking-widest
+                  ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                  Existing Tables — tap to select
+                </p>
+                <div className="max-h-44 overflow-y-auto pb-2">
+                  {suggestions.map(t => (
+                    <button
+                      key={t}
+                      onMouseDown={() => handlePickSuggestion(t)}
+                      className="w-full text-left px-4 py-3 text-xs font-black uppercase tracking-widest transition-colors flex items-center gap-3 hover:bg-yellow-500 hover:text-black group"
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 group-hover:bg-black transition-colors" />
+                      {t}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
+
+            {/* Helper text */}
+            <p className={`text-[10px] mt-1.5 ml-1 font-bold transition-colors
+              ${tableInput ? "text-yellow-500" : isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+              {tableInput
+                ? `✓ Sending to: ${tableInput.toUpperCase()}`
+                : "Type any name — existing table or new"}
+            </p>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-8 space-y-4 custom-scrollbar">
+        {/* ── CART ITEMS ── */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
           {cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-20">
-               <LayoutGrid className="text-zinc-500" size={64} />
-               <p className="italic font-black uppercase text-xs tracking-widest">Your cart is empty</p>
+            <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20 py-16">
+              <LayoutGrid size={52} className="text-zinc-500" />
+              <p className="italic font-black uppercase text-xs tracking-widest">Cart is empty</p>
             </div>
           ) : (
             cart.map((item) => (
-              <div key={item.id} className={`p-5 rounded-[2.5rem] border ${theme === 'dark' ? 'bg-black/40 border-white/5' : 'bg-zinc-50 border-black/5'}`}>
-                <div className="flex gap-5">
-                  <img 
-                    src={getImageSrc(item.image_url)} 
-                    className="w-20 h-20 rounded-3xl object-cover shadow-lg" alt={item.name} 
+              <div key={item.id} className={`rounded-2xl border overflow-hidden
+                ${isDark ? "bg-black/40 border-white/5" : "bg-zinc-50 border-black/5"}`}>
+
+                <div className="flex gap-3 p-3">
+                  <img
+                    src={getImageSrc(item.image_url)}
+                    className="w-16 h-16 rounded-xl object-cover shrink-0 shadow"
+                    alt={item.name}
                     onError={(e) => e.target.src = "https://via.placeholder.com/150"}
                   />
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start">
-                      <h4 className="font-black uppercase text-base tracking-tight">{item.name}</h4>
-                      <button onClick={() => removeFromCart(item.id)} className="text-zinc-400 hover:text-rose-500 transition-colors"><Trash2 size={20} /></button>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="font-black uppercase text-sm tracking-tight leading-tight truncate">
+                        {item.name}
+                      </h4>
+                      <button
+                        onClick={() => removeFromCart(item.id)}
+                        className="shrink-0 w-7 h-7 rounded-lg bg-rose-500/10 flex items-center justify-center hover:bg-rose-500/20 transition-all"
+                      >
+                        <Trash2 size={13} className="text-rose-500" />
+                      </button>
                     </div>
-                    <div className="flex items-center gap-4 mt-4">
-                      <div className="flex items-center gap-4 px-3 py-2 rounded-xl bg-zinc-500/10">
-                        <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-yellow-500"><Minus size={16}/></button>
-                        <span className="text-base font-black w-6 text-center">{item.quantity}</span>
-                        <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-yellow-500"><Plus size={16}/></button>
+
+                    <p className="text-[11px] font-black text-yellow-500 mt-0.5">
+                      UGX {(Number(item.price || 0) * item.quantity).toLocaleString()}
+                    </p>
+
+                    <div className="flex items-center gap-2 mt-2">
+                      <div className={`flex items-center rounded-xl overflow-hidden border
+                        ${isDark ? "border-white/10 bg-black/30" : "border-black/8 bg-white"}`}>
+                        <button
+                          onClick={() => updateQuantity(item.id, -1)}
+                          className="w-9 h-9 flex items-center justify-center hover:bg-yellow-500 hover:text-black transition-all font-black text-xl leading-none"
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center text-sm font-black">{item.quantity}</span>
+                        <button
+                          onClick={() => updateQuantity(item.id, 1)}
+                          className="w-9 h-9 flex items-center justify-center hover:bg-yellow-500 hover:text-black transition-all font-black text-xl leading-none"
+                        >
+                          +
+                        </button>
                       </div>
-                      <input 
-                        type="text" placeholder="Add kitchen note..." value={item.note || ""}
-                        onChange={(e) => updateNote(item.id, e.target.value)}
-                        className="flex-1 text-xs py-2 px-4 rounded-xl border bg-transparent outline-none italic border-zinc-500/20 focus:border-yellow-500/50"
-                      />
+                      <span className="text-[10px] text-zinc-500 font-bold">
+                        × UGX {Number(item.price || 0).toLocaleString()}
+                      </span>
                     </div>
                   </div>
+                </div>
+
+                {/* Kitchen note */}
+                <div className="px-3 pb-3">
+                  <input
+                    type="text"
+                    placeholder="Kitchen note (e.g. no onions, extra spicy)..."
+                    value={item.note || ""}
+                    onChange={(e) => updateNote(item.id, e.target.value)}
+                    className={`w-full text-xs py-2.5 px-3.5 rounded-xl border bg-transparent outline-none italic transition-all
+                      ${isDark
+                        ? "border-white/5 focus:border-yellow-500/40 placeholder:text-zinc-600"
+                        : "border-black/8 focus:border-yellow-500 placeholder:text-zinc-400"}`}
+                  />
                 </div>
               </div>
             ))
           )}
         </div>
 
-        <div className={`p-8 border-t ${theme === 'dark' ? 'bg-black/60 border-white/10' : 'bg-zinc-50 border-black/10'}`}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center mb-8">
-            <div className="w-full">
-              <label className="text-[10px] font-black uppercase text-zinc-500 ml-2 mb-2 block">Table Allocation</label>
-              <div className={`flex items-center gap-4 px-6 py-5 rounded-2xl border-2 transition-all ${tableName ? 'border-yellow-500 bg-yellow-500/5' : 'border-zinc-500/20'}`}>
-                <UtensilsCrossed size={20} className={tableName ? 'text-yellow-500' : 'text-zinc-500'} />
-                <input 
-                  type="text" placeholder="NAME OR NUMBER" 
-                  value={tableName} onChange={(e) => handleSelectTable(e.target.value)}
-                  className="bg-transparent outline-none flex-1 font-black uppercase text-base italic placeholder:text-zinc-600"
-                />
-              </div>
+        {/* ── FOOTER ── */}
+        <div className={`shrink-0 border-t px-4 py-4 space-y-3
+          ${isDark ? "bg-black/60 border-white/5" : "bg-zinc-50 border-black/5"}`}>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Order Total</p>
+              <p className="text-2xl font-black text-yellow-500 leading-tight">
+                UGX {cartTotal.toLocaleString()}
+              </p>
             </div>
             <div className="text-right">
-              <span className="text-xs font-black text-zinc-500 uppercase tracking-[0.2em]">Total Amount</span>
-              <div className="text-3xl font-black text-yellow-500 mt-1">UGX {cartTotal.toLocaleString()}</div>
+              <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Items</p>
+              <p className="text-2xl font-black leading-tight">
+                {cart.reduce((s, i) => s + i.quantity, 0)}
+              </p>
             </div>
           </div>
-          <button 
+
+          <button
             onClick={handleProcessOrder}
-            disabled={cart.length === 0 || !tableName}
-            className="w-full py-7 font-black rounded-3xl flex items-center justify-center gap-4 uppercase italic tracking-tighter text-lg bg-yellow-500 text-black shadow-xl shadow-yellow-500/20 active:scale-[0.98] transition-all disabled:opacity-20 disabled:grayscale"
+            disabled={cart.length === 0 || !tableInput.trim()}
+            className={`w-full py-4 font-black rounded-2xl flex items-center justify-center gap-3
+              uppercase tracking-widest text-sm transition-all active:scale-[0.98]
+              ${cart.length > 0 && tableInput.trim()
+                ? "bg-yellow-500 text-black shadow-lg shadow-yellow-500/20 hover:bg-yellow-400"
+                : "bg-zinc-800 text-zinc-600 cursor-not-allowed"}`}
           >
-            <Send size={24} /> Sync Order to Stations
+            <Send size={18} />
+            {!tableInput.trim()
+              ? "Enter a Table Name First"
+              : cart.length === 0
+                ? "Add Items to Order"
+                : `Send to Stations · ${tableInput.trim().toUpperCase()}`}
           </button>
         </div>
       </div>
