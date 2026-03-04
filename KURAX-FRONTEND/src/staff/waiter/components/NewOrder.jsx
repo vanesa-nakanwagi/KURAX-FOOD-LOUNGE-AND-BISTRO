@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import ThemeToggle from "../../../customer/components/context/ThemeToggle";
 import { getImageSrc } from "../../../utils/imageHelper";
+import API_URL from "../../../config/api";
 
 export default function NewOrder() {
   const { orders = [], setOrders, menus = [], currentUser } = useData() || { setOrders: () => {}, orders: [], menus: [] };
@@ -97,22 +98,22 @@ export default function NewOrder() {
   const handleProcessOrder = async () => {
     if (!tableName) return alert("Please assign a table name/number.");
     if (cart.length === 0) return alert("Cart is empty.");
-
-    const orderData = {
+    
+const orderData = {
       staffId: currentUser?.id || 1,
+      staffRole: currentUser?.role || "WAITER", 
       tableName: tableName.toUpperCase(),
       items: cart,
       total: cartTotal,
       paymentMethod: "Cash"
-      // Note: Backend handles the 'is_permitted' check via the staffId
     };
 
     try {
-      const response = await fetch(`http://localhost:5000/api/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData),
-      });
+     const response = await fetch(`${API_URL}/api/orders`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(orderData),
+});
 
       const data = await response.json();
 

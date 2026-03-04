@@ -1,30 +1,31 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import kuraxLogo from '../customer/assets/images/logo.jpeg'; 
+import { useData } from '../customer/components/context/DataContext'; // ✅ ADDED
+import kuraxLogo from '../customer/assets/images/logo.jpeg';
 
 const StaffLogin = () => {
   const [email, setEmail] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false); // Add loading state
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+
+  const { setCurrentUser } = useData(); // ✅ ADDED: pulls setter from context
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    
-    // Prevent multiple submissions
+
     if (isLoading) return;
-    
+
     setError('');
     setIsLoading(true);
 
     try {
       console.log('🔐 Starting login...');
-      
-      // Use environment variable
+
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       console.log('🌐 API URL:', API_URL);
-      
+
       const response = await fetch(`${API_URL}/api/staff/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -36,13 +37,17 @@ const StaffLogin = () => {
 
       if (response.ok) {
         console.log('✅ Login successful, storing user...');
-        localStorage.setItem('user', JSON.stringify(data.user));
-        
+
+        // ✅ FIX 1: Save under 'kurax_user' — matches what DataContext reads
+        localStorage.setItem('kurax_user', JSON.stringify(data.user));
+
+        // ✅ FIX 2: Immediately update context so all components get the user
+        setCurrentUser(data.user);
+
         const role = data.user.role.toUpperCase();
         console.log('👤 User role:', role);
         console.log('🚀 Navigating to dashboard...');
 
-        // Role-based navigation
         const roleRoutes = {
           'DIRECTOR': '/director/dashboard',
           'WAITER': '/staff/waiter',
@@ -68,30 +73,30 @@ const StaffLogin = () => {
     } finally {
       setIsLoading(false);
     }
-  }; 
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white font-[Outfit] px-4 relative overflow-hidden">
-      
+
       {/* Subtle Kurax Yellow Glow */}
       <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-yellow-500/5 rounded-full blur-[100px]"></div>
       <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-yellow-500/5 rounded-full blur-[100px]"></div>
 
       <div className="relative max-w-sm w-full">
         <div className="bg-white rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
-          
+
           {/* Branding Section */}
           <div className="text-center mb-8">
-            <img 
-              src={kuraxLogo} 
-              alt="Kurax Logo" 
-              className="h-20 w-auto mx-auto mb-4 mix-blend-multiply" 
+            <img
+              src={kuraxLogo}
+              alt="Kurax Logo"
+              className="h-20 w-auto mx-auto mb-4 mix-blend-multiply"
             />
             <h2 className="text-2xl font-black tracking-tight text-black uppercase">
               Staff <span className="text-black">Entry</span>
             </h2>
             <p className="text-[12px] mt-1 text-yellow-700 font-bold">
-             Luxury dining, signature drinks & rooftop vibes
+              Luxury dining, signature drinks & rooftop vibes
             </p>
           </div>
 

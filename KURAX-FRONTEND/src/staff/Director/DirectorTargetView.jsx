@@ -48,16 +48,19 @@ export default function DirectorTargetView() {
   const target        = monthlyTargets?.[currentMonthKey] ?? {};
   const targetRevenue = Number(target.revenue) || 0;
 
-  const actualSales = useMemo(() => {
-    return (orders || [])
-      .filter(o =>
-        o &&
-        typeof o.date === "string" &&
-        o.date.startsWith(currentMonthKey) &&
-        o.status === "CLOSED"
-      )
-      .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-  }, [orders, currentMonthKey]);
+ const actualSales = useMemo(() => {
+  return (orders || [])
+    .filter(o => {
+      // Use 'timestamp' if 'date' isn't available yet
+      const orderDate = o.date || o.timestamp; 
+      return (
+        orderDate &&
+        orderDate.toString().startsWith(currentMonthKey) &&
+        (o.status === "CLOSED" || !o.status) // Count it if CLOSED or if status hasn't been set yet
+      );
+    })
+    .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+}, [orders, currentMonthKey]);
 
   // ── Derived metrics ──────────────────────────────────────
   const progress       = targetRevenue > 0 ? Math.min((actualSales / targetRevenue) * 100, 100) : 0;
