@@ -7,7 +7,7 @@ import {
   ChefHat, Power, X, ShieldAlert
 } from "lucide-react";
 import Footer from "../../customer/components/common/Foooter";
-import API_URL from "../../../config/api";
+import API_URL from "../../config/api";
 
 
 
