@@ -1,15 +1,13 @@
-import React, { useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useData } from "../../customer/components/context/DataContext";
 import { useTheme } from "../../customer/components/context/ThemeContext";
 import {
-  Target, ArrowUpRight, TrendingUp, TrendingDown,
-  CheckCircle2, AlertTriangle, Zap, Calendar, Activity
+  Target, TrendingUp, Zap, Calendar, Activity, Edit3, Save, X, 
+  ChevronLeft, ChevronRight, BarChart3, Clock
 } from "lucide-react";
+import API_URL from "../../config/api";
 
-// ─────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────
-
+// --- HELPERS ---
 function fmtUGX(n) {
   const v = Number(n) || 0;
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
@@ -17,404 +15,206 @@ function fmtUGX(n) {
   return v.toLocaleString();
 }
 
-function daysRemainingInMonth() {
-  const now  = new Date();
-  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  return Math.max(1, last - now.getDate() + 1);
-}
-
-function daysInMonth() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-}
-
-function daysElapsed() {
-  return new Date().getDate();
-}
-
-// ─────────────────────────────────────────────────────────
-// MAIN COMPONENT
-// ─────────────────────────────────────────────────────────
 export default function DirectorTargetView() {
-  const { theme }                                     = useTheme();
-  const { orders = [], monthlyTargets = {}, loading } = useData();
+  const { theme } = useTheme();
+  const { orders = [], monthlyTargets = {}, refreshData } = useData();
   const dark = theme === "dark";
 
-  const currentMonthKey = new Date().toISOString().substring(0, 7);
-  const monthLabel = new Date()
-    .toLocaleString("default", { month: "long", year: "numeric" })
-    .toUpperCase();
+  // --- MONTH SELECTION STATE ---
+  const [viewDate, setViewDate] = useState(new Date());
+  const monthKey = viewDate.toISOString().substring(0, 7); 
+  const monthLabel = viewDate.toLocaleString("default", { month: "long", year: "numeric" }).toUpperCase();
 
-  const target        = monthlyTargets?.[currentMonthKey] ?? {};
+  const [isEditing, setIsEditing] = useState(false);
+  const [editRevenue, setEditRevenue] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Target for the SELECTED month
+  const target = monthlyTargets?.[monthKey] ?? { revenue: 0 };
   const targetRevenue = Number(target.revenue) || 0;
 
- const actualSales = useMemo(() => {
-  return (orders || [])
-    .filter(o => {
-      // Use 'timestamp' if 'date' isn't available yet
+  // --- IMPROVED REVENUE CALCULATIONS ---
+  // This now syncs perfectly with Manager view by checking for 'Paid' status
+  const filteredOrders = useMemo(() => {
+    return (orders || []).filter(o => {
       const orderDate = o.date || o.timestamp; 
-      return (
-        orderDate &&
-        orderDate.toString().startsWith(currentMonthKey) &&
-        (o.status === "CLOSED" || !o.status) // Count it if CLOSED or if status hasn't been set yet
-      );
-    })
-    .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-}, [orders, currentMonthKey]);
+      const isCorrectMonth = orderDate && orderDate.toString().startsWith(monthKey);
+      const isSuccessful = o.is_archived === true || o.status === "Paid" || o.status === "CLOSED";
+      return isCorrectMonth && isSuccessful;
+    });
+  }, [orders, monthKey]);
 
-  // ── Derived metrics ──────────────────────────────────────
-  const progress       = targetRevenue > 0 ? Math.min((actualSales / targetRevenue) * 100, 100) : 0;
-  const remaining      = Math.max(0, targetRevenue - actualSales);
-  const daysLeft       = daysRemainingInMonth();
-  const elapsed        = daysElapsed();
-  const totalDays      = daysInMonth();
-  const dailyPace      = daysLeft > 0 ? Math.round(remaining / daysLeft) : 0;
-  const avgDailyActual = elapsed > 0 ? Math.round(actualSales / elapsed) : 0;
-  const expectedByNow  = targetRevenue > 0
-    ? Math.round((targetRevenue / totalDays) * elapsed) : 0;
-  const paceGap = actualSales - expectedByNow;
+  const actualSales = useMemo(() => {
+    return filteredOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  }, [filteredOrders]);
 
-  const isComplete = targetRevenue > 0 && actualSales >= targetRevenue;
-  const isOnTrack  = paceGap >= 0;
-  const isNotSet   = targetRevenue === 0;
+  // NEW: Calculate the "Last Updated" timestamp based on the latest order
+  const lastUpdate = useMemo(() => {
+    if (filteredOrders.length === 0) return "No sales yet";
+    const timestamps = filteredOrders
+      .map(o => new Date(o.timestamp || o.date).getTime())
+      .filter(t => !isNaN(t));
+    if (timestamps.length === 0) return "Waiting for data...";
+    return new Date(Math.max(...timestamps)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }, [filteredOrders]);
 
-  // ── Status config ─────────────────────────────────────────
-  const statusConfig = isNotSet
-    ? {
-        label: "NOT SET",
-        textColor: dark ? "text-zinc-400"    : "text-zinc-500",
-        bg:        dark ? "bg-zinc-800/80"   : "bg-zinc-100",
-        border:    dark ? "border-zinc-700"  : "border-zinc-300",
-        icon: <Target size={13}/>,
+  // --- PROJECTION ENGINE ---
+  const isCurrentMonth = monthKey === new Date().toISOString().substring(0, 7);
+  const totalDays = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+  const elapsedDays = isCurrentMonth ? new Date().getDate() : totalDays; 
+  
+  const dailyAvg = actualSales / (elapsedDays || 1);
+  const projectedRevenue = dailyAvg * totalDays;
+  const progress = targetRevenue > 0 ? Math.min((actualSales / targetRevenue) * 100, 100) : 0;
+  const dailyPaceNeeded = totalDays - elapsedDays > 0 ? (targetRevenue - actualSales) / (totalDays - elapsedDays) : 0;
+  const isOnTrack = projectedRevenue >= targetRevenue;
+
+  const handleMonthChange = (offset) => {
+    const d = new Date(viewDate);
+    d.setMonth(d.getMonth() + offset);
+    setViewDate(d);
+    setIsEditing(false);
+  };
+
+  const handleSave = async () => {
+    if (!editRevenue || isNaN(editRevenue)) {
+      alert("Please enter a valid amount");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${API_URL}/api/manager/targets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          month_key: monthKey,
+          revenue_goal: parseFloat(editRevenue),
+          waiter_quota: 0
+        })
+      });
+
+      if (response.ok) {
+        setIsEditing(false);
+        if (refreshData) await refreshData(); 
+        alert(`Target for ${monthLabel} updated!`);
       }
-    : isComplete
-    ? {
-        label: "ACHIEVED",
-        textColor: "text-emerald-400",
-        bg:        dark ? "bg-emerald-500/15" : "bg-emerald-100",
-        border:    dark ? "border-emerald-500/30" : "border-emerald-300",
-        icon: <CheckCircle2 size={13}/>,
-      }
-    : isOnTrack
-    ? {
-        label: "ON TRACK",
-        textColor: "text-yellow-400",
-        bg:        dark ? "bg-yellow-500/15"  : "bg-yellow-100",
-        border:    dark ? "border-yellow-500/30" : "border-yellow-300",
-        icon: <Zap size={13}/>,
-      }
-    : {
-        label: "BEHIND PACE",
-        textColor: "text-rose-400",
-        bg:        dark ? "bg-rose-500/15"    : "bg-rose-100",
-        border:    dark ? "border-rose-500/30" : "border-rose-300",
-        icon: <AlertTriangle size={13}/>,
-      };
+    } catch (err) {
+      alert("Save Error: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-  // ── Bar color ─────────────────────────────────────────────
-  const barColor = isComplete
-    ? "bg-emerald-500"
-    : progress > 75 ? "bg-yellow-400"
-    : progress > 40 ? "bg-yellow-500"
-    : "bg-rose-500";
-
-  const barGlow = isComplete
-    ? "shadow-[0_0_12px_rgba(52,211,153,0.35)]"
-    : progress > 40
-    ? "shadow-[0_0_12px_rgba(234,179,8,0.35)]"
-    : "";
-
-  // ── Reusable dark/light tokens ────────────────────────────
-  // Outer card shell
-  const outerCard = dark
-    ? "bg-zinc-900 border-zinc-800"
-    : "bg-white border-zinc-200";
-
-  // Inner sub-card (slightly lighter/darker than outer)
-  const innerCard = dark
-    ? "bg-zinc-800/70 border-zinc-700/60"
-    : "bg-zinc-50 border-zinc-200";
-
-  // Emerald tinted inner card
-  const emeraldCard = dark
-    ? "bg-emerald-900/20 border-emerald-500/20"
-    : "bg-emerald-50 border-emerald-200";
-
-  // Insight card shell
-  const insightCard = dark
-    ? "bg-zinc-800/60 border-zinc-700/50 hover:bg-zinc-800 hover:border-zinc-600"
-    : "bg-zinc-50 border-zinc-200 hover:bg-white hover:border-zinc-300";
-
-  // Icon background
-  const iconBg = dark ? "bg-zinc-700/80" : "bg-zinc-200/80";
-
-  // Text tokens
-  const strong = dark ? "text-white"    : "text-zinc-900";
-  const muted  = dark ? "text-zinc-500" : "text-zinc-400";
-  const faint  = dark ? "text-zinc-600" : "text-zinc-300";
-
-  // Track background
-  const trackBg = dark
-    ? "bg-zinc-800 border-zinc-700/50"
-    : "bg-zinc-100 border-zinc-200";
-
-  // ── Loading skeleton ──────────────────────────────────────
-  if (loading) {
-    const skeletonBlock = dark ? "bg-zinc-800" : "bg-zinc-200";
-    return (
-      <div className={`rounded-3xl p-6 space-y-5 animate-pulse ${dark ? "bg-zinc-900" : "bg-zinc-50"}`}>
-        <div className={`h-7 w-44 rounded-xl ${skeletonBlock}`}/>
-        <div className={`h-36 w-full rounded-2xl ${skeletonBlock}`}/>
-        <div className="grid grid-cols-3 gap-3">
-          {[1,2,3].map(i => <div key={i} className={`h-20 rounded-2xl ${skeletonBlock}`}/>)}
-        </div>
-      </div>
-    );
-  }
+  const cardBg = dark ? "bg-zinc-900/40 border-white/5" : "bg-white border-zinc-200 shadow-sm";
+  const inputBg = dark ? "bg-black border-zinc-800 text-white" : "bg-white border-zinc-300 text-zinc-900";
 
   return (
-    <div className="space-y-4 font-[Outfit]">
+    <div className={`space-y-6 font-[Outfit] pb-10 ${dark ? 'text-white' : 'text-zinc-900'}`}>
 
-      {/* ── HEADER ───────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+      {/* HEADER & PICKER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h2 className={`text-xl sm:text-2xl md:text-3xl font-black uppercase italic tracking-tighter leading-none ${strong}`}>
-            Manager's Goal
-          </h2>
-          <p className={`text-[9px] font-bold uppercase tracking-[0.18em] mt-1 ${muted}`}>
-            Target vs. Actual Performance
-          </p>
+          <h2 className="text-3xl font-[900] uppercase italic tracking-tighter">Director Control</h2>
+          <div className="flex items-center gap-3 mt-1 text-yellow-500">
+            <button onClick={() => handleMonthChange(-1)} className="hover:scale-125 transition-transform"><ChevronLeft size={20}/></button>
+            <span className="text-[10px] font-black tracking-widest uppercase">{monthLabel}</span>
+            <button onClick={() => handleMonthChange(1)} className="hover:scale-125 transition-transform"><ChevronRight size={20}/></button>
+          </div>
         </div>
-
-        <div className="flex sm:flex-col items-center sm:items-end gap-2 sm:gap-1">
-          {/* Status pill */}
-          <span className={`
-            inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border
-            text-[9px] font-black uppercase tracking-widest
-            ${statusConfig.textColor} ${statusConfig.bg} ${statusConfig.border}
-          `}>
-            {statusConfig.icon}
-            {statusConfig.label}
-          </span>
-          <span className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest ${muted}`}>
-            <Calendar size={9}/>
-            {monthLabel}
-          </span>
-        </div>
+        <button 
+          onClick={() => { setEditRevenue(targetRevenue); setIsEditing(!isEditing); }}
+          className={`p-3 rounded-xl transition-all ${isEditing ? 'bg-zinc-800 text-zinc-400' : 'bg-yellow-500 text-black hover:scale-105'}`}
+        >
+          {isEditing ? <X size={20}/> : <Edit3 size={20}/>}
+        </button>
       </div>
 
-      {/* ── MAIN CARD ────────────────────────────────────── */}
-      <div className={`rounded-2xl md:rounded-3xl border p-5 md:p-7 space-y-5 ${outerCard}`}>
-
-        {/* Target + Actual boxes */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-5">
-
-          {/* Target */}
-          <div className={`rounded-2xl border p-4 ${innerCard}`}>
-            <p className={`text-[8px] font-black uppercase tracking-[0.18em] mb-3 ${muted}`}>
-              Monthly Target
-            </p>
-            {isNotSet ? (
-              <p className={`text-base font-black uppercase italic ${muted}`}>
-                Not configured
-              </p>
-            ) : (
-              <>
-                <div className="flex items-baseline gap-1.5 flex-wrap">
-                  <span className={`text-[10px] font-black uppercase ${muted}`}>UGX</span>
-                  <span className={`text-2xl sm:text-3xl font-black italic tracking-tighter ${strong}`}>
-                    {fmtUGX(targetRevenue)}
-                  </span>
-                </div>
-                <p className={`text-[8px] font-bold mt-1.5 ${muted}`}>
-                  ≈ UGX {fmtUGX(Math.round(targetRevenue / totalDays))} / day required
-                </p>
-              </>
-            )}
-          </div>
-
-          {/* Actual */}
-          <div className={`rounded-2xl border p-4 ${emeraldCard}`}>
-            <p className="text-[8px] font-black uppercase tracking-[0.18em] mb-3 text-emerald-500">
-              Actual Revenue — Live
-            </p>
-            <div className="flex items-baseline gap-1.5 flex-wrap">
-              <span className="text-[10px] font-black uppercase text-emerald-500">UGX</span>
-              <span className="text-2xl sm:text-3xl font-black italic tracking-tighter text-emerald-400">
-                {fmtUGX(actualSales)}
-              </span>
-            </div>
-            <p className={`text-[8px] font-bold mt-1.5 ${muted}`}>
-              ≈ UGX {fmtUGX(avgDailyActual)} / day average
-            </p>
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div className="space-y-2.5">
-          <div className="flex justify-between items-center">
-            <p className={`text-[9px] font-black uppercase italic tracking-widest ${muted}`}>
-              Monthly Completion
-            </p>
-            <p className={`text-xl sm:text-2xl font-black italic ${isComplete ? "text-emerald-400" : "text-yellow-500"}`}>
-              {progress.toFixed(1)}%
-            </p>
-          </div>
-
-          <div className={`w-full h-3 md:h-4 rounded-full overflow-hidden border p-[2px] ${trackBg}`}>
-            <div
-              className={`h-full rounded-full transition-all duration-1000 ease-out ${barColor} ${barGlow}`}
-              style={{ width: `${progress}%` }}
+      {/* EDIT DRAWER */}
+      {isEditing && (
+        <div className={`p-6 rounded-3xl border animate-in slide-in-from-top-2 duration-300 ${cardBg}`}>
+          <label className="text-[10px] font-black uppercase text-yellow-500 tracking-widest mb-3 block">Set Goal for {monthLabel}</label>
+          <div className="flex flex-col md:flex-row gap-4">
+            <input 
+              type="number" value={editRevenue} onChange={(e) => setEditRevenue(e.target.value)}
+              className={`flex-1 p-4 rounded-2xl font-black text-2xl italic border outline-none focus:border-yellow-500/50 ${inputBg}`}
             />
-          </div>
-
-          {!isNotSet && (
-            <div className="flex items-center justify-between pt-0.5">
-              <span className={`flex items-center gap-1.5 text-[9px] font-bold uppercase ${
-                isOnTrack || isComplete ? "text-emerald-400" : "text-rose-400"
-              }`}>
-                {isOnTrack || isComplete ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
-                {isComplete
-                  ? "Target achieved!"
-                  : isOnTrack
-                  ? `UGX ${fmtUGX(paceGap)} ahead of pace`
-                  : `UGX ${fmtUGX(Math.abs(paceGap))} behind pace`
-                }
-              </span>
-              <span className={`text-[8px] font-bold ${muted}`}>
-                Day {elapsed} of {totalDays}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── INSIGHT CARDS ────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-
-        <InsightCard
-          label="Remaining"
-          value={isNotSet ? "N/A" : `UGX ${fmtUGX(remaining)}`}
-          sub={isComplete ? "Target hit!" : `${daysLeft} days left`}
-          icon={<ArrowUpRight size={15}/>}
-          valueColor={isComplete ? "text-emerald-400" : "text-yellow-400"}
-          insightCard={insightCard}
-          iconBg={iconBg}
-          strong={strong}
-          muted={muted}
-        />
-
-        <InsightCard
-          label="Daily Pace Needed"
-          value={isNotSet ? "N/A" : isComplete ? "Done" : `UGX ${fmtUGX(dailyPace)}`}
-          sub={isNotSet ? "Set a target" : `avg actual: ${fmtUGX(avgDailyActual)}`}
-          icon={<TrendingUp size={15}/>}
-          valueColor={isOnTrack ? "text-emerald-400" : "text-rose-400"}
-          insightCard={insightCard}
-          iconBg={iconBg}
-          strong={strong}
-          muted={muted}
-        />
-
-        {/* Full-width on mobile, normal on desktop */}
-        <div className="col-span-2 md:col-span-1">
-          <InsightCard
-            label="Target Status"
-            value={statusConfig.label}
-            sub={
-              isNotSet   ? "Manager hasn't set a target" :
-              isComplete ? `${progress.toFixed(1)}% complete` :
-              isOnTrack  ? `${(100 - progress).toFixed(1)}% remaining` :
-                           "Needs attention"
-            }
-            icon={statusConfig.icon}
-            valueColor={statusConfig.textColor}
-            insightCard={insightCard}
-            iconBg={iconBg}
-            strong={strong}
-            muted={muted}
-            fullHeight
-          />
-        </div>
-      </div>
-
-      {/* ── MONTHLY TIMELINE ─────────────────────────────── */}
-      {!isNotSet && (
-        <div className={`rounded-2xl border p-4 md:p-5 ${outerCard}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Activity size={12} className="text-yellow-500 shrink-0"/>
-            <p className={`text-[9px] font-black uppercase tracking-widest ${muted}`}>
-              Monthly Timeline
-            </p>
-            <span className={`ml-auto text-[8px] font-bold uppercase ${faint}`}>
-              {totalDays} days total
-            </span>
-          </div>
-
-          {/* Day bars */}
-          <div className="flex gap-[2px] items-end h-8">
-            {Array.from({ length: totalDays }, (_, i) => {
-              const day     = i + 1;
-              const isPast  = day < elapsed;
-              const isToday = day === elapsed;
-              const barH    = isToday ? "100%" : isPast ? "70%" : "35%";
-
-              let barCls = "";
-              if (isToday)     barCls = "bg-yellow-500 animate-pulse";
-              else if (isPast) barCls = isOnTrack
-                ? dark ? "bg-yellow-500/60" : "bg-yellow-400/70"
-                : dark ? "bg-rose-500/50"   : "bg-rose-400/60";
-              else             barCls = dark ? "bg-zinc-700/70" : "bg-zinc-200";
-
-              return (
-                <div
-                  key={day}
-                  title={`Day ${day}`}
-                  className={`flex-1 rounded-[2px] transition-all duration-300 ${barCls}`}
-                  style={{ height: barH }}
-                />
-              );
-            })}
-          </div>
-
-          <div className="flex justify-between mt-2.5">
-            <span className={`text-[8px] font-bold ${muted}`}>Day 1</span>
-            <span className="text-[8px] font-bold text-yellow-500">Today · Day {elapsed}</span>
-            <span className={`text-[8px] font-bold ${muted}`}>Day {totalDays}</span>
+            <button onClick={handleSave} disabled={isSaving} className="px-10 py-4 bg-emerald-500 text-white font-black uppercase italic rounded-2xl flex items-center justify-center gap-2 hover:bg-emerald-600">
+              <Save size={18}/> {isSaving ? "Syncing..." : "Save Target"}
+            </button>
           </div>
         </div>
       )}
+
+      {/* MAIN TARGET CARD */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className={`lg:col-span-2 p-8 rounded-[2.5rem] border relative overflow-hidden ${cardBg}`}>
+          {/* LIVE TIMESTAMP BADGE */}
+          <div className="absolute top-8 right-8 flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full border border-white/5">
+           
+            
+          </div>
+
+          <div className="flex justify-between items-start mb-10">
+            <div>
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Revenue Objective</p>
+              <h3 className="text-5xl font-[900] italic tracking-tighter">{fmtUGX(targetRevenue)}</h3>
+            </div>
+            <div className="text-right pt-4 md:pt-0">
+              <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Real-Time Sales</p>
+              <h3 className="text-5xl font-[900] italic tracking-tighter text-emerald-500">{fmtUGX(actualSales)}</h3>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="w-full h-3 rounded-full bg-zinc-800/50 border border-white/5 overflow-hidden">
+              <div 
+                className="h-full bg-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.3)] transition-all duration-1000 ease-out" 
+                style={{ width: `${progress}%` }} 
+              />
+            </div>
+            <div className="flex justify-between text-[10px] font-black uppercase text-zinc-500 italic">
+              <span>Current Effort</span>
+              <span className="text-yellow-500">{progress.toFixed(1)}% Goal Completion</span>
+              <span>Target</span>
+            </div>
+          </div>
+        </div>
+
+        {/* PREDICTION CARD */}
+        <div className={`p-8 rounded-[2.5rem] border flex flex-col justify-between ${isOnTrack ? 'bg-emerald-500/10 border-emerald-500/20 shadow-[0_0_50px_rgba(16,185,129,0.05)]' : 'bg-rose-500/10 border-rose-500/20'}`}>
+          <div className="flex justify-between items-start">
+             <BarChart3 className={isOnTrack ? 'text-emerald-500' : 'text-rose-500'} size={24} />
+             <div className={`px-2 py-1 rounded text-[8px] font-black uppercase ${isOnTrack ? 'bg-emerald-500 text-black' : 'bg-rose-500 text-white'}`}>
+               {isOnTrack ? 'Pace: Healthy' : 'Pace: Slow'}
+             </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">Projected Finish</p>
+            <h4 className={`text-4xl font-[900] italic tracking-tighter ${isOnTrack ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {fmtUGX(projectedRevenue)}
+            </h4>
+            <p className="text-[9px] font-bold mt-2 opacity-50 uppercase italic leading-tight">If current performance velocity is maintained.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* GRID INSIGHTS */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <MiniCard label="Daily Average" value={fmtUGX(dailyAvg)} icon={<Zap size={16}/>} dark={dark} />
+        <MiniCard label="Required / Day" value={fmtUGX(Math.max(0, dailyPaceNeeded))} icon={<TrendingUp size={16}/>} dark={dark} />
+        <MiniCard label="Days Left" value={isCurrentMonth ? totalDays - elapsedDays : 0} icon={<Calendar size={16}/>} dark={dark} />
+        <MiniCard label="Account Status" value={progress >= 100 ? "TARGET MET" : "COLLECTING"} icon={<Activity size={16}/>} dark={dark} />
+      </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// INSIGHT CARD
-// ─────────────────────────────────────────────────────────
-function InsightCard({ label, value, sub, icon, valueColor, insightCard, iconBg, strong, muted, fullHeight }) {
+function MiniCard({ label, value, icon, dark }) {
   return (
-    <div className={`
-      border rounded-2xl p-4 flex flex-col gap-3
-      transition-all duration-200 active:scale-[0.98]
-      ${insightCard}
-      ${fullHeight ? "h-full" : ""}
-    `}>
-      <div className="flex items-start justify-between gap-2">
-        <p className={`text-[8px] font-black uppercase tracking-widest leading-snug ${muted}`}>
-          {label}
-        </p>
-        <div className={`p-1.5 rounded-xl shrink-0 ${iconBg} ${valueColor}`}>
-          {icon}
-        </div>
-      </div>
-      <div>
-        <p className={`text-sm sm:text-base font-black italic tracking-tighter leading-tight ${valueColor}`}>
-          {value}
-        </p>
-        {sub && (
-          <p className={`text-[8px] font-bold mt-1 ${muted}`}>{sub}</p>
-        )}
-      </div>
+    <div className={`p-6 rounded-[2rem] border transition-all hover:border-yellow-500/30 ${dark ? 'bg-zinc-900/60 border-white/5' : 'bg-white shadow-sm'}`}>
+      <div className="text-yellow-500 mb-3">{icon}</div>
+      <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">{label}</p>
+      <p className="text-xl font-[900] italic tracking-tighter">{value}</p>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import {
@@ -8,24 +8,33 @@ import {
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
-
 // ─── MOMO CODES ───────────────────────────────────────────────────────────────
 const MOMO_CODES = {
   MTN: {
-    label: "MTN MoMo",
-    color: "#FFCC00",
-    merchant: "*165*3#",
-    till: "KURAX-MTN-001",
+    label: "MTN MoMo", color: "#FFCC00", merchant: "*165*3#", till: "KURAX-MTN-001",
     instructions: "Dial *165*3# → Send Money → Merchant → Enter till number",
   },
   AIRTEL: {
-    label: "Airtel Money",
-    color: "#FF0000",
-    merchant: "*185*9#",
-    till: "KURAX-AIR-002",
+    label: "Airtel Money", color: "#FF0000", merchant: "*185*9#", till: "KURAX-AIR-002",
     instructions: "Dial *185*9# → Make Payment → Enter merchant code",
   },
 };
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+// Always returns YYYY-MM-DD in the device's LOCAL timezone (Kampala safe)
+function toLocalDateStr(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+// Returns the local date string for RIGHT NOW, re-evaluated each call
+function getTodayLocal() {
+  return toLocalDateStr(new Date());
+}
 
 // ─── PAY MODAL ────────────────────────────────────────────────────────────────
 function PayModal({ order, onClose, onConfirmPay }) {
@@ -61,7 +70,6 @@ function PayModal({ order, onClose, onConfirmPay }) {
             <X size={16} className="text-zinc-400" />
           </button>
         </div>
-
         <div className="p-6 space-y-4">
           {step === "select" && (
             <>
@@ -69,7 +77,7 @@ function PayModal({ order, onClose, onConfirmPay }) {
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { key: "Cash", icon: <Banknote size={22} />, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30" },
-                  { key: "Card", icon: <CreditCard size={22} />, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/30" },
+                  { key: "Card", icon: <CreditCard size={22} />, color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
                   { key: "Momo", icon: <Smartphone size={22} />, color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
                 ].map(({ key, icon, color, bg }) => (
                   <button key={key} onClick={() => handleSelectMethod(key)}
@@ -82,7 +90,6 @@ function PayModal({ order, onClose, onConfirmPay }) {
               </div>
             </>
           )}
-
           {step === "momo" && (
             <>
               <button onClick={() => { setStep("select"); setMethod(null); }}
@@ -116,12 +123,10 @@ function PayModal({ order, onClose, onConfirmPay }) {
               </div>
             </>
           )}
-
           <div className="bg-white/3 rounded-2xl p-4 flex justify-between items-center border border-white/5">
             <span className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">Total Due</span>
             <span className="font-black text-white text-xl">UGX {order.total.toLocaleString()}</span>
           </div>
-
           <button disabled={!canPay || confirming} onClick={handlePay}
             className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2
               ${canPay ? "bg-yellow-500 text-black hover:bg-yellow-400 active:scale-[0.98]" : "bg-white/5 text-zinc-600 cursor-not-allowed"}`}>
@@ -187,17 +192,17 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
 function OrderCard({ order, theme, onMarkServed, onOpenPay, onVoidItem }) {
   const [expanded, setExpanded] = useState(false);
-  const isReady = order.status === "Ready";
-  const isPaid = order.isPaid;
+  const isReady  = order.status === "Ready";
+  const isPaid   = order.isPaid;
   const isServed = order.status === "Served";
 
   const statusConfig = {
-    Pending:   { label: "Pending",    color: "text-zinc-400",    bg: "bg-zinc-500/10 border-zinc-500/20",     dot: "bg-zinc-400" },
-    Preparing: { label: "Preparing",  color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/20", dot: "bg-orange-400 animate-pulse" },
-    Ready:     { label: "🔔 Ready!",  color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30",dot: "bg-emerald-400" },
-    Delayed:   { label: "Delayed",    color: "text-red-400",     bg: "bg-red-500/10 border-red-500/20",       dot: "bg-red-400" },
-    Served:    { label: "Served",     color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/20",     dot: "bg-blue-400" },
-    Paid:      { label: "Paid",       color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20",dot: "bg-emerald-400" },
+    Pending:   { label: "Pending",   color: "text-zinc-400",    bg: "bg-zinc-500/10 border-zinc-500/20",      dot: "bg-zinc-400" },
+    Preparing: { label: "Preparing", color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/20",  dot: "bg-orange-400 animate-pulse" },
+    Ready:     { label: "🔔 Ready!", color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", dot: "bg-emerald-400" },
+    Delayed:   { label: "Delayed",   color: "text-red-400",     bg: "bg-red-500/10 border-red-500/20",         dot: "bg-red-400" },
+    Served:    { label: "Served",    color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/20",       dot: "bg-blue-400" },
+    Paid:      { label: "Paid",      color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", dot: "bg-emerald-400" },
   };
   const s = statusConfig[isPaid ? "Paid" : order.status] || statusConfig.Pending;
 
@@ -216,7 +221,6 @@ function OrderCard({ order, theme, onMarkServed, onOpenPay, onVoidItem }) {
       <div className="p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`font-black text-base uppercase tracking-tight ${theme === "dark" ? "text-white" : "text-zinc-900"}`}>{order.tableName}</span>
@@ -293,7 +297,6 @@ function StatCard({ label, value, icon, highlight, theme, sub }) {
     : theme === "dark"
       ? "bg-zinc-900 border-white/5 text-white"
       : "bg-white border-black/5 text-zinc-900 shadow-sm";
-
   return (
     <div className={`p-5 rounded-2xl border transition-all hover:scale-[1.02] duration-200 ${base}`}>
       <div className="flex items-center justify-between mb-3">
@@ -315,46 +318,70 @@ function StatCard({ label, value, icon, highlight, theme, sub }) {
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function OrderHistory() {
-  const { orders = [], setOrders, currentUser, refreshData } = useData() || {};
+  const { orders = [], currentUser, refreshData } = useData() || {};
   const { theme } = useTheme();
 
-  const savedUser = useMemo(() => JSON.parse(localStorage.getItem("kurax_user") || "{}"), []);
-  const currentStaffId = currentUser?.id || savedUser?.id;
+  const savedUser        = useMemo(() => JSON.parse(localStorage.getItem("kurax_user") || "{}"), []);
+  const currentStaffId   = currentUser?.id   || savedUser?.id;
   const currentStaffName = currentUser?.name || savedUser?.name || "Staff Member";
 
-  const [activeTab, setActiveTab] = useState("Live");
+  const [activeTab,   setActiveTab]   = useState("Live");
   const [searchQuery, setSearchQuery] = useState("");
-  const [payOrder, setPayOrder] = useState(null);
-  const [voidItem, setVoidItem] = useState(null);
+  const [payOrder,    setPayOrder]    = useState(null);
+  const [voidItem,    setVoidItem]    = useState(null);
+
+  // ── Live "today" date that resets at local midnight ───────────────────────
+  const [today, setToday] = useState(getTodayLocal);
+
+  useEffect(() => {
+    // Calculate ms until next local midnight, then tick
+    const scheduleReset = () => {
+      const now  = new Date();
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+      const msUntilMidnight = next - now;
+
+      const timer = setTimeout(() => {
+        setToday(getTodayLocal()); // update date → totals & orders auto-filter to new day
+        scheduleReset();           // schedule next midnight reset
+      }, msUntilMidnight);
+
+      return timer;
+    };
+
+    const timer = scheduleReset();
+    return () => clearTimeout(timer);
+  }, []);
 
   const DAILY_GOAL = 20;
-  const today = new Date().toISOString().split("T")[0];
 
+  // ── Filter to today's orders for this staff member ────────────────────────
   const dailyStaffOrders = useMemo(() => {
     return (orders || []).filter(order => {
       const ts = order.timestamp || order.created_at;
       if (!ts) return false;
-      const orderDate = new Date(ts).toISOString().split("T")[0];
-      const oStaffId = order.staff_id || order.staffId;
+      const orderDate = toLocalDateStr(new Date(ts)); // local date, not UTC
+      const oStaffId   = order.staff_id   || order.staffId;
       const oStaffName = order.staff_name || order.waiterName;
-      const isMyOrder = oStaffId === currentStaffId || oStaffName === currentStaffName;
+      const isMyOrder  = oStaffId === currentStaffId || oStaffName === currentStaffName;
       return isMyOrder && orderDate === today;
     });
   }, [orders, currentStaffId, currentStaffName, today]);
+  // ↑ `today` changing at midnight causes this to recompute automatically —
+  //   old orders (yesterday's date) drop out, totals go to 0. DB unchanged.
 
   const groupedTableOrders = useMemo(() => {
     return dailyStaffOrders.reduce((acc, order) => {
       const key = (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase();
       if (!acc[key]) {
         acc[key] = {
-          tableName: key,
-          displayId: order.id ? String(order.id).slice(-6) : "000000",
-          total: Number(order.total) || 0,
-          items: [...(order.items || [])],
-          status: order.status || "Pending",
-          isPaid: order.status === "Paid" || order.is_paid || order.isPaid,
-          timestamp: order.timestamp || order.created_at,
-          orderIds: [order.id],
+          tableName:  key,
+          displayId:  order.id ? String(order.id).slice(-6) : "000000",
+          total:      Number(order.total) || 0,
+          items:      [...(order.items || [])],
+          status:     order.status || "Pending",
+          isPaid:     order.status === "Paid" || order.is_paid || order.isPaid,
+          timestamp:  order.timestamp || order.created_at,
+          orderIds:   [order.id],
           rawOrderId: order.id,
           waiterName: order.staff_name || order.waiterName,
         };
@@ -371,18 +398,16 @@ export default function OrderHistory() {
   const filteredOrders = useMemo(() => {
     return Object.values(groupedTableOrders).filter(group => {
       const matchesSearch = group.tableName.toLowerCase().includes(searchQuery.toLowerCase());
-      const isTabMatch = activeTab === "Live"
-        ? ["Pending", "Preparing", "Ready", "Delayed"].includes(group.status)
-        : ["Served", "Paid", "Closed"].includes(group.status);
+      const isTabMatch    = activeTab === "Live"
+        ? ["Pending","Preparing","Ready","Delayed"].includes(group.status)
+        : ["Served","Paid","Closed"].includes(group.status);
       return matchesSearch && isTabMatch;
     }).sort((a, b) => {
       if (a.status === "Ready" && b.status !== "Ready") return -1;
-      if (b.status === "Ready" && a.status !== "Ready") return 1;
+      if (b.status === "Ready" && a.status !== "Ready") return  1;
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
   }, [groupedTableOrders, searchQuery, activeTab]);
-
-  const progressPercent = Math.min((dailyStaffOrders.length / DAILY_GOAL) * 100, 100);
 
   const totals = useMemo(() => {
     return dailyStaffOrders.reduce((acc, order) => {
@@ -393,7 +418,7 @@ export default function OrderHistory() {
         if (raw.includes("momo") || raw.includes("mtn") || raw.includes("airtel")) method = "Momo";
         else if (raw.includes("card")) method = "Card";
         acc[method] = (acc[method] || 0) + Number(order.total);
-        acc.all += Number(order.total);
+        acc.all     += Number(order.total);
       }
       return acc;
     }, { Cash: 0, Card: 0, Momo: 0, all: 0 });
@@ -401,16 +426,17 @@ export default function OrderHistory() {
 
   const readyCount = useMemo(() =>
     Object.values(groupedTableOrders).filter(o => o.status === "Ready").length,
-    [groupedTableOrders]
-  );
+  [groupedTableOrders]);
   const liveCount = useMemo(() =>
     Object.values(groupedTableOrders).filter(o => ["Pending","Preparing","Ready","Delayed"].includes(o.status)).length,
-    [groupedTableOrders]
-  );
+  [groupedTableOrders]);
   const servedCount = useMemo(() =>
     Object.values(groupedTableOrders).filter(o => ["Served","Paid","Closed"].includes(o.status)).length,
-    [groupedTableOrders]
-  );
+  [groupedTableOrders]);
+
+  const progressPercent = Math.min((dailyStaffOrders.length / DAILY_GOAL) * 100, 100);
+  const paidOrdersCount = dailyStaffOrders.filter(o => o.status === "Paid" || o.is_paid).length;
+  const firstName       = currentStaffName.split(" ")[0];
 
   const handleMarkServed = useCallback(async (order) => {
     try {
@@ -441,8 +467,8 @@ export default function OrderHistory() {
       await fetch(`${API_URL}/api/orders/void-item`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          order_id: voidItem?.order?.rawOrderId,
-          item_name: item.name, reason,
+          order_id:     voidItem?.order?.rawOrderId,
+          item_name:    item.name, reason,
           requested_by: currentStaffName,
         }),
       });
@@ -450,17 +476,13 @@ export default function OrderHistory() {
     } catch (err) { console.error("Void request failed:", err); }
   }, [voidItem, currentStaffName, refreshData]);
 
-  const firstName = currentStaffName.split(" ")[0];
-  const paidOrdersCount = dailyStaffOrders.filter(o => o.status === "Paid" || o.is_paid).length;
-
   return (
     <div className={`min-h-screen font-[Outfit] pb-28 transition-colors duration-300 ${theme === "dark" ? "bg-black text-white" : "bg-zinc-50 text-zinc-900"}`}>
 
-      {/* ── STICKY HEADER BAR ── */}
+      {/* STICKY HEADER */}
       <div className={`sticky top-0 z-10 w-full border-b px-4 md:px-8 lg:px-12 py-4 flex items-center justify-between gap-4
         ${theme === "dark" ? "bg-zinc-950/95 backdrop-blur-xl border-white/5" : "bg-white/95 backdrop-blur-xl border-black/5 shadow-sm"}`}>
 
-        {/* Identity */}
         <div className="flex items-center gap-3 shrink-0">
           <div className="w-10 h-10 rounded-xl bg-yellow-500 flex items-center justify-center font-black text-black text-base shrink-0">
             {firstName[0]}
@@ -468,7 +490,7 @@ export default function OrderHistory() {
           <div className="hidden sm:block">
             <div className="flex items-center gap-1.5">
               <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
-              <p className="text-[8px] font-black uppercase tracking-[0.25em] text-zinc-500">Active</p>
+              <p className="text-[8px] font-black uppercase tracking-[0.25em] text-zinc-500">Active · {today}</p>
             </div>
             <h1 className="text-base font-black uppercase tracking-tighter leading-none">
               {firstName}'s <span className="text-yellow-500">Dashboard</span>
@@ -478,33 +500,25 @@ export default function OrderHistory() {
 
         {/* Desktop inline stats */}
         <div className="hidden lg:flex items-center gap-8 flex-1 justify-center">
-          <div className="text-center">
-            <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Orders</p>
-            <p className="text-xl font-black">{dailyStaffOrders.length}<span className="text-xs text-zinc-500">/{DAILY_GOAL}</span></p>
-          </div>
-          <div className={`w-px h-8 ${theme === "dark" ? "bg-white/10" : "bg-black/10"}`} />
-          <div className="text-center">
-            <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Gross</p>
-            <p className="text-xl font-black text-yellow-500">UGX {totals.all.toLocaleString()}</p>
-          </div>
-          <div className={`w-px h-8 ${theme === "dark" ? "bg-white/10" : "bg-black/10"}`} />
-          <div className="text-center">
-            <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Cash</p>
-            <p className="text-xl font-black text-emerald-500">UGX {totals.Cash.toLocaleString()}</p>
-          </div>
-          <div className={`w-px h-8 ${theme === "dark" ? "bg-white/10" : "bg-black/10"}`} />
-          <div className="text-center">
-            <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Momo</p>
-            <p className="text-xl font-black text-yellow-400">UGX {totals.Momo.toLocaleString()}</p>
-          </div>
-          <div className={`w-px h-8 ${theme === "dark" ? "bg-white/10" : "bg-black/10"}`} />
-          <div className="text-center">
-            <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Card</p>
-            <p className="text-xl font-black text-blue-400">UGX {totals.Card.toLocaleString()}</p>
-          </div>
+          {[
+            { label: "Orders", value: `${dailyStaffOrders.length}`, suffix: `/${DAILY_GOAL}`, color: "" },
+            { label: "Gross",  value: `UGX ${totals.all.toLocaleString()}`,  color: "text-yellow-500" },
+            { label: "Cash",   value: `UGX ${totals.Cash.toLocaleString()}`, color: "text-emerald-500" },
+            { label: "Momo",   value: `UGX ${totals.Momo.toLocaleString()}`, color: "text-yellow-400" },
+            { label: "Card",   value: `UGX ${totals.Card.toLocaleString()}`, color: "text-blue-400" },
+          ].map(({ label, value, suffix, color }, i, arr) => (
+            <React.Fragment key={label}>
+              <div className="text-center">
+                <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">{label}</p>
+                <p className={`text-xl font-black ${color}`}>
+                  {value}{suffix && <span className="text-xs text-zinc-500">{suffix}</span>}
+                </p>
+              </div>
+              {i < arr.length - 1 && <div className={`w-px h-8 ${theme === "dark" ? "bg-white/10" : "bg-black/10"}`} />}
+            </React.Fragment>
+          ))}
         </div>
 
-        {/* Ready alert pill */}
         {readyCount > 0 && (
           <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500 rounded-xl shrink-0 animate-pulse">
             <Bell size={13} className="text-black" />
@@ -515,21 +529,24 @@ export default function OrderHistory() {
 
       <div className="px-4 md:px-8 lg:px-12 pt-6">
 
-        {/* ── PROGRESS BAR (mobile/tablet only — desktop sees it in header) ── */}
-        <div className={`lg:hidden p-4 rounded-2xl border mb-4 ${theme === "dark" ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
+        {/* Progress bar */}
+        <div className={`p-4 rounded-2xl border mb-4 ${theme === "dark" ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-2">
               <Activity size={12} className="text-orange-400" />
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Daily Target</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Daily Target Progress</p>
             </div>
-            <span className="text-[11px] font-black text-orange-400">{dailyStaffOrders.length}/{DAILY_GOAL}</span>
+            <span className="text-[11px] font-black text-orange-400">
+              {dailyStaffOrders.length} / {DAILY_GOAL} · {Math.round(progressPercent)}%
+            </span>
           </div>
           <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-orange-600 to-orange-400 transition-all duration-1000 rounded-full" style={{ width: `${progressPercent}%` }} />
+            <div className="h-full bg-gradient-to-r from-orange-600 to-orange-400 transition-all duration-1000 rounded-full"
+              style={{ width: `${progressPercent}%` }} />
           </div>
         </div>
 
-        {/* ── STAT CARDS (mobile/tablet: 2x2 | desktop: full row in header already) ── */}
+        {/* Stat cards */}
         <div className="lg:hidden grid grid-cols-2 gap-3 mb-6">
           <StatCard theme={theme} label="Cash" value={totals.Cash}
             icon={<Banknote size={18} className="text-emerald-500" />}
@@ -545,21 +562,7 @@ export default function OrderHistory() {
             sub={`${paidOrdersCount} paid`} />
         </div>
 
-        {/* Desktop: progress bar shown below header stats */}
-        <div className={`hidden lg:block p-4 rounded-2xl border mb-6 ${theme === "dark" ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
-          <div className="flex justify-between items-center mb-2">
-            <div className="flex items-center gap-2">
-              <Activity size={12} className="text-orange-400" />
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Daily Target Progress</p>
-            </div>
-            <span className="text-[11px] font-black text-orange-400">{dailyStaffOrders.length} / {DAILY_GOAL} orders · {Math.round(progressPercent)}% complete</span>
-          </div>
-          <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-orange-600 to-orange-400 transition-all duration-1000 rounded-full" style={{ width: `${progressPercent}%` }} />
-          </div>
-        </div>
-
-        {/* ── TABS + SEARCH ── */}
+        {/* Tabs + Search */}
         <div className="flex items-center justify-between mb-6 gap-4">
           <div className="flex gap-1 p-1 rounded-2xl bg-zinc-900 shrink-0">
             {[{ key: "Live", count: liveCount }, { key: "Served", count: servedCount }].map(({ key, count }) => (
@@ -576,7 +579,6 @@ export default function OrderHistory() {
               </button>
             ))}
           </div>
-
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={14} />
             <input type="text" placeholder="Filter by table..." value={searchQuery}
@@ -586,11 +588,7 @@ export default function OrderHistory() {
           </div>
         </div>
 
-        {/* ── ORDERS GRID ──
-            Mobile:  1 col
-            Tablet:  2 col
-            Desktop: 3 col
-            XL:      4 col                                                     */}
+        {/* Orders grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredOrders.length === 0 ? (
             <div className="col-span-full py-32 text-center opacity-20">

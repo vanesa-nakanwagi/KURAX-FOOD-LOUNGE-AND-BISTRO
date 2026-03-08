@@ -2,14 +2,15 @@ import React, { useState, useEffect } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { 
-  Receipt, CheckCircle2, Timer, Search, 
-  RotateCcw, LayoutDashboard
+  Timer, Search, LayoutDashboard, 
+  AlertCircle, MessageSquare, Clock, CheckCircle
 } from "lucide-react";
 
 export default function LiveTableGrid() {
-  const { orders = [], setOrders } = useData();
+  const { orders = [] } = useData();
   const { theme } = useTheme();
   const [searchQuery, setSearchQuery] = useState("");
+  const isDark = theme === 'dark';
   
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -17,37 +18,30 @@ export default function LiveTableGrid() {
     return () => clearInterval(timer);
   }, []);
 
-  const isDark = theme === 'dark';
-
-  const getReadableTime = (startTime) => {
-    const diffInMinutes = Math.floor((new Date() - new Date(startTime)) / 60000);
-    if (diffInMinutes < 0) return "Just now";
-    if (diffInMinutes < 60) return `${diffInMinutes}m`;
-    const hours = Math.floor(diffInMinutes / 60);
-    const mins = diffInMinutes % 60;
-    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  const getMinutesElapsed = (startTime) => {
+    return Math.floor((new Date() - new Date(startTime)) / 60000);
   };
 
-  const activeOrders = orders.filter(o => !o.isArchived);
-  
-  const tableGroups = activeOrders.reduce((acc, order) => {
+  // Logic to show both Active and recently Archived (Closed) tables for monitoring
+  const tableGroups = orders.reduce((acc, order) => {
     const key = order.tableName?.trim().toUpperCase() || "WALK-IN";
-    if (!acc[key]) {
-      acc[key] = {
-        name: key.replace("TABLE", "").trim(),
-        fullName: key,
-        total: Number(order.total) || 0,
-        count: order.items?.length || 0,
-        start: order.timestamp,
-        waiter: order.waiterName || "Staff",
-        ids: [order.id]
-      };
-    } else {
-      acc[key].total += (Number(order.total) || 0);
-      acc[key].count += (order.items?.length || 0);
-      acc[key].ids.push(order.id);
-      if (new Date(order.timestamp) < new Date(acc[key].start)) {
-        acc[key].start = order.timestamp;
+    const isRecentlyClosed = order.isArchived && 
+      (new Date() - new Date(order.timestamp)) < 3600000; // Show closed for 1hr
+
+    if (!order.isArchived || isRecentlyClosed) {
+      if (!acc[key]) {
+        acc[key] = {
+          name: key.replace("TABLE", "").trim(),
+          fullName: key,
+          total: Number(order.total) || 0,
+          count: order.items?.length || 0,
+          start: order.timestamp,
+          waiter: order.waiterName || "Staff",
+          isClosed: order.isArchived
+        };
+      } else {
+        acc[key].total += Number(order.total);
+        acc[key].count += order.items?.length;
       }
     }
     return acc;
@@ -57,176 +51,103 @@ export default function LiveTableGrid() {
     t.fullName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleClearTable = (name, ids) => {
-    if (window.confirm(`Finalize billing for ${name}? This will clear all linked orders.`)) {
-      setOrders(prev => prev.map(o => ids.includes(o.id) ? { ...o, isArchived: true } : o));
-    }
-  };
-
-  const handleResetAll = () => {
-    const code = Math.floor(1000 + Math.random() * 9000);
-    const confirm = window.prompt(`CRITICAL: Type "${code}" to archive ALL active tables:`);
-    if (confirm === code.toString()) {
-      setOrders(prev => prev.map(o => ({ ...o, isArchived: true })));
-      alert("Floor Cleared.");
-    }
-  };
-
   return (
-    <div className="p-4 md:p-10 space-y-5 md:space-y-8 animate-in fade-in duration-500">
+    <div className="p-4 md:p-10 space-y-6 animate-in fade-in duration-700 pb-32">
       
       {/* HEADER */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
-          <h2 className={`text-3xl md:text-4xl font-black italic tracking-tighter uppercase ${
-            isDark ? 'text-white' : 'text-zinc-900'
-          }`}>
-            Floor Management
+          <h2 className={`text-4xl font-[900] italic tracking-tighter uppercase ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            Floor <span className="text-yellow-500">Overview</span>
           </h2>
-          <div className="flex items-center gap-2 mt-1">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-              {tables.length} Active {tables.length === 1 ? 'Session' : 'Sessions'}
-            </p>
-          </div>
+          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] mt-1">
+            Managerial Oversight & Service Tracking
+          </p>
         </div>
 
-        {/* Search + Reset */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-56 group">
-            <Search 
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-yellow-500 transition-colors" 
-              size={15} 
-            />
-            <input 
-              type="text" 
-              placeholder="Search table..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full pl-10 pr-4 py-3 rounded-2xl text-xs font-bold uppercase outline-none border transition-all ${
-                isDark 
-                  ? 'bg-zinc-900 border-white/5 focus:border-yellow-500 text-white' 
-                  : 'bg-white border-black/5 focus:border-yellow-500 text-zinc-900'
-              }`}
-            />
-          </div>
-          <button 
-            onClick={handleResetAll} 
-            className="p-3 rounded-2xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all shrink-0"
-            title="Reset all tables"
-          >
-            <RotateCcw size={18} />
-          </button>
+        <div className="relative w-full md:w-64">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={14} />
+          <input 
+            type="text" 
+            placeholder="Search Floor..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={`w-full pl-12 pr-4 py-4 rounded-[1.5rem] text-[10px] font-black uppercase outline-none border transition-all ${
+              isDark ? 'bg-zinc-900 border-white/5 focus:border-yellow-500 text-white' : 'bg-white border-black/5 focus:border-yellow-500 shadow-sm'
+            }`}
+          />
         </div>
       </div>
 
       {/* GRID */}
-      {tables.length === 0 ? (
-        <div className="py-24 md:py-40 text-center opacity-20">
-          <LayoutDashboard size={48} className="mx-auto mb-4" />
-          <p className="font-black uppercase italic tracking-widest text-sm text-zinc-500">
-            Floor is Clear
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3 md:gap-6">
-          {tables.map((table) => (
-            <TableCard 
-              key={table.fullName} 
-              table={table} 
-              isDark={isDark}
-              onClear={handleClearTable} 
-              timeLabel={getReadableTime(table.start)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {tables.map((table) => {
+          const minutes = getMinutesElapsed(table.start);
+          const isDelayed = !table.isClosed && minutes > 45;
+
+          return (
+            <div key={table.fullName} className={`rounded-[2.5rem] p-6 border-2 transition-all duration-500 ${
+              table.isClosed 
+                ? 'opacity-60 bg-zinc-500/5 border-zinc-500/10' 
+                : isDelayed ? 'border-rose-500/30 bg-rose-500/5 shadow-rose-500/5' : 'bg-zinc-900/40 border-white/5 shadow-2xl'
+            }`}>
+              
+              {/* STATUS INDICATOR */}
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="font-[900] text-2xl italic tracking-tighter uppercase text-white">
+                    {table.fullName}
+                  </h3>
+                  <StatusBadge isClosed={table.isClosed} isDelayed={isDelayed} />
+                </div>
+                {!table.isClosed && (
+                  <div className={`p-3 rounded-2xl font-black text-xs ${isDelayed ? 'bg-rose-500 text-white' : 'bg-white/5 text-zinc-400'}`}>
+                    {minutes}m
+                  </div>
+                )}
+              </div>
+
+              {/* DATA POINTS */}
+              <div className="space-y-3 mb-8">
+                <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                  <span>Assigned To</span>
+                  <span className="text-white">{table.waiter}</span>
+                </div>
+                <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                  <span>Current Bill</span>
+                  <span className="text-yellow-500">UGX {table.total.toLocaleString()}</span>
+                </div>
+              </div>
+
+              {/* MANAGER ACTION (Approaching Staff) */}
+              {isDelayed ? (
+                <div className="animate-bounce mt-auto flex items-center gap-2 text-rose-500 bg-rose-500/10 p-4 rounded-2xl">
+                  <AlertCircle size={18} />
+                  <span className="text-[10px] font-[900] uppercase italic tracking-widest">
+                    Approach {table.waiter}
+                  </span>
+                </div>
+              ) : table.isClosed ? (
+                <div className="mt-auto flex items-center gap-2 text-zinc-500 bg-zinc-500/10 p-4 rounded-2xl">
+                  <CheckCircle size={18} />
+                  <span className="text-[10px] font-[900] uppercase tracking-widest">Cleared</span>
+                </div>
+              ) : (
+                <div className="mt-auto flex items-center gap-2 text-emerald-500 bg-emerald-500/10 p-4 rounded-2xl">
+                  <Clock size={18} />
+                  <span className="text-[10px] font-[900] uppercase tracking-widest">Service Healthy</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function TableCard({ table, isDark, onClear, timeLabel }) {
-  const displayTitle = table.name.toUpperCase().includes('TABLE') 
-    ? table.name.toUpperCase() 
-    : `TABLE ${table.name}`;
-
-  return (
-    <div className={`rounded-[1.5rem] md:rounded-[2.3rem] p-4 md:p-7 flex flex-col border transition-colors duration-300 ${
-      isDark 
-        ? 'bg-zinc-900 border-white/5 shadow-xl' 
-        : 'bg-white border-black/8 shadow-md'
-    }`}>
-      
-      {/* CARD HEADER */}
-      <div className="flex justify-between items-start mb-4 md:mb-6">
-        <div>
-          <h3 className={`font-black text-lg md:text-2xl italic tracking-tighter leading-none ${
-            isDark ? 'text-white' : 'text-zinc-900'
-          }`}>
-            {displayTitle}
-          </h3>
-          <div className="flex items-center gap-1 mt-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span className="text-[7px] md:text-[8px] font-black text-emerald-500 uppercase tracking-widest">
-              Active
-            </span>
-          </div>
-        </div>
-
-        {/* Timer badge */}
-        <div className={`flex items-center gap-1 px-2 py-1 rounded-xl text-[8px] md:text-[9px] font-black uppercase tracking-tight ${
-          isDark ? 'bg-rose-500/10 text-rose-400' : 'bg-rose-50 text-rose-500'
-        }`}>
-          <Timer size={10} className="shrink-0" />
-          {timeLabel}
-        </div>
-      </div>
-
-      {/* STATS */}
-      <div className="space-y-3 mb-4 md:mb-6 flex-1">
-        {/* Waiter */}
-        <div className={`flex justify-between items-center text-[9px] md:text-[10px] font-bold uppercase pb-2 border-b border-dashed ${
-          isDark ? 'border-white/5' : 'border-black/5'
-        }`}>
-          <span className="text-zinc-500 tracking-widest">Waiter</span>
-          <span className={`truncate max-w-[80px] md:max-w-none ${isDark ? 'text-white' : 'text-zinc-800'}`}>
-            {table.waiter}
-          </span>
-        </div>
-
-        {/* Items */}
-        <div className={`flex justify-between items-center text-[9px] md:text-[10px] font-bold uppercase pb-2 border-b border-dashed ${
-          isDark ? 'border-white/5' : 'border-black/5'
-        }`}>
-          <span className="text-zinc-500 tracking-widest">Items</span>
-          <span className={isDark ? 'text-white' : 'text-zinc-800'}>
-            {table.count} units
-          </span>
-        </div>
-
-        {/* Bill */}
-        <div>
-          <span className="text-[8px] md:text-[9px] font-black text-yellow-600 uppercase tracking-widest block mb-1">
-            Bill
-          </span>
-          <div className="text-xl md:text-3xl font-black italic tracking-tighter text-yellow-500 flex items-baseline gap-1">
-            <span className="text-[9px] md:text-xs opacity-60">UGX</span>
-            <span className="truncate">{table.total.toLocaleString()}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ACTION BUTTON */}
-      <button 
-        onClick={() => onClear(table.fullName, table.ids)}
-        className={`w-full py-3 md:py-4 rounded-xl md:rounded-2xl font-black uppercase italic text-[9px] md:text-[10px] tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 border ${
-          isDark 
-            ? 'bg-white/5 text-white border-white/5 hover:bg-yellow-400 hover:text-black hover:border-yellow-400' 
-            : 'bg-zinc-100 text-black border-black/5 hover:bg-yellow-400 hover:border-yellow-400'
-        }`}
-      >
-        <CheckCircle2 size={12} /> Close Table
-      </button>
-    </div>
-  );
+function StatusBadge({ isClosed, isDelayed }) {
+  if (isClosed) return <span className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Closed Session</span>;
+  if (isDelayed) return <span className="text-[8px] font-black uppercase tracking-widest text-rose-500 animate-pulse">Delayed - Check Waiter</span>;
+  return <span className="text-[8px] font-black uppercase tracking-widest text-emerald-500">Open & Active</span>;
 }

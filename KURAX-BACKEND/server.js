@@ -10,6 +10,9 @@ import staffRoutes from './routes/staffRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
 import siteVisits from './routes/siteVisits.js';
+import managerRoutes from './routes/managerRoutes.js';
+import overviewRoutes from './routes/overviewRoutes.js';
+import weeklyRevenueRoutes from "./routes/weeklyRevenueRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -55,6 +58,9 @@ app.use('/api/menus', menuRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/events', eventRoutes);
+app.use('/api/manager', managerRoutes);
+app.use('/api/overview', overviewRoutes);
+app.use("/api/overview", weeklyRevenueRoutes);
 
 // 4. DATABASE VERIFICATION
 const verifyDB = async () => {

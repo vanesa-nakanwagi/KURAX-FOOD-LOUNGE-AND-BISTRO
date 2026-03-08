@@ -118,6 +118,7 @@ export default function NewOrder() {
 
     const orderData = {
       staffId: currentUser?.id || 1,
+       staffRole: currentUser?.role || "MANAGER",
       tableName: tableName.toUpperCase(),
       items: cart,
       total: cartTotal,

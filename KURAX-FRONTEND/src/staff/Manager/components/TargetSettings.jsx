@@ -1,85 +1,98 @@
 import React, { useState, useMemo } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
-import { Target, TrendingUp, Users, Save, ShoppingBag, Calendar, Download, FileText } from "lucide-react";
+import API_URL from "../../../config/api"; // Ensure this path correctly points to your API_URL
+import { 
+  Target, TrendingUp, ShoppingBag, 
+  Calendar, Download, FileText, Lock, CheckCircle2, Loader2
+} from "lucide-react";
+
+// --- HELPERS ---
+function fmtUGX(n) {
+  return `UGX ${Number(n).toLocaleString()}`;
+}
 
 export default function TargetSettings() {
   const { 
     dailyGoal, setDailyGoal, 
-    monthlyTargets = {}, updateMonthlyTarget, 
-    staffList = [],
-    orders = []
+    monthlyTargets = {}, 
+    orders = [],
   } = useData() || {};
   const { theme } = useTheme();
 
   const isDark = theme === 'dark';
+  const [isSaving, setIsSaving] = useState(false);
 
-  // --- Daily Order Target ---
-  const handleDailyOrderChange = (e) => {
-    setDailyGoal(Number(e.target.value));
-  };
-
-  // --- Monthly Revenue Goal ---
+  // --- Display State for Director's Revenue Target ---
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
-  const [revenueGoal, setRevenueGoal] = useState(
-    monthlyTargets[selectedMonth]?.revenue || 0
-  );
+  
+  // 1. UPDATED REVENUE CALCULATION: Matches Director's logic using is_archived and Paid
+  const monthlyActualRevenue = useMemo(() => {
+    return orders
+      .filter(o => {
+        const orderDate = (o.timestamp || o.date || "").toString();
+        // Check for specific month and verified payment status
+        return (
+          orderDate.startsWith(selectedMonth) && 
+          (o.is_archived === true || o.status === "Paid" || o.status === "CLOSED")
+        );
+      })
+      .reduce((sum, o) => sum + Number(o.total || 0), 0);
+  }, [orders, selectedMonth]);
 
-  const handleMonthChange = (e) => {
-    const month = e.target.value;
-    setSelectedMonth(month);
-    setRevenueGoal(monthlyTargets[month]?.revenue || 0);
+  const revenueGoal = useMemo(() => {
+    return monthlyTargets[selectedMonth]?.revenue || 0;
+  }, [selectedMonth, monthlyTargets]);
+
+  // Progress Percentage
+  const progressPercent = revenueGoal > 0 
+    ? Math.min((monthlyActualRevenue / revenueGoal) * 100, 100).toFixed(1) 
+    : 0;
+
+  // 2. STAFF ORDER GOAL PERSISTENCE: Saves to database when slider moves
+  const handleStaffGoalChange = async (value) => {
+    setDailyGoal(value); // Update UI immediately for responsiveness
+    
+    try {
+      setIsSaving(true);
+      const response = await fetch(`${API_URL}/api/manager/staff-goals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_count_goal: value })
+      });
+
+      if (!response.ok) throw new Error("Failed to sync goal");
+    } catch (err) {
+      console.error("Staff Goal Sync Error:", err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleSaveMonthly = () => {
-    const currentQuota = monthlyTargets[selectedMonth]?.waiterQuota || 0;
-    updateMonthlyTarget(selectedMonth, Number(revenueGoal), currentQuota);
-    alert(`Monthly Revenue Goal for ${selectedMonth} updated!`);
-  };
-
-  // --- Daily Report ---
+  // --- Daily Report Logic ---
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
 
   const reportData = useMemo(() => {
     const dailyOrders = orders.filter(order => {
-      const orderDate = new Date(order.timestamp || order.date)
-        .toISOString()
-        .split('T')[0];
-      return orderDate === reportDate;
+      const orderDate = new Date(order.timestamp || order.date).toISOString().split('T')[0];
+      // Updated to match the business definition of a completed transaction
+      return orderDate === reportDate && (order.is_archived || order.status === "Paid" || order.status === "CLOSED");
     });
 
-    const totalCash = dailyOrders
-      .filter(o => (o.payment_method || o.paymentMethod) === 'CASH')
+    const getSum = (method) => dailyOrders
+      .filter(o => (o.payment_method || "").toUpperCase().includes(method))
       .reduce((sum, o) => sum + Number(o.total || 0), 0);
-
-    const totalMomo = dailyOrders
-      .filter(o => (o.payment_method || o.paymentMethod) === 'MOMO')
-      .reduce((sum, o) => sum + Number(o.total || 0), 0);
-
-    const totalCard = dailyOrders
-      .filter(o => (o.payment_method || o.paymentMethod) === 'CARD')
-      .reduce((sum, o) => sum + Number(o.total || 0), 0);
-
-    const totalRevenue = totalCash + totalMomo + totalCard;
 
     return {
       orders: dailyOrders,
       totalTransactions: dailyOrders.length,
-      totalRevenue,
-      totalCash,
-      totalMomo,
-      totalCard,
+      totalRevenue: dailyOrders.reduce((sum, o) => sum + Number(o.total || 0), 0),
+      totalCash: getSum('CASH'),
+      totalMomo: getSum('MTN') + getSum('AIRTEL'),
+      totalCard: getSum('CARD') + getSum('POS') + getSum('VISA'),
     };
   }, [orders, reportDate]);
 
-  // --- Progress toward monthly goal ---
-  const currentMonthKey = reportDate.substring(0, 7);
-  const monthTarget = monthlyTargets[currentMonthKey] || { revenue: 0, waiterQuota: 0 };
-  const progressPercent = monthTarget.revenue > 0
-    ? Math.min((reportData.totalRevenue / monthTarget.revenue) * 100, 100).toFixed(1)
-    : 0;
-
-  // --- CSV Download ---
   const handleDownloadReport = () => {
     if (reportData.orders.length === 0) {
       alert("No transactions found for this date.");
@@ -95,260 +108,156 @@ export default function TargetSettings() {
       [`Total Transactions`, reportData.totalTransactions],
       [`Total Revenue`, `UGX ${reportData.totalRevenue.toLocaleString()}`],
       [`Cash`, `UGX ${reportData.totalCash.toLocaleString()}`],
-      [`Mobile Money (MOMO)`, `UGX ${reportData.totalMomo.toLocaleString()}`],
-      [`Card`, `UGX ${reportData.totalCard.toLocaleString()}`],
+      [`Mobile Money`, `UGX ${reportData.totalMomo.toLocaleString()}`],
+      [`Card/POS`, `UGX ${reportData.totalCard.toLocaleString()}`],
       [],
       [`ORDER BREAKDOWN`],
       [`Order ID`, `Waiter`, `Table`, `Amount (UGX)`, `Payment Method`, `Time`],
       ...reportData.orders.map(o => [
-        o.id,
-        o.waiter_name || o.waiterName || o.waiter || "—",
-        o.table_name || o.tableName || o.name || "—",
-        Number(o.total || 0).toLocaleString(),
-        o.payment_method || o.paymentMethod || "—",
-        o.timestamp
-          ? new Date(o.timestamp).toLocaleTimeString()
-          : (o.time || "—")
+        o.id || "N/A",
+        o.waiter_name || "—",
+        o.table_name || "—",
+        Number(o.total || 0),
+        o.payment_method || "—",
+        o.timestamp ? new Date(o.timestamp).toLocaleTimeString() : "—"
       ])
     ];
 
-    const csvContent = "data:text/csv;charset=utf-8," +
+    const csvContent = "data:text/csv;charset=utf-8," + 
       summaryRows.map(row => row.join(",")).join("\n");
 
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csvContent));
-    link.setAttribute("download", `Kurax_Daily_Report_${reportDate}.csv`);
+    link.setAttribute("download", `Kurax_Report_${reportDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  const cardClass = isDark ? "bg-zinc-900/40 border-white/5 shadow-2xl" : "bg-white border-black/5 shadow-xl";
+
   return (
-    <div className={`p-4 md:p-8 min-h-screen font-[Outfit] transition-colors duration-300 ${
-      isDark ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'
-    }`}>
-      <div className="max-w-5xl space-y-8">
-
-        {/* PAGE HEADER */}
-        <div>
-          <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tighter italic flex items-center gap-3">
-            <Target className="text-yellow-500 shrink-0" size={32} />
-            Performance Hub
-          </h1>
-          <p className="text-zinc-500 text-xs font-bold uppercase mt-2 tracking-widest">
-            Manage staff order targets & business revenue goals
-          </p>
+    <div className={`p-4 md:p-8 min-h-screen font-[Outfit] ${isDark ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'}`}>
+      <div className="max-w-5xl mx-auto space-y-8">
+        
+        {/* HEADER */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-black uppercase italic tracking-tighter flex items-center gap-3">
+              <Target className="text-yellow-500" size={32} />
+              Performance Hub
+            </h1>
+            <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mt-1">Manager Overview</p>
+          </div>
         </div>
 
-        {/* ROW 1: Target Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
-
-          {/* SECTION A: STAFF ORDER TARGET */}
-          <div className={`p-6 md:p-8 rounded-[2.5rem] border transition-all ${
-            isDark ? 'bg-zinc-900 border-white/5 shadow-2xl' : 'bg-white border-black/5 shadow-xl'
-          }`}>
-            <div className="flex justify-between items-start mb-8">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <ShoppingBag size={14} className="text-yellow-500" />
-                  <p className="text-[10px] font-black uppercase text-yellow-500 tracking-widest">
-                    Floor Staff Target
-                  </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* DAILY ORDER GOAL (EDITABLE BY MANAGER + SAVES TO DB) */}
+          <div className={`p-8 rounded-[2.5rem] border flex flex-col justify-between transition-all ${cardClass}`}>
+            <div>
+                <div className="flex justify-between items-start">
+                  <p className="text-[10px] font-black uppercase text-yellow-500 tracking-widest mb-6">Staff Order Goal</p>
+                  {isSaving && <Loader2 className="animate-spin text-zinc-500" size={12} />}
                 </div>
-                <h2 className="text-4xl md:text-5xl font-black tracking-tighter italic">
-                  {dailyGoal || 20}
-                  <span className="text-xs text-zinc-500 ml-2 uppercase not-italic">Orders / Day</span>
+                <h2 className="text-5xl font-black tracking-tighter italic mb-4">
+                  {dailyGoal || 20}<span className="text-sm text-zinc-500 italic ml-2">Orders/Day</span>
                 </h2>
-              </div>
-              <Users className="text-zinc-700 shrink-0" size={28} />
+                <input
+                  type="range" min="5" max="200" step="5"
+                  value={dailyGoal || 20}
+                  onChange={(e) => handleStaffGoalChange(Number(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                />
             </div>
-            <div className="space-y-4">
-              <input
-                type="range" min="5" max="100" step="5"
-                value={dailyGoal || 20}
-                onChange={handleDailyOrderChange}
-                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-yellow-500"
-              />
-              <div className="flex justify-between text-[9px] font-black uppercase text-zinc-500 italic tracking-widest">
-                <span>Min: 5</span>
-                <span>Max: 100</span>
-              </div>
-            </div>
+            <p className="text-[9px] text-zinc-500 font-bold uppercase mt-6 italic">Manager-controlled target for floor efficiency</p>
           </div>
 
-          {/* SECTION B: MONTHLY REVENUE GOAL */}
-          <div className={`p-6 md:p-8 rounded-[2.5rem] border transition-all ${
-            isDark ? 'bg-zinc-900 border-white/5 shadow-2xl' : 'bg-white border-black/5 shadow-xl'
-          }`}>
-            <div className="flex justify-between items-center mb-6">
+          {/* MONTHLY REVENUE (READ-ONLY DIRECTOR TARGET) */}
+          <div className={`p-8 rounded-[2.5rem] border relative overflow-hidden flex flex-col ${cardClass}`}>
+            <Lock className="absolute -right-4 -top-4 text-white/5 w-32 h-32 rotate-12" />
+            
+            <div className="flex justify-between items-center mb-6 relative z-10">
               <div className="flex items-center gap-2">
-                <TrendingUp size={14} className="text-emerald-500" />
-                <p className="text-[10px] font-black uppercase text-emerald-500 tracking-widest">
-                  Business Revenue Goal
-                </p>
+                <p className="text-[10px] font-black uppercase text-emerald-500 tracking-widest italic">Revenue Objective</p>
+                <Lock size={10} className="text-zinc-600" />
               </div>
               <input
-                type="month" value={selectedMonth} onChange={handleMonthChange}
-                className="bg-transparent font-black uppercase text-[10px] outline-none border border-zinc-800 rounded-lg px-2 py-1 text-zinc-400 cursor-pointer"
+                type="month" value={selectedMonth} 
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-zinc-800/50 font-black text-[10px] border border-zinc-700 rounded-lg px-2 py-1 outline-none text-zinc-400"
               />
             </div>
 
-            <div className="relative mb-6">
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-500 font-black text-sm ml-1 uppercase">
-                UGX
-              </span>
-              <input
-                type="number" value={revenueGoal}
-                onChange={(e) => setRevenueGoal(e.target.value)}
-                className="w-full bg-transparent border-b-2 border-zinc-800 py-2 pl-10 text-3xl md:text-4xl font-black outline-none focus:border-yellow-500 transition-colors"
-                placeholder="0"
-              />
+            <div className="relative mb-6 z-10">
+              <h3 className="text-4xl md:text-5xl font-black tracking-tighter italic">
+                {fmtUGX(revenueGoal)}
+              </h3>
+              <p className="text-zinc-500 font-black text-[9px] uppercase mt-1 tracking-widest italic">Director's Set Target</p>
             </div>
 
-            <button
-              onClick={handleSaveMonthly}
-              className="w-full py-4 bg-yellow-500 text-black rounded-2xl font-black uppercase italic text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-white transition-all shadow-lg shadow-yellow-500/10 active:scale-95"
-            >
-              <Save size={16} /> Update Monthly Revenue
-            </button>
-          </div>
-        </div>
-
-        {/* ROW 2: DAILY REPORT DOWNLOADER */}
-        <div className={`p-6 md:p-8 rounded-[2.5rem] border transition-all ${
-          isDark ? 'bg-zinc-900 border-white/5 shadow-2xl' : 'bg-white border-black/5 shadow-xl'
-        }`}>
-
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-500 shrink-0">
-                <FileText size={18} />
+            {/* PROGRESS BAR SECTION */}
+            <div className="mt-auto space-y-3 relative z-10">
+              <div className="flex justify-between items-end">
+                <span className="text-[10px] font-black uppercase text-zinc-400">Monthly Completion</span>
+                <span className="text-xl font-black italic text-emerald-500">{progressPercent}%</span>
               </div>
-              <div>
-                <p className="text-[10px] font-black uppercase text-yellow-500 tracking-widest">Daily Report</p>
-                <h2 className="text-base md:text-lg font-black italic uppercase tracking-tight">
-                  Export Transactions
-                </h2>
-              </div>
-            </div>
-
-            {/* Date Picker */}
-            <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border shrink-0 ${
-              isDark ? 'bg-black/40 border-white/5' : 'bg-zinc-50 border-black/10'
-            }`}>
-              <Calendar className="text-yellow-500 shrink-0" size={16} />
-              <input
-                type="date" value={reportDate}
-                onChange={(e) => setReportDate(e.target.value)}
-                className="bg-transparent font-black text-xs uppercase outline-none text-zinc-500 focus:text-yellow-500 transition-colors cursor-pointer"
-              />
-            </div>
-          </div>
-
-          {/* Live Summary Preview */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-            <ReportStatBox label="Transactions" value={reportData.totalTransactions} color="text-white" isDark={isDark} />
-            <ReportStatBox label="Total Revenue" value={`UGX ${reportData.totalRevenue.toLocaleString()}`} color="text-yellow-500" isDark={isDark} />
-            <ReportStatBox label="Cash" value={`UGX ${reportData.totalCash.toLocaleString()}`} color="text-emerald-500" isDark={isDark} />
-            <ReportStatBox label="Momo" value={`UGX ${reportData.totalMomo.toLocaleString()}`} color="text-yellow-400" isDark={isDark} />
-            <ReportStatBox label="Card" value={`UGX ${reportData.totalCard.toLocaleString()}`} color="text-blue-500" isDark={isDark} />
-          </div>
-
-          {/* Progress Bar toward monthly goal */}
-          {monthTarget.revenue > 0 && (
-            <div className={`rounded-2xl border p-4 mb-6 ${
-              isDark ? 'bg-black/30 border-white/5' : 'bg-zinc-50 border-black/5'
-            }`}>
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">
-                  Monthly Progress — {currentMonthKey}
-                </p>
-                <p className={`text-[9px] font-black uppercase tracking-widest ${
-                  Number(progressPercent) >= 100 ? 'text-emerald-500' : 'text-yellow-500'
-                }`}>
-                  {progressPercent}%
-                </p>
-              </div>
-              <div className={`w-full h-2 rounded-full overflow-hidden ${
-                isDark ? 'bg-zinc-800' : 'bg-zinc-200'
-              }`}>
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${
-                    Number(progressPercent) >= 100 ? 'bg-emerald-500' : 'bg-yellow-500'
-                  }`}
+              <div className="w-full h-2.5 bg-black/40 rounded-full border border-white/5 overflow-hidden">
+                <div 
+                  className="h-full bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all duration-1000"
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>
-              <div className="flex justify-between mt-1.5">
-                <p className="text-[8px] text-zinc-600 font-bold uppercase">
-                  UGX {reportData.totalRevenue.toLocaleString()} today
-                </p>
-                <p className="text-[8px] text-zinc-600 font-bold uppercase">
-                  Goal: UGX {monthTarget.revenue.toLocaleString()}
-                </p>
+              <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-zinc-600">
+                <span>Earned: {fmtUGX(monthlyActualRevenue)}</span>
+                {Number(progressPercent) >= 100 && <span className="text-emerald-500 flex items-center gap-1"><CheckCircle2 size={10}/> GOAL MET</span>}
               </div>
             </div>
-          )}
+          </div>
+        </div>
 
-          {/* Download Button */}
+        {/* EXPORT SECTION */}
+        <div className={`p-8 rounded-[3rem] border ${cardClass}`}>
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6 mb-8">
+            <div className="flex items-center gap-4">
+              <div className="p-4 bg-yellow-500/10 rounded-2xl text-yellow-500"><FileText /></div>
+              <div>
+                <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Reports</p>
+                <h2 className="text-xl font-black italic uppercase">Export Transactions</h2>
+              </div>
+            </div>
+            <input
+              type="date" value={reportDate}
+              onChange={(e) => setReportDate(e.target.value)}
+              className="px-4 py-3 rounded-xl font-black text-xs uppercase bg-black/40 border border-zinc-800 outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+            <StatBox label="Orders" value={reportData.totalTransactions} color="text-white" isDark={isDark} />
+            <StatBox label="Revenue Today" value={fmtUGX(reportData.totalRevenue)} color="text-yellow-500" isDark={isDark} />
+            <StatBox label="Cash" value={fmtUGX(reportData.totalCash)} color="text-emerald-500" isDark={isDark} />
+            <StatBox label="Mobile Money" value={fmtUGX(reportData.totalMomo)} color="text-yellow-400" isDark={isDark} />
+            <StatBox label="Card/POS" value={fmtUGX(reportData.totalCard)} color="text-blue-400" isDark={isDark} />
+          </div>
+
           <button
             onClick={handleDownloadReport}
             disabled={reportData.totalTransactions === 0}
-            className="w-full py-4 rounded-2xl font-black uppercase italic text-xs tracking-widest flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 bg-yellow-500 text-black hover:bg-white shadow-yellow-500/10 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
+            className="w-full py-5 bg-white text-black rounded-2xl font-black uppercase italic text-xs flex items-center justify-center gap-3 hover:bg-yellow-500 transition-all disabled:opacity-20 shadow-xl"
           >
-            <Download size={16} />
-            {reportData.totalTransactions === 0
-              ? `No Data for ${reportDate}`
-              : `Download Report — ${reportData.totalTransactions} Orders`
-            }
+            <Download size={18} /> {reportData.totalTransactions === 0 ? "No Data Available" : "Download Daily CSV"}
           </button>
         </div>
-
-        {/* ROW 3: BOTTOM SUMMARY */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <SummaryBox
-            label="Current Active Staff"
-            value={`${staffList.length} Personnel`}
-            isDark={isDark}
-          />
-          <SummaryBox
-            label="Target Sales / Day"
-            value={`UGX ${Math.round(revenueGoal / 30).toLocaleString()}`}
-            valueColor="text-emerald-500"
-            isDark={isDark}
-          />
-          <SummaryBox
-            label="System Status"
-            value="CLOUD SYNC ACTIVE"
-            valueColor="text-yellow-500"
-            isDark={isDark}
-          />
-        </div>
-
       </div>
     </div>
   );
 }
 
-function ReportStatBox({ label, value, color, isDark }) {
+function StatBox({ label, value, color, isDark }) {
   return (
-    <div className={`p-4 rounded-2xl border text-center ${
-      isDark ? 'bg-black/30 border-white/5' : 'bg-zinc-50 border-black/5'
-    }`}>
-      <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1">{label}</p>
+    <div className={`p-4 rounded-2xl border ${isDark ? 'bg-black/40 border-white/5' : 'bg-zinc-50 border-black/5'}`}>
+      <p className="text-[8px] font-black text-zinc-500 uppercase mb-1 tracking-widest">{label}</p>
       <p className={`text-sm font-black italic truncate ${color}`}>{value}</p>
-    </div>
-  );
-}
-
-function SummaryBox({ label, value, valueColor = "text-white", isDark }) {
-  return (
-    <div className={`p-6 rounded-[2rem] border ${
-      isDark ? 'bg-zinc-900/40 border-white/5' : 'bg-white border-black/5'
-    }`}>
-      <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">{label}</p>
-      <p className={`text-xl font-black italic ${valueColor}`}>{value}</p>
     </div>
   );
 }

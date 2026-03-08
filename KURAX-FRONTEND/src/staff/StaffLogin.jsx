@@ -44,7 +44,7 @@ const StaffLogin = () => {
         // ✅ FIX 2: Immediately update context so all components get the user
         setCurrentUser(data.user);
 
-        const role = data.user.role.toUpperCase();
+        const role = data.user.role.toUpperCase().trim();
         console.log('👤 User role:', role);
         console.log('🚀 Navigating to dashboard...');
 
