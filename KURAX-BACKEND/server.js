@@ -13,6 +13,7 @@ import siteVisits from './routes/siteVisits.js';
 import managerRoutes from './routes/managerRoutes.js';
 import overviewRoutes from './routes/overviewRoutes.js';
 import weeklyRevenueRoutes from "./routes/weeklyRevenueRoutes.js";
+import sendToCashierRoute from "./routes/sendToCashierRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -61,6 +62,7 @@ app.use('/api/events', eventRoutes);
 app.use('/api/manager', managerRoutes);
 app.use('/api/overview', overviewRoutes);
 app.use("/api/overview", weeklyRevenueRoutes);
+app.use("/api/orders", sendToCashierRoute);
 
 // 4. DATABASE VERIFICATION
 const verifyDB = async () => {
