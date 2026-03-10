@@ -10,26 +10,11 @@ const router = express.Router();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/orders/send-to-cashier
-//
-// Each call creates ONE independent row in cashier_queue.
-// Pilao (Cash, 25000) and Chicken (Card, 45000) from the same table become
-// two separate rows — each with their own method + amount — so confirming
-// one never overwrites the other's method on the orders row.
-// Cashier totals are always read from cashier_queue confirmed rows, never
-// from orders.payment_method.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/send-to-cashier", async (req, res) => {
   const {
-    order_ids,    // integer[] — DB order row ids this payment covers
-    table_name,
-    label,        // human-readable display: "Pilao" or "Full Table · T-04"
-    method,       // "Cash" | "Card" | "Momo-MTN" | "Momo-Airtel" | "Credit"
-    amount,
-    is_item  = false,
-    item,         // { name, price, quantity } for per-item payments
-    credit_info,  // { name, phone, pay_by } for credit payments
-    requested_by,
-    staff_id,
+    order_ids, table_name, label, method, amount,
+    is_item = false, item, credit_info, requested_by, staff_id,
   } = req.body;
 
   if (!method || amount === undefined || amount === null) {
@@ -47,11 +32,11 @@ router.post("/send-to-cashier", async (req, res) => {
       [
         order_ids    || [],
         table_name   || null,
-        label        || null,                                    // human label for cashier display
+        label        || null,
         method,
         Number(amount),
         is_item,
-        item?.name   || (is_item ? "Unknown Item" : "Full Table"), // item_name fallback
+        item?.name   || (is_item ? "Unknown Item" : "Full Table"),
         requested_by || null,
         staff_id     || null,
         credit_info?.name   || null,
@@ -60,7 +45,6 @@ router.post("/send-to-cashier", async (req, res) => {
       ]
     );
 
-    // Flag the order rows so the waiter card shows "Sent to Cashier"
     if (order_ids?.length) {
       await pool.query(
         `UPDATE orders SET sent_to_cashier = true WHERE id = ANY($1::int[])`,
@@ -77,13 +61,14 @@ router.post("/send-to-cashier", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/orders/cashier-queue
-// Returns all Pending rows — cashier polls this every 8 seconds.
+// Returns Pending rows (including PendingManagerApproval so cashier can track
+// credit requests they've forwarded to the manager).
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/cashier-queue", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM cashier_queue
-       WHERE status = 'Pending'
+       WHERE status IN ('Pending','PendingManagerApproval')
        ORDER BY created_at ASC`
     );
     res.json(result.rows);
@@ -94,34 +79,71 @@ router.get("/cashier-queue", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/orders/cashier-queue/:id/request-approval
+//
+// Cashier clicks "Request Approval" on a Credit row.
+// Transitions: Pending → PendingManagerApproval
+// The row stays visible in the cashier queue (read-only) so they can see
+// it was forwarded. The manager sees it via GET /credit-approvals.
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch("/cashier-queue/:id/request-approval", async (req, res) => {
+  const { id }           = req.params;
+  const { requested_by } = req.body; // cashier name for the audit trail
+
+  try {
+    const qRes = await pool.query(
+      `SELECT * FROM cashier_queue WHERE id = $1`, [id]
+    );
+    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
+    const q = qRes.rows[0];
+
+    if (q.method !== "Credit") {
+      return res.status(400).json({ error: "Only Credit queue items need manager approval" });
+    }
+    if (q.status !== "Pending") {
+      return res.status(400).json({ error: `Already in status: ${q.status}` });
+    }
+
+    await pool.query(
+      `UPDATE cashier_queue
+       SET status = 'PendingManagerApproval',
+           confirmed_by = $1        -- reusing column as "forwarded_by" for audit
+       WHERE id = $2`,
+      [requested_by || "Cashier", id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("request-approval failed:", err);
+    res.status(500).json({ error: "Failed to request approval" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/orders/cashier-queue/:id/confirm
 //
-// TOTALS DESIGN:
-//   Cash/Card/MTN/Airtel totals on the cashier dashboard come from
-//   cashier_queue rows (status='Confirmed', confirmed today).
-//   Each row has its OWN method column — Pilao=Cash and Chicken=Card are
-//   separate rows, so their totals never collide. The orders.payment_method
-//   column is only written for full-table payments (is_item=false) and is
-//   used for order history only, not for real-time totals.
+// Only for Cash / Card / Momo rows. Credit rows now go through
+// request-approval → credit-approvals/:id/approve instead.
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch("/cashier-queue/:id/confirm", async (req, res) => {
   const { id }                           = req.params;
   const { confirmed_by, transaction_id } = req.body;
 
   try {
-    // 1. Fetch the queue row
     const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
-    if (!qRes.rows.length) {
-      return res.status(404).json({ error: "Queue item not found" });
-    }
+    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
     const q = qRes.rows[0];
 
-    // 2. Enforce transaction ID for Momo payments
+    if (q.method === "Credit") {
+      return res.status(400).json({
+        error: "Credit payments require manager approval — use Request Approval instead"
+      });
+    }
+
     if ((q.method === "Momo-MTN" || q.method === "Momo-Airtel") && !transaction_id) {
       return res.status(400).json({ error: "Transaction ID is required for Momo payments" });
     }
 
-    // 3. Mark this queue row as Confirmed — this is what drives cashier totals
     await pool.query(
       `UPDATE cashier_queue
        SET status         = 'Confirmed',
@@ -132,39 +154,8 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
       [confirmed_by || "Cashier", transaction_id || null, id]
     );
 
-    // 4. Update source orders
-    if (q.method === "Credit") {
-      // ── Credit payment ────────────────────────────────────────────────────
-      // Record in the credits ledger for the cashier to track.
-      await pool.query(
-        `INSERT INTO credits
-           (order_ids, table_name, amount, client_name, client_phone, pay_by,
-            approved_by, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,
-        [
-          q.order_ids,
-          q.table_name,
-          q.amount,
-          q.credit_name   || null,
-          q.credit_phone  || null,
-          q.credit_pay_by || null,
-          confirmed_by    || "Cashier",
-        ]
-      );
-      // Mark the order(s) as Credit status
-      if (q.order_ids?.length) {
-        await pool.query(
-          `UPDATE orders
-           SET status = 'Credit', payment_method = 'Credit', sent_to_cashier = false
-           WHERE id = ANY($1::int[])`,
-          [q.order_ids]
-        );
-      }
-
-    } else if (q.is_item) {
-      // ── Per-item payment (Cash / Card / Momo) ─────────────────────────────
-      // Step 1: Release the sent_to_cashier lock on this order row so the
-      //         waiter can send the next item if needed.
+    if (q.is_item) {
+      // Release lock so waiter can pay next item
       if (q.order_ids?.length) {
         await pool.query(
           `UPDATE orders SET sent_to_cashier = false WHERE id = ANY($1::int[])`,
@@ -172,51 +163,30 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
         );
       }
 
-      // Step 2: Check if ALL cashier_queue rows for this table are now settled
-      //         (no Pending rows remain). If so, mark every order for this table
-      //         as Paid — this is what makes the waiter's totals increment and
-      //         removes the card from the Served list.
+      // If no more Pending rows for this table → mark all orders Paid
       if (q.table_name) {
         const pendingCheck = await pool.query(
-          `SELECT COUNT(*) AS cnt
-           FROM cashier_queue
-           WHERE table_name = $1
-             AND status = 'Pending'`,
+          `SELECT COUNT(*) AS cnt FROM cashier_queue
+           WHERE table_name = $1 AND status = 'Pending'`,
           [q.table_name]
         );
-        const stillPending = parseInt(pendingCheck.rows[0].cnt, 10);
-
-        if (stillPending === 0) {
-          // All items for this table are confirmed — mark the orders as Paid.
-          // Use payment_method = 'Mixed' since different items may have been
-          // paid via different methods. Cashier totals still read from
-          // cashier_queue rows (each with the correct individual method),
-          // so this 'Mixed' label is only for order history display.
+        if (parseInt(pendingCheck.rows[0].cnt, 10) === 0) {
           await pool.query(
             `UPDATE orders
-             SET status         = 'Paid',
-                 payment_method = 'Mixed',
-                 paid_at        = NOW(),
-                 sent_to_cashier = false
-             WHERE table_name = $1
-               AND status NOT IN ('Paid', 'Credit', 'Void')`,
+             SET status = 'Paid', payment_method = 'Mixed', paid_at = NOW(), sent_to_cashier = false
+             WHERE table_name = $1 AND status NOT IN ('Paid','Credit','Void')`,
             [q.table_name]
           );
         }
       }
 
     } else {
-      // ── Full-table payment (Cash / Card / Momo) ───────────────────────────
-      // Safe to write payment_method to the order row since we're paying
-      // the whole table in one go with one method.
+      // Full-table payment
       if (q.order_ids?.length) {
         await pool.query(
           `UPDATE orders
-           SET status          = 'Paid',
-               payment_method  = $1,
-               paid_at         = NOW(),
-               sent_to_cashier = false,
-               transaction_id  = $2
+           SET status = 'Paid', payment_method = $1, paid_at = NOW(),
+               sent_to_cashier = false, transaction_id = $2
            WHERE id = ANY($3::int[])`,
           [q.method, transaction_id || null, q.order_ids]
         );
@@ -232,17 +202,15 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/orders/cashier-queue/:id/reject
-// Returns the request to the waiter so they can re-send with a different method.
+// Cashier rejects a non-credit payment → order → back to Served
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch("/cashier-queue/:id/reject", async (req, res) => {
   const { id }     = req.params;
   const { reason } = req.body;
 
   try {
-    // Fetch order_ids BEFORE updating — safer order of operations
     const qRes = await pool.query(
-      `SELECT order_ids FROM cashier_queue WHERE id = $1`,
-      [id]
+      `SELECT order_ids FROM cashier_queue WHERE id = $1`, [id]
     );
     const ids = qRes.rows[0]?.order_ids || [];
 
@@ -253,10 +221,10 @@ router.patch("/cashier-queue/:id/reject", async (req, res) => {
       [reason || "Rejected by cashier", id]
     );
 
-    // Unset sent_to_cashier so waiter's Pay button re-appears
     if (ids.length) {
       await pool.query(
-        `UPDATE orders SET sent_to_cashier = false WHERE id = ANY($1::int[])`,
+        `UPDATE orders SET sent_to_cashier = false, status = 'Served'
+         WHERE id = ANY($1::int[]) AND status NOT IN ('Paid','Credit')`,
         [ids]
       );
     }
@@ -269,11 +237,132 @@ router.patch("/cashier-queue/:id/reject", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/orders/credit-approvals
+//
+// Manager polls this to see credit requests awaiting approval.
+// Returns PendingManagerApproval rows with full client info.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/credit-approvals", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM cashier_queue
+       WHERE status = 'PendingManagerApproval'
+       ORDER BY created_at ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("credit-approvals fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch credit approvals" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/orders/credit-approvals/:id/approve
+//
+// Manager approves → inserts into credits ledger → order status = 'Credit'.
+// The cashier_queue row is marked Confirmed (so it appears in cashier history).
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch("/credit-approvals/:id/approve", async (req, res) => {
+  const { id }          = req.params;
+  const { approved_by } = req.body;
+
+  try {
+    const qRes = await pool.query(
+      `SELECT * FROM cashier_queue WHERE id = $1`, [id]
+    );
+    if (!qRes.rows.length) return res.status(404).json({ error: "Approval request not found" });
+    const q = qRes.rows[0];
+
+    if (q.status !== "PendingManagerApproval") {
+      return res.status(400).json({ error: `Cannot approve — current status: ${q.status}` });
+    }
+
+    // 1. Mark queue row as Confirmed (shows in cashier history as Credit)
+    await pool.query(
+      `UPDATE cashier_queue
+       SET status = 'Confirmed', confirmed_by = $1, confirmed_at = NOW()
+       WHERE id = $2`,
+      [approved_by || "Manager", id]
+    );
+
+    // 2. Insert into credits ledger — this is the running debt record
+    await pool.query(
+      `INSERT INTO credits
+         (order_ids, table_name, amount, client_name, client_phone, pay_by,
+          approved_by, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,
+      [
+        q.order_ids,
+        q.table_name,
+        q.amount,
+        q.credit_name   || null,
+        q.credit_phone  || null,
+        q.credit_pay_by || null,
+        approved_by     || "Manager",
+      ]
+    );
+
+    // 3. Mark source orders as Credit (not Paid yet — client will pay later)
+    if (q.order_ids?.length) {
+      await pool.query(
+        `UPDATE orders
+         SET status = 'Credit', payment_method = 'Credit', sent_to_cashier = false
+         WHERE id = ANY($1::int[])`,
+        [q.order_ids]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("credit approve failed:", err);
+    res.status(500).json({ error: "Failed to approve credit" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/orders/credit-approvals/:id/reject
+//
+// Manager rejects credit request → order back to 'Served' → waiter retries.
+// The cashier_queue row is deleted so it disappears from both queues.
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch("/credit-approvals/:id/reject", async (req, res) => {
+  const { id }       = req.params;
+  const { reason, rejected_by } = req.body;
+
+  try {
+    const qRes = await pool.query(
+      `SELECT * FROM cashier_queue WHERE id = $1`, [id]
+    );
+    if (!qRes.rows.length) return res.status(404).json({ error: "Approval request not found" });
+    const q = qRes.rows[0];
+
+    // 1. Mark queue row as Rejected (stays in history for audit)
+    await pool.query(
+      `UPDATE cashier_queue
+       SET status = 'Rejected', confirmed_by = $2, confirmed_at = NOW()
+       WHERE id = $1`,
+      [id, `${rejected_by || "Manager"}: ${reason || "Credit rejected"}`]
+    );
+
+    // 2. Restore order to Served so waiter can collect payment another way
+    if (q.order_ids?.length) {
+      await pool.query(
+        `UPDATE orders
+         SET status = 'Served', sent_to_cashier = false
+         WHERE id = ANY($1::int[]) AND status NOT IN ('Paid')`,
+        [q.order_ids]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("credit reject failed:", err);
+    res.status(500).json({ error: "Failed to reject credit" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/orders/cashier-history
-// Returns today's confirmed + rejected rows.
-// CRITICAL: uses Africa/Kampala timezone so "today" starts at Kampala midnight,
-// not UTC midnight — without this, the first 3 hours of Kampala morning
-// would be missing from the cashier's totals.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/cashier-history", async (req, res) => {
   try {
@@ -293,7 +382,7 @@ router.get("/cashier-history", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/orders/credits
-// All credit records for the cashier ledger (settled + unsettled).
+// Full credits ledger — used by cashier, manager, accountant, director.
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/credits", async (req, res) => {
   try {
@@ -309,38 +398,68 @@ router.get("/credits", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/orders/credits/:id/settle
-// Cashier marks a credit as settled when the client returns to pay.
+//
+// Cashier OR manager settles a credit when the client returns to pay.
+// Records: method, transaction_id, notes, amount_paid, settled_by.
+// Supports partial payment — if amount_paid < credit.amount, credit stays open
+// with remaining balance; otherwise marked fully paid.
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch("/credits/:id/settle", async (req, res) => {
-  const { id }         = req.params;
-  const { settled_by } = req.body;
+  const { id } = req.params;
+  const {
+    settled_by,
+    settle_method,      // Cash | Card | Momo-MTN | Momo-Airtel
+    settle_transaction, // transaction ID / reference (optional)
+    settle_notes,       // free-text notes
+    amount_paid,        // actual amount client paid (may be partial)
+  } = req.body;
 
   try {
     const cRes = await pool.query(
-      `SELECT order_ids FROM credits WHERE id = $1`,
-      [id]
+      `SELECT * FROM credits WHERE id = $1`, [id]
     );
     if (!cRes.rows.length) return res.status(404).json({ error: "Credit not found" });
-    const ids = cRes.rows[0].order_ids || [];
+    const credit = cRes.rows[0];
+
+    const paid_amount  = Number(amount_paid) || Number(credit.amount);
+    const is_full      = paid_amount >= Number(credit.amount);
 
     await pool.query(
-      `UPDATE credits SET paid = true, paid_at = NOW(), approved_by = $1 WHERE id = $2`,
-      [settled_by || "Cashier", id]
+      `UPDATE credits
+       SET paid             = $1,
+           paid_at          = NOW(),
+           approved_by      = $2,
+           settle_method    = $3,
+           settle_txn       = $4,
+           settle_notes     = $5,
+           amount_paid      = $6
+       WHERE id = $7`,
+      [
+        is_full,
+        settled_by         || "Cashier",
+        settle_method      || null,
+        settle_transaction || null,
+        settle_notes       || null,
+        paid_amount,
+        id,
+      ]
     );
 
-    if (ids.length) {
+    // Only mark orders Paid when fully settled
+    if (is_full && credit.order_ids?.length) {
       await pool.query(
-        `UPDATE orders SET status = 'Paid', paid_at = NOW() WHERE id = ANY($1::int[])`,
-        [ids]
+        `UPDATE orders
+         SET status = 'Paid', payment_method = $1, paid_at = NOW()
+         WHERE id = ANY($2::int[])`,
+        [settle_method || "Cash", credit.order_ids]
       );
     }
 
-    res.json({ success: true });
+    res.json({ success: true, fully_settled: is_full });
   } catch (err) {
     console.error("settle credit failed:", err);
     res.status(500).json({ error: "Failed to settle credit" });
   }
 });
 
-// export MUST be at the very bottom — after ALL routes are registered
 export default router;
