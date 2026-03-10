@@ -25,6 +25,8 @@ pool.on('error', (err, client) => {
     client.release();
   } catch (err) {
     console.error('❌ Database connection failed:', err.message);
+    console.error('❌ Error code:', err.code);           // add this
+    console.error('❌ Error detail:', err);
     console.error(
       '❌ DATABASE_URL is',
       process.env.DATABASE_URL ? 'Set' : 'NOT SET'
