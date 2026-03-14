@@ -32,8 +32,8 @@ export default function HistorySection() {
     })();
   }, [sub]);
 
-  const paginated   = (arr) => arr.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-  const totalPages  = (arr) => Math.max(1, Math.ceil(arr.length / PER_PAGE));
+  const paginated  = (arr) => arr.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const totalPages = (arr) => Math.max(1, Math.ceil(arr.length / PER_PAGE));
 
   const Skeleton = () => (
     <tr>
@@ -60,6 +60,8 @@ export default function HistorySection() {
       </div>
 
       <div className={`${t.card} border rounded-2xl overflow-hidden overflow-x-auto`}>
+
+        {/* ── ORDERS TAB ── */}
         {sub === "ORDERS" ? (
           <>
             <table className="w-full text-left min-w-[480px]">
@@ -77,7 +79,11 @@ export default function HistorySection() {
                       <OrderRow
                         key={order.id}
                         id={`#${order.id}`}
-                        waiter={order.staff_name || order.waiter_name || "—"}
+                        waiter={
+                          (order.staff_name || order.waiter_name)
+                            ? `${order.role || "WAITER"}: ${(order.staff_name || order.waiter_name).toUpperCase()}`
+                            : "—"
+                        }
                         method={order.payment_method || "—"}
                         amount={Number(order.total || 0)}
                         time={order.created_at
@@ -93,12 +99,14 @@ export default function HistorySection() {
               <p className={`text-center py-8 text-[10px] font-black uppercase ${t.subtext}`}>No orders found</p>
             )}
           </>
+
         ) : (
+          /* ── SHIFTS TAB ── */
           <>
             <table className="w-full text-left min-w-[440px]">
               <thead className={dark ? "bg-white/5" : "bg-zinc-50"}>
                 <tr className={`text-[9px] font-black uppercase ${t.subtext}`}>
-                  {["Staff", "Role", "Shift End", "Cash Reported", "Digital Total"].map(h => (
+                  {["Staff", "Role", "Shift End", "Gross Revenue", "Digital Total"].map(h => (
                     <th key={h} className="p-3 md:p-5">{h}</th>
                   ))}
                 </tr>
@@ -108,18 +116,27 @@ export default function HistorySection() {
                   ? [1, 2, 3, 4, 5].map(i => <Skeleton key={i} />)
                   : paginated(shifts).map((shift, i) => (
                       <tr key={shift.id ?? i} className={t.rowHover}>
-                        <td className="p-3 md:p-5">{shift.staff_name || "—"}</td>
-                        <td className={`p-3 md:p-5 ${t.subtext}`}>{shift.role || "—"}</td>
+                        {/* ✅ col 1 — Staff name */}
+                        <td className="p-3 md:p-5">
+                          {shift.staff_name || "—"}
+                        </td>
+                        {/* ✅ col 2 — Role */}
+                        <td className={`p-3 md:p-5 ${t.subtext}`}>
+                          {shift.role || "—"}
+                        </td>
+                        {/* ✅ col 3 — Shift end time */}
                         <td className={`p-3 md:p-5 ${t.subtext}`}>
                           {shift.clock_out
                             ? new Date(shift.clock_out).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                             : "—"}
                         </td>
+                        {/* ✅ col 4 — Gross Revenue (all payment methods) */}
                         <td className="p-3 md:p-5 text-emerald-500">
-                          {Number(shift.total_cash || 0).toLocaleString()}
+                          UGX {Number(shift.gross_total || 0).toLocaleString()}
                         </td>
+                        {/* ✅ col 5 — Digital Total (Momo + Card) */}
                         <td className="p-3 md:p-5 text-blue-500">
-                          {(Number(shift.total_momo || 0) + Number(shift.total_card || 0)).toLocaleString()}
+                          UGX {(Number(shift.total_momo || 0) + Number(shift.total_card || 0)).toLocaleString()}
                         </td>
                       </tr>
                     ))

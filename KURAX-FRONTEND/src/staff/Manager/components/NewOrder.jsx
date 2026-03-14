@@ -113,43 +113,50 @@ export default function NewOrder() {
   };
 
   const handleProcessOrder = async () => {
-    if (!tableName) return alert("Please assign a table name/number.");
-    if (cart.length === 0) return alert("Cart is empty.");
+  if (!tableName) return alert("Please assign a table name/number.");
+  if (cart.length === 0) return alert("Cart is empty.");
 
-    const orderData = {
-      staffId: currentUser?.id || 1,
-       staffRole: currentUser?.role || "MANAGER",
-      tableName: tableName.toUpperCase(),
-      items: cart,
-      total: cartTotal,
-      paymentMethod: "Cash"
-    };
+  // 1. Ensure staffName is derived from your currentUser or fallback
+  const currentStaffName = currentUser?.name || staffName || "Unknown Waiter";
 
-    try {
-      const response = await fetch(`${API_URL}/api/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setOrders(prev => [data, ...prev]);
-        setShowSuccess(true);
-        // Clear User-specific Storage on success
-        setCart([]); 
-        setTableName("");
-        localStorage.removeItem(CART_KEY);
-        localStorage.removeItem(TABLE_KEY);
-      } else {
-        alert(data.error || "Order failed to sync.");
-      }
-    } catch (err) {
-      console.error("Transmission Error:", err);
-      alert("Network error. Check if backend is running.");
-    }
+  const orderData = {
+    staffId: currentUser?.id || 1,
+    staff_name: currentStaffName, // 👈 The backend needs 'staff_name' to log the actor properly
+    staffRole: (currentUser?.role || "WAITER").toUpperCase(),
+    tableName: tableName.trim().toUpperCase(),
+    items: cart,
+    total: cartTotal,
+    paymentMethod: "Cash"
   };
+
+  try {
+    const response = await fetch(`${API_URL}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(orderData),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setOrders(prev => [data, ...prev]);
+      setShowSuccess(true);
+      
+      // Clear specific storage and state
+      setCart([]); 
+      setTableName("");
+      
+      // Use the keys defined in your useMemo/useEffect
+      localStorage.removeItem(CART_KEY);
+      localStorage.removeItem(TABLE_KEY);
+    } else {
+      alert(data.error || "Order failed to sync.");
+    }
+  } catch (err) {
+    console.error("Transmission Error:", err);
+    alert("Network error. Check if backend is running.");
+  }
+};
 
   const activeMenus = useMemo(() => (menus || []).filter(item => {
     const isLive = item.status === 'live' || item.published === true || item.published === 't';

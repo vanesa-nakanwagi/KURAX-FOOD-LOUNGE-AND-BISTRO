@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, BarChart3,
-  History, Target, Bell, Sun, Moon, Menu, X, LogOut,
+  History, Target, Bell, Sun, Moon, Menu, X, LogOut, Bike,
 } from "lucide-react";
 
 // ── Local components ──────────────────────────────────────────────────────────
@@ -14,6 +14,9 @@ import HistorySection                from "./components/HistorySection";
 import CreateStaffModal              from "./components/CreateStaffModal";
 import StaffAnalyticsModal           from "./components/StaffAnalyticsModal";
 import DirectorTargetView            from "./DirectorTargetView";
+import RidersSettings from "./components/RiderSettings";
+import RiderLedger   from "./components/RiderLedger";
+
 
 // ── Shared app context ────────────────────────────────────────────────────────
 import { useData }  from "../../customer/components/context/DataContext";
@@ -24,9 +27,10 @@ import API_URL      from "../../config/api";
 const NAV = [
   { icon: <LayoutDashboard size={18} />, label: "Overview",  tab: "OVERVIEW"  },
   { icon: <Users size={18} />,           label: "Staff",     tab: "STAFF"     },
-  { icon: <BarChart3 size={18} />,       label: "Finances",  tab: "FINANCES"  },
+  { icon: <BarChart3 size={18} />,       label: "Finances & Credits",  tab: "FINANCES"  },
   { icon: <History size={18} />,         label: "History",   tab: "HISTORY"   },
   { icon: <Target size={18} />,          label: "Targets",   tab: "TARGETS"   },
+    { icon: <Bike size={18} />,            label: "Riders",    tab: "RIDERS"    },
 ];
 
 export default function DirectorDashboard() {
@@ -224,6 +228,15 @@ export default function DirectorDashboard() {
 
               {activeTab === "FINANCES" && <FinancesSection />}
               {activeTab === "HISTORY"  && <HistorySection />}
+
+     {activeTab === "RIDERS" && (
+  <div className="animate-in fade-in duration-500 space-y-10">
+    <RiderLedger dark={dark} t={t} />
+    <div className={`border-t pt-8 ${dark ? "border-white/5" : "border-zinc-100"}`}>
+      <RidersSettings dark={dark} t={t} />
+    </div>
+  </div>
+)}
             </div>
             <Footer />
           </main>

@@ -1,282 +1,584 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom"; // For redirection
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useData } from "../../customer/components/context/DataContext";
-import { 
-  Clock, CheckCircle, Coffee, Play, 
+import {
+  Clock, CheckCircle, Coffee, Play,
   AlertCircle, Search, RotateCcw, Trophy, Bean,
-  UserPlus, ClipboardCheck, User, Power
+  UserPlus, Power, X, ShieldAlert
 } from "lucide-react";
 import Footer from "../../customer/components/common/Foooter";
+import API_URL from "../../config/api";
 
+// ─── KAMPALA DATE ─────────────────────────────────────────────────────────────
+function kampalaDateStr(d = new Date()) {
+  return new Date(d.toLocaleString("en-US", { timeZone: "Africa/Nairobi" }))
+    .toISOString().split("T")[0];
+}
+
+// ─── ASSIGN MODAL ────────────────────────────────────────────────────────────
+function AssignModal({ assigningItem, onConfirm, onClose }) {
+  const [name, setName] = useState("");
+  const handleConfirm = () => { if (name.trim()) { onConfirm(name.trim()); setName(""); } };
+
+  return (
+    <div className="fixed inset-0 z-[500] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="bg-zinc-900 border border-white/10 w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3 text-orange-500">
+            <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
+              <UserPlus size={20}/>
+            </div>
+            <div>
+              <h3 className="font-black uppercase italic tracking-tighter text-lg leading-none">Assign Barista</h3>
+              <p className="text-[10px] text-zinc-500 font-bold mt-0.5">{assigningItem.itemName}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-all">
+            <X size={14} className="text-zinc-400"/>
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest ml-1 block">Barista's Name</label>
+          <input
+            autoFocus type="text" placeholder="e.g. Timo" autoComplete="off"
+            value={name} onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleConfirm()}
+            className="w-full bg-black border border-white/10 rounded-2xl py-4 px-6 text-base font-bold text-white outline-none focus:border-orange-500 transition-all placeholder:opacity-20"
+          />
+          <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-3">
+            <ShieldAlert size={14} className="text-amber-400 shrink-0 mt-0.5"/>
+            <p className="text-[10px] text-amber-400/80 font-bold leading-relaxed">
+              This barista will be held accountable for this drink. Their name is permanently recorded with the order.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 pt-1">
+            <button onClick={handleConfirm} disabled={!name.trim()}
+              className="w-full py-4 bg-orange-600 text-white font-black rounded-2xl uppercase italic text-xs active:scale-95 transition-all shadow-lg shadow-orange-600/10 disabled:opacity-40 disabled:cursor-not-allowed">
+              Confirm Assignment
+            </button>
+            <button onClick={onClose} className="w-full py-3 text-zinc-500 font-bold text-[10px] uppercase tracking-widest hover:text-white transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SHIFT SUMMARY MODAL ─────────────────────────────────────────────────────
+function ShiftSummaryModal({ stats, onConfirm, onClose }) {
+  return (
+    <div className="fixed inset-0 z-[400] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 text-white">
+      <div className="bg-zinc-900 border border-white/10 w-full max-w-sm rounded-[3rem] p-8 text-center shadow-2xl">
+        <div className="w-16 h-16 bg-orange-600/10 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Trophy size={32}/>
+        </div>
+        <h2 className="text-xl font-black uppercase italic mb-1">Shift Recap</h2>
+        <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-6 font-bold">End of Barista Shift</p>
+
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="bg-black/40 p-5 rounded-2xl border border-white/5">
+            <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Dockets</p>
+            <p className="text-3xl font-black">{stats.totalOrders}</p>
+          </div>
+          <div className="bg-black/40 p-5 rounded-2xl border border-white/5">
+            <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Cups</p>
+            <p className="text-3xl font-black">{stats.totalBrewed}</p>
+          </div>
+        </div>
+
+        {/* Per-barista breakdown from DB */}
+        {stats.baristas && stats.baristas.length > 0 && (
+          <div className="mb-6 text-left space-y-2">
+            <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-3">Barista Breakdown</p>
+            {stats.baristas.map(b => (
+              <div key={b.barista} className="flex items-center justify-between bg-black/30 px-4 py-2.5 rounded-xl border border-white/5">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-orange-500/10 text-orange-400 flex items-center justify-center text-[9px] font-black">
+                    {b.barista[0]}
+                  </div>
+                  <span className="font-black text-xs text-white uppercase">{b.barista}</span>
+                </div>
+                <span className="text-[10px] font-black text-orange-400">
+                  {b.drinks_made} drink{Number(b.drinks_made) !== 1 ? "s" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <button onClick={onConfirm}
+            className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl uppercase italic text-xs shadow-lg active:scale-95 transition-all">
+            Clear Feed &amp; End Shift
+          </button>
+          <button onClick={onClose} className="w-full py-4 text-zinc-500 font-bold uppercase tracking-widest text-[9px]">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ORDER CARD ───────────────────────────────────────────────────────────────
+function OrderCard({ order, onUpdateStatus, onAssignBarista }) {
+  const minutesAgo  = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
+  const isCompleted = ["Served","Paid","Closed","Credit","Mixed"].includes(order.status);
+  const isReady     = order.status === "Ready";
+  const isPreparing = order.status === "Preparing";
+  const isDelayed   = minutesAgo >= 12 && !isReady && !isCompleted;
+
+  const headerBg = isCompleted ? "bg-zinc-800/60"
+    : isReady   ? "bg-zinc-800"
+    : isDelayed ? "bg-orange-600"
+    : "bg-orange-950";
+
+  return (
+    <div className={`flex flex-col rounded-[2.5rem] border-2 bg-zinc-900 transition-all duration-500 h-[460px] overflow-hidden shadow-xl
+      ${isCompleted ? "opacity-35 grayscale border-transparent"
+        : isReady   ? "opacity-60 grayscale border-transparent"
+        : isDelayed ? "border-orange-600"
+        : "border-white/5"}`}>
+
+      {/* Header */}
+      <div className={`p-5 shrink-0 ${headerBg} text-white`}>
+        <div className="flex justify-between items-start mb-2">
+          <h2 className="text-2xl font-black italic tracking-tighter uppercase leading-none text-white">
+            T-{order.table_name || order.tableName}
+          </h2>
+          {isCompleted ? (
+            <span className="text-[9px] font-black px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 uppercase tracking-widest border border-emerald-500/20">
+              ✓ Collected
+            </span>
+          ) : (
+            <span className={`text-sm font-black italic flex items-center gap-1.5 px-3 py-1 rounded-full
+              ${isDelayed ? "bg-white/20 text-white" : "bg-black/30 text-zinc-300"}`}>
+              <Clock size={12}/> {minutesAgo}m
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-[10px] font-black uppercase text-white/50">
+            {order.staff_name || order.waiterName || "Staff"}
+          </p>
+          {isDelayed && (
+            <span className="ml-auto flex items-center gap-1 text-[9px] font-black text-white/70 uppercase">
+              <AlertCircle size={10}/> Delayed
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Items */}
+      <div className="p-5 flex-grow overflow-y-auto space-y-3 custom-scrollbar">
+        {order.items.map((item, idx) => (
+          <div key={idx} className="border-b border-white/5 pb-3 last:border-0">
+            <div className="flex justify-between items-start gap-3">
+              <div className="flex items-start gap-2 flex-1 min-w-0">
+                <span className="bg-orange-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded leading-none shrink-0 mt-0.5">
+                  {item.quantity}x
+                </span>
+                <div className="min-w-0">
+                  <p className={`font-black text-sm uppercase leading-tight ${isReady || isCompleted ? "line-through text-zinc-500" : "text-white"}`}>
+                    {item.name}
+                  </p>
+                  {item.note && (
+                    <p className="text-[10px] text-orange-400 italic font-bold mt-1 bg-orange-600/5 p-1.5 rounded-lg">
+                      "{item.note}"
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Barista badge */}
+              <div className="shrink-0">
+                {item.assignedTo ? (
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="bg-emerald-500/10 text-emerald-400 text-[8px] font-black px-2 py-1 rounded-full border border-emerald-500/20 whitespace-nowrap">
+                      ☕ {item.assignedTo}
+                    </span>
+                    {item.assignedAt && (
+                      <span className="text-[7px] text-zinc-600 font-bold">
+                        {new Date(item.assignedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
+                  </div>
+                ) : !isCompleted ? (
+                  <button
+                    onClick={() => onAssignBarista(order.id, order._ticketId, idx, item.name)}
+                    className="bg-zinc-800 text-zinc-400 text-[8px] font-black px-2 py-1 rounded-full border border-white/5 hover:bg-orange-600 hover:text-white transition-all whitespace-nowrap">
+                    + Barista
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer actions */}
+      <div className="p-4 bg-black/20 border-t border-white/5 shrink-0">
+        {isCompleted ? (
+          <div className="py-3 flex items-center justify-center gap-2">
+            <CheckCircle size={13} className="text-emerald-500"/>
+            <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Served &amp; Collected</p>
+          </div>
+        ) : order.status === "Pending" ? (
+          <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
+            className="w-full py-4 bg-orange-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 text-[11px] uppercase italic active:scale-95 transition-all shadow-lg shadow-orange-600/10">
+            <Bean size={16}/> Start Brewing
+          </button>
+        ) : isPreparing ? (
+          <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Ready")}
+            className="w-full py-4 bg-emerald-500 text-black font-black rounded-2xl flex items-center justify-center gap-2 text-[11px] uppercase italic active:scale-95 transition-all shadow-lg shadow-emerald-500/10">
+            <CheckCircle size={16}/> Order Ready — Notify Waiter
+          </button>
+        ) : isReady ? (
+          <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
+            className="w-full py-4 bg-zinc-800 text-zinc-400 font-black rounded-2xl flex items-center justify-center gap-2 text-[11px] uppercase italic active:scale-95 transition-all">
+            <RotateCcw size={14}/> Return to Queue
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN ────────────────────────────────────────────────────────────────────
 export default function BaristaDisplay() {
-  const { orders = [], setOrders } = useData() || {};
+  const { orders = [], setOrders, refreshData } = useData() || {};
   const navigate = useNavigate();
 
-  // --- AUTH & SESSION LOGIC ---
-  const savedUser = useMemo(() => JSON.parse(localStorage.getItem('user') || '{}'), []);
-  const baristaName = savedUser.name || "Head Barista";
-  const baristaInitials = baristaName.split(' ').map(n => n[0]).join('').toUpperCase();
+  const savedUser = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); }
+    catch { return {}; }
+  }, []);
+  const baristaName     = savedUser.name || "Head Barista";
+  const baristaInitials = baristaName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+  const handleLogout    = () => { localStorage.removeItem("kurax_user"); navigate("/staff/login"); };
 
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    navigate('/staff/login');
-  };
+  const [audioEnabled,  setAudioEnabled]  = useState(false);
+  const [searchQuery,   setSearchQuery]   = useState("");
+  const [showSummary,   setShowSummary]   = useState(false);
+  const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalBrewed: 0, baristas: [] });
+  const [assigningItem, setAssigningItem] = useState(null);
 
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showSummary, setShowSummary] = useState(false);
-  const [shiftStats, setShiftStats] = useState({ totalBrewed: 0, totalOrders: 0 });
-  const [assigningItem, setAssigningItem] = useState(null); 
+  // ── Ticket map: orderId → barista_tickets.id (ref — no render needed) ──────
+  const ticketMapRef = useRef({});
 
-  // --- FILTER LOGIC (UNCHANGED) ---
-  const filteredOrders = (orders || [])
-    .filter(order => {
-      const isActiveStatus = ["Pending", "Preparing", "Ready"].includes(order.status);
-      const notCleared = !order.clearedByBarista;
-      const hasBaristaItems = order.items.some(item => 
-        item.station?.toLowerCase() === "barista" || item.station?.toLowerCase() === "coffee"
-      );
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch = !searchQuery.trim() || 
-                           order.tableName?.toLowerCase().includes(searchLower) || 
-                           order.id.toLowerCase().includes(searchLower);
-      
-      return isActiveStatus && notCleared && hasBaristaItems && matchesSearch;
-    })
-    .map(order => ({
-      ...order,
-      items: order.items.filter(item => 
-        item.station?.toLowerCase() === "barista" || item.station?.toLowerCase() === "coffee"
-      )
-    }))
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  // ── Seen order IDs — stored as plain number[] so React diffs it correctly ───
+  // A Set in state looks like the same reference to useMemo even after mutation.
+  // A plain array triggers proper re-renders and can safely go in deps.
+  const [seenOrderIds, setSeenOrderIds] = useState([]);
 
-  const prevOrdersLength = useRef(orders.length);
-
-  const playChime = () => {
-    const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/1062/1062-preview.mp3");
-    audio.play().catch(() => setAudioEnabled(false));
-  };
-
+  // ── On mount: load today's barista tickets from DB ────────────────────────
+  // Fills ticketMapRef (orderId → ticketId) AND populates seenOrderIds so
+  // completed cards (Served / Paid) survive a full page refresh.
   useEffect(() => {
-    if (orders.length > prevOrdersLength.current) {
-      const latestOrder = orders[orders.length - 1];
-      const hasNewCoffee = latestOrder?.items.some(item => 
-        item.station?.toLowerCase() === "barista" || item.station?.toLowerCase() === "coffee"
-      );
-      if (latestOrder?.status === "Pending" && hasNewCoffee) playChime();
-    }
-    prevOrdersLength.current = orders.length;
-  }, [orders]);
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/barista/tickets?date=${kampalaDateStr()}`);
+        if (res.ok) {
+          const rows = await res.json();
+          const ids = [];
+          rows.forEach(t => {
+            if (t.order_id) {
+              ticketMapRef.current[t.order_id] = t.id;
+              ids.push(Number(t.order_id));
+            }
+          });
+          if (ids.length > 0) setSeenOrderIds(ids);
+        }
+      } catch (e) { console.error("Load barista tickets:", e); }
+    })();
+  }, []);
 
-  // --- ASSIGN BARISTA LOGIC ---
-  const handleAssignBarista = (baristaNameInput) => {
-    if (!baristaNameInput) return;
-    const { orderId, itemIdx } = assigningItem;
-    
-    setOrders(prev => prev.map(order => {
-      if (order.id === orderId) {
-        const newItems = [...order.items];
-        newItems[itemIdx] = { 
-          ...newItems[itemIdx], 
-          assignedTo: baristaNameInput,
-          assignedAt: new Date().toISOString()
-        };
-        return { ...order, items: newItems };
+  // ── Filter helpers ────────────────────────────────────────────────────────
+  const isBaristaItem = item =>
+    item.station?.toLowerCase() === "barista" ||
+    item.station?.toLowerCase() === "coffee"  ||
+    item.category?.toLowerCase()?.includes("coffee") ||
+    item.category?.toLowerCase()?.includes("barista");
+
+  const filteredOrders = useMemo(() => {
+    const active    = ["Pending", "Preparing", "Ready"];
+    const completed = ["Served", "Paid", "Closed", "Credit", "Mixed"];
+    const seenSet   = new Set(seenOrderIds); // convert array → Set inside memo for O(1) lookup
+
+    return (orders || [])
+      .filter(order => {
+        if (order.clearedByBarista) return false;
+        if (!(order.items || []).some(isBaristaItem)) return false;
+
+        // Always show orders currently active at the barista station
+        if (active.includes(order.status)) return true;
+
+        // Show completed orders that were already logged as barista tickets today
+        if (completed.includes(order.status) && seenSet.has(Number(order.id))) return true;
+
+        return false;
+      })
+      .filter(order => {
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (order.table_name || order.tableName || "").toLowerCase().includes(q) ||
+               String(order.id).includes(q);
+      })
+      .map(order => ({
+        ...order,
+        _ticketId: ticketMapRef.current[order.id] || null,
+        items: (order.items || []).filter(isBaristaItem),
+      }))
+      .sort((a, b) => {
+        const p  = { Pending: 0, Preparing: 1, Ready: 2 };
+        const aP = p[a.status] ?? 10;
+        const bP = p[b.status] ?? 10;
+        if (aP !== bP) return aP - bP;
+        return new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at);
+      });
+  }, [orders, searchQuery, seenOrderIds]); // ← seenOrderIds NOW in deps
+
+  // ── Auto-upsert: every new barista order gets a ticket row in the DB ──────
+  const upsertedRef = useRef(new Set());
+  useEffect(() => {
+    filteredOrders.forEach(async order => {
+      if (upsertedRef.current.has(order.id)) return;
+      upsertedRef.current.add(order.id);
+      try {
+        const res = await fetch(`${API_URL}/api/barista/tickets`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            order_id:   order.id,
+            table_name: order.table_name || order.tableName || "WALK-IN",
+            staff_name: order.staff_name || order.waiterName || null,
+            items:      order.items,
+            total:      order.total || 0,
+            status:     order.status,
+          }),
+        });
+        if (res.ok) {
+          const ticket = await res.json();
+          ticketMapRef.current[order.id] = ticket.id;
+          // Add to seenOrderIds so this order stays visible after Served/Paid
+          setSeenOrderIds(prev =>
+            prev.includes(Number(order.id)) ? prev : [...prev, Number(order.id)]
+          );
+        }
+      } catch (e) { console.error("Upsert barista ticket:", e); }
+    });
+  }, [filteredOrders]);
+
+  // ── Audio ─────────────────────────────────────────────────────────────────
+  const prevLen = useRef(orders.length);
+  const playChime = () => {
+    new Audio("https://assets.mixkit.co/active_storage/sfx/1062/1062-preview.mp3")
+      .play().catch(() => setAudioEnabled(false));
+  };
+  useEffect(() => {
+    if (orders.length > prevLen.current) {
+      const latest = orders[orders.length - 1];
+      const hasCoffee = (latest?.items || []).some(isBaristaItem);
+      if (latest?.status === "Pending" && hasCoffee && audioEnabled) playChime();
+    }
+    prevLen.current = orders.length;
+  }, [orders, audioEnabled]);
+
+  // ── Update status ─────────────────────────────────────────────────────────
+  const updateStatus = useCallback(async (orderId, ticketId, newStatus) => {
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    try {
+      await fetch(`${API_URL}/api/orders/${orderId}/status`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const tId = ticketId || ticketMapRef.current[orderId];
+      if (tId) {
+        await fetch(`${API_URL}/api/barista/tickets/${tId}/status`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        });
       }
-      return order;
+    } catch (err) {
+      console.error("Status update failed:", err);
+      refreshData?.();
+    }
+  }, [setOrders, refreshData]);
+
+  // ── Assign barista ────────────────────────────────────────────────────────
+  const handleAssignBarista = useCallback(async (nameInput) => {
+    if (!nameInput || !assigningItem) return;
+    const { orderId, ticketId, itemIdx, itemName } = assigningItem;
+    const assignedAt = new Date().toISOString();
+
+    setOrders(prev => prev.map(order => {
+      if (order.id !== orderId) return order;
+      const newItems = [...order.items];
+      newItems[itemIdx] = { ...newItems[itemIdx], assignedTo: nameInput, assignedAt };
+      return { ...order, items: newItems };
     }));
     setAssigningItem(null);
-  };
 
-  const updateStatus = (id, newStatus) => {
-    setOrders(prev => prev.map(order => 
-      order.id === id ? { ...order, status: newStatus } : order
-    ));
-  };
+    try {
+      const currentOrder = orders.find(o => o.id === orderId);
+      if (!currentOrder) return;
+      const updatedItems = currentOrder.items.map((item, i) =>
+        i === itemIdx ? { ...item, assignedTo: nameInput, assignedAt } : item
+      );
 
-  const handleShiftReset = () => {
-    const cupCount = filteredOrders.reduce((sum, o) => sum + o.items.length, 0);
-    setShiftStats({ totalOrders: filteredOrders.length, totalBrewed: cupCount });
+      // Update main orders table
+      await fetch(`${API_URL}/api/orders/${orderId}/assign-chef`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: updatedItems, item_name: itemName, assigned_to: nameInput, assigned_at: assignedAt, assigned_by: baristaName }),
+      });
+
+      // Update barista ticket (logs to barista_assignments)
+      const tId = ticketId || ticketMapRef.current[orderId];
+      if (tId) {
+        await fetch(`${API_URL}/api/barista/tickets/${tId}/assign-barista`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: updatedItems, item_name: itemName, assigned_to: nameInput, assigned_at: assignedAt, assigned_by: baristaName }),
+        });
+      }
+    } catch (err) { console.error("Assign barista failed:", err); }
+  }, [assigningItem, orders, setOrders, baristaName]);
+
+  // ── End Shift ─────────────────────────────────────────────────────────────
+  const handleShiftReset = async () => {
+    let baristas = [];
+    try {
+      const res = await fetch(`${API_URL}/api/barista/tickets/summary?date=${kampalaDateStr()}`);
+      if (res.ok) { const d = await res.json(); baristas = d.baristas || []; }
+    } catch {}
+    // Count ALL orders seen this session (active + completed)
+    const cupCount = filteredOrders.reduce((s, o) => s + o.items.length, 0);
+    setShiftStats({ totalOrders: filteredOrders.length, totalBrewed: cupCount, baristas });
     setShowSummary(true);
   };
 
-  const confirmEndShift = () => {
+  const confirmEndShift = async () => {
+    try {
+      await fetch(`${API_URL}/api/barista/clear-shift`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cleared_by: baristaName }),
+      });
+    } catch (err) { console.error("Clear barista shift:", err); }
+
     setOrders(prev => prev.map(order => {
-      const isVisibleHere = ["Pending", "Preparing", "Ready"].includes(order.status) && 
-                            order.items.some(i => i.station?.toLowerCase() === "barista" || i.station?.toLowerCase() === "coffee");
-      if (isVisibleHere) return { ...order, clearedByBarista: true };
-      return order;
+      const isActive = ["Pending","Preparing","Ready"].includes(order.status) &&
+        (order.items || []).some(isBaristaItem);
+      return isActive ? { ...order, clearedByBarista: true } : order;
     }));
+
     setShowSummary(false);
+    upsertedRef.current.clear();
+    setSeenOrderIds([]); // reset so next shift starts with a blank feed
   };
 
+  const pendingCount   = filteredOrders.filter(o => o.status === "Pending").length;
+  const preparingCount = filteredOrders.filter(o => o.status === "Preparing").length;
+  const readyCount     = filteredOrders.filter(o => o.status === "Ready").length;
+
   return (
-    <div className="h-screen bg-zinc-950 p-4 md:p-6 overflow-hidden flex flex-col font-[Outfit] relative text-white">
-      
-      {/* Audio Permission Overlay */}
+    <div className="h-screen bg-zinc-950 p-3 md:p-5 overflow-hidden flex flex-col font-[Outfit] relative text-white">
+
+      {/* ── AUDIO GATE ── */}
       {!audioEnabled && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center">
-          <div>
-            <Coffee size={60} className="text-orange-500 mx-auto mb-6 animate-pulse" />
-            <button 
-              onClick={() => { setAudioEnabled(true); playChime(); }}
-              className="bg-orange-600 text-white px-12 py-5 rounded-2xl font-black uppercase italic hover:scale-105 transition-transform flex items-center gap-3 shadow-2xl shadow-orange-600/20 active:scale-95"
-            >
-              <Play fill="currentColor" size={20} /> Open Barista Station
+          <div className="space-y-6">
+            <div className="w-24 h-24 bg-orange-600/10 rounded-full flex items-center justify-center mx-auto">
+              <Coffee size={48} className="text-orange-500 animate-pulse"/>
+            </div>
+            <div>
+              <h2 className="text-2xl font-black uppercase italic tracking-tighter text-white">Barista Station</h2>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mt-1">Kurax Lounge &amp; Bistro</p>
+            </div>
+            <button onClick={() => { setAudioEnabled(true); playChime(); }}
+              className="bg-orange-600 text-white px-12 py-5 rounded-2xl font-black uppercase italic hover:scale-105 transition-transform flex items-center gap-3 mx-auto shadow-2xl shadow-orange-600/20 active:scale-95">
+              <Play fill="currentColor" size={20}/> Open Barista Station
             </button>
           </div>
         </div>
       )}
 
-      {/* BARISTA ASSIGNMENT MODAL */}
       {assigningItem && (
-        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-white/10 w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center text-orange-500">
-                <UserPlus size={20} />
-              </div>
-              <h3 className="font-black uppercase italic tracking-tighter text-lg">Assign Barista</h3>
-            </div>
-            
-            <input 
-              autoFocus id="baristaInput" type="text" placeholder="e.g. Timo" autoComplete="off"
-              onKeyDown={(e) => e.key === 'Enter' && handleAssignBarista(e.target.value)}
-              className="w-full bg-black border border-white/10 rounded-xl py-4 px-5 text-sm font-bold text-white outline-none focus:border-orange-500 mb-4"
-            />
-
-            <div className="flex flex-col gap-2">
-                <button onClick={() => { const val = document.getElementById('baristaInput').value; if(val) handleAssignBarista(val); }} className="w-full py-4 bg-orange-600 text-white font-black rounded-xl uppercase italic text-xs shadow-lg active:scale-95 transition-all">Confirm Assignment</button>
-                <button onClick={() => setAssigningItem(null)} className="w-full py-3 text-zinc-500 font-bold text-[10px] uppercase tracking-widest">Cancel</button>
-            </div>
-          </div>
-        </div>
+        <AssignModal assigningItem={assigningItem} onConfirm={handleAssignBarista} onClose={() => setAssigningItem(null)}/>
+      )}
+      {showSummary && (
+        <ShiftSummaryModal stats={shiftStats} onConfirm={confirmEndShift} onClose={() => setShowSummary(false)}/>
       )}
 
-      {/* HEADER: Profile & Session Info */}
-      <header className="flex flex-col lg:flex-row justify-between items-center mb-6 bg-zinc-900 p-4 lg:p-5 rounded-[2.5rem] border border-white/5 shadow-2xl gap-4">
+      {/* ── HEADER ── */}
+      <header className="flex flex-col lg:flex-row justify-between items-center mb-4 bg-zinc-900 p-4 lg:px-6 rounded-[2rem] border border-white/5 shadow-2xl gap-3 shrink-0">
         <div className="flex items-center gap-4 w-full lg:w-auto">
-          <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white shadow-lg font-black text-xl border-b-4 border-orange-800">
-            {baristaInitials[0]}
+          <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black text-lg border-b-4 border-orange-800 shrink-0">
+            {baristaInitials}
           </div>
-          <div>
-            <h1 className="text-xl font-black uppercase tracking-tighter leading-none italic">{baristaName}</h1>
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Certified Brewer Session</p>
-          </div>
-        </div>
-
-        <div className="flex flex-1 items-center justify-center gap-4 w-full lg:w-auto">
-          <div className="relative w-full lg:w-80">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
-            <input 
-              type="text" placeholder="Filter coffee orders..." value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-950 border border-white/10 rounded-full py-3 pl-12 pr-4 text-xs font-bold text-white outline-none focus:border-orange-600 transition-all"
-            />
+          <div className="min-w-0">
+            <h1 className="text-lg font-black uppercase tracking-tighter leading-none italic truncate">{baristaName}</h1>
+            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">Active Barista Session</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-            <button onClick={handleShiftReset} className="flex items-center gap-2 px-6 py-3 rounded-full bg-zinc-800 border border-white/5 text-zinc-400 hover:text-white transition-all text-[10px] font-black uppercase italic">
-                <RotateCcw size={14} /> Clear Feed
-            </button>
-            <button onClick={handleLogout} className="flex items-center gap-2 px-6 py-3 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white transition-all text-[10px] font-black uppercase italic">
-                <Power size={14} /> Logout
-            </button>
+        {/* Live stats */}
+        <div className="flex items-center gap-2 flex-wrap justify-center">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-800 border border-white/5 text-[10px] font-black uppercase">
+            <span className="w-2 h-2 rounded-full bg-zinc-400"/>
+            <span className="text-zinc-400">{pendingCount} Pending</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-[10px] font-black uppercase">
+            <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse"/>
+            <span className="text-orange-400">{preparingCount} Brewing</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-black uppercase">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"/>
+            <span className="text-emerald-400">{readyCount} Ready</span>
+          </div>
+        </div>
+
+        {/* Search + controls */}
+        <div className="flex items-center gap-2 w-full lg:w-auto">
+          <div className="relative flex-1 lg:w-56">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={14}/>
+            <input type="text" placeholder="Search table..." value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full bg-zinc-950 border border-white/10 rounded-full py-2.5 pl-9 pr-4 text-xs font-bold text-white outline-none focus:border-orange-500 transition-all"/>
+          </div>
+          <button onClick={handleShiftReset}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-zinc-800 border border-white/5 text-zinc-400 hover:text-white transition-all text-[10px] font-black uppercase italic shrink-0">
+            <RotateCcw size={13}/> End Shift
+          </button>
+          <button onClick={handleLogout}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white transition-all text-[10px] font-black uppercase italic shrink-0">
+            <Power size={13}/> Out
+          </button>
         </div>
       </header>
 
-      {/* ORDERS GRID */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 overflow-y-auto pb-12 custom-scrollbar">
-        {filteredOrders.map((order) => {
-          const minutesAgo = Math.floor((new Date() - new Date(order.timestamp)) / 60000);
-          const isDelayed = minutesAgo >= 12 && order.status !== "Ready";
-          const isReady = order.status === "Ready";
-
-          return (
-            <div key={order.id} className={`flex flex-col rounded-[2.5rem] border-2 bg-zinc-900 transition-all duration-500 h-[450px] overflow-hidden ${isReady ? 'opacity-50 grayscale border-transparent' : isDelayed ? 'border-orange-600 animate-pulse-slow' : 'border-white/5 shadow-xl'}`}>
-              
-              <div className={`p-5 shrink-0 ${isReady ? 'bg-zinc-800' : isDelayed ? 'bg-orange-600' : 'bg-orange-950'} text-white`}>
-                <div className="flex justify-between items-start">
-                  <h2 className="text-xl font-black italic tracking-tighter uppercase leading-none">T-{order.tableName}</h2>
-                  <span className="text-sm font-black italic flex items-center gap-1">
-                    <Clock size={14} /> {minutesAgo}m
-                  </span>
-                </div>
-                <p className="text-[9px] font-black uppercase opacity-60 mt-1">{order.waiterName || "Staff"}</p>
-              </div>
-
-              <div className="p-6 flex-grow overflow-y-auto space-y-4 custom-scrollbar">
-                {order.items.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-start gap-3 border-b border-white/5 pb-3 last:border-0">
-                    <div className="flex items-start gap-2">
-                        <span className="bg-orange-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded leading-none">{item.quantity}x</span>
-                        <div>
-                            <p className={`font-black text-sm uppercase leading-tight ${isReady ? 'line-through text-zinc-500' : 'text-white'}`}>{item.name}</p>
-                            {item.note && <p className="text-[10px] text-orange-400 italic font-bold mt-1 bg-orange-600/5 p-1 rounded">"{item.note}"</p>}
-                        </div>
-                    </div>
-                    <div className="shrink-0">
-                      {item.assignedTo ? (
-                        <span className="bg-emerald-500/10 text-emerald-500 text-[8px] font-black px-2 py-1 rounded-full border border-emerald-500/20">{item.assignedTo}</span>
-                      ) : (
-                        <button onClick={() => setAssigningItem({ orderId: order.id, itemIdx: idx })} className="bg-zinc-800 text-zinc-400 text-[8px] font-black px-2 py-1 rounded-full border border-white/5 hover:bg-orange-600 hover:text-white transition-all">+ Barista</button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="p-4 bg-black/20 border-t border-white/5">
-                {order.status === "Pending" && (
-                  <button onClick={() => updateStatus(order.id, "Preparing")} className="w-full py-4 bg-orange-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 text-[10px] uppercase italic active:scale-95 transition-all">
-                    <Bean size={16} /> Start Brewing
-                  </button>
-                )}
-                {order.status === "Preparing" && (
-                  <button onClick={() => updateStatus(order.id, "Ready")} className="w-full py-4 bg-emerald-500 text-black font-black rounded-2xl flex items-center justify-center gap-2 text-[10px] uppercase italic active:scale-95 transition-all">
-                    <CheckCircle size={16} /> Order Ready
-                  </button>
-                )}
-                {isReady && (
-                   <button onClick={() => updateStatus(order.id, "Preparing")} className="w-full py-4 bg-zinc-800 text-zinc-400 font-black rounded-2xl flex items-center justify-center gap-2 text-[10px] uppercase italic">
-                    <RotateCcw size={16} /> Return to Queue
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      {/* ── ORDERS GRID ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pb-16 custom-scrollbar flex-1">
+        {filteredOrders.length === 0 ? (
+          <div className="col-span-full flex flex-col items-center justify-center py-32 opacity-20">
+            <Coffee size={60} className="mb-4"/>
+            <p className="text-sm font-black uppercase tracking-[0.3em]">Bar is Clear</p>
+          </div>
+        ) : (
+          filteredOrders.map(order => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              onUpdateStatus={updateStatus}
+              onAssignBarista={(orderId, ticketId, itemIdx, itemName) =>
+                setAssigningItem({ orderId, ticketId, itemIdx, itemName })
+              }
+            />
+          ))
+        )}
       </div>
 
-      {/* SHIFT SUMMARY MODAL */}
-      {showSummary && (
-        <div className="fixed inset-0 z-[400] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 text-white">
-          <div className="bg-zinc-900 border border-white/10 w-full max-w-sm rounded-[3rem] p-8 text-center shadow-2xl">
-            <div className="w-16 h-16 bg-orange-600/10 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Trophy size={32} />
-            </div>
-            <h2 className="text-xl font-black uppercase italic mb-2">Shift Recap</h2>
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              <div className="bg-black/40 p-5 rounded-2xl border border-white/5">
-                <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Dockets</p>
-                <p className="text-2xl font-black">{shiftStats.totalOrders}</p>
-              </div>
-              <div className="bg-black/40 p-5 rounded-2xl border border-white/5">
-                <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Cups</p>
-                <p className="text-2xl font-black">{shiftStats.totalBrewed}</p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <button onClick={confirmEndShift} className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl uppercase italic text-xs shadow-lg active:scale-95 transition-all">Clear Feed</button>
-              <button onClick={() => setShowSummary(false)} className="w-full py-4 text-zinc-500 font-bold uppercase tracking-widest text-[9px]">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      <Footer />
+      <Footer/>
     </div>
   );
 }

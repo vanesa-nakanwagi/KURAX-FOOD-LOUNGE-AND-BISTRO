@@ -3,8 +3,8 @@ import {
   ComposedChart, Area, Bar, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
-import { useTheme } from "./components/shared/ThemeContext";
-import API_URL from "../../config/api";
+import { useTheme } from "../../../staff/Director/components/shared/ThemeContext";
+import API_URL from "../../../config/api";
 
 // ── Custom Tooltip ──────────────────────────────────────────────────────────
 function CustomTooltip({ active, payload, label }) {

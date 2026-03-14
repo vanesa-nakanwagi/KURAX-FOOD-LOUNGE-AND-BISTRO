@@ -10,7 +10,7 @@ export default function SideBar({
   setActiveSection, 
   isOpen, 
   setIsOpen, 
-  onEndShift 
+  onEndShift, stats
 }) {
   const navigate = useNavigate(); // Initialize navigate
 

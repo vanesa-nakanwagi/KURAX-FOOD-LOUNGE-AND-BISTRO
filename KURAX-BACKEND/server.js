@@ -14,6 +14,15 @@ import managerRoutes from './routes/managerRoutes.js';
 import overviewRoutes from './routes/overviewRoutes.js';
 import weeklyRevenueRoutes from "./routes/weeklyRevenueRoutes.js";
 import sendToCashierRoute from "./routes/sendToCashierRoutes.js";
+import summaryRoutes from './routes/summaryRoutes.js';
+import accountantRoutes from './routes/accountantRoutes.js';
+import kitchenRoutes     from "./routes/kitchenRoutes.js";
+import baristaRoutes     from "./routes/baristaRoutes.js";
+import barmanRoutes      from "./routes/barmanRoutes.js";
+import waiterRoutes from './routes/waiterRoutes.js';
+import historyRoutes from './routes/historyRoutes.js';
+import deliveryRoutes from './routes/deliveryRoutes.js';
+
 
 dotenv.config();
 const app = express();
@@ -63,7 +72,14 @@ app.use('/api/manager', managerRoutes);
 app.use('/api/overview', overviewRoutes);
 app.use("/api/overview", weeklyRevenueRoutes);
 app.use("/api/orders", sendToCashierRoute);
-
+app.use('/api/summaries', summaryRoutes);
+app.use('/api/accountant', accountantRoutes);
+app.use("/api/kitchen", kitchenRoutes);
+app.use("/api/barista", baristaRoutes);
+app.use("/api/barman",  barmanRoutes);
+app.use('/api/waiter', waiterRoutes);
+app.use('/api/history', historyRoutes);
+app.use('/api/delivery', deliveryRoutes);
 // 4. DATABASE VERIFICATION
 const verifyDB = async () => {
   try {

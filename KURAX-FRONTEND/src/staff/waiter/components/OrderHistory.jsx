@@ -3,18 +3,43 @@ import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import {
   Activity, Banknote, CreditCard, Smartphone, ClipboardList,
-  Search, ChevronDown, ChevronUp, Bell, Trash2, X,
+  Search, ChevronDown, ChevronUp, Bell, X,
   AlertTriangle, Utensils, TrendingUp, Send, Receipt,
-  BookOpen, User, Phone, CheckCircle, Clock
+  BookOpen, User, Phone, CheckCircle, Clock, RotateCcw,
+  Coffee, Wine
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function toLocalDateStr(date) {
+  // Always convert through Kampala timezone — new Date().toISOString() is UTC
+  // and gives yesterday's date before 3am in Kampala.
   const d = date instanceof Date ? date : new Date(date);
-  return [d.getFullYear(), String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0")].join("-");
+  return new Date(d.toLocaleString("en-US", { timeZone: "Africa/Nairobi" }))
+    .toISOString().split("T")[0];
 }
 function getTodayLocal() { return toLocalDateStr(new Date()); }
+
+// ─── STATION DETECTION ───────────────────────────────────────────────────────
+// Returns "barista" | "barman" | "kitchen" based on item category/station tags
+function getItemStation(item) {
+  const station   = (item.station   || "").toLowerCase();
+  const category  = (item.category  || "").toLowerCase();
+  const name      = (item.name      || "").toLowerCase();
+
+  if (station === "barista" || category.includes("barista") || category.includes("coffee"))
+    return "barista";
+  if (station === "barman"  || category.includes("bar") || category.includes("cocktail") || category.includes("drink"))
+    return "barman";
+  return "kitchen";
+}
+
+// Station display config
+const STATION_CONFIG = {
+  barista: { label: "Awaiting Barista", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20", dot: "bg-orange-400 animate-pulse", icon: <Coffee size={9}/> },
+  barman:  { label: "Awaiting Barman",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/20",     dot: "bg-blue-400 animate-pulse",   icon: <Wine size={9}/> },
+  kitchen: { label: "Awaiting Kitchen", color: "text-zinc-400",   bg: "bg-zinc-500/10 border-zinc-500/20",     dot: "bg-zinc-400 animate-pulse",   icon: <Utensils size={9}/> },
+};
 
 // ─── PAYMENT METHODS ──────────────────────────────────────────────────────────
 const MOMO_CODES = {
@@ -30,9 +55,6 @@ const PAY_METHODS = [
 ];
 
 // ─── PAY MODAL ────────────────────────────────────────────────────────────────
-// Used for both single-item pay and full-table pay.
-// All data it needs (tableName, orderId, amount) is passed directly in `target`
-// — no dependency on external state that could be stale.
 function PayModal({ target, onClose, onSend }) {
   const [method,      setMethod]      = useState(null);
   const [creditName,  setCreditName]  = useState("");
@@ -57,8 +79,6 @@ function PayModal({ target, onClose, onSend }) {
       method,
       amount,
       label,
-      // For item pay: the single order row this item lives in
-      // For table pay: all unsent order row ids
       orderIds:   isItem ? [target.orderId] : target.orderIds,
       item:       isItem ? target.item : null,
       creditInfo: isCredit
@@ -72,8 +92,6 @@ function PayModal({ target, onClose, onSend }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm px-2 pb-0 sm:pb-4">
       <div className="w-full max-w-md bg-zinc-950 rounded-t-[2rem] sm:rounded-[2rem] border border-white/10 overflow-hidden max-h-[90vh] overflow-y-auto">
-
-        {/* Header */}
         <div className="sticky top-0 bg-zinc-950 z-10 flex items-center justify-between px-6 pt-6 pb-4 border-b border-white/5">
           <div>
             <p className="text-[9px] font-black text-yellow-500 uppercase tracking-widest">
@@ -86,27 +104,20 @@ function PayModal({ target, onClose, onSend }) {
             <X size={16} className="text-zinc-400" />
           </button>
         </div>
-
         <div className="p-6 space-y-5">
-
-          {/* Method selector */}
           <div>
             <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3">Select Payment Method</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {PAY_METHODS.map(({ key, label: ml, icon, color, bg }) => (
                 <button key={key} onClick={() => setMethod(key)}
                   className={`flex flex-col items-center gap-2 py-4 rounded-2xl border-2 transition-all font-black text-[10px] uppercase tracking-widest
-                    ${method === key
-                      ? `${bg} ${color} scale-[1.02] shadow-lg`
-                      : "border-white/5 bg-white/3 text-zinc-500 hover:border-white/20"}`}>
+                    ${method === key ? `${bg} ${color} scale-[1.02] shadow-lg` : "border-white/5 bg-white/3 text-zinc-500 hover:border-white/20"}`}>
                   <span className={method === key ? color : "text-zinc-600"}>{icon}</span>
                   {ml}
                 </button>
               ))}
             </div>
           </div>
-
-          {/* Momo instructions */}
           {isMomo && MOMO_CODES[method] && (
             <div className="bg-white/3 rounded-2xl p-4 border border-white/5 space-y-2">
               <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2">Payment Instructions</p>
@@ -120,8 +131,6 @@ function PayModal({ target, onClose, onSend }) {
               </div>
             </div>
           )}
-
-          {/* Credit fields */}
           {isCredit && (
             <div className="space-y-3">
               <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Client Details</p>
@@ -146,21 +155,15 @@ function PayModal({ target, onClose, onSend }) {
               </div>
             </div>
           )}
-
-          {/* Amount */}
           <div className="bg-white/3 rounded-2xl p-4 flex justify-between items-center border border-white/5">
             <span className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">
               {isItem ? "Item Total" : "Table Total"}
             </span>
             <span className="font-black text-white text-xl">UGX {amount.toLocaleString()}</span>
           </div>
-
-          {/* Send button */}
           <button disabled={!canSend || sending} onClick={handleSend}
             className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2
-              ${canSend && !sending
-                ? "bg-yellow-500 text-black hover:bg-yellow-400 active:scale-[0.98]"
-                : "bg-white/5 text-zinc-600 cursor-not-allowed"}`}>
+              ${canSend && !sending ? "bg-yellow-500 text-black hover:bg-yellow-400 active:scale-[0.98]" : "bg-white/5 text-zinc-600 cursor-not-allowed"}`}>
             {sending ? "Sending…" : canSend ? <><Send size={15}/> Send to Cashier</> : "Select a Method"}
           </button>
         </div>
@@ -188,7 +191,7 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
               <AlertTriangle size={18} className="text-red-500" />
             </div>
             <div>
-              <p className="font-black text-white text-sm">Void Item Request</p>
+              <p className="font-black text-white text-sm">Request Void</p>
               <p className="text-[10px] text-zinc-500">{tableName} · {item.name}</p>
             </div>
             <button onClick={onClose} className="ml-auto w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
@@ -203,8 +206,12 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
             <p className="text-zinc-500 text-[10px] mt-1">UGX {Number(item.price || 0).toLocaleString()}</p>
           </div>
           <textarea value={reason} onChange={e => setReason(e.target.value)}
-            placeholder="Reason for void…"
+            placeholder="Reason for void request…"
             className="w-full bg-white/3 border border-white/5 rounded-2xl p-4 text-sm text-white placeholder-zinc-600 outline-none focus:border-red-500/40 resize-none h-20 mb-4" />
+          <div className="flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/20 rounded-xl mb-4">
+            <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse shrink-0" />
+            <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Request will be sent to accountant for approval</p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <button onClick={onClose}
               className="py-3 rounded-xl border border-white/10 text-zinc-400 font-black text-xs uppercase tracking-widest hover:bg-white/5">Cancel</button>
@@ -220,26 +227,41 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
 }
 
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
-// sentItems  = Set of item keys already sent to cashier (tracked in parent state)
-// tableAllPaid = true when every order row for this table is Paid/Credit
-function OrderCard({ order, theme, sentItems, onMarkServed, onPayItem, onPayTable, onVoidItem }) {
+function OrderCard({ order, theme, sentItems, onMarkServed, onUnserve, onPayItem, onPayTable, onVoidItem }) {
   const [expanded, setExpanded] = useState(false);
 
-  const isReady    = order.status === "Ready";
-  const isServed   = order.status === "Served";
+  const isReady      = order.status === "Ready";
+  const isServed     = order.status === "Served";
+  const isPreparing  = order.status === "Preparing";
+  const isPending    = order.status === "Pending";
   const tableAllPaid = order.allPaid;
 
-  // How many items are still payable (served, not yet sent, not paid at row level)
   const payableItems = order.items.filter(item => {
     const key = itemKey(order.tableName, item);
     return !sentItems.has(key) && !item._rowPaid;
   });
-  const allItemsSent = !tableAllPaid && payableItems.length === 0 && order.items.length > 0;
+  const allItemsSent  = !tableAllPaid && payableItems.length === 0 && order.items.length > 0;
   const someItemsSent = !tableAllPaid && order.items.some(item => sentItems.has(itemKey(order.tableName, item)));
+
+  // ✅ True when every item on this table has been voided (approved)
+  // voidProcessed:true OR status==="VOIDED" counts as voided
+  const allItemsVoided = order.items.length > 0 && order.items.every(
+    item => item.voidProcessed === true || item.status === "VOIDED"
+  );
+
+  // Determine station label for items that are still being prepared
+  // Show the dominant station type for the card-level status
+  const preparingStation = useMemo(() => {
+    if (tableAllPaid || isServed) return null;
+    const stations = order.items.map(getItemStation);
+    if (stations.every(s => s === "barista")) return "barista";
+    if (stations.every(s => s === "barman"))  return "barman";
+    return "kitchen"; // mixed or all kitchen
+  }, [order.items, tableAllPaid, isServed]);
 
   const statusConfig = {
     Pending:         { label: "Pending",          color: "text-zinc-400",    bg: "bg-zinc-500/10 border-zinc-500/20",       dot: "bg-zinc-400" },
-    Preparing:       { label: "Preparing",         color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/20",   dot: "bg-orange-400 animate-pulse" },
+    Preparing:       { label: `Preparing`,         color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/20",   dot: "bg-orange-400 animate-pulse" },
     Ready:           { label: "🔔 Ready!",         color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", dot: "bg-emerald-400" },
     Delayed:         { label: "Delayed",           color: "text-red-400",     bg: "bg-red-500/10 border-red-500/20",         dot: "bg-red-400" },
     Served:          { label: "Served",            color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/20",       dot: "bg-blue-400" },
@@ -256,14 +278,18 @@ function OrderCard({ order, theme, sentItems, onMarkServed, onPayItem, onPayTabl
     : someItemsSent ? "PartialSent"
     : order.status;
 
-  const s = statusConfig[derivedStatus] || statusConfig.Pending;
+  // Override Preparing label with station-specific text
+  let s = { ...(statusConfig[derivedStatus] || statusConfig.Pending) };
+  if ((derivedStatus === "Preparing" || derivedStatus === "Pending") && preparingStation && preparingStation !== "kitchen") {
+    const sc = STATION_CONFIG[preparingStation];
+    s = { ...s, label: sc.label, color: sc.color, bg: sc.bg, dot: sc.dot };
+  }
 
   return (
     <div className={`rounded-[1.75rem] border-2 overflow-hidden transition-all duration-300
       ${isReady && !tableAllPaid ? "border-emerald-500/40 shadow-[0_0_24px_rgba(16,185,129,0.12)]" : theme === "dark" ? "border-white/5" : "border-black/5 shadow-sm"}
       ${theme === "dark" ? "bg-zinc-900" : "bg-white"}`}>
 
-      {/* Ready banner */}
       {isReady && !tableAllPaid && (
         <div className="bg-emerald-500 px-5 py-2 flex items-center justify-center gap-2">
           <Bell size={12} className="text-black" />
@@ -271,7 +297,6 @@ function OrderCard({ order, theme, sentItems, onMarkServed, onPayItem, onPayTabl
         </div>
       )}
 
-      {/* Card header */}
       <div className="p-5">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -300,54 +325,96 @@ function OrderCard({ order, theme, sentItems, onMarkServed, onPayItem, onPayTabl
         </button>
       </div>
 
-      {/* ── EXPANDED ITEMS ─────────────────────────────────────────────────── */}
+      {/* ── EXPANDED ITEMS ── */}
       {expanded && (
         <div className={`border-t px-5 pb-4 pt-3 space-y-2 ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
           {order.items.map((item, i) => {
-            const key      = itemKey(order.tableName, item);
-            const isSent   = sentItems.has(key);
-            const itemPaid = item._rowPaid;
-            const itemTotal= Number(item.price || 0) * Number(item.quantity || 1);
+            const key            = itemKey(order.tableName, item);
+            const isSent         = sentItems.has(key);
+            const itemPaid       = item._rowPaid;
+            const voidApproved   = item.voidProcessed === true || item.status === "VOIDED";
+            const voidRejected   = item.voidRejected  === true;
+            const hasVoidReq     = item.voidRequested === true && !voidApproved && !voidRejected;
+            const originalPrice  = Number(item.price || 0);
+            const displayPrice   = voidApproved ? 0 : originalPrice;
+            const itemTotal      = displayPrice * Number(item.quantity || 1);
+            const station        = getItemStation(item);
+            const stCfg          = STATION_CONFIG[station];
 
             return (
               <div key={i}
-                className={`rounded-xl overflow-hidden transition-all ${itemPaid ? "opacity-50" : ""}
+                className={`rounded-xl overflow-hidden transition-all
+                  ${voidApproved ? "opacity-40" : itemPaid ? "opacity-50" : ""}
                   ${theme === "dark" ? "bg-white/3" : "bg-zinc-50"}`}>
                 <div className="flex items-center justify-between py-2.5 px-3 gap-2">
                   <div className="flex-1 min-w-0">
-                    <p className={`font-black text-sm truncate ${theme === "dark" ? "text-white" : "text-zinc-900"}`}>
-                      {item.name}
-                    </p>
-                    <p className="text-[10px] text-zinc-500 font-medium">
-                      x{item.quantity || 1} · UGX {itemTotal.toLocaleString()}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Item name — struck through if void approved */}
+                      <p className={`font-black text-sm truncate
+                        ${voidApproved
+                          ? "line-through text-zinc-600"
+                          : theme === "dark" ? "text-white" : "text-zinc-900"}`}>
+                        {item.name}
+                      </p>
+                      {/* Station badge */}
+                      {!voidApproved && (
+                        <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg border text-[8px] font-black uppercase ${stCfg.bg} ${stCfg.color}`}>
+                          {stCfg.icon} {station === "kitchen" ? "Kitchen" : station === "barista" ? "Barista" : "Barman"}
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-[10px] font-medium ${voidApproved ? "text-zinc-600" : "text-zinc-500"}`}>
+                      x{item.quantity || 1} ·{" "}
+                      {voidApproved
+                        ? <span className="line-through mr-1">UGX {(originalPrice * Number(item.quantity || 1)).toLocaleString()}</span>
+                        : `UGX ${itemTotal.toLocaleString()}`}
+                      {voidApproved && <span className="text-emerald-600 font-black">UGX 0</span>}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    {/* Paid badge */}
-                    {itemPaid && (
+                    {/* ── VOID APPROVED — green tick, crossed out ── */}
+                    {voidApproved && (
+                      <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase">
+                        <CheckCircle size={9}/> Voided
+                      </span>
+                    )}
+                    {/* ── VOID REJECTED — red badge, void button reappears ── */}
+                    {voidRejected && !itemPaid && (
+                      <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[9px] font-black uppercase">
+                        <X size={9}/> Void Rejected
+                      </span>
+                    )}
+                    {/* ── VOID PENDING ── */}
+                    {hasVoidReq && (
+                      <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[9px] font-black uppercase animate-pulse">
+                        <AlertTriangle size={9}/> Void Pending
+                      </span>
+                    )}
+                    {/* ── PAID ── */}
+                    {itemPaid && !voidApproved && (
                       <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase">
                         <CheckCircle size={9}/> Paid
                       </span>
                     )}
-                    {/* Sent-to-cashier badge — shows while waiting for cashier */}
-                    {isSent && !itemPaid && (
+                    {/* ── SENT TO CASHIER ── */}
+                    {isSent && !itemPaid && !voidApproved && (
                       <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-[9px] font-black uppercase animate-pulse">
                         <Clock size={9}/> Sent ↗
                       </span>
                     )}
-                    {/* PAY button — only when: order is Served, item not yet sent, not paid */}
-                    {isServed && !itemPaid && !isSent && (
+                    {/* ── PAY button ── */}
+                    {isServed && !itemPaid && !isSent && !hasVoidReq && !voidApproved && (
                       <button onClick={() => onPayItem(item, order)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 font-black text-[10px] uppercase tracking-widest hover:bg-yellow-500/20 transition-all">
                         <Receipt size={11}/> Pay
                       </button>
                     )}
-                    {/* Void — only before served, not sent, not paid */}
-                    {!isServed && !itemPaid && !isSent && (
+                    {/* ── REQUEST VOID — also shows again after rejection ── */}
+                    {!isServed && !itemPaid && !isSent && !hasVoidReq && !voidApproved && (
                       <button onClick={() => onVoidItem(item, order)}
-                        className="w-8 h-8 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center hover:bg-red-500/20 transition-all">
-                        <Trash2 size={13} className="text-red-400"/>
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-black text-[9px] uppercase tracking-widest hover:bg-red-500/20 transition-all whitespace-nowrap">
+                        <AlertTriangle size={10}/> Void
                       </button>
                     )}
                   </div>
@@ -356,7 +423,7 @@ function OrderCard({ order, theme, sentItems, onMarkServed, onPayItem, onPayTabl
             );
           })}
 
-          {/* Pay remaining — only shows if served and at least one item is unsent/unpaid */}
+          {/* Pay remaining */}
           {isServed && !tableAllPaid && payableItems.length > 0 && (
             <button onClick={() => onPayTable(order)}
               className="w-full mt-2 py-2.5 rounded-xl bg-yellow-500 text-black font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-yellow-400 active:scale-[0.98] transition-all">
@@ -367,36 +434,66 @@ function OrderCard({ order, theme, sentItems, onMarkServed, onPayItem, onPayTabl
         </div>
       )}
 
-      {/* ── BOTTOM ACTION BAR ──────────────────────────────────────────────── */}
+      {/* ── BOTTOM ACTION BAR ── */}
       {!tableAllPaid && (
         <div className={`flex gap-3 px-5 pb-5 pt-2 border-t ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
-          {/* Mark as served */}
-          {isReady && !isServed && (
-            <button onClick={() => onMarkServed(order)}
-              className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-black font-black text-xs uppercase tracking-widest rounded-2xl transition-all flex items-center justify-center gap-2">
-              <Bell size={14}/> Mark as Served
-            </button>
-          )}
-          {/* Pay button — shows when served and there are items not yet sent */}
-          {isServed && payableItems.length > 0 && (
-            <button onClick={() => onPayTable(order)}
-              className="flex-1 py-3 bg-yellow-500 hover:bg-yellow-400 active:scale-[0.98] text-black font-black text-xs uppercase tracking-widest rounded-2xl transition-all flex items-center justify-center gap-2">
-              <Send size={14}/>
-              {payableItems.length < order.items.length ? "Pay Remaining" : "Pay"}
-            </button>
-          )}
-          {/* All items sent, waiting cashier */}
-          {isServed && allItemsSent && (
-            <div className="flex-1 py-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/5 flex items-center justify-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"/>
-              <p className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">Awaiting Cashier</p>
+
+          {/* ── ALL ITEMS VOIDED → Cancelled Order (replaces everything) ── */}
+          {allItemsVoided ? (
+            <div className="flex-1 py-3 rounded-2xl border border-red-500/20 bg-red-500/5 flex items-center justify-center gap-2">
+              <X size={13} className="text-red-400"/>
+              <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">Cancelled Order</p>
             </div>
-          )}
-          {/* Not ready yet */}
-          {!isReady && !isServed && (
-            <div className="flex-1 py-3 rounded-2xl border border-white/5 flex items-center justify-center">
-              <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">Awaiting Kitchen…</p>
-            </div>
+          ) : (
+            <>
+              {/* Mark as served — only when not all voided */}
+              {isReady && !isServed && (
+                <button onClick={() => onMarkServed(order)}
+                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-black font-black text-xs uppercase tracking-widest rounded-2xl transition-all flex items-center justify-center gap-2">
+                  <Bell size={14}/> Mark as Served
+                </button>
+              )}
+              {/* Unserve — lets waiter undo accidental serve */}
+              {isServed && (
+                <button onClick={() => onUnserve(order)}
+                  className={`py-3 px-4 rounded-2xl border font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 shrink-0
+                    ${theme === "dark" ? "border-white/10 text-zinc-500 hover:text-white hover:border-white/20" : "border-black/10 text-zinc-400 hover:text-zinc-700"}`}>
+                  <RotateCcw size={13}/> Unserve
+                </button>
+              )}
+              {/* Pay button — hidden if all remaining items are voided */}
+              {isServed && payableItems.length > 0 && (
+                <button onClick={() => onPayTable(order)}
+                  className="flex-1 py-3 bg-yellow-500 hover:bg-yellow-400 active:scale-[0.98] text-black font-black text-xs uppercase tracking-widest rounded-2xl transition-all flex items-center justify-center gap-2">
+                  <Send size={14}/>
+                  {payableItems.length < order.items.length ? "Pay Remaining" : "Pay"}
+                </button>
+              )}
+              {/* All items sent, waiting cashier */}
+              {isServed && allItemsSent && (
+                <div className="flex-1 py-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/5 flex items-center justify-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"/>
+                  <p className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">Awaiting Cashier</p>
+                </div>
+              )}
+              {/* Not ready yet — station-specific waiting message */}
+              {!isReady && !isServed && (
+                <div className="flex-1 py-3 rounded-2xl border border-white/5 flex items-center justify-center gap-2">
+                  {preparingStation && preparingStation !== "kitchen" ? (
+                    <>
+                      <span className={STATION_CONFIG[preparingStation].color}>
+                        {STATION_CONFIG[preparingStation].icon}
+                      </span>
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${STATION_CONFIG[preparingStation].color}`}>
+                        {STATION_CONFIG[preparingStation].label}…
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">Awaiting Kitchen…</p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -425,16 +522,12 @@ function StatCard({ label, value, icon, highlight, theme, sub }) {
 }
 
 // ─── ITEM KEY ─────────────────────────────────────────────────────────────────
-// Unique string to identify one specific item for sentItems tracking.
-// Always uses item._itemIndex (assigned during grouping) so the key is
-// consistent whether called from OrderCard, handlePayItem, or handleSend.
-// "_itemIndex" is the item's position in the merged items array for the table.
 function itemKey(tableName, item) {
   return `${tableName}::${item.name}::${item._itemIndex ?? ""}`;
 }
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
-export default function OrderHistory() {
+export default function OrderHistory({ shiftEnded = false }) {
   const { orders = [], currentUser, refreshData } = useData() || {};
   const { theme } = useTheme();
 
@@ -446,21 +539,17 @@ export default function OrderHistory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [payTarget,   setPayTarget]   = useState(null);
   const [voidItem,    setVoidItem]    = useState(null);
-
-  // ── sentItems: Set of itemKey strings ─────────────────────────────────────
-  // This is the KEY fix. Instead of relying on the DB row's sent_to_cashier
-  // flag (which is one boolean for the whole order row covering ALL items),
-  // we track sent status per individual item in local React state.
-  //
-  // When waiter sends Pilao by Cash → sentItems.add("T4::Pilao::0")
-  // When waiter sends Chicken by Card → sentItems.add("T4::Chicken::1")
-  // Chicken's Pay button is still visible while Pilao shows "Sent ↗"
-  // They are two independent queue entries at the cashier with different methods.
-  const [sentItems,      setSentItems]      = useState(new Set());
+  const [sentItems,   setSentItems]   = useState(new Set());
   const [confirmedQueue, setConfirmedQueue] = useState([]);
 
-  // Poll cashier-history for per-item confirmed amounts (for waiter totals)
+  // When shiftEnded=true (passed from WaiterLayout after end-shift):
+  // clear confirmedQueue immediately and stop polling so SOURCE 2 totals
+  // don't survive after the shift is archived.
   useEffect(() => {
+    if (shiftEnded) {
+      setConfirmedQueue([]);
+      return; // don't start a new poll
+    }
     const poll = async () => {
       try {
         const res = await fetch(`${API_URL}/api/orders/cashier-history`);
@@ -470,9 +559,8 @@ export default function OrderHistory() {
     poll();
     const id = setInterval(poll, 10000);
     return () => clearInterval(id);
-  }, []);
+  }, [shiftEnded]); // re-runs when shiftEnded flips to true
 
-  // Today resets at local midnight
   const [today, setToday] = useState(getTodayLocal);
   useEffect(() => {
     const schedule = () => {
@@ -487,70 +575,52 @@ export default function OrderHistory() {
 
   const DAILY_GOAL = 20;
 
-  // ── Filter to my orders today ──────────────────────────────────────────────
   const dailyStaffOrders = useMemo(() =>
     (orders || []).filter(o => {
       const ts = o.timestamp || o.created_at;
       if (!ts) return false;
       const mine =
         String(o.staff_id || o.staffId) === String(currentStaffId) ||
-        (o.staff_name || o.waiterName)   === currentStaffName;
-      return mine && toLocalDateStr(new Date(ts)) === today;
+        (o.staff_name || o.waiterName) === currentStaffName;
+      // KEY FIX: exclude shift_cleared orders — these are archived to staff_shifts DB.
+      // Without this, the waiter sees yesterday's totals on their next shift because
+      // the orders still exist in the DB (archived, not deleted) and still match
+      // the date + staff filters above.
+      const cleared = o.shift_cleared === true || o.shift_cleared === "t" || o.shift_cleared === "true";
+      return mine && toLocalDateStr(new Date(ts)) === today && !cleared;
     }),
   [orders, currentStaffId, currentStaffName, today]);
 
-  // ── Group DB rows by table ─────────────────────────────────────────────────
-  // Each DB order row carries its items array. Multiple rows can belong to
-  // the same table (e.g. waiter added items in two submissions).
-  // We merge them into one grouped card, annotating each item with:
-  //   _orderId  — which DB row it came from (needed for routing send-to-cashier)
-  //   _rowPaid  — whether that DB row is already Paid/Credit
-  //   _itemIndex— its position within the merged items array (used for itemKey)
   const groupedTableOrders = useMemo(() => {
     const groups = {};
     dailyStaffOrders.forEach(order => {
-      const key      = (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase();
-      const rowPaid  = order.status === "Paid" || order.status === "Credit"
-                       || order.status === "Mixed"
-                       || order.is_paid || order.isPaid;
-      const rowSent  = order.sent_to_cashier || order.sentToCashier || false;
+      const key     = (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase();
+      const rowPaid = order.status === "Paid" || order.status === "Credit"
+                      || order.status === "Mixed" || order.is_paid || order.isPaid;
+      const rowSent = order.sent_to_cashier || order.sentToCashier || false;
 
       if (!groups[key]) {
         groups[key] = {
-          tableName:  key,
-          displayId:  order.id ? String(order.id).slice(-6) : "000000",
-          total:      0,
-          items:      [],
-          status:     order.status || "Pending",
-          timestamp:  order.timestamp || order.created_at,
-          orderIds:   [],
-          _rows:      [],   // raw DB rows for this table
+          tableName: key,
+          displayId: order.id ? String(order.id).slice(-6) : "000000",
+          total: 0, items: [], status: order.status || "Pending",
+          timestamp: order.timestamp || order.created_at,
+          orderIds: [], _rows: [],
         };
       }
-
       const g = groups[key];
       g.total += Number(order.total) || 0;
       g.orderIds.push(order.id);
       g._rows.push({ id: order.id, paid: rowPaid, sent: rowSent, total: Number(order.total) || 0 });
 
       (order.items || []).forEach(item => {
-        g.items.push({
-          ...item,
-          _orderId: order.id,  // which DB row this item belongs to
-          _rowPaid: rowPaid,   // is that DB row fully paid?
-          // NOTE: _sentToCashier is intentionally NOT set here.
-          // The DB sent_to_cashier flag covers the whole order row, not
-          // individual items. Per-item sent state is tracked exclusively
-          // via the sentItems Set in component state.
-        });
+        g.items.push({ ...item, _orderId: order.id, _rowPaid: rowPaid });
       });
 
-      // Promote status: Served > Ready > Preparing > Pending
       const rank = { Served: 5, Ready: 4, Delayed: 3, Preparing: 2, Pending: 1 };
       if ((rank[order.status] || 0) > (rank[g.status] || 0)) g.status = order.status;
     });
 
-    // Assign stable _itemIndex after all items are collected
     Object.values(groups).forEach(g => {
       g.items = g.items.map((item, idx) => ({ ...item, _itemIndex: idx }));
     });
@@ -558,26 +628,16 @@ export default function OrderHistory() {
     return groups;
   }, [dailyStaffOrders]);
 
-  // ── Enrich: derive allPaid, unsentTotal, unsentOrderIds ───────────────────
   const enrichedGroups = useMemo(() =>
     Object.values(groupedTableOrders).map(group => {
-      const allPaid = group._rows.length > 0 && group._rows.every(r => r.paid);
-      // Unsent rows = not paid and not sent at the DB level
-      // Used for "Pay Full Table" which sends all unsent rows at once
+      const allPaid        = group._rows.length > 0 && group._rows.every(r => r.paid);
       const unsentRows     = group._rows.filter(r => !r.paid && !r.sent);
       const unsentOrderIds = unsentRows.map(r => r.id);
       const unsentTotal    = unsentRows.reduce((s, r) => s + r.total, 0);
-
-      return {
-        ...group,
-        allPaid,
-        unsentOrderIds,
-        unsentTotal: unsentTotal || group.total, // fallback to full total
-      };
+      return { ...group, allPaid, unsentOrderIds, unsentTotal: unsentTotal || group.total };
     }),
   [groupedTableOrders]);
 
-  // ── Filtered + sorted for display ─────────────────────────────────────────
   const filteredOrders = useMemo(() =>
     enrichedGroups
       .filter(g => {
@@ -597,56 +657,33 @@ export default function OrderHistory() {
       }),
   [enrichedGroups, searchQuery, activeTab]);
 
-  // ── Totals ─────────────────────────────────────────────────────────────────
-  // Strategy:
-  //   Full-table payments (Cash/Card/Momo): read from orders.payment_method
-  //   Per-item payments (Mixed):            read from cashier_queue Confirmed rows
-  //     filtered to this staff + today — same source the cashier uses.
-  //   This gives accurate Cash/Card/Momo splits for both flows.
+  // Totals come from confirmedQueue ONLY — never from orders[].
+  // orders[].payment_method is always "Cash" (hardcoded in NewOrder.jsx),
+  // so reading it would double-count every non-cash payment and miscount cash.
+  // confirmedQueue has the real method for every payment (full-order + item-level).
+  // After end-shift: confirmedQueue is cleared (shiftEnded=true + backend filter),
+  // so totals correctly drop to zero for the new shift.
   const totals = useMemo(() => {
-    const acc = { Cash: 0, Card: 0, Momo: 0, all: 0 };
-
-    // ── 1. Full-table paid orders (non-Mixed) ────────────────────────────────
-    dailyStaffOrders.forEach(o => {
-      const paid = o.status === "Paid" || o.is_paid || o.isPaid;
-      if (!paid) return;
-      const raw = (o.payment_method || o.paymentMethod || "").toLowerCase().trim();
-      if (raw === "mixed") return; // handled below via cashier_queue
-      const amt = Number(o.total) || 0;
-      if      (!raw || raw === "cash")                          { acc.Cash += amt; acc.all += amt; }
-      else if (raw === "card" || raw.includes("card"))          { acc.Card += amt; acc.all += amt; }
-      else if (raw.includes("mtn") || raw.includes("airtel") || raw.includes("momo")) {
-                                                                  acc.Momo += amt; acc.all += amt; }
-      else                                                      {                  acc.all += amt; }
-    });
-
-    // ── 2. Per-item confirmed payments from cashier_queue ────────────────────
-    // Filter: Confirmed today + sent by this staff + is_item=true.
-    // is_item=true means this was a per-item payment (not a full-table payment).
-    // Full-table payments (is_item=false) are already counted from orders above.
-    // Filtering by is_item avoids double-counting without needing to know
-    // whether the orders row has reached status=Mixed yet.
+    const acc = { Cash: 0, Card: 0, MTN: 0, Airtel: 0, Momo: 0, all: 0 };
+    if (shiftEnded) return acc; // shift ended — show zeros until next end-shift
     confirmedQueue.forEach(row => {
       if (row.status !== "Confirmed") return;
-      if (!row.is_item) return;  // skip full-table payments (counted from orders above)
       const confirmedOn = toLocalDateStr(new Date(row.confirmed_at || row.created_at));
       if (confirmedOn !== today) return;
       if (row.requested_by !== currentStaffName) return;
-
       const amt = Number(row.amount) || 0;
       switch (row.method) {
-        case "Cash":        acc.Cash += amt; acc.all += amt; break;
-        case "Card":        acc.Card += amt; acc.all += amt; break;
-        case "Momo-MTN":
-        case "Momo-Airtel": acc.Momo += amt; acc.all += amt; break;
-        default: break;
+        case "Cash":        acc.Cash   += amt; acc.all += amt; break;
+        case "Card":        acc.Card   += amt; acc.all += amt; break;
+        case "Momo-MTN":    acc.MTN    += amt; acc.Momo += amt; acc.all += amt; break;
+        case "Momo-Airtel": acc.Airtel += amt; acc.Momo += amt; acc.all += amt; break;
+        default:            acc.all    += amt; break; // Credit/Mixed → gross only
       }
     });
-
     return acc;
-  }, [dailyStaffOrders, confirmedQueue, today, currentStaffName]);
+  }, [confirmedQueue, today, currentStaffName, shiftEnded]);
 
-  const readyCount      = useMemo(() => enrichedGroups.filter(o => o.status === "Ready").length,  [enrichedGroups]);
+  const readyCount      = useMemo(() => enrichedGroups.filter(o => o.status === "Ready").length, [enrichedGroups]);
   const liveCount       = useMemo(() => enrichedGroups.filter(o => ["Pending","Preparing","Ready","Delayed"].includes(o.status)).length, [enrichedGroups]);
   const servedCount     = useMemo(() => enrichedGroups.filter(o => ["Served","Paid","Closed","Credit","Mixed"].includes(o.status)).length, [enrichedGroups]);
   const progressPercent = Math.min((dailyStaffOrders.length / DAILY_GOAL) * 100, 100);
@@ -666,76 +703,62 @@ export default function OrderHistory() {
     } catch (err) { console.error("Mark served failed:", err); }
   }, [refreshData]);
 
-  // ── Open pay modal for a single item ──────────────────────────────────────
-  const handlePayItem = useCallback((item, order) => {
-    setPayTarget({
-      type:      "item",
-      tableName: order.tableName,
-      item,
-      orderId:   item._orderId,   // the DB row this item belongs to
-    });
+  // ── ✅ UNSERVE — sets status back to Ready ────────────────────────────────
+  const handleUnserve = useCallback(async (order) => {
+    try {
+      await Promise.all(order.orderIds.map(id =>
+        fetch(`${API_URL}/api/orders/${id}/status`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "Ready" }),
+        })
+      ));
+      refreshData?.();
+    } catch (err) { console.error("Unserve failed:", err); }
+  }, [refreshData]);
+
+  const handlePayItem  = useCallback((item, order) => {
+    setPayTarget({ type: "item", tableName: order.tableName, item, orderId: item._orderId });
   }, []);
 
-  // ── Open pay modal for full/remaining table ────────────────────────────────
   const handlePayTable = useCallback((order) => {
     setPayTarget({
-      type:       "table",
-      tableName:  order.tableName,
-      total:      order.unsentTotal,
-      orderIds:   order.unsentOrderIds.length ? order.unsentOrderIds : order.orderIds,
+      type: "table", tableName: order.tableName,
+      total: order.unsentTotal,
+      orderIds: order.unsentOrderIds.length ? order.unsentOrderIds : order.orderIds,
     });
   }, []);
 
-  // ── Send to cashier ────────────────────────────────────────────────────────
-  // After sending, we mark the item(s) in sentItems so their Pay button hides
-  // immediately — no need to wait for a DB round-trip / refreshData.
   const handleSend = useCallback(async (payload) => {
     try {
       await fetch(`${API_URL}/api/orders/send-to-cashier`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          order_ids:    payload.orderIds,
-          table_name:   payload.tableName,
-          method:       payload.method,
-          amount:       payload.amount,
-          label:        payload.label,
-          is_item:      payload.type === "item",
-          item:         payload.item,
-          credit_info:  payload.creditInfo,
-          requested_by: currentStaffName,
-          staff_id:     currentStaffId,
+          order_ids: payload.orderIds, table_name: payload.tableName,
+          method: payload.method, amount: payload.amount, label: payload.label,
+          is_item: payload.type === "item", item: payload.item,
+          credit_info: payload.creditInfo,
+          requested_by: currentStaffName, staff_id: currentStaffId,
         }),
       });
-
-      // Mark item(s) as sent in local state immediately
       setSentItems(prev => {
         const next = new Set(prev);
         if (payload.type === "item" && payload.item) {
-          // Single item: mark just this item's key
           next.add(itemKey(payload.tableName, payload.item));
         } else {
-          // Full / remaining table: mark every unpaid item in the group
           const group = enrichedGroups.find(g => g.tableName === payload.tableName);
-          if (group) {
-            group.items.forEach(item => {
-              if (!item._rowPaid) next.add(itemKey(payload.tableName, item));
-            });
-          }
+          if (group) group.items.forEach(item => { if (!item._rowPaid) next.add(itemKey(payload.tableName, item)); });
         }
         return next;
       });
-
       refreshData?.();
     } catch (err) { console.error("Send to cashier failed:", err); }
   }, [currentStaffName, currentStaffId, enrichedGroups, refreshData]);
 
-  // ── Void item ──────────────────────────────────────────────────────────────
+  // ── ✅ VOID — hits API so accountant sees it in Live Audit ────────────────
   const handleVoidItem = useCallback(async (item, reason) => {
     try {
       await fetch(`${API_URL}/api/orders/void-item`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           order_id:     item._orderId,
           item_name:    item.name,
@@ -750,10 +773,9 @@ export default function OrderHistory() {
   return (
     <div className={`min-h-screen font-[Outfit] pb-28 transition-colors duration-300 ${theme === "dark" ? "bg-black text-white" : "bg-zinc-50 text-zinc-900"}`}>
 
-      {/* ── HEADER ── */}
+      {/* HEADER */}
       <div className={`sticky top-0 z-10 w-full border-b px-4 md:px-8 lg:px-12 py-4 flex items-center justify-between gap-4
         ${theme === "dark" ? "bg-zinc-950/95 backdrop-blur-xl border-white/5" : "bg-white/95 backdrop-blur-xl border-black/5 shadow-sm"}`}>
-
         <div className="flex items-center gap-3 shrink-0">
           <div className="w-10 h-10 rounded-xl bg-yellow-500 flex items-center justify-center font-black text-black text-base shrink-0">
             {firstName[0]}
@@ -798,7 +820,6 @@ export default function OrderHistory() {
       </div>
 
       <div className="px-4 md:px-8 lg:px-12 pt-6">
-
         {/* Progress */}
         <div className={`p-4 rounded-2xl border mb-4 ${theme === "dark" ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
           <div className="flex justify-between items-center mb-2">
@@ -864,6 +885,7 @@ export default function OrderHistory() {
               theme={theme}
               sentItems={sentItems}
               onMarkServed={handleMarkServed}
+              onUnserve={handleUnserve}
               onPayItem={handlePayItem}
               onPayTable={handlePayTable}
               onVoidItem={(item, ord) => setVoidItem({ item, order: ord })} />
@@ -872,12 +894,8 @@ export default function OrderHistory() {
       </div>
 
       {payTarget && (
-        <PayModal
-          target={payTarget}
-          onClose={() => setPayTarget(null)}
-          onSend={handleSend} />
+        <PayModal target={payTarget} onClose={() => setPayTarget(null)} onSend={handleSend} />
       )}
-
       {voidItem && (
         <VoidModal
           item={voidItem.item}

@@ -1,201 +1,242 @@
 import React, { useState, useEffect } from "react";
-import { 
-  Lock, PlusCircle, Receipt, ShieldAlert, 
-  ShieldCheck, RefreshCcw, Smartphone, Clock, Flag 
-} from "lucide-react"; 
+import { Lock, ShieldCheck, RefreshCcw, Menu as MenuIcon, Zap, Bell } from "lucide-react";
 
-// Component Imports
-import NewOrder from "./NewOrder";
+import NewOrder    from "./NewOrder";
 import OrderHistory from "./OrderHistory";
-import Sidebar from "./Sidebar"; 
-import ShiftReportModal from "./ShiftModal";
-import LiveOrderStatus from "./LiveOrderStatus";
-import LiveTableGrid from "./LiveTableGrid"; 
+import ShiftModal  from "./ShiftModal";
+import LiveOrderStatus       from "./LiveOrderStatus";
+import Sidebar               from "./Sidebar";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
-import { useData } from "../../../customer/components/context/DataContext";
+import { useData }  from "../../../customer/components/context/DataContext";
+import API_URL      from "../../../config/api";
 
-export default function StaffPortalLayout() {
-  const [activeTab, setActiveTab] = useState("order");
+
+import { ClipboardList, Clock, History, Flag } from "lucide-react";
+const SUPERVISOR_MENU = [
+  { id: "order",   label: "TAKE ORDER",         icon: <ClipboardList size={20} /> },
+  { id: "status",  label: "VIEW ORDER STATUS",   icon: <Clock size={20} /> },
+  { id: "history", label: "ORDER HISTORY",       icon: <History size={20} /> },
+  { id: "shift",   label: "END SHIFT",           icon: <Flag size={20} /> },
+];
+
+export default function SupervisorLayout() {
+  const [activeTab,        setActiveTab]        = useState("order");
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
-  
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isArchiving,      setIsArchiving]      = useState(false);
+
   const { theme } = useTheme();
   const { currentUser, isGranted } = useData();
+  const isDark = theme === "dark";
 
-  /**
-   * Universal Content Resolver
-   * "status" and "tables" are always open.
-   * "order" is ONLY open if isGranted is true.
-   */
-  const renderContent = () => {
-    switch (activeTab) {
-      case "order": 
-        if (!isGranted) {
-          return (
-            <LockedView 
-              name={currentUser?.name} 
-              theme={theme} 
-            />
-          );
-        }
-        return <NewOrder />;
+  const savedUser        = (() => { try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); } catch { return {}; } })();
+  const currentStaffId   = currentUser?.id   || savedUser?.id;
+  const currentStaffName = currentUser?.name || savedUser?.name || "Supervisor";
 
-      case "status": 
-        return <LiveOrderStatus />;
-      
-      case "tables": 
-        return <LiveTableGrid />; 
+  
+  const today = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Africa/Nairobi" })
+  ).toISOString().split("T")[0];
+  const shiftSessionKey = `supervisor_shift_ended_${today}`;
 
-      case "history": 
-        return <OrderHistory />;
+  const handleFinalizeShift = async () => {
+    if (isArchiving) return;
 
-      case "logout": 
-        return (
-          <div className="flex flex-col items-center justify-center h-full gap-4">
-            <div className="w-12 h-12 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin" />
-            <p className="font-black uppercase tracking-widest italic text-zinc-500">Signing out...</p>
-          </div>
-        );
-      default: 
-        return <LiveOrderStatus />; // Default to status if order is locked
+    // Guard: already archived today in this session?
+    if (localStorage.getItem(shiftSessionKey)) {
+      setIsShiftModalOpen(false);
+      alert("Shift was already archived today.");
+      return;
+    }
+
+    setIsArchiving(true);
+    try {
+      const res = await fetch(`${API_URL}/api/waiter/end-shift`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          waiter_id:   currentStaffId,
+          waiter_name: currentStaffName,
+          role:        "SUPERVISOR",
+        }),
+      });
+      if (res.ok) {
+        localStorage.setItem(shiftSessionKey, "1");
+        setIsShiftModalOpen(false);
+        alert("Shift archived successfully.");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed to archive shift: ${err.error || "Unknown error"}`);
+      }
+    } catch (err) {
+      console.error("End shift error:", err);
+      alert("Network error — please try again.");
+    } finally {
+      setIsArchiving(false);
     }
   };
 
+  // ── Tab → content map ─────────────────────────────────────────────────────
+  const renderContent = () => {
+    switch (activeTab) {
+      case "order":
+        if (!isGranted) return <LockedView name={currentUser?.name} role="Supervisor" />;
+        return <NewOrder />;
+      case "status":
+        return <LiveOrderStatus />;
+      case "history":
+        return <OrderHistory />;
+      default:
+        return <NewOrder />;
+    }
+  };
+
+  // ── Tab change — "shift" opens modal instead of switching view ────────────
   const handleTabChange = (tabId) => {
     if (tabId === "shift") {
       setIsShiftModalOpen(true);
     } else {
       setActiveTab(tabId);
+      setIsMobileMenuOpen(false);
     }
   };
 
   return (
-    <div className={`flex h-screen w-full font-[Outfit] overflow-hidden transition-colors duration-300 ${
-      theme === 'dark' ? 'bg-black text-slate-100' : 'bg-zinc-50 text-zinc-900'
+    <div className={`flex h-[100dvh] w-full font-[Outfit] overflow-hidden transition-colors duration-500 ${
+      isDark ? "bg-black text-slate-100" : "bg-zinc-50 text-zinc-900"
     }`}>
-      
-      {/* SIDEBAR - Status and End Shift are always triggers */}
-      <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} />
 
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-1 h-full overflow-y-auto relative">
-        
-        {/* PERMISSION INDICATOR */}
-        <div className="absolute top-6 right-8 z-50">
-           <div className={`flex items-center gap-2 px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.1em] shadow-lg transition-all duration-500 ${
-             isGranted 
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
-              : 'bg-zinc-500/10 border-zinc-500/20 text-zinc-500 opacity-50'
-           }`}>
-             <div className={`w-2 h-2 rounded-full ${isGranted ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`} />
-             {isGranted ? 'Ordering Enabled' : 'View Only Mode'}
-           </div>
+      {/* ── Mobile hamburger ───────────────────────────────────────────────── */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 flex items-center px-6 z-[60] bg-transparent">
+        <button
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="p-2.5 bg-yellow-500 text-black rounded-xl shadow-lg active:scale-90 transition-all"
+        >
+          <MenuIcon size={20} strokeWidth={3} />
+        </button>
+      </div>
+
+      {/* ── Mobile backdrop ────────────────────────────────────────────────── */}
+      <div
+        className={`fixed inset-0 bg-black/80 backdrop-blur-sm z-[65] lg:hidden transition-opacity duration-500 ${
+          isMobileMenuOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={() => setIsMobileMenuOpen(false)}
+      />
+
+      {/* ── Sidebar — receives supervisor menu override ─────────────────────
+          The shared Sidebar component accepts an optional `menuItems` prop.
+          If your Sidebar doesn't support that yet, see note below.           */}
+      <aside className={`fixed inset-y-0 left-0 z-[70] w-64 transform lg:relative lg:translate-x-0 transition-all duration-500 ease-in-out ${
+        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+      }`}>
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={handleTabChange}
+          menuItems={SUPERVISOR_MENU}
+        />
+      </aside>
+
+      {/* ── Main content ───────────────────────────────────────────────────── */}
+      <main className="flex-1 h-full overflow-y-auto relative flex flex-col min-w-0">
+
+        {/* Permission badge */}
+        <div className="absolute top-6 right-6 z-50">
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 backdrop-blur-md shadow-xl transition-all ${
+            isGranted
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
+              : "bg-rose-500/10 border-rose-500/20 text-rose-500 animate-pulse"
+          }`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${isGranted ? "bg-emerald-500 animate-ping" : "bg-rose-500"}`} />
+            <span className="text-[9px] font-black uppercase tracking-widest leading-none">
+              {isGranted ? "Online" : "Restricted"}
+            </span>
+          </div>
         </div>
 
-        <div className={`${(activeTab === "order" || activeTab === "status") ? "pb-32" : ""}`}>
+        <div className="flex-1 pb-10">
           {renderContent()}
         </div>
       </main>
 
-      {/* BOTTOM NAVIGATION - Optimized for restricted flow */}
-      <nav className={`fixed bottom-0 left-64 right-0 backdrop-blur-md border-t px-12 py-4 pb-8 flex justify-around items-center z-[100] transition-all duration-500 ${
-        theme === 'dark' ? 'bg-zinc-900/90 border-white/5' : 'bg-white/80 border-black/5'
-      }`}>
-        <NavButton 
-          active={activeTab === "status"} 
-          onClick={() => setActiveTab("status")}
-          icon={<Clock size={24} />}
-          label="Orders"
-          theme={theme}
-        />
-        <NavButton 
-          active={activeTab === "order"} 
-          onClick={() => setActiveTab("order")}
-          icon={isGranted ? <PlusCircle size={28} /> : <Lock size={24} />}
-          label={isGranted ? "New Order" : "Locked"}
-          theme={theme}
-        />
-        <NavButton 
-          active={false} 
-          onClick={() => setIsShiftModalOpen(true)}
-          icon={<Flag size={24} />}
-          label="End Shift"
-          theme={theme}
-        />
-      </nav>
-
-      <ShiftReportModal 
-        isOpen={isShiftModalOpen} 
-        onClose={() => setIsShiftModalOpen(false)} 
+      {/* ── Shift modal ───────────────────────────────────────────────────── */}
+      <ShiftModal
+        isOpen={isShiftModalOpen}
+        onClose={() => setIsShiftModalOpen(false)}
+        onConfirm={handleFinalizeShift}
+        isArchiving={isArchiving}
+        staffId={currentStaffId}
+        staffName={currentStaffName}
+        theme={theme}
       />
     </div>
   );
 }
 
-/**
- * UNIVERSAL LOCKED VIEW
- */
-function LockedView({ name, theme }) {
+// ── LockedView — shown on "order" tab when Director hasn't granted permission ─
+function LockedView({ name, role }) {
   const { currentUser } = useData();
   const [requestSent, setRequestSent] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading,     setLoading]     = useState(false);
 
   useEffect(() => {
-    const sent = localStorage.getItem(`perm_req_${currentUser?.id}`);
-    if (sent) setRequestSent(true);
+    if (localStorage.getItem(`perm_req_${currentUser?.id}`)) setRequestSent(true);
   }, [currentUser?.id]);
 
-  const handleRequestPermission = async () => {
+  const handleRequest = async () => {
     setLoading(true);
-    // Simulating API call for permission
-    setTimeout(() => {
-      setRequestSent(true);
-      localStorage.setItem(`perm_req_${currentUser?.id}`, 'true');
-      setLoading(false);
-    }, 1500);
+    try {
+      const res = await fetch(`${API_URL}/api/staff/request-permission`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId: currentUser.id, staffName: currentUser.name }),
+      });
+      if (res.ok) {
+        setRequestSent(true);
+        localStorage.setItem(`perm_req_${currentUser?.id}`, "true");
+      }
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[80vh] p-12 text-center gap-6 animate-in fade-in zoom-in duration-500">
-      <div className={`w-20 h-20 rounded-3xl flex items-center justify-center border transition-all duration-700 ${
-        requestSent ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500' : 'bg-zinc-500/10 border-white/10 text-zinc-500'
-      }`}>
-        {requestSent ? <RefreshCcw size={32} className="animate-spin-slow" /> : <Lock size={32} />}
+    <div className="flex flex-col items-center justify-center h-full min-h-[75vh] p-8 text-center animate-in fade-in duration-700">
+      <div className="relative mb-8">
+        <div className={`w-28 h-28 rounded-[2.5rem] flex items-center justify-center border-2 transition-all duration-700 rotate-6 ${
+          requestSent ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" : "bg-yellow-500/10 border-yellow-500/20 text-yellow-500"
+        }`}>
+          {requestSent ? <ShieldCheck size={48} className="animate-pulse" /> : <Lock size={48} />}
+        </div>
+        <div className="absolute -top-1 -right-1 p-2.5 rounded-2xl bg-black border border-white/10">
+          <Zap className={requestSent ? "text-emerald-500" : "text-yellow-500"} size={20} />
+        </div>
       </div>
-      
-      <div className="space-y-2">
-        <h2 className="text-2xl font-black uppercase tracking-tighter">
-          {requestSent ? "Activation Pending" : "Ordering Permission Required"}
+      <div className="space-y-2 mb-10">
+        <h2 className="text-3xl font-black uppercase italic tracking-tighter">
+          {requestSent ? "Signal Sent" : "Access Locked"}
         </h2>
-        <p className="text-zinc-500 max-w-[320px] leading-relaxed text-[11px] font-bold uppercase tracking-widest">
-          {requestSent 
-            ? `Hold tight, ${name}. Requesting ordering rights from the Director...`
-            : `You can view status and end your shift, but taking new orders requires activation.`
-          }
+        <p className="text-zinc-500 max-w-[300px] mx-auto text-[10px] font-bold uppercase tracking-[0.2em] leading-relaxed opacity-60">
+          {requestSent
+            ? "Your request is live. Wait for the Director to grant ordering power."
+            : `Hey ${name?.split(" ")[0]}, authorization is required for ${role}s to take orders.`}
         </p>
       </div>
-
-      {!requestSent && (
-        <button 
-          onClick={handleRequestPermission}
-          disabled={loading}
-          className="px-8 py-4 bg-white text-black rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-yellow-500 transition-all flex items-center gap-2"
-        >
-          {loading ? <RefreshCcw size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-          Request Activation
-        </button>
-      )}
+      <div className="flex flex-col gap-4 w-full max-w-[280px]">
+        {!requestSent ? (
+          <button
+            onClick={handleRequest} disabled={loading}
+            className="px-6 py-5 bg-yellow-500 text-black rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3"
+          >
+            {loading ? <RefreshCcw size={16} className="animate-spin" /> : <Bell size={16} />}
+            Request Power
+          </button>
+        ) : (
+          <div className="px-6 py-5 bg-emerald-500/10 text-emerald-500 border-2 border-emerald-500/20 rounded-3xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+            <RefreshCcw size={14} className="animate-spin" /> Awaiting Sync
+          </div>
+        )}
+      </div>
     </div>
-  );
-}
-
-function NavButton({ icon, label, active, onClick, theme }) {
-  return (
-    <button onClick={onClick} className={`flex flex-col items-center gap-1.5 transition-all duration-300 ${
-        active ? "text-yellow-500 scale-110" : "text-zinc-500 hover:text-zinc-300"
-      }`}>
-      {icon}
-      <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
-    </button>
   );
 }

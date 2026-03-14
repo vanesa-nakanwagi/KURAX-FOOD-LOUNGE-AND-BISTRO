@@ -18,15 +18,55 @@ import PerformanceReports from "./PerformanceReports";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData }  from "../../../customer/components/context/DataContext";
+import API_URL      from "../../../config/api";
 
 export default function ManagerLayout() {
   const [activeTab, setActiveTab] = useState("order");
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isArchiving,      setIsArchiving]      = useState(false);
   
   const { theme } = useTheme();
   const { currentUser, isGranted } = useData();
   const isDark = theme === 'dark';
+
+  // ── Pull identity from currentUser or localStorage fallback ──────────────
+  const savedUser      = (() => { try { return JSON.parse(localStorage.getItem('kurax_user') || '{}'); } catch { return {}; } })();
+  const currentStaffId   = currentUser?.id   || savedUser?.id;
+  const currentStaffName = currentUser?.name || savedUser?.name || "Manager";
+
+  // ── handleFinalizeShift ─────────────────────────────────────────────────────
+  // Calls PATCH /api/waiter/end-shift with role=MANAGER.
+  // Backend re-derives all totals from DB (orders + cashier_queue) and
+  // saves a staff_shifts row — which StaffAnalyticsModal polls every 8s.
+  const handleFinalizeShift = async () => {
+    if (isArchiving) return;
+    setIsArchiving(true);
+    try {
+      const res = await fetch(`${API_URL}/api/waiter/end-shift`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          waiter_id:   currentStaffId,
+          waiter_name: currentStaffName,
+          role:        "MANAGER",
+          orderCount:  0,          // backend ignores this — derives count from DB
+        }),
+      });
+      if (res.ok) {
+        setIsShiftModalOpen(false);
+        alert("Shift archived successfully.");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed to archive shift: ${err.error || "Unknown error"}`);
+      }
+    } catch (err) {
+      console.error("End shift error:", err);
+      alert("Network error — please try again.");
+    } finally {
+      setIsArchiving(false);
+    }
+  };
 
   // --- Content Switcher ---
   const renderContent = () => {
@@ -104,7 +144,7 @@ export default function ManagerLayout() {
         </div>
       </main>
 
-      {/* 4. FOOTER TABS (Matched to your reference image) */}
+      {/* 4. FOOTER TABS */}
       {(activeTab === "order" || activeTab === "history") && (
         <nav className={`fixed bottom-0 left-0 lg:left-72 right-0 px-10 py-4 pb-8 flex justify-center items-center gap-16 md:gap-32 z-[100] border-t ${
           isDark ? 'bg-[#0a0a0a] border-white/5' : 'bg-white border-black/5 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]'
@@ -115,7 +155,6 @@ export default function ManagerLayout() {
             icon={<PlusCircle size={22} strokeWidth={2.5} />}
             label="Take Order"
           />
-          
           <NavButton 
             active={activeTab === "history"} 
             onClick={() => setActiveTab("history")}
@@ -125,15 +164,20 @@ export default function ManagerLayout() {
         </nav>
       )}
 
-      <ShiftReportModal isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} />
+      {/* ── ShiftReportModal — must receive staffId + managerName ── */}
+      <ShiftReportModal
+        isOpen={isShiftModalOpen}
+        onClose={() => setIsShiftModalOpen(false)}
+        onConfirm={handleFinalizeShift}
+        isArchiving={isArchiving}
+        staffId={currentStaffId}
+        managerName={currentStaffName}
+        theme={theme}
+      />
     </div>
   );
 }
 
-/**
- * CUSTOM NAV BUTTON
- * Replicates the circular border and bold typography from your screenshot
- */
 function NavButton({ icon, label, active, onClick }) {
   return (
     <button 
@@ -154,10 +198,6 @@ function NavButton({ icon, label, active, onClick }) {
   );
 }
 
-/**
- * REWRITTEN LOCKED VIEW
- * Aesthetic permission request screen
- */
 function LockedView({ name, role, theme }) {
   const { currentUser } = useData();
   const [requestSent, setRequestSent] = useState(false);
