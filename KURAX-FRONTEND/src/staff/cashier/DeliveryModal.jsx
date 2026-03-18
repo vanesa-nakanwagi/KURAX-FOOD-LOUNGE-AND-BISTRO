@@ -23,12 +23,14 @@ export default function DeliveryModal({ order, cashierName, onClose, onCreated }
   const [ridersLoading, setRidersLoading] = useState(true);
   const [error,         setError]         = useState("");
 
-  // Pre-fill client info if order already has it
+  // Pre-fill client info — cashier_queue rows use credit_name/credit_phone
+  // orders rows use client_name/client_phone
   useEffect(() => {
-    if (order?.client_name)  setClientName(order.client_name);
-    if (order?.client_phone) setClientPhone(order.client_phone);
-    if (order?.credit_name)  setClientName(order.credit_name);
-    if (order?.credit_phone) setClientPhone(order.credit_phone);
+    if (!order) return;
+    const name  = order.client_name  || order.credit_name  || "";
+    const phone = order.client_phone || order.credit_phone || "";
+    if (name)  setClientName(name);
+    if (phone) setClientPhone(phone);
   }, [order]);
 
   // Fetch active riders
@@ -49,12 +51,19 @@ export default function DeliveryModal({ order, cashierName, onClose, onCreated }
     if (!canSubmit) return;
     setSubmitting(true);
     setError("");
+
+    // order_ids is the array of actual orders.id values on the cashier_queue row.
+    // order.id is the cashier_queue row id — NOT the orders table id.
+    // We need the first entry from order_ids to update the orders table.
+    const actualOrderId = order?.order_ids?.[0] ?? order?.id;
+
     try {
       const res = await fetch(`${API_URL}/api/delivery/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          order_id:         order.id,
+          order_id:         actualOrderId,
+          cashier_queue_id: order.id,          // also send queue id for reference
           rider_id:         Number(riderId),
           client_name:      clientName.trim() || "Client",
           client_phone:     clientPhone.trim(),

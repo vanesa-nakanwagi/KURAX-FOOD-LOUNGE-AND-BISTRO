@@ -170,6 +170,7 @@ export default function CashierDashboard() {
   const [deliveryBadge,      setDeliveryBadge]      = useState(0);    // pending+out count for header
 
   const [riders, setRiders] = useState([]);
+  const [isFinalizing, setIsFinalizing] = useState(false); 
 
   const [today, setToday] = useState(getTodayLocal);
   useEffect(() => {
@@ -244,6 +245,7 @@ export default function CashierDashboard() {
     setRejecting(false);
     setRejectNote("");
   };
+  
 
   const handleFinalConfirm = async () => {
     const order  = processingOrder;
@@ -308,33 +310,48 @@ export default function CashierDashboard() {
     setShowReceipt(true);
   };
 
-  // ── Finalize shift — called from ShiftSummaryModal ─────────────────────────
-  const handleFinalizeShift = async () => {
-    const staffId   = loggedInUser?.id || loggedInUser?.staff_id;
-    const staffName = loggedInUser?.name || "Cashier";
-    const todayStr  = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Africa/Nairobi" })
-    ).toISOString().split("T")[0];
 
-    // 1. Write shift to staff_shifts so director sees it in Shift Registry immediately
-    try {
-      await fetch(`${API_URL}/api/waiter/end-shift`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          waiter_id:   staffId,
-          waiter_name: staffName,
-          role:        loggedInUser?.role || "CASHIER",
-          orderCount:  0,
-        }),
-      });
-    } catch (e) { console.error("End-shift API failed:", e); }
+const handleFinalizeShift = async () => {
+  // 1. Confirm with the user first
+  console.log("DEBUG: Current User ID:", loggedInUser?.id, "Name:", loggedInUser?.name);
+  const confirmEnd = window.confirm("Are you sure you want to finalize this shift? This will archive all current totals.");
+  if (!confirmEnd) return;
 
-    // 2. Flag in localStorage — CashierLayout reads this and shows "Shift Ended"
-    localStorage.setItem(`cashier_shift_ended_${staffId}_${todayStr}`, "true");
+  setIsFinalizing(true); // Start loading state
 
-    // 3. Reload — CashierLayout picks up the flag and renders the ended screen
-    window.location.reload();
+  const payload = {
+    waiter_id: loggedInUser?.id,
+    waiter_name: loggedInUser?.name,
+    role: loggedInUser?.role,
+    total_cash: todayTotals.cash,
+    total_mtn: todayTotals.momo_mtn,
+    total_airtel: todayTotals.momo_airtel,
+    total_card: todayTotals.card,
+    gross_total: todayTotals.gross,
+    petty_cash_spent: pettyCashTotal 
   };
+
+  try {
+    const res = await fetch(`${API_URL}/api/waiter/end-shift`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      // 2. Give a small delay so they can see the "Success" before the reload
+      alert("Shift Finalized. All totals have been archived.");
+      window.location.reload(); 
+    } else {
+      alert("Failed to finalize shift. Please try again.");
+    }
+  } catch (error) {
+    console.error("Shift finalization error:", error);
+    alert("A connection error occurred.");
+  } finally {
+    setIsFinalizing(false); // Reset loading state
+  }
+};
 
   const normalQueue    = liveQueue.filter(r => r.status === "Pending");
   const forwardedQueue = liveQueue.filter(r => r.status === "PendingManagerApproval");
@@ -353,13 +370,18 @@ export default function CashierDashboard() {
   return (
     <div className="flex h-screen bg-black font-[Outfit] text-slate-200 overflow-hidden">
       <SideBar
-        activeSection={activeSection}
-        setActiveSection={(section) => { setActiveSection(section); if (section === "CLOSED") setOrderStatusFilter("CLOSED"); }}
-        isOpen={isSidebarOpen}
-        setIsOpen={setIsSidebarOpen}
-        onEndShift={() => setShowShiftSummary(true)}
-        stats={{ cash: netCashOnCounter, momo: todayTotals.momo_mtn + todayTotals.momo_airtel, card: todayTotals.card }}
-      />
+  activeSection={activeSection}
+  setActiveSection={(section) => { 
+    setActiveSection(section); 
+    if (section === "CLOSED") setOrderStatusFilter("CLOSED"); 
+  }}
+  isOpen={isSidebarOpen}
+  setIsOpen={setIsSidebarOpen}
+  // This triggers the modal to show
+  onEndShift={() => setShowShiftSummary(true)} 
+  stats={{ cash: netCashOnCounter, momo: todayTotals.momo_mtn + todayTotals.momo_airtel, card: todayTotals.card }}
+  deliveryBadge={deliveryBadge}
+/>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="flex items-center justify-between px-6 py-4 bg-[#0c0c0c] border-b border-white/5 sticky top-0 z-50">
@@ -715,6 +737,7 @@ export default function CashierDashboard() {
           }}
           onClose={() => setShowShiftSummary(false)}
           onFinalize={handleFinalizeShift}
+          isFinalizing={isFinalizing}
         />
       )}
 
@@ -911,75 +934,62 @@ function HeaderStat({ icon, label, value, color }) {
   );
 }
 
-// ─── SHIFT SUMMARY MODAL ──────────────────────────────────────────────────────
-function ShiftSummaryModal({ data, onClose, onFinalize }) {
-  const [submitting, setSubmitting] = useState(false);
+function ShiftSummaryModal({ data, onClose, onFinalize, isFinalizing }) {
+  // ── Safety check: if data is somehow missing, show a loader or empty state
+  if (!data) return null;
 
-  const handleFinalize = async () => {
-    setSubmitting(true);
-    try { await onFinalize(); }
-    finally { setSubmitting(false); }
-  };
+  const ugx = (val) => `UGX ${Number(val || 0).toLocaleString()}`;
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-[#0f0f0f] border border-white/10 w-full sm:max-w-md rounded-t-[2rem] sm:rounded-[2rem] overflow-hidden shadow-2xl">
-        <div className="flex justify-center pt-3 pb-1 sm:hidden">
-          <div className="w-10 h-1 rounded-full bg-white/20" />
+    <div className="fixed inset-0 z-[500] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-[#0c0c0c] border border-white/10 rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+        
+        <div className="text-center mb-8">
+          <div className="w-12 h-1 text-yellow-500 bg-yellow-500 mx-auto rounded-full mb-4 opacity-50" />
+          <h2 className="text-xl font-black text-white uppercase italic tracking-tight">Shift Review</h2>
+          <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-2">Verify totals before closing</p>
         </div>
-        <div className="flex items-center justify-between px-6 pt-4 pb-4 sm:pt-6 border-b border-white/8">
-          <div>
-            <p className="text-[10px] font-black tracking-[0.2em] text-zinc-600 uppercase mb-1">End of Shift</p>
-            <h2 className="text-lg sm:text-xl font-black uppercase italic text-yellow-500 tracking-tight leading-none">Audit Report</h2>
+
+        <div className="space-y-4 mb-8">
+          {/* Detailed breakdown using the 'data' prop you passed */}
+          <SummaryRow label="Total Cash" value={ugx(data.cash)} />
+          <SummaryRow label="Momo (MTN/Airtel)" value={ugx(data.momo)} />
+          <SummaryRow label="Card Payments" value={ugx(data.card)} />
+          <SummaryRow label="Petty Cash" value={`-${ugx(data.petty)}`} color="text-rose-500" />
+          
+          <div className="pt-4 mt-4 border-t border-white/5">
+            <div className="bg-yellow-500 p-5 rounded-2xl border border-yellow-400 shadow-xl shadow-yellow-500/10">
+              <p className="text-[9px] font-black text-black/60 uppercase tracking-widest mb-1">Handover Balance (Cash)</p>
+              <p className="text-2xl font-black text-black italic tracking-tighter">
+                {ugx(data.net)}
+              </p>
+            </div>
           </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/5 border border-white/10 text-zinc-500 hover:text-white hover:bg-white/10 flex items-center justify-center transition-all shrink-0">
-            <X size={16} />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <button 
+            onClick={onFinalize}
+            disabled={isFinalizing}
+            className={`w-full py-5 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-3 transition-all
+              ${isFinalizing ? "bg-zinc-800 text-zinc-600" : "bg-red-600 text-white hover:bg-red-500 active:scale-95 shadow-lg shadow-red-600/20"}`}
+          >
+            {isFinalizing ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <span>Finalizing Shift...</span>
+              </>
+            ) : (
+              "Finalize & Clear Totals"
+            )}
           </button>
-        </div>
-        <div className="overflow-y-auto max-h-[70vh] sm:max-h-none px-5 pb-6 pt-4 space-y-3">
-          <div className="bg-white/3 border border-white/7 rounded-2xl p-4 space-y-3">
-            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-600">Cash Breakdown</p>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-zinc-400 font-bold">Gross Cash Collections</span>
-              <span className="text-sm font-black text-white italic">UGX {(data.cash + data.petty).toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-zinc-400 font-bold">Total Petty Outflow</span>
-              <span className="text-sm font-black text-rose-400 italic">− UGX {data.petty.toLocaleString()}</span>
-            </div>
-            <div className="border-t border-dashed border-white/8 pt-3 flex justify-between items-center">
-              <span className="text-xs text-white font-black">Actual Drawer Handover</span>
-              <span className="text-sm font-black text-emerald-400 italic">UGX {data.net.toLocaleString()}</span>
-            </div>
-          </div>
-          <div className="bg-white/3 border border-white/7 rounded-2xl p-4">
-            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-600 mb-3">Digital Settlements</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: "MTN Momo",  value: data.mtn,    color: "text-yellow-400", bg: "bg-yellow-500/8  border-yellow-500/15" },
-                { label: "Airtel",    value: data.airtel, color: "text-red-400",    bg: "bg-red-500/8     border-red-500/15"    },
-                { label: "POS Card",  value: data.card,   color: "text-blue-400",   bg: "bg-blue-500/8    border-blue-500/15"   },
-                { label: "Credits",   value: data.credit, color: "text-purple-400", bg: "bg-purple-500/8  border-purple-500/15" },
-              ].map(({ label, value, color, bg }) => (
-                <div key={label} className={`${bg} border rounded-xl p-3`}>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-1">{label}</p>
-                  <p className={`text-sm font-black italic ${color}`}>UGX {Number(value || 0).toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="bg-yellow-500/6 border border-yellow-500/20 rounded-2xl p-4 flex items-center justify-between">
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-yellow-700 mb-1">Total Shift Revenue</p>
-              <p className="text-2xl font-black italic text-yellow-400 tracking-tight">UGX {Number(data.gross || 0).toLocaleString()}</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-yellow-500/10 border border-yellow-500/25 flex items-center justify-center shrink-0">
-              <CheckCircle2 size={18} className="text-yellow-500"/>
-            </div>
-          </div>
-          <button onClick={handleFinalize} disabled={submitting}
-            className="w-full py-4 bg-yellow-500 text-black font-black rounded-xl uppercase italic text-sm tracking-widest hover:bg-yellow-400 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-yellow-500/10">
-            {submitting ? "Finalizing…" : "Submit & Finalize Audit"}
+          
+          <button 
+            onClick={onClose}
+            disabled={isFinalizing}
+            className="w-full py-2 text-zinc-600 font-bold uppercase text-[10px] tracking-widest hover:text-zinc-400 transition-colors"
+          >
+            Cancel
           </button>
         </div>
       </div>
@@ -987,6 +997,15 @@ function ShiftSummaryModal({ data, onClose, onFinalize }) {
   );
 }
 
+// Small helper for the rows
+function SummaryRow({ label, value, color = "text-white" }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{label}</span>
+      <span className={`text-sm font-black italic ${color}`}>{value}</span>
+    </div>
+  );
+}
 // ─── RIDER CARD ───────────────────────────────────────────────────────────────
 function RiderCard({ rider, onReconcile }) {
   const [cash, setCash] = useState(0);

@@ -171,6 +171,73 @@ router.post('/request-permission', async (req, res) => {
 });
 
 /**
+ * 8. FETCH PERFORMANCE LIST (For Supervisor Targets Dashboard)
+ * Retrieves staff by specific service roles for target setting.
+ */
+router.get("/performance-list", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, role, monthly_income_target, daily_order_target 
+       FROM staff 
+       WHERE role IN ('WAITER', 'MANAGER', 'SUPERVISOR', 'CHEF', 'BARISTA', 'BARMAN')
+       ORDER BY 
+         CASE role 
+           WHEN 'MANAGER' THEN 1 
+           WHEN 'SUPERVISOR' THEN 2 
+           WHEN 'WAITER' THEN 3 
+           ELSE 4 
+         END, 
+         name ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Performance List Error:", err.message);
+    res.status(500).json({ error: "Failed to load staff performance directory" });
+  }
+});
+
+/**
+ * 9. UPDATE STAFF TARGETS
+ * Allows Supervisor/Director to set the quotas for staff members.
+ */
+router.patch("/update-targets", async (req, res) => {
+  const { staff_id, income_target, order_target } = req.body;
+
+  if (!staff_id) {
+    return res.status(400).json({ error: "Staff ID is required" });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE staff 
+       SET monthly_income_target = $1, 
+           daily_order_target = $2 
+       WHERE id = $3
+       RETURNING id, name`,
+      [
+        Number(income_target) || 0, 
+        Number(order_target) || 0, 
+        staff_id
+      ]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Staff member not found" });
+    }
+
+    console.log(`🎯 TARGET UPDATED | ${result.rows[0].name} | Income: ${income_target} | Orders: ${order_target}`);
+
+    res.json({ 
+      success: true, 
+      message: `Targets synchronized for ${result.rows[0].name}` 
+    });
+  } catch (err) {
+    console.error("Target Update Error:", err.message);
+    res.status(500).json({ error: "Database synchronization failed" });
+  }
+});
+
+/**
  * 6. TERMINATE STAFF
  */
 router.delete('/terminate/:id', async (req, res) => {

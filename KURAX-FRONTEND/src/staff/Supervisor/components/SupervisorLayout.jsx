@@ -10,12 +10,14 @@ import Sidebar               from "./Sidebar";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData }  from "../../../customer/components/context/DataContext";
 import API_URL      from "../../../config/api";
+import StaffTargets          from "./StaffTargets";
 
 
-import { ClipboardList, Clock, History, Flag } from "lucide-react";
+import { ClipboardList, Clock, History, Flag, Target } from "lucide-react";
 const SUPERVISOR_MENU = [
   { id: "order",   label: "TAKE ORDER",         icon: <ClipboardList size={20} /> },
   { id: "status",  label: "VIEW ORDER STATUS",   icon: <Clock size={20} /> },
+  { id: "targets", label: "STAFF TARGETS",       icon: <Target size={20} /> },
   { id: "history", label: "ORDER HISTORY",       icon: <History size={20} /> },
   { id: "shift",   label: "END SHIFT",           icon: <Flag size={20} /> },
 ];
@@ -85,6 +87,8 @@ export default function SupervisorLayout() {
         return <NewOrder />;
       case "status":
         return <LiveOrderStatus />;
+      case "targets":
+        return <StaffTargets />;
       case "history":
         return <OrderHistory />;
       default:

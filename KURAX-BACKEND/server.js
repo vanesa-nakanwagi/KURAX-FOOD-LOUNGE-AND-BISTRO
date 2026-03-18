@@ -80,6 +80,8 @@ app.use("/api/barman",  barmanRoutes);
 app.use('/api/waiter', waiterRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/delivery', deliveryRoutes);
+app.use('/api/accountant', waiterRoutes);
+
 // 4. DATABASE VERIFICATION
 const verifyDB = async () => {
   try {

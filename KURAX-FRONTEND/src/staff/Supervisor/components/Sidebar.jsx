@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, Clock, LogOut, Flag } from "lucide-react";
+import { ClipboardList, Target, Clock, LogOut, Flag } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData }  from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
@@ -10,6 +10,7 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 const DEFAULT_MENU = [
   { id: "order",  label: "TAKE ORDER",        icon: <ClipboardList size={20} /> },
   { id: "status", label: "VIEW ORDER STATUS",  icon: <Clock size={20} /> },
+  { id: "targets", label: "SET STAFF TARGETS",   icon: <Target size={20} /> },
   { id: "shift",  label: "END SHIFT",          icon: <Flag size={20} /> },
 ];
 

@@ -558,6 +558,15 @@ export default function AccountantDashboard() {
             </div>
           )}
 
+          {/* ─── ADD THIS NEW SECTION ─── */}
+  {activeSection === "END_OF_SHIFT" && (
+    <AccountantEndShift 
+      sys={sys} 
+      physTotals={{ cash: physCash, mtn: physMomoMTN, airtel: physMomoAirtel, card: physCard }}
+      variance={varTotal}
+    />
+  )}
+
           {/* ══════════════════════════════════════════════════════
               LIVE AUDIT
           ══════════════════════════════════════════════════════ */}
@@ -770,6 +779,111 @@ export default function AccountantDashboard() {
 
         </main>
         <Footer/>
+      </div>
+    </div>
+  );
+}
+function AccountantEndShift({ sys, physTotals, variance }) {
+  const [isFinalizing, setIsFinalizing] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+
+const handleFinalSync = async () => {
+  const confirm = window.confirm("Finalize all accounts? Cards will reset to 0.");
+  if (!confirm) return;
+
+  setIsFinalizing(true);
+  try {
+    const res = await fetch(`${API_URL}/api/accountant/finalize-day`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        final_gross: sys.gross, 
+        recorded_by: JSON.parse(localStorage.getItem('kurax_user'))?.name 
+      })
+    });
+
+    if (res.ok) {
+      setDone(true);
+
+      // --- THE MAGIC PART: MANUALLY ZERO OUT THE DASHBOARD ---
+      // Replace 'setRevenue' with whatever your state setter is called
+      if (typeof setRevenue === 'function') {
+        setRevenue({
+          cash: 0, card: 0, mtn: 0, airtel: 0, gross: 0, orders: 0, credits: 0
+        });
+      }
+      
+      // Also clear the system totals state you use for the summary
+      if (typeof setSys === 'function') {
+        setSys({ gross: 0, cash: 0, mtn: 0, airtel: 0, card: 0 });
+      }
+    }
+  } catch (e) {
+    alert("Error finalizing day.");
+  }
+  setIsFinalizing(false);
+};
+
+
+  if (done) return (
+    <div className="flex flex-col items-center justify-center py-24 animate-in zoom-in-95 duration-700">
+      <div className="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-500 mb-8 border border-emerald-500/20">
+        <CheckCircle2 size={48} />
+      </div>
+      <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">Accounts Closed</h2>
+      <p className="text-zinc-600 text-[10px] mt-3 uppercase tracking-[0.3em] font-bold">Lounge dashboard has been reset</p>
+    </div>
+  );
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
+      <div className="text-center">
+        <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Day Finalization</h2>
+        <p className="text-yellow-600 text-[12px] font-bold mt-2 uppercase tracking-widest italic opacity-80">
+          Reconcile system data with physical collections
+        </p>
+      </div>
+
+      <div className="bg-zinc-900/40 border border-white/5 rounded-[3rem] p-10 shadow-2xl relative overflow-hidden">
+        {/* Subtle background accent */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 blur-[60px] rounded-full" />
+        
+        <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.25em] mb-10 text-center">Verification Summary</h3>
+        
+        <div className="space-y-6 mb-12">
+          <div className="flex justify-between items-center border-b border-white/5 pb-6">
+            <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">System Gross</span>
+            <span className="text-2xl font-black text-white italic">UGX {sys.gross.toLocaleString()}</span>
+          </div>
+          
+          <div className="flex justify-between items-center border-b border-white/5 pb-6">
+            <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">Physical Total</span>
+            <span className="text-2xl font-black text-white italic">
+              UGX {(physTotals.cash + physTotals.mtn + physTotals.airtel + physTotals.card).toLocaleString()}
+            </span>
+          </div>
+          
+          <div className="flex justify-between items-center pt-4">
+            <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">Closing Variance</span>
+            <div className="text-right">
+              <span className={`text-2xl font-black italic ${variance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {variance >= 0 ? '+' : ''}UGX {variance.toLocaleString()}
+              </span>
+              <p className="text-[8px] font-black uppercase opacity-40 mt-1">
+                {variance === 0 ? "Balanced" : variance > 0 ? "Overage" : "Shortage"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <button 
+          onClick={handleFinalSync}
+          disabled={isFinalizing}
+          className="w-full bg-yellow-500 text-black font-black uppercase text-[12px] tracking-[0.15em] py-6 rounded-2xl hover:bg-yellow-400 hover:scale-[1.01] transition-all flex items-center justify-center gap-4 shadow-xl shadow-yellow-500/5"
+        >
+          {isFinalizing ? <RefreshCw className="animate-spin" size={18}/> : <RotateCcw size={18}/>}
+          Close Accounts & Reset Dashboard
+        </button>
       </div>
     </div>
   );

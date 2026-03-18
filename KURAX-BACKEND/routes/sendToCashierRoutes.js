@@ -2,7 +2,7 @@
 import express from "express";
 import pool from "../db.js";
 import { updateDailySummary } from '../helpers/summaryHelper.js';
-import logActivity  from '../utils/logsActivity.js';
+import logActivity from '../utils/logsActivity.js'; 
 
 const router = express.Router();
 
@@ -22,8 +22,8 @@ router.post("/send-to-cashier", async (req, res) => {
       `INSERT INTO cashier_queue
          (order_ids, table_name, label, method, amount, is_item, item_name,
           requested_by, staff_id, credit_name, credit_phone, credit_pay_by,
-          status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'Pending',NOW())
+          status, created_at, shift_cleared)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'Pending',NOW(), FALSE)
        RETURNING id`,
       [
         order_ids    || [],
@@ -58,9 +58,11 @@ router.post("/send-to-cashier", async (req, res) => {
 // GET /api/orders/cashier-queue
 router.get("/cashier-queue", async (req, res) => {
   try {
+    // UPDATED: Added shift_cleared = FALSE
     const result = await pool.query(
       `SELECT * FROM cashier_queue
        WHERE status IN ('Pending','PendingManagerApproval')
+         AND shift_cleared = FALSE
        ORDER BY created_at ASC`
     );
     res.json(result.rows);
@@ -102,7 +104,6 @@ router.patch("/cashier-queue/:id/request-approval", async (req, res) => {
 });
 
 // PATCH /api/orders/cashier-queue/:id/confirm
-// ✅ Calls updateDailySummary after successful payment confirmation
 router.patch("/cashier-queue/:id/confirm", async (req, res) => {
   const { id }                           = req.params;
   const { confirmed_by, transaction_id } = req.body;
@@ -137,12 +138,16 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
           `UPDATE orders SET sent_to_cashier = false WHERE id = ANY($1::int[])`,
           [q.order_ids]
         );
+        
+        await pool.query(
+          `UPDATE orders
+           SET delivery_status = 'collected', delivered_at = NOW()
+           WHERE id = ANY($1::int[])
+             AND order_type = 'delivery'`,
+          [q.order_ids]
+        );
       }
 
-      // ✅ FIX: Always update daily_summaries for EVERY confirmed item payment.
-      // Previously this only ran when ALL pending items for the table were done
-      // (the Mixed path). That meant individual item payments were silently dropped
-      // from daily_summaries — the director saw only partial totals in collections.
       await updateDailySummary({ amount: q.amount, method: q.method, orderCount: 0 });
 
       if (q.table_name) {
@@ -158,22 +163,19 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
              WHERE table_name = $1 AND status NOT IN ('Paid','Credit','Void')`,
             [q.table_name]
           );
-          // ── If any of these table orders are deliveries, mark them paid ──
+          
           await pool.query(
             `UPDATE orders
-             SET delivery_status = 'paid', delivered_at = NOW()
+             SET delivery_status = 'collected', delivered_at = NOW()
              WHERE table_name = $1
                AND order_type = 'delivery'
-               AND delivery_status IS DISTINCT FROM 'paid'`,
+               AND delivery_status IS DISTINCT FROM 'collected'`,
             [q.table_name]
           );
-          // Table fully settled — log a zero-amount Mixed entry just to mark closure
-          // (the actual amounts were already counted per-item above)
         }
       }
 
     } else {
-      // Full-table payment
       if (q.order_ids?.length) {
         await pool.query(
           `UPDATE orders
@@ -182,17 +184,15 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
            WHERE id = ANY($3::int[])`,
           [q.method, transaction_id || null, q.order_ids]
         );
-        // ── If any of these orders are deliveries, mark them paid ────────────
+        
         await pool.query(
           `UPDATE orders
-           SET delivery_status = 'paid', delivered_at = NOW()
+           SET delivery_status = 'collected', delivered_at = NOW()
            WHERE id = ANY($1::int[])
-             AND order_type = 'delivery'
-             AND delivery_status IS DISTINCT FROM 'paid'`,
+             AND order_type = 'delivery'`,
           [q.order_ids]
         );
       }
-      // ✅ Full payment — update summary with actual method
       await updateDailySummary({ amount: q.amount, method: q.method });
     }
 
@@ -247,9 +247,11 @@ router.patch("/cashier-queue/:id/reject", async (req, res) => {
 // GET /api/orders/credit-approvals
 router.get("/credit-approvals", async (req, res) => {
   try {
+    // UPDATED: Added shift_cleared = FALSE
     const result = await pool.query(
       `SELECT * FROM cashier_queue
        WHERE status = 'PendingManagerApproval'
+         AND shift_cleared = FALSE
        ORDER BY created_at ASC`
     );
     res.json(result.rows);
@@ -260,7 +262,6 @@ router.get("/credit-approvals", async (req, res) => {
 });
 
 // PATCH /api/orders/credit-approvals/:id/approve
-// ✅ Calls updateDailySummary for credit amounts
 router.patch("/credit-approvals/:id/approve", async (req, res) => {
   const { id }          = req.params;
   const { approved_by } = req.body;
@@ -305,7 +306,6 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
       );
     }
 
-    // ✅ Track credit amount in daily summary
     await updateDailySummary({ amount: q.amount, method: 'Credit' });
 
     await logActivity(pool, 'CREDIT',
@@ -320,7 +320,7 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
 });
 
 // PATCH /api/orders/credit-approvals/:id/reject
-router.patch("/credit-approvals/:id/reject", async (req, res) => {
+router.patch("/api/orders/credit-approvals/:id/reject", async (req, res) => {
   const { id }                  = req.params;
   const { reason, rejected_by } = req.body;
 
@@ -357,22 +357,15 @@ router.patch("/credit-approvals/:id/reject", async (req, res) => {
 });
 
 // GET /api/orders/cashier-history
-// Returns today's confirmed/rejected cashier_queue rows for all staff.
-// Each staff member filters client-side by their own requested_by name.
-// Shift clearing is handled by the session key in localStorage (frontend)
-// and by the end-shift endpoint marking orders shift_cleared=TRUE (backend).
-//
-// IMPORTANT: The previous version used a complex bool_and(shift_cleared) subquery
-// that silently returned 0 rows when order_ids was empty or the subquery returned NULL.
-// This caused all totals to always show as 0. Now we simply return all of today's rows.
 router.get("/cashier-history", async (req, res) => {
   try {
+    // UPDATED: Added shift_cleared = FALSE
     const result = await pool.query(
       `SELECT cq.*
        FROM cashier_queue cq
        WHERE cq.status IN ('Confirmed', 'Rejected')
-         AND (cq.created_at AT TIME ZONE 'Africa/Nairobi')::date =
-             (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Nairobi')::date
+         AND cq.created_at::date = CURRENT_DATE
+         AND cq.shift_cleared = FALSE
        ORDER BY cq.confirmed_at DESC NULLS LAST
        LIMIT 500`
     );
@@ -397,7 +390,6 @@ router.get("/credits", async (req, res) => {
 });
 
 // PATCH /api/orders/credits/:id/settle
-// ✅ Calls updateDailySummary when credit is fully settled
 router.patch("/credits/:id/settle", async (req, res) => {
   const { id } = req.params;
   const { settled_by, settle_method, settle_transaction, settle_notes, amount_paid } = req.body;
@@ -438,7 +430,6 @@ router.patch("/credits/:id/settle", async (req, res) => {
          WHERE id = ANY($2::int[])`,
         [settle_method || "Cash", credit.order_ids]
       );
-      // ✅ Credit is now settled — record the actual payment method used
       await updateDailySummary({ amount: paid_amount, method: settle_method || 'Cash' });
     }
 

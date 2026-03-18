@@ -11,17 +11,26 @@ function kampalaDate(d = new Date()) {
 
 // ── PATCH /api/waiter/end-shift ───────────────────────────────────────────────
 router.patch('/end-shift', async (req, res) => {
-  const { waiter_id, waiter_name, role, orderCount } = req.body;
+  const { 
+    waiter_id, 
+    waiter_name, 
+    role, 
+    total_cash, 
+    total_mtn, 
+    total_airtel, 
+    total_card, 
+    gross_total,
+    petty_cash_spent,
+    orderCount 
+  } = req.body;
+
   const today     = kampalaDate();
   const staffRole = (role || 'WAITER').toUpperCase();
 
   if (!waiter_id) return res.status(400).json({ error: 'waiter_id is required' });
 
   try {
-
-    // ── 0. Check is_permitted from the staff table ────────────────────────────
-    // Managers are only permitted to take orders when the director enables it.
-    // For WAITER/SUPERVISOR we skip this check — they are always permitted.
+    // ── 0. Permission Check (for Managers) ──────────────────────────────────
     let isPermitted = true;
     if (staffRole === 'MANAGER') {
       const permRes = await pool.query(
@@ -30,65 +39,55 @@ router.patch('/end-shift', async (req, res) => {
       );
       if (permRes.rows.length > 0) {
         const raw = permRes.rows[0].is_permitted;
-        // DB may store boolean, integer 1/0, or string "t"/"f"/"true"/"false"
         isPermitted = raw === true || raw === 1 || raw === 't' || raw === 'true';
       } else {
         isPermitted = false;
       }
     }
 
-    // ── 1a. Order count + gross — only if permitted ───────────────────────────
-    // Non-permitted managers took no orders today — store zeros.
-    // orders.payment_method is always "Cash" (hardcoded in NewOrder.jsx).
-    // Real method lives in cashier_queue — see step 1b.
-    let count      = 0;
-    let totalGross = 0;
+    // ── 1. Calculate Totals (Priority: Frontend Payload > Database Query) ───
+    let finalCount  = Number(orderCount) || 0;
+    let finalGross  = Number(gross_total);
+    let finalCash   = Number(total_cash);
+    let finalMTN    = Number(total_mtn);
+    let finalAirtel = Number(total_airtel);
+    let finalCard   = Number(total_card);
+    let finalPetty  = Number(petty_cash_spent) || 0;
 
-    if (isPermitted) {
-      // orders table has no staff_name column — query by staff_id only
-      const ordersRes = await pool.query(
-        `SELECT
-           COUNT(*)                AS order_count,
-           COALESCE(SUM(total), 0) AS gross_total
-         FROM orders
-         WHERE staff_id = $1
-           AND date = $2
-           AND shift_cleared = FALSE
+    // Fallback logic for Waiters/Staff who don't pass payload
+    if (isNaN(finalGross)) {
+      if (isPermitted) {
+        const ordersRes = await pool.query(
+          `SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS gross
+           FROM orders WHERE staff_id = $1 AND date = $2 AND shift_cleared = FALSE
            AND status NOT IN ('Cancelled', 'Voided')`,
-        [waiter_id, today]
-      );
-      count      = Number(ordersRes.rows[0].order_count) || Number(orderCount) || 0;
-      totalGross = Number(ordersRes.rows[0].gross_total) || 0;
+          [waiter_id, today]
+        );
+        finalCount = Number(ordersRes.rows[0].count);
+        finalGross = Number(ordersRes.rows[0].gross);
+
+        const queueRes = await pool.query(
+          `SELECT
+             COALESCE(SUM(CASE WHEN method = 'Cash' THEN amount ELSE 0 END), 0) AS total_cash,
+             COALESCE(SUM(CASE WHEN method = 'Momo-MTN' THEN amount ELSE 0 END), 0) AS total_mtn,
+             COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0) AS total_airtel,
+             COALESCE(SUM(CASE WHEN method IN ('Card','Visa','POS','Debit') THEN amount ELSE 0 END), 0) AS total_card
+           FROM cashier_queue
+           WHERE (staff_id = $1 OR requested_by = $2)
+             AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
+             AND status = 'Confirmed' AND method != 'Credit' AND shift_cleared = FALSE`,
+          [waiter_id, waiter_name, today]
+        );
+        finalCash   = Number(queueRes.rows[0].total_cash);
+        finalMTN    = Number(queueRes.rows[0].total_mtn);
+        finalAirtel = Number(queueRes.rows[0].total_airtel);
+        finalCard   = Number(queueRes.rows[0].total_card);
+      } else {
+        finalCount = 0; finalGross = 0; finalCash = 0; finalMTN = 0; finalAirtel = 0; finalCard = 0;
+      }
     }
 
-    // ── 1b. Payment breakdowns from cashier_queue — only if permitted ─────────
-    let totalCash   = 0;
-    let totalMTN    = 0;
-    let totalAirtel = 0;
-    let totalCard   = 0;
-
-    if (isPermitted) {
-      const queueRes = await pool.query(
-        `SELECT
-           COALESCE(SUM(CASE WHEN method = 'Cash'                         THEN amount ELSE 0 END), 0) AS total_cash,
-           COALESCE(SUM(CASE WHEN method = 'Momo-MTN'                     THEN amount ELSE 0 END), 0) AS total_mtn,
-           COALESCE(SUM(CASE WHEN method = 'Momo-Airtel'                  THEN amount ELSE 0 END), 0) AS total_airtel,
-           COALESCE(SUM(CASE WHEN method IN ('Card','Visa','POS','Debit') THEN amount ELSE 0 END), 0) AS total_card
-         FROM cashier_queue
-         WHERE (staff_id = $1 OR requested_by = $2)
-           AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
-           AND status = 'Confirmed'
-           AND method != 'Credit'`,
-        [waiter_id, waiter_name, today]
-      );
-      totalCash   = Number(queueRes.rows[0].total_cash)   || 0;
-      totalMTN    = Number(queueRes.rows[0].total_mtn)    || 0;
-      totalAirtel = Number(queueRes.rows[0].total_airtel) || 0;
-      totalCard   = Number(queueRes.rows[0].total_card)   || 0;
-    }
-
-    // ── 1c. Credit decisions — always queried ────────────────────────────────
-    // Managers approve/reject credits. Waiters will always get 0s here.
+    // ── 1c. Credit decisions ────────────────────────────────────────────────
     const creditRes = await pool.query(
       `SELECT
          COUNT(*) FILTER (WHERE status = 'Confirmed' AND method = 'Credit')                 AS credit_approved,
@@ -96,72 +95,64 @@ router.patch('/end-shift', async (req, res) => {
          COALESCE(SUM(amount) FILTER (WHERE status = 'Confirmed' AND method = 'Credit'), 0) AS credit_approved_amt
        FROM cashier_queue
        WHERE confirmed_by ILIKE $1
-         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $2`,
+         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $2
+         AND shift_cleared = FALSE`,
       [waiter_name, today]
     );
-    const creditApproved    = Number(creditRes.rows[0].credit_approved)     || 0;
-    const creditRejected    = Number(creditRes.rows[0].credit_rejected)     || 0;
-    const creditApprovedAmt = Number(creditRes.rows[0].credit_approved_amt) || 0;
+    const crApp     = Number(creditRes.rows[0].credit_approved) || 0;
+    const crRej     = Number(creditRes.rows[0].credit_rejected) || 0;
+    const crAppAmt  = Number(creditRes.rows[0].credit_approved_amt) || 0;
 
-    // ── 2. UPSERT into staff_shifts ───────────────────────────────────────────
-    // Run once in Neon if columns/constraint are missing:
-    //   ALTER TABLE staff_shifts ADD CONSTRAINT uq_staff_shift_date UNIQUE (staff_id, shift_date);
-    //   ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS is_permitted       BOOLEAN DEFAULT FALSE;
-    //   ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS credit_approved     INT     DEFAULT 0;
-    //   ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS credit_rejected     INT     DEFAULT 0;
-    //   ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS credit_approved_amt NUMERIC DEFAULT 0;
+    // ── 2. UPSERT into staff_shifts ──────────────────────────────────────────
     await pool.query(
       `INSERT INTO staff_shifts
          (staff_id, staff_name, role, is_permitted,
-          total_orders, total_cash, total_mtn, total_airtel, total_card, gross_total,
-          credit_approved, credit_rejected, credit_approved_amt,
-          shift_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          total_orders, total_cash, total_mtn, total_airtel, total_card, gross_total, petty_cash,
+          credit_approved, credit_rejected, credit_approved_amt, shift_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT (staff_id, shift_date)
        DO UPDATE SET
-         staff_name          = EXCLUDED.staff_name,
-         role                = EXCLUDED.role,
-         is_permitted        = EXCLUDED.is_permitted,
          total_orders        = EXCLUDED.total_orders,
          total_cash          = EXCLUDED.total_cash,
          total_mtn           = EXCLUDED.total_mtn,
          total_airtel        = EXCLUDED.total_airtel,
          total_card          = EXCLUDED.total_card,
          gross_total         = EXCLUDED.gross_total,
+         petty_cash          = EXCLUDED.petty_cash,
          credit_approved     = EXCLUDED.credit_approved,
          credit_rejected     = EXCLUDED.credit_rejected,
          credit_approved_amt = EXCLUDED.credit_approved_amt`,
       [waiter_id, waiter_name, staffRole, isPermitted,
-       count, totalCash, totalMTN, totalAirtel, totalCard, totalGross,
-       creditApproved, creditRejected, creditApprovedAmt,
-       today]
+       finalCount, finalCash, finalMTN, finalAirtel, finalCard, finalGross, finalPetty,
+       crApp, crRej, crAppAmt, today]
     );
 
-    // ── 3. Mark orders shift_cleared — only if permitted ─────────────────────
+    // ── 3. THE CLEARING LOGIC (Archive live data) ───────────────────────────
+    // This makes the totals on the dashboard return to 0
     if (isPermitted) {
-      // orders table has no staff_name column — update by staff_id only
+      // Clear main orders
       await pool.query(
-        `UPDATE orders
-         SET shift_cleared = TRUE
-         WHERE staff_id = $1
-           AND date = $2
-           AND shift_cleared = FALSE`,
+        `UPDATE orders SET shift_cleared = TRUE 
+         WHERE staff_id = $1 AND date = $2 AND shift_cleared = FALSE`,
         [waiter_id, today]
+      );
+      
+      // Clear cashier queue and history
+      await pool.query(
+        `UPDATE cashier_queue SET shift_cleared = TRUE 
+         WHERE (staff_id = $1 OR requested_by = $2) 
+         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3 
+         AND shift_cleared = FALSE`,
+        [waiter_id, waiter_name, today]
       );
     }
 
-    console.log(
-      `✅ Shift ended — ${staffRole} ${waiter_name} | permitted: ${isPermitted} | ` +
-      `${count} orders | Cash: ${totalCash} | MTN: ${totalMTN} | Airtel: ${totalAirtel} | ` +
-      `Card: ${totalCard} | Gross: ${totalGross} | Credits: +${creditApproved} -${creditRejected}`
-    );
+    console.log(`✅ Shift Finalized — ${staffRole} ${waiter_name} | Gross: ${finalGross}`);
 
     res.json({
-      success:     true,
-      message:     'Shift archived.',
-      isPermitted,
-      totals:  { totalCash, totalMTN, totalAirtel, totalCard, totalGross, count },
-      credits: { creditApproved, creditRejected, creditApprovedAmt },
+      success: true,
+      message: 'Shift archived and live totals reset.',
+      totals: { finalCash, finalMTN, finalAirtel, finalCard, finalGross, finalPetty }
     });
 
   } catch (err) {
@@ -176,18 +167,9 @@ router.get('/shifts/:staffId', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
     const result = await pool.query(
-      `SELECT id, staff_name, role, is_permitted,
-              total_orders, total_cash, total_mtn, total_airtel, total_card, gross_total,
-              credit_approved, credit_rejected, credit_approved_amt,
-              shift_date, created_at
-       FROM staff_shifts
-       WHERE staff_id = $1
-         AND shift_date = $2
-       ORDER BY created_at ASC`,
+      `SELECT * FROM staff_shifts WHERE staff_id = $1 AND shift_date = $2`,
       [staffId, date]
     );
-    // DEBUG — remove once confirmed working
-    console.log(`[shifts] staffId="${staffId}" date="${date}" → ${result.rows.length} row(s)`, result.rows);
     res.json(result.rows);
   } catch (err) {
     console.error('Fetch shifts error:', err.message);
@@ -196,8 +178,6 @@ router.get('/shifts/:staffId', async (req, res) => {
 });
 
 // ── GET /api/waiter/manager-credit-stats ─────────────────────────────────────
-// Returns how many credit orders a manager approved/rejected today.
-// Called by ManagerShiftModal before archiving the shift.
 router.get('/manager-credit-stats', async (req, res) => {
   const { manager_name, date } = req.query;
   const today = date || kampalaDate();
@@ -205,156 +185,191 @@ router.get('/manager-credit-stats', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT
-         COUNT(*) FILTER (WHERE status = 'Confirmed' AND method = 'Credit')                 AS approved,
-         COUNT(*) FILTER (WHERE status = 'Rejected'  AND method = 'Credit')                 AS rejected,
+         COUNT(*) FILTER (WHERE status = 'Confirmed' AND method = 'Credit') AS approved,
+         COUNT(*) FILTER (WHERE status = 'Rejected'  AND method = 'Credit') AS rejected,
          COALESCE(SUM(amount) FILTER (WHERE status = 'Confirmed' AND method = 'Credit'), 0) AS approved_amt
        FROM cashier_queue
-       WHERE confirmed_by ILIKE $1
-         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $2`,
+       WHERE confirmed_by ILIKE $1 
+       AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $2
+       AND shift_cleared = FALSE`, // Skip already finalized data
       [manager_name, today]
     );
     const row = result.rows[0];
     res.json({
-      approved:    Number(row.approved)     || 0,
-      rejected:    Number(row.rejected)     || 0,
+      approved: Number(row.approved) || 0,
+      rejected: Number(row.rejected) || 0,
       approvedAmt: Number(row.approved_amt) || 0,
     });
   } catch (err) {
-    console.error('Manager credit stats error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── GET /api/waiter/manager-shift-preview ────────────────────────────────────
-// Called by ManagerShiftModal on open to get live order count + payment totals.
-// Reads from orders table (count) and cashier_queue (real payment methods).
+// ── PREVIEW ROUTES (Manager & Supervisor) ────────────────────────────────────
 router.get('/manager-shift-preview', async (req, res) => {
   const { staff_id, staff_name, date } = req.query;
   const today = date || kampalaDate();
   if (!staff_id) return res.status(400).json({ error: 'staff_id required' });
   try {
-    // orders table has no staff_name column — filter by staff_id only
     const ordersRes = await pool.query(
-      `SELECT
-         COUNT(*)                AS order_count,
-         COALESCE(SUM(total), 0) AS gross_total
-       FROM orders
-       WHERE staff_id = $1
-         AND date = $2
-         AND shift_cleared = FALSE
-         AND status NOT IN ('Cancelled', 'Voided')`,
+      `SELECT COUNT(*) AS order_count, COALESCE(SUM(total), 0) AS gross_total
+       FROM orders WHERE staff_id = $1 AND date = $2 AND shift_cleared = FALSE 
+       AND status NOT IN ('Cancelled', 'Voided')`,
       [staff_id, today]
     );
-
-    // cashier_queue has both staff_id and requested_by (name) — match either
     const queueRes = await pool.query(
       `SELECT
-         COALESCE(SUM(CASE WHEN method = 'Cash'                         THEN amount ELSE 0 END), 0) AS total_cash,
-         COALESCE(SUM(CASE WHEN method = 'Momo-MTN'                     THEN amount ELSE 0 END), 0) AS total_mtn,
-         COALESCE(SUM(CASE WHEN method = 'Momo-Airtel'                  THEN amount ELSE 0 END), 0) AS total_airtel,
+         COALESCE(SUM(CASE WHEN method = 'Cash' THEN amount ELSE 0 END), 0) AS total_cash,
+         COALESCE(SUM(CASE WHEN method = 'Momo-MTN' THEN amount ELSE 0 END), 0) AS total_mtn,
+         COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0) AS total_airtel,
          COALESCE(SUM(CASE WHEN method IN ('Card','Visa','POS','Debit') THEN amount ELSE 0 END), 0) AS total_card
        FROM cashier_queue
-       WHERE (staff_id = $1 OR requested_by = $2)
-         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
-         AND status = 'Confirmed'
-         AND method != 'Credit'`,
+       WHERE (staff_id = $1 OR requested_by = $2) 
+       AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
+       AND status = 'Confirmed' AND method != 'Credit' AND shift_cleared = FALSE`,
       [staff_id, staff_name || '', today]
     );
-
-    const o = ordersRes.rows[0];
-    const q = queueRes.rows[0];
-
-    console.log(`[manager-shift-preview] staff_id="${staff_id}" staff_name="${staff_name}" date="${today}"`);
-    console.log(`[manager-shift-preview] orders  →`, o);
-    console.log(`[manager-shift-preview] queue   →`, q);
-
     res.json({
-      order_count:  Number(o.order_count)  || 0,
-      gross_total:  Number(o.gross_total)  || 0,
-      total_cash:   Number(q.total_cash)   || 0,
-      total_mtn:    Number(q.total_mtn)    || 0,
-      total_airtel: Number(q.total_airtel) || 0,
-      total_card:   Number(q.total_card)   || 0,
+      order_count: Number(ordersRes.rows[0].order_count) || 0,
+      gross_total: Number(ordersRes.rows[0].gross_total) || 0,
+      total_cash:  Number(queueRes.rows[0].total_cash)   || 0,
+      total_mtn:   Number(queueRes.rows[0].total_mtn)    || 0,
+      total_airtel:Number(queueRes.rows[0].total_airtel) || 0,
+      total_card:  Number(queueRes.rows[0].total_card)   || 0,
     });
   } catch (err) {
-    console.error('Manager shift preview error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── GET /api/waiter/supervisor-shift-preview ──────────────────────────────────
-// ── GET /api/waiter/supervisor-shift-preview ──────────────────────────────────
-// Called by SupervisorShiftModal on open.
-// Returns live order count + gross total + payment breakdown for the supervisor.
-//
-// KEY DESIGN NOTES:
-//   orders table      → has staff_id column BUT no staff_name column.
-//                        staff_name is only available via JOIN with staff table.
-//                        So we MUST filter by staff_id only here.
-//   cashier_queue     → stores both staff_id (number) AND requested_by (text name).
-//                        We match on either so both new and legacy rows are captured.
-//   gross_total       → taken from orders.total (the item prices, set at order time).
-//   payment breakdown → taken from cashier_queue where status='Confirmed'
-//                        because orders.payment_method is always "Cash" (hardcoded);
-//                        real method is only recorded in cashier_queue.
 router.get('/supervisor-shift-preview', async (req, res) => {
   const { staff_id, staff_name, date } = req.query;
   const today = date || kampalaDate();
-
   if (!staff_id) return res.status(400).json({ error: 'staff_id required' });
-
   try {
-    // ── 1. Order count + gross from orders table ─────────────────────────────
-    // orders has NO staff_name column — filter by staff_id only.
-    // Also include staff_role = 'SUPERVISOR' guard to avoid cross-role matches
-    // when staff_id is reused across roles (edge case safety).
     const ordersRes = await pool.query(
-      `SELECT
-         COUNT(*)                AS order_count,
-         COALESCE(SUM(total), 0) AS gross_total
-       FROM orders
-       WHERE staff_id = $1
-         AND date = $2
-         AND shift_cleared = FALSE
-         AND status NOT IN ('Cancelled', 'Voided')`,
+      `SELECT COUNT(*) AS order_count, COALESCE(SUM(total), 0) AS gross_total
+       FROM orders WHERE staff_id = $1 AND date = $2 AND shift_cleared = FALSE 
+       AND status NOT IN ('Cancelled', 'Voided')`,
       [staff_id, today]
     );
-
-    // ── 2. Payment breakdown from cashier_queue ───────────────────────────────
-    // cashier_queue stores staff_id (number) and requested_by (text).
-    // We match on both to capture all supervisor's confirmed payments.
-    // method != 'Credit' because credit amounts are not real cash collected.
     const queueRes = await pool.query(
       `SELECT
-         COALESCE(SUM(CASE WHEN method = 'Cash'                         THEN amount ELSE 0 END), 0) AS total_cash,
-         COALESCE(SUM(CASE WHEN method = 'Momo-MTN'                     THEN amount ELSE 0 END), 0) AS total_mtn,
-         COALESCE(SUM(CASE WHEN method = 'Momo-Airtel'                  THEN amount ELSE 0 END), 0) AS total_airtel,
+         COALESCE(SUM(CASE WHEN method = 'Cash' THEN amount ELSE 0 END), 0) AS total_cash,
+         COALESCE(SUM(CASE WHEN method = 'Momo-MTN' THEN amount ELSE 0 END), 0) AS total_mtn,
+         COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0) AS total_airtel,
          COALESCE(SUM(CASE WHEN method IN ('Card','Visa','POS','Debit') THEN amount ELSE 0 END), 0) AS total_card
        FROM cashier_queue
-       WHERE (staff_id = $1 OR requested_by = $2)
-         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
-         AND status = 'Confirmed'
-         AND method != 'Credit'`,
+       WHERE (staff_id = $1 OR requested_by = $2) 
+       AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
+       AND status = 'Confirmed' AND method != 'Credit' AND shift_cleared = FALSE`,
       [staff_id, staff_name || '', today]
     );
-
-    const o = ordersRes.rows[0];
-    const q = queueRes.rows[0];
-
-    console.log(`[supervisor-shift-preview] staff_id="${staff_id}" staff_name="${staff_name}" date="${today}"`);
-    console.log(`[supervisor-shift-preview] orders  →`, o);
-    console.log(`[supervisor-shift-preview] queue   →`, q);
-
     res.json({
-      order_count:  Number(o.order_count)  || 0,
-      gross_total:  Number(o.gross_total)  || 0,
-      total_cash:   Number(q.total_cash)   || 0,
-      total_mtn:    Number(q.total_mtn)    || 0,
-      total_airtel: Number(q.total_airtel) || 0,
-      total_card:   Number(q.total_card)   || 0,
+      order_count: Number(ordersRes.rows[0].order_count) || 0,
+      gross_total: Number(ordersRes.rows[0].gross_total) || 0,
+      total_cash:  Number(queueRes.rows[0].total_cash)   || 0,
+      total_mtn:   Number(queueRes.rows[0].total_mtn)    || 0,
+      total_airtel:Number(queueRes.rows[0].total_airtel) || 0,
+      total_card:  Number(queueRes.rows[0].total_card)   || 0,
     });
   } catch (err) {
-    console.error('Supervisor shift preview error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/accountant/finalize-day ────────────────────────────────────────
+// This archives the entire lounge's performance for the day
+router.post('/finalize-day', async (req, res) => {
+  const { final_gross, variance, recorded_by } = req.body;
+  const today = kampalaDate();
+
+  try {
+    // 1. Create a Master Daily Record for the Director
+    await pool.query(
+      `INSERT INTO daily_reconciliations 
+         (date, total_system_gross, total_variance, finalized_by, status)
+       VALUES ($1, $2, $3, $4, 'CLOSED')
+       ON CONFLICT (date) DO UPDATE SET
+         total_system_gross = EXCLUDED.total_system_gross,
+         total_variance     = EXCLUDED.total_variance,
+         finalized_by       = EXCLUDED.finalized_by`,
+      [today, final_gross, variance, recorded_by]
+    );
+
+    // 2. Archive live data so 'Live Audit' and 'Queue' clear
+    await pool.query(
+      `UPDATE orders SET shift_cleared = TRUE 
+       WHERE date = $1 AND shift_cleared = FALSE`,
+      [today]
+    );
+
+    await pool.query(
+      `UPDATE cashier_queue SET shift_cleared = TRUE 
+       WHERE (created_at AT TIME ZONE 'Africa/Nairobi')::date = $1 
+       AND shift_cleared = FALSE`,
+      [today]
+    );
+
+    // ── 2.5 NEW: RESET REVENUE SUMMARY TABLE ──────────────────────────────
+    // This is what actually clears the cards in your "MY COLLECTIONS" view
+    await pool.query(
+      `UPDATE daily_summaries 
+       SET total_cash = 0, total_mtn = 0, total_airtel = 0, total_card = 0, 
+           gross_revenue = 0, order_count = 0, total_credits = 0
+       WHERE date = $1`,
+      [today]
+    );
+
+    console.log(`🏛️ DAY FINALIZED by ${recorded_by} | All summaries reset to 0.`);
+
+    res.json({ 
+      success: true, 
+      message: 'All lounge accounts finalized and summary cards reset.' 
+    });
+  } catch (err) {
+    console.error('Accountant Finalize Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/accountant/physical-count ───────────────────────────────────────
+// Fetches the saved physical counts if the accountant previously saved them
+router.get('/physical-count', async (req, res) => {
+  const today = kampalaDate();
+  try {
+    const result = await pool.query(
+      `SELECT * FROM physical_counts WHERE date = $1`,
+      [today]
+    );
+    res.json(result.rows[0] || { cash: 0, momo_mtn: 0, momo_airtel: 0, card: 0, notes: '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/physical-count ──────────────────────────────────────
+// Saves the intermediate physical count (from the Physical Count tab)
+router.post('/physical-count', async (req, res) => {
+  const { cash, momo_mtn, momo_airtel, card, notes, submitted_by } = req.body;
+  const today = kampalaDate();
+
+  try {
+    await pool.query(
+      `INSERT INTO physical_counts 
+         (date, cash, momo_mtn, momo_airtel, card, notes, submitted_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (date) DO UPDATE SET
+         cash = EXCLUDED.cash,
+         momo_mtn = EXCLUDED.momo_mtn,
+         momo_airtel = EXCLUDED.momo_airtel,
+         card = EXCLUDED.card,
+         notes = EXCLUDED.notes,
+         submitted_by = EXCLUDED.submitted_by`,
+      [today, cash, momo_mtn, momo_airtel, card, notes, submitted_by]
+    );
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
