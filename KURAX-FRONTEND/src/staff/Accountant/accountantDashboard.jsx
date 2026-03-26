@@ -4,7 +4,8 @@ import {
   Menu, Calculator, Wallet, CheckCircle2,
   RotateCcw, BookOpen, User, Phone, Calendar,
   RefreshCw, TrendingUp, Save, AlertTriangle,
-  BarChart3, ChefHat, Coffee, Wine, ChevronDown, ChevronUp
+  BarChart3, ChefHat, Coffee, Wine, ChevronDown, ChevronUp,
+  ClipboardList,
 } from "lucide-react";
 import { useData } from "../../customer/components/context/DataContext";
 import SideBar from "./SideBar";
@@ -70,8 +71,6 @@ function AccountantCreditRow({ credit }) {
     <div className={`bg-zinc-900/20 border rounded-[2rem] p-5 flex items-start justify-between gap-3 flex-wrap
       ${credit.paid ? "border-emerald-500/20 opacity-70" : "border-purple-500/30"}`}>
       <div className="flex-1 min-w-0">
-
-        {/* Table + status badge */}
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <span className="font-black text-white uppercase italic tracking-tighter">{credit.table_name || "Table"}</span>
           {credit.paid
@@ -79,10 +78,8 @@ function AccountantCreditRow({ credit }) {
             : <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[9px] font-black uppercase animate-pulse">Outstanding</span>
           }
         </div>
-
-        {/* Client details */}
         <div className="flex items-center gap-3 flex-wrap text-[10px] mb-1">
-          {credit.client_name  && (
+          {credit.client_name && (
             <div className="flex items-center gap-1">
               <User size={10} className="text-zinc-600"/>
               <span className="text-zinc-300 font-bold">{credit.client_name}</span>
@@ -94,7 +91,6 @@ function AccountantCreditRow({ credit }) {
               <span className="text-zinc-400">{credit.client_phone}</span>
             </div>
           )}
-          {/* Pay-by date only shown for outstanding */}
           {!credit.paid && credit.pay_by && (
             <div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg">
               <Calendar size={10} className="text-amber-400"/>
@@ -102,8 +98,6 @@ function AccountantCreditRow({ credit }) {
             </div>
           )}
         </div>
-
-        {/* Settlement details for paid credits */}
         {credit.paid && credit.settle_method && (
           <p className="text-[9px] text-zinc-600 mt-1 font-mono">
             Settled via {credit.settle_method}
@@ -111,12 +105,10 @@ function AccountantCreditRow({ credit }) {
             {credit.paid_at    ? ` · ${toLocalDateStr(new Date(credit.paid_at))}` : ""}
           </p>
         )}
-
         <p className="text-[9px] text-zinc-700 mt-1">
           Approved by {credit.approved_by} · {toLocalDateStr(new Date(credit.created_at))}
         </p>
       </div>
-
       <div className="text-right shrink-0">
         <p className="text-xl font-black text-purple-400 italic">UGX {fmt(credit.amount)}</p>
         {credit.paid && credit.amount_paid && Number(credit.amount_paid) !== Number(credit.amount) && (
@@ -127,7 +119,7 @@ function AccountantCreditRow({ credit }) {
   );
 }
 
-// ─── STATION CARD (View Sales) ────────────────────────────────────────────────
+// ─── STATION CARD ─────────────────────────────────────────────────────────────
 function StationCard({ icon, label, color, borderColor, summary, loading, tickets }) {
   const [expanded, setExpanded] = useState(false);
   const t = summary?.totals || {};
@@ -147,7 +139,6 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
           </div>
           {loading && <RefreshCw size={14} className="text-zinc-600 animate-spin"/>}
         </div>
-
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-black/40 rounded-2xl p-4">
             <p className="text-[8px] font-black uppercase text-zinc-600 mb-1">Tickets</p>
@@ -160,7 +151,7 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
           <div className="bg-black/40 rounded-2xl p-4 col-span-2">
             <p className="text-[8px] font-black uppercase text-zinc-600 mb-2">Status Breakdown</p>
             <div className="flex items-center gap-4 text-[10px] font-black uppercase">
-              <span className="text-zinc-400">{t.pending_count   || 0} Pending</span>
+              <span className="text-zinc-400">{t.pending_count || 0} Pending</span>
               <span className="text-orange-400">{t.preparing_count || 0} Active</span>
               <span className="text-emerald-400">{t.completed_count || 0} Done</span>
             </div>
@@ -168,7 +159,6 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
         </div>
       </div>
 
-      {/* Staff breakdown */}
       {(summary?.chefs || summary?.baristas || summary?.barmen || []).length > 0 && (
         <div className="px-6 pb-4">
           <p className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mb-2">Staff Breakdown</p>
@@ -194,7 +184,6 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
         </div>
       )}
 
-      {/* Expandable ticket list */}
       {tickets && tickets.length > 0 && (
         <div className="px-6 pb-6">
           <button onClick={() => setExpanded(e => !e)}
@@ -239,79 +228,96 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
 export default function AccountantDashboard() {
   const { todaySummary, orders = [], setOrders } = useData() || {};
 
-  const [activeSection,   setActiveSection]   = useState("FINANCIAL_HISTORY");
-  const [mobileMenuOpen,  setMobileMenuOpen]  = useState(false);
+  const [activeSection,  setActiveSection]  = useState("FINANCIAL_HISTORY");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // ── Live summary (own fetch — bypasses DataContext polling delay) ─────────
+  const [liveSummary, setLiveSummary] = useState(null);
+
+  const fetchLiveSummary = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/summaries/today`);
+      if (res.ok) setLiveSummary(await res.json());
+    } catch (e) { console.error("live summary:", e); }
+  }, []);
+
+  useEffect(() => {
+    fetchLiveSummary();
+    const id = setInterval(fetchLiveSummary, 15000);
+    return () => clearInterval(id);
+  }, [fetchLiveSummary]);
 
   // ── Physical count ────────────────────────────────────────────────────────
-  const [physCash,        setPhysCash]        = useState(0);
-  const [physMomoMTN,     setPhysMomoMTN]     = useState(0);
-  const [physMomoAirtel,  setPhysMomoAirtel]  = useState(0);
-  const [physCard,        setPhysCard]        = useState(0);
-  const [physNotes,       setPhysNotes]       = useState("");
-  const [physSaving,      setPhysSaving]      = useState(false);
-  const [physSaved,       setPhysSaved]       = useState(false);
-  const [physLoading,     setPhysLoading]     = useState(false);
+  const [physCash,       setPhysCash]       = useState(0);
+  const [physMomoMTN,    setPhysMomoMTN]    = useState(0);
+  const [physMomoAirtel, setPhysMomoAirtel] = useState(0);
+  const [physCard,       setPhysCard]       = useState(0);
+  const [physNotes,      setPhysNotes]      = useState("");
+  const [physSaving,     setPhysSaving]     = useState(false);
+  const [physSaved,      setPhysSaved]      = useState(false);
+  const [physLoading,    setPhysLoading]    = useState(false);
 
   // ── Credits ───────────────────────────────────────────────────────────────
-  const [creditsLedger,   setCreditsLedger]   = useState([]);
-  const [creditsLoading,  setCreditsLoading]  = useState(false);
-  const [creditFilter,    setCreditFilter]    = useState("all");
+  const [creditsLedger,  setCreditsLedger]  = useState([]);
+  const [creditsLoading, setCreditsLoading] = useState(false);
+  const [creditFilter,   setCreditFilter]   = useState("all");
 
   // ── Void requests ─────────────────────────────────────────────────────────
   const [voidRequests,        setVoidRequests]        = useState([]);
   const [voidRequestsLoading, setVoidRequestsLoading] = useState(false);
+  const [voidHistory,         setVoidHistory]         = useState([]);
+  const [voidHistoryLoading,  setVoidHistoryLoading]  = useState(false);
 
-  // ── Station sales (View Sales) ────────────────────────────────────────────
-  const [kitchenSummary,  setKitchenSummary]  = useState(null);
-  const [baristaSummary,  setBaristaSummary]  = useState(null);
-  const [barmanSummary,   setBarmanSummary]   = useState(null);
-  const [salesLoading,    setSalesLoading]    = useState(false);
-  const [salesDate,       setSalesDate]       = useState(kampalaDate());
+  // ── Station sales ─────────────────────────────────────────────────────────
+  const [kitchenSummary, setKitchenSummary] = useState(null);
+  const [baristaSummary, setBaristaSummary] = useState(null);
+  const [barmanSummary,  setBarmanSummary]  = useState(null);
+  const [salesLoading,   setSalesLoading]   = useState(false);
+  const [salesDate,      setSalesDate]      = useState(kampalaDate());
 
-  // --- Inside AccountantDashboard.jsx ---
+  // ── Monthly profit / expenses ─────────────────────────────────────────────
+  const [profitData,     setProfitData]     = useState(null);
+  const [profitLoad,     setProfitLoad]     = useState(false);
+  const [selectedMonth,  setSelectedMonth]  = useState(new Date().toISOString().substring(0, 7));
 
-// 1. Add these states at the top with your other useStates
-const [profitData, setProfitData] = useState(null);
-const [profitLoad, setProfitLoad] = useState(false);
-const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7)); // e.g. "2026-03"
+  const fetchMonthlyData = useCallback(async () => {
+    setProfitLoad(true);
+    try {
+      const res = await fetch(`${API_URL}/api/summaries/monthly-profit?month=${selectedMonth}`);
+      if (res.ok) setProfitData(await res.json());
+    } catch (e) { console.error("monthly profit:", e); }
+    finally { setProfitLoad(false); }
+  }, [selectedMonth]);
 
-// 2. Add the fetch function
-const fetchMonthlyData = useCallback(async () => {
-  setProfitLoad(true);
-  try {
-    // This endpoint should return { costs: { fixed_items: [...] } }
-    const res = await fetch(`${API_URL}/api/summaries/monthly-profit?month=${selectedMonth}`);
-    if (res.ok) {
-      const data = await res.json();
-      setProfitData(data);
-    }
-  } catch (e) {
-    console.error("Failed to fetch expenses:", e);
-  } finally {
-    setProfitLoad(false);
-  }
-}, [selectedMonth]);
+  useEffect(() => { fetchMonthlyData(); }, [fetchMonthlyData]);
 
-// 3. Trigger the fetch when the dashboard loads or the month changes
-useEffect(() => {
-  fetchMonthlyData();
-}, [fetchMonthlyData]);
+  // ── Void history ──────────────────────────────────────────────────────────
+  const loadVoidHistory = useCallback(async () => {
+    setVoidHistoryLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/orders/void-requests/history`);
+      if (res.ok) setVoidHistory(await res.json());
+    } catch (e) { console.error("void history:", e); }
+    setVoidHistoryLoading(false);
+  }, []);
 
-  // ── Void requests polling ─────────────────────────────────────────────────
+  // ── Void pending requests (also refreshes history) ────────────────────────
   const loadVoidRequests = useCallback(async () => {
     setVoidRequestsLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/orders/void-requests`);
       if (res.ok) setVoidRequests(await res.json());
-    } catch (e) { console.error("Void requests:", e); }
+    } catch (e) { console.error("void requests:", e); }
     setVoidRequestsLoading(false);
-  }, []);
+    loadVoidHistory();
+  }, [loadVoidHistory]);
 
   useEffect(() => {
     loadVoidRequests();
+    loadVoidHistory();
     const id = setInterval(loadVoidRequests, 15000);
     return () => clearInterval(id);
-  }, [loadVoidRequests]);
+  }, [loadVoidRequests, loadVoidHistory]);
 
   // ── Physical count ────────────────────────────────────────────────────────
   const loadPhysicalCount = useCallback(async () => {
@@ -349,7 +355,7 @@ useEffect(() => {
     setPhysSaving(false);
   };
 
-  // ── Credits (always loaded so Financial History alert is live) ────────────
+  // ── Credits ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       setCreditsLoading(true);
@@ -391,17 +397,19 @@ useEffect(() => {
     if (activeSection === "VIEW_SALES") loadSales(salesDate);
   }, [activeSection, salesDate]);
 
-  // ── Derived values ────────────────────────────────────────────────────────
+  // ── Derived values — use liveSummary (direct fetch) not todaySummary ──────
+  const src = liveSummary || todaySummary || {};
   const sys = {
-    cash:   Number(todaySummary?.total_cash)   || 0,
-    card:   Number(todaySummary?.total_card)   || 0,
-    mtn:    Number(todaySummary?.total_mtn)    || 0,
-    airtel: Number(todaySummary?.total_airtel) || 0,
-    credit: Number(todaySummary?.total_credit) || 0,
-    mixed:  Number(todaySummary?.total_mixed)  || 0,
-    gross:  Number(todaySummary?.total_gross)  || 0,
-    orders: Number(todaySummary?.order_count)  || 0,
+    cash:   Number(src.total_cash)   || 0,
+    card:   Number(src.total_card)   || 0,
+    mtn:    Number(src.total_mtn)    || 0,
+    airtel: Number(src.total_airtel) || 0,
+    credit: Number(src.total_credit) || 0,
+    mixed:  Number(src.total_mixed)  || 0,
+    gross:  Number(src.total_gross)  || 0,
+    orders: Number(src.order_count)  || 0,
   };
+
   const varCash   = physCash       - sys.cash;
   const varMTN    = physMomoMTN    - sys.mtn;
   const varAirtel = physMomoAirtel - sys.airtel;
@@ -424,7 +432,7 @@ useEffect(() => {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approved_by: loggedInUser?.name || "Accountant" }),
       });
-      loadVoidRequests();
+      loadVoidRequests(); // also refreshes history
     } catch (e) { console.error("void approve:", e); }
   };
 
@@ -434,10 +442,11 @@ useEffect(() => {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rejected_by: loggedInUser?.name || "Accountant" }),
       });
-      loadVoidRequests();
+      loadVoidRequests(); // also refreshes history
     } catch (e) { console.error("void reject:", e); }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-[#0a0a0a] font-[Outfit] text-slate-200">
       <SideBar
@@ -480,57 +489,51 @@ useEffect(() => {
               FINANCIAL HISTORY
           ══════════════════════════════════════════════════════ */}
           {activeSection === "FINANCIAL_HISTORY" && (
-  <div className="space-y-8 animate-in fade-in duration-500">
-    <div>
-      <h2 className="text-xl font-black text-white uppercase leading-none">Today's Revenue</h2>
-      <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from daily summaries — same source as all roles</p>
-    </div>
+            <div className="space-y-8 animate-in fade-in duration-500">
+              <div>
+                <h2 className="text-xl font-black text-white uppercase leading-none">Today's Revenue</h2>
+                <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue — updates every 15 seconds</p>
+              </div>
 
-    {/* REVENUE STATS GRID */}
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-      <StatCard icon={<Banknote size={18}/>}    label="Cash"        value={sys.cash}   color="text-emerald-500"/>
-      <StatCard icon={<CreditCard size={18}/>}  label="Card"        value={sys.card}   color="text-blue-400"/>
-      <StatCard icon={<Smartphone size={18}/>}  label="MTN Momo"    value={sys.mtn}    color="text-yellow-500"/>
-      <StatCard icon={<Smartphone size={18}/>}  label="Airtel Momo" value={sys.airtel} color="text-red-500"/>
-      <StatCard icon={<BookOpen size={18}/>}    label="Credits"     value={sys.credit} color="text-purple-400" note="not in gross"/>
-      <StatCard icon={<Wallet size={18}/>}      label="Mixed"       value={sys.mixed}  color="text-orange-400"/>
-      <StatCard icon={<Receipt size={18}/>}     label="Orders"      value={sys.orders} color="text-zinc-400" isCount/>
-      
-      <div className="bg-yellow-500 p-5 rounded-[2rem] border border-yellow-400 flex flex-col gap-2 shadow-lg shadow-yellow-500/10">
-        <div className="p-2.5 w-fit rounded-xl bg-black/20 text-black"><TrendingUp size={18}/></div>
-        <div>
-          <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em] mb-1">Gross Revenue</p>
-          <h3 className="text-xl font-black text-black italic tracking-tighter">
-            <span className="text-[9px] mr-1 opacity-50 not-italic">UGX</span>{fmt(sys.gross)}
-          </h3>
-        </div>
-      </div>
-    </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <StatCard icon={<Banknote size={18}/>}   label="Cash"        value={sys.cash}   color="text-emerald-500"/>
+                <StatCard icon={<CreditCard size={18}/>} label="Card"        value={sys.card}   color="text-blue-400"/>
+                <StatCard icon={<Smartphone size={18}/>} label="MTN Momo"    value={sys.mtn}    color="text-yellow-500"/>
+                <StatCard icon={<Smartphone size={18}/>} label="Airtel Momo" value={sys.airtel} color="text-red-500"/>
+                <StatCard icon={<BookOpen size={18}/>}   label="Credits"     value={sys.credit} color="text-purple-400" note="not in gross"/>
+                <StatCard icon={<Wallet size={18}/>}     label="Mixed"       value={sys.mixed}  color="text-orange-400"/>
+                <StatCard icon={<Receipt size={18}/>}    label="Orders"      value={sys.orders} color="text-zinc-400" isCount/>
 
-    {/* MONTHLY EXPENSES SECTION */}
-    <div className="pt-4">
-      <div className="mb-4">
-        <h2 className="text-xl font-black text-white uppercase leading-none">Monthly Expenses</h2>
-        <p className="text-zinc-500 text-[11px] font-medium mt-1 italic uppercase tracking-wider">Fixed Costs & Operational Overheads</p>
-      </div>
-      
-      <MonthlyCosts 
-        month={selectedMonth}
-        monthLabel={selectedMonth} 
-        fixedItems={profitData?.costs?.fixed_items || []} 
-        profitLoad={profitLoad}
-        onRefresh={fetchMonthlyData}
-        API_URL={API_URL}
-        dark={true}
-        t={{
-          card: "bg-zinc-900/30",
-          divider: "border-white/5",
-          subtext: "text-zinc-500"
-        }}
-      />
-    </div>
-  </div>
-)}
+                <div className="bg-yellow-500 p-5 rounded-[2rem] border border-yellow-400 flex flex-col gap-2 shadow-lg shadow-yellow-500/10">
+                  <div className="p-2.5 w-fit rounded-xl bg-black/20 text-black"><TrendingUp size={18}/></div>
+                  <div>
+                    <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em] mb-1">Gross Revenue</p>
+                    <h3 className="text-xl font-black text-black italic tracking-tighter">
+                      <span className="text-[9px] mr-1 opacity-50 not-italic">UGX</span>{fmt(sys.gross)}
+                    </h3>
+                  </div>
+                </div>
+              </div>
+
+              {/* Monthly Expenses */}
+              <div className="pt-4">
+                <div className="mb-4">
+                  <h2 className="text-xl font-black text-white uppercase leading-none">Monthly Expenses</h2>
+                  <p className="text-zinc-500 text-[11px] font-medium mt-1 italic uppercase tracking-wider">Fixed Costs & Operational Overheads</p>
+                </div>
+                <MonthlyCosts
+                  month={selectedMonth}
+                  monthLabel={selectedMonth}
+                  fixedItems={profitData?.costs?.fixed_items || []}
+                  profitLoad={profitLoad}
+                  onRefresh={fetchMonthlyData}
+                  API_URL={API_URL}
+                  dark={true}
+                  t={{ card: "bg-zinc-900/30", divider: "border-white/5", subtext: "text-zinc-500" }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* ══════════════════════════════════════════════════════
               PHYSICAL COUNT
@@ -551,10 +554,10 @@ useEffect(() => {
                     <div className="h-40 animate-pulse bg-zinc-800/30 rounded-2xl"/>
                   ) : (
                     <>
-                      <PhysInput label="Cash on Hand"  value={physCash}        onChange={setPhysCash}        color="text-emerald-400"/>
-                      <PhysInput label="MTN Momo"       value={physMomoMTN}     onChange={setPhysMomoMTN}     color="text-yellow-400"/>
-                      <PhysInput label="Airtel Momo"    value={physMomoAirtel}  onChange={setPhysMomoAirtel}  color="text-red-400"/>
-                      <PhysInput label="Card / POS"     value={physCard}        onChange={setPhysCard}        color="text-blue-400"/>
+                      <PhysInput label="Cash on Hand" value={physCash}        onChange={setPhysCash}        color="text-emerald-400"/>
+                      <PhysInput label="MTN Momo"      value={physMomoMTN}     onChange={setPhysMomoMTN}     color="text-yellow-400"/>
+                      <PhysInput label="Airtel Momo"   value={physMomoAirtel}  onChange={setPhysMomoAirtel}  color="text-red-400"/>
+                      <PhysInput label="Card / POS"    value={physCard}        onChange={setPhysCard}        color="text-blue-400"/>
                       <div>
                         <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2">Notes (optional)</p>
                         <textarea value={physNotes} onChange={e => setPhysNotes(e.target.value)}
@@ -594,7 +597,6 @@ useEffect(() => {
                       {varTotal === 0 ? "Perfect match" : varTotal > 0 ? "Surplus on counter" : "Shortage detected"}
                     </p>
                   </div>
-                  {/* System reference */}
                   <div className="pt-4 border-t border-white/5 space-y-2">
                     <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">System Totals (reference)</p>
                     <div className="grid grid-cols-2 gap-2 text-[10px]">
@@ -611,73 +613,200 @@ useEffect(() => {
             </div>
           )}
 
-          {/* ─── ADD THIS NEW SECTION ─── */}
-  {activeSection === "END_OF_SHIFT" && (
-    <AccountantEndShift 
-      sys={sys} 
-      physTotals={{ cash: physCash, mtn: physMomoMTN, airtel: physMomoAirtel, card: physCard }}
-      variance={varTotal}
-    />
-  )}
+          {/* ══════════════════════════════════════════════════════
+              END OF SHIFT
+          ══════════════════════════════════════════════════════ */}
+          {activeSection === "END_OF_SHIFT" && (
+            <AccountantEndShift
+              sys={sys}
+              physTotals={{ cash: physCash, mtn: physMomoMTN, airtel: physMomoAirtel, card: physCard }}
+              variance={varTotal}
+            />
+          )}
 
           {/* ══════════════════════════════════════════════════════
-              LIVE AUDIT
+              LIVE AUDIT  — pending + history ledger
           ══════════════════════════════════════════════════════ */}
           {activeSection === "LIVE_AUDIT" && (
             <div className="space-y-6 animate-in fade-in duration-500">
+
+              {/* Header */}
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-black text-white uppercase leading-none">Live Audit</h2>
-                  <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Void requests from waiters — approve or reject</p>
+                  <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">
+                    Void requests from waiters — approve or reject
+                  </p>
                 </div>
-                <button onClick={loadVoidRequests}
+                <button onClick={() => { loadVoidRequests(); loadVoidHistory(); }}
                   className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-white/5 rounded-2xl text-[10px] font-black text-zinc-400 uppercase hover:text-white transition-colors">
                   <RefreshCw size={12} className={voidRequestsLoading ? "animate-spin" : ""}/> Refresh
                 </button>
               </div>
 
-              {voidRequestsLoading && voidRequests.length === 0 ? (
-                <div className="space-y-3">
-                  {[...Array(2)].map((_,i) => <div key={i} className="h-28 rounded-[2rem] bg-zinc-900/30 animate-pulse border border-white/5"/>)}
-                </div>
-              ) : voidRequests.length === 0 ? (
-                <div className="py-24 text-center border-2 border-dashed border-white/5 rounded-[3rem] bg-zinc-900/10">
-                  <CheckCircle2 size={32} className="mx-auto text-zinc-700 mb-4"/>
-                  <p className="text-zinc-500 font-black uppercase text-[10px] tracking-widest italic">No pending void requests</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {voidRequests.map(vr => (
-                    <div key={vr.id} className="bg-zinc-900/30 border border-rose-500/20 p-5 rounded-[2rem] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <div className="w-12 h-12 bg-rose-500/20 rounded-2xl flex items-center justify-center text-rose-400 shrink-0">
-                          <AlertTriangle size={18}/>
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <p className="font-black text-white uppercase text-sm italic">{vr.item_name}</p>
-                            <span className="px-2 py-0.5 rounded-lg bg-zinc-800 text-zinc-400 text-[9px] font-black uppercase border border-white/5">
-                              {vr.table_name || "Unknown Table"}
-                            </span>
+              {/* ── PENDING REQUESTS ── */}
+              <div>
+                <p className="text-[9px] font-black uppercase text-zinc-500 tracking-[0.2em] mb-3 flex items-center gap-2">
+                  <AlertTriangle size={10} className="text-rose-400"/>
+                  Pending Requests
+                  {voidRequests.length > 0 && (
+                    <span className="bg-rose-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">
+                      {voidRequests.length}
+                    </span>
+                  )}
+                </p>
+
+                {voidRequestsLoading && voidRequests.length === 0 ? (
+                  <div className="space-y-3">
+                    {[...Array(2)].map((_,i) => (
+                      <div key={i} className="h-28 rounded-[2rem] bg-zinc-900/30 animate-pulse border border-white/5"/>
+                    ))}
+                  </div>
+                ) : voidRequests.length === 0 ? (
+                  <div className="py-10 text-center border-2 border-dashed border-white/5 rounded-[3rem] bg-zinc-900/10">
+                    <CheckCircle2 size={28} className="mx-auto text-zinc-700 mb-3"/>
+                    <p className="text-zinc-500 font-black uppercase text-[10px] tracking-widest italic">
+                      No pending void requests
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {voidRequests.map(vr => (
+                      <div key={vr.id}
+                        className="bg-zinc-900/30 border border-rose-500/20 p-5 rounded-[2rem] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <div className="w-12 h-12 bg-rose-500/20 rounded-2xl flex items-center justify-center text-rose-400 shrink-0">
+                            <AlertTriangle size={18}/>
                           </div>
-                          <p className="text-[10px] text-zinc-500">
-                            Waiter: <span className="text-white font-bold">{vr.waiter_name || vr.requested_by}</span>
-                            <span className="mx-2 text-zinc-700">·</span>
-                            {new Date(vr.created_at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
-                          </p>
-                          <p className="text-[10px] text-rose-400 italic mt-0.5">"{vr.reason}"</p>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <p className="font-black text-white uppercase text-sm italic">{vr.item_name}</p>
+                              {vr.table_name && (
+                                <span className="px-2 py-0.5 rounded-lg bg-zinc-800 text-zinc-400 text-[9px] font-black uppercase border border-white/5">
+                                  {vr.table_name}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 flex-wrap text-[10px] text-zinc-500">
+                              <span>Waiter: <span className="text-white font-bold">{vr.waiter_name || vr.requested_by}</span></span>
+                              {vr.chef_name && (
+                                <span>· Chef: <span className="text-yellow-400 font-bold">{vr.chef_name}</span></span>
+                              )}
+                              {vr.station && (
+                                <span className="text-zinc-600 capitalize">· {vr.station}</span>
+                              )}
+                              <span className="text-zinc-700">
+                                {new Date(vr.created_at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-rose-400 italic mt-0.5">"{vr.reason}"</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <button onClick={() => approveVoid(vr.id)}
+                            className="bg-rose-600 text-white px-5 py-2.5 rounded-xl text-[9px] font-black uppercase hover:bg-rose-500 transition-all">
+                            Approve
+                          </button>
+                          <button onClick={() => rejectVoid(vr.id)}
+                            className="bg-zinc-800 text-zinc-400 px-5 py-2.5 rounded-xl text-[9px] font-black uppercase border border-white/5 hover:bg-zinc-700 transition-all">
+                            Reject
+                          </button>
                         </div>
                       </div>
-                      <div className="flex gap-2 shrink-0">
-                        <button onClick={() => approveVoid(vr.id)}
-                          className="bg-rose-600 text-white px-5 py-2.5 rounded-xl text-[9px] font-black uppercase hover:bg-rose-500 transition-all">Approve</button>
-                        <button onClick={() => rejectVoid(vr.id)}
-                          className="bg-zinc-800 text-zinc-400 px-5 py-2.5 rounded-xl text-[9px] font-black uppercase border border-white/5 hover:bg-zinc-700 transition-all">Reject</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ── TODAY'S VOID HISTORY LEDGER ── */}
+              <div className="pt-4 border-t border-white/5">
+                <p className="text-[9px] font-black uppercase text-zinc-500 tracking-[0.2em] mb-3 flex items-center gap-2">
+                  <ClipboardList size={10} className="text-zinc-400"/>
+                  Today's Resolved Voids
+                  {voidHistory.length > 0 && (
+                    <span className="bg-zinc-700 text-zinc-300 text-[8px] font-black px-1.5 py-0.5 rounded-full">
+                      {voidHistory.length}
+                    </span>
+                  )}
+                </p>
+
+                {voidHistoryLoading ? (
+                  <div className="space-y-2">
+                    {[...Array(3)].map((_,i) => (
+                      <div key={i} className="h-16 rounded-2xl bg-zinc-900/30 animate-pulse border border-white/5"/>
+                    ))}
+                  </div>
+                ) : voidHistory.length === 0 ? (
+                  <div className="py-10 text-center border border-dashed border-white/5 rounded-[2rem]">
+                    <p className="text-zinc-700 font-black uppercase text-[9px] tracking-widest">
+                      No resolved voids today
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {voidHistory.map(vr => (
+                      <div key={vr.id}
+                        className={`p-4 rounded-2xl border flex items-center justify-between gap-3 flex-wrap
+                          ${vr.status === 'Approved'
+                            ? 'bg-rose-500/5 border-rose-500/15'
+                            : vr.status === 'Rejected'
+                            ? 'bg-zinc-900/20 border-white/5'
+                            : 'bg-zinc-900/10 border-white/5 opacity-50'}`}>
+
+                        {/* Left */}
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-[11px] font-black
+                            ${vr.status === 'Approved'
+                              ? 'bg-rose-500/20 text-rose-400'
+                              : 'bg-zinc-800 text-zinc-500'}`}>
+                            {vr.status === 'Approved' ? '✓' : '✕'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-[11px] font-black text-white uppercase">{vr.item_name}</p>
+                              {vr.table_name && (
+                                <span className="text-[8px] font-black text-zinc-600 uppercase">{vr.table_name}</span>
+                              )}
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-lg uppercase
+                                ${vr.status === 'Approved'
+                                  ? 'bg-rose-500/10 text-rose-400'
+                                  : vr.status === 'Rejected'
+                                  ? 'bg-zinc-700/50 text-zinc-500'
+                                  : 'bg-zinc-800 text-zinc-600'}`}>
+                                {vr.status}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap text-[9px] text-zinc-600 mt-0.5">
+                              <span>Waiter: <span className="text-zinc-400">{vr.waiter_name || vr.requested_by}</span></span>
+                              {vr.chef_name && (
+                                <span>· Chef: <span className="text-yellow-500/70">{vr.chef_name}</span></span>
+                              )}
+                              {vr.station && (
+                                <span className="text-zinc-700 capitalize">· {vr.station}</span>
+                              )}
+                            </div>
+                            <p className="text-[8px] text-zinc-700 italic mt-0.5">"{vr.reason}"</p>
+                          </div>
+                        </div>
+
+                        {/* Right */}
+                        <div className="text-right shrink-0">
+                          {vr.resolved_by && (
+                            <p className="text-[9px] font-black text-zinc-500 uppercase">by {vr.resolved_by}</p>
+                          )}
+                          <p className="text-[8px] text-zinc-700">
+                            {vr.resolved_at
+                              ? new Date(vr.resolved_at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})
+                              : new Date(vr.created_at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})
+                            }
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
 
@@ -691,7 +820,6 @@ useEffect(() => {
                 <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">All on-account orders — outstanding and settled</p>
               </div>
 
-              {/* Summary tiles */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div className="bg-zinc-900/30 border border-white/5 p-5 rounded-[2rem]">
                   <div className="p-2.5 w-fit bg-purple-500/10 rounded-xl text-purple-400 mb-3"><BookOpen size={16}/></div>
@@ -713,7 +841,6 @@ useEffect(() => {
                 </div>
               </div>
 
-              {/* Filter tabs */}
               <div className="flex gap-1 p-1 bg-zinc-900 rounded-2xl w-fit">
                 {[{key:"all",label:"All"},{key:"outstanding",label:"Outstanding"},{key:"settled",label:"Settled"}].map(({key,label}) => (
                   <button key={key} onClick={() => setCreditFilter(key)}
@@ -724,7 +851,6 @@ useEffect(() => {
                 ))}
               </div>
 
-              {/* Credits list */}
               {creditsLoading ? (
                 <div className="space-y-3">
                   {[...Array(3)].map((_,i) => <div key={i} className="h-24 rounded-[2rem] bg-zinc-900/30 animate-pulse border border-white/5"/>)}
@@ -753,8 +879,7 @@ useEffect(() => {
                   <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Kitchen · Barista · Bar — daily output per station</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input type="date" value={salesDate}
-                    onChange={e => setSalesDate(e.target.value)}
+                  <input type="date" value={salesDate} onChange={e => setSalesDate(e.target.value)}
                     className="bg-zinc-900 border border-white/10 rounded-2xl px-4 py-2.5 text-white text-xs font-bold outline-none focus:border-yellow-500/50"/>
                   <button onClick={() => loadSales(salesDate)}
                     className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900 border border-white/5 rounded-2xl text-[10px] font-black text-zinc-400 uppercase hover:text-white transition-colors">
@@ -763,14 +888,10 @@ useEffect(() => {
                 </div>
               </div>
 
-              {/* Combined total banner */}
               {(kitchenSummary || baristaSummary || barmanSummary) && (() => {
-                const totalTickets = [kitchenSummary, baristaSummary, barmanSummary]
-                  .reduce((s,d) => s + Number(d?.totals?.ticket_count || 0), 0);
-                const totalItems   = [kitchenSummary, baristaSummary, barmanSummary]
-                  .reduce((s,d) => s + Number(d?.totals?.total_items   || 0), 0);
-                const totalDone    = [kitchenSummary, baristaSummary, barmanSummary]
-                  .reduce((s,d) => s + Number(d?.totals?.completed_count || 0), 0);
+                const totalTickets = [kitchenSummary, baristaSummary, barmanSummary].reduce((s,d) => s + Number(d?.totals?.ticket_count || 0), 0);
+                const totalItems   = [kitchenSummary, baristaSummary, barmanSummary].reduce((s,d) => s + Number(d?.totals?.total_items   || 0), 0);
+                const totalDone    = [kitchenSummary, baristaSummary, barmanSummary].reduce((s,d) => s + Number(d?.totals?.completed_count || 0), 0);
                 return (
                   <div className="bg-yellow-500 rounded-[2rem] p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div>
@@ -795,29 +916,16 @@ useEffect(() => {
                 );
               })()}
 
-              {/* Three station cards */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <StationCard
-                  icon={<ChefHat size={22}/>} label="Kitchen"
-                  color={{ text: "text-yellow-400", bg: "bg-yellow-500/10" }}
-                  borderColor="border-yellow-500/20"
-                  summary={kitchenSummary} loading={salesLoading}
-                  tickets={kitchenSummary?.tickets || []}
-                />
-                <StationCard
-                  icon={<Coffee size={22}/>} label="Barista"
-                  color={{ text: "text-orange-400", bg: "bg-orange-500/10" }}
-                  borderColor="border-orange-500/20"
-                  summary={baristaSummary} loading={salesLoading}
-                  tickets={baristaSummary?.tickets || []}
-                />
-                <StationCard
-                  icon={<Wine size={22}/>} label="Bar"
-                  color={{ text: "text-blue-400", bg: "bg-blue-500/10" }}
-                  borderColor="border-blue-500/20"
-                  summary={barmanSummary} loading={salesLoading}
-                  tickets={barmanSummary?.tickets || []}
-                />
+                <StationCard icon={<ChefHat size={22}/>} label="Kitchen"
+                  color={{ text: "text-yellow-400", bg: "bg-yellow-500/10" }} borderColor="border-yellow-500/20"
+                  summary={kitchenSummary} loading={salesLoading} tickets={kitchenSummary?.tickets || []}/>
+                <StationCard icon={<Coffee size={22}/>} label="Barista"
+                  color={{ text: "text-orange-400", bg: "bg-orange-500/10" }} borderColor="border-orange-500/20"
+                  summary={baristaSummary} loading={salesLoading} tickets={baristaSummary?.tickets || []}/>
+                <StationCard icon={<Wine size={22}/>} label="Bar"
+                  color={{ text: "text-blue-400", bg: "bg-blue-500/10" }} borderColor="border-blue-500/20"
+                  summary={barmanSummary} loading={salesLoading} tickets={barmanSummary?.tickets || []}/>
               </div>
 
               {!salesLoading && !kitchenSummary && !baristaSummary && !barmanSummary && (
@@ -830,33 +938,31 @@ useEffect(() => {
             </div>
           )}
 
+          {/* ══════════════════════════════════════════════════════
+              MONTHLY COSTS
+          ══════════════════════════════════════════════════════ */}
           {activeSection === "MONTHLY_COSTS" && (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div>
-        <h2 className="text-xl font-black text-white uppercase leading-none">Monthly Expenses</h2>
-        <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">
-          Manage recurring operational costs for Kurax Bistro
-        </p>
-      </div>
-
-      <div className="max-w-4xl">
-        <MonthlyCosts 
-          month={kampalaDate().substring(0, 7)} // Pass current YYYY-MM
-          monthLabel={new Date().toLocaleString("en-US", { month: "long", year: "numeric" })}
-          fixedItems={[]} // This will be populated by the fetch inside the component or via a parent effect
-          profitLoad={false} 
-          onRefresh={() => {}} // Optional: define if you want to refresh global state
-          dark={true} 
-          t={{
-            card: "bg-zinc-900/30 border-white/5",
-            divider: "border-white/5",
-            subtext: "text-zinc-500"
-          }}
-          API_URL={API_URL}
-        />
-      </div>
-    </div>
-  )}
+            <div className="space-y-6 animate-in fade-in duration-500">
+              <div>
+                <h2 className="text-xl font-black text-white uppercase leading-none">Monthly Expenses</h2>
+                <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">
+                  Manage recurring operational costs for Kurax Bistro
+                </p>
+              </div>
+              <div className="max-w-4xl">
+                <MonthlyCosts
+                  month={selectedMonth}
+                  monthLabel={new Date().toLocaleString("en-US", { month: "long", year: "numeric" })}
+                  fixedItems={profitData?.costs?.fixed_items || []}
+                  profitLoad={profitLoad}
+                  onRefresh={fetchMonthlyData}
+                  dark={true}
+                  t={{ card: "bg-zinc-900/30 border-white/5", divider: "border-white/5", subtext: "text-zinc-500" }}
+                  API_URL={API_URL}
+                />
+              </div>
+            </div>
+          )}
 
         </main>
         <Footer/>
@@ -865,19 +971,21 @@ useEffect(() => {
   );
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// ACCOUNTANT END SHIFT
+// ─────────────────────────────────────────────────────────────────────────────
 function AccountantEndShift({ sys, physTotals, variance }) {
   const { refreshData } = useData() || {};
 
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [done,         setDone]         = useState(false);
-  const [result,       setResult]       = useState(null);   // API response
+  const [result,       setResult]       = useState(null);
   const [error,        setError]        = useState(null);
 
-  const physTotal = (physTotals?.cash || 0)
-                  + (physTotals?.mtn  || 0)
-                  + (physTotals?.airtel || 0)
-                  + (physTotals?.card || 0);
+  const physTotal = (physTotals?.cash    || 0)
+                  + (physTotals?.mtn     || 0)
+                  + (physTotals?.airtel  || 0)
+                  + (physTotals?.card    || 0);
 
   const handleFinalSync = async () => {
     const confirmed = window.confirm(
@@ -905,24 +1013,16 @@ function AccountantEndShift({ sys, physTotals, variance }) {
       });
 
       const data = await res.json();
+      if (!res.ok) { setError(data.error || "Server error — please try again."); return; }
 
-      if (!res.ok) {
-        setError(data.error || "Server error — please try again.");
-        return;
-      }
-
-      // ── Success ─────────────────────────────────────────────────────────
       setResult(data);
       setDone(true);
 
-      // Re-fetch all shared data so every dashboard goes blank immediately
       if (typeof refreshData === "function") {
         await refreshData();
       } else {
-        // Hard reload as absolute fallback
         setTimeout(() => window.location.reload(), 2500);
       }
-
     } catch (e) {
       console.error("Finalize day error:", e);
       setError("Network error — could not reach the server. Please try again.");
@@ -931,29 +1031,22 @@ function AccountantEndShift({ sys, physTotals, variance }) {
     }
   };
 
-  // ── SUCCESS SCREEN ───────────────────────────────────────────────────────
   if (done && result) return (
     <div className="flex flex-col items-center justify-center py-24 gap-6 animate-in zoom-in-95 duration-700">
-      <div className="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center
-        text-emerald-500 border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
+      <div className="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-500 border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
         <CheckCircle2 size={48}/>
       </div>
-
       <div className="text-center">
-        <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">
-          Accounts Closed
-        </h2>
+        <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">Accounts Closed</h2>
         <p className="text-zinc-600 text-[10px] mt-2 uppercase tracking-[0.3em] font-bold">
           {result.date} · closed successfully
         </p>
       </div>
-
-      {/* Stats */}
       <div className="grid grid-cols-3 gap-4 w-full max-w-md">
         {[
-          { label: "Orders Archived",   value: result.cleared_orders,  color: "text-yellow-400" },
-          { label: "Tickets Cleared",   value: result.cleared_tickets, color: "text-orange-400" },
-          { label: "Final Gross",       value: `UGX ${fmt(sys?.gross)}`, color: "text-emerald-400" },
+          { label: "Orders Archived", value: result.cleared_orders,    color: "text-yellow-400" },
+          { label: "Tickets Cleared", value: result.cleared_tickets,   color: "text-orange-400" },
+          { label: "Final Gross",     value: `UGX ${fmt(sys?.gross)}`, color: "text-emerald-400" },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 text-center">
             <p className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mb-1">{label}</p>
@@ -961,17 +1054,12 @@ function AccountantEndShift({ sys, physTotals, variance }) {
           </div>
         ))}
       </div>
-
-      <p className="text-zinc-700 text-[9px] uppercase font-bold tracking-widest">
-        All dashboards will refresh automatically
-      </p>
+      <p className="text-zinc-700 text-[9px] uppercase font-bold tracking-widest">All dashboards will refresh automatically</p>
     </div>
   );
 
-  // ── MAIN FORM ────────────────────────────────────────────────────────────
   return (
     <div className="max-w-3xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
-
       <div className="text-center">
         <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Day Finalization</h2>
         <p className="text-yellow-600 text-[12px] font-bold mt-2 uppercase tracking-widest italic opacity-80">
@@ -980,7 +1068,6 @@ function AccountantEndShift({ sys, physTotals, variance }) {
       </div>
 
       <div className="bg-zinc-900/40 border border-white/5 rounded-[3rem] p-10 shadow-2xl relative overflow-hidden">
-        {/* Subtle bg accent */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 blur-[60px] rounded-full"/>
 
         <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.25em] mb-10 text-center">
@@ -1009,7 +1096,6 @@ function AccountantEndShift({ sys, physTotals, variance }) {
           </div>
         </div>
 
-        {/* What will happen — checklist */}
         <div className="bg-black/30 rounded-2xl p-5 mb-8 space-y-2.5">
           <p className="text-[9px] font-black uppercase text-zinc-600 tracking-widest mb-3">This will</p>
           {[
@@ -1028,7 +1114,6 @@ function AccountantEndShift({ sys, physTotals, variance }) {
           ))}
         </div>
 
-        {/* Error message */}
         {error && (
           <div className="flex items-start gap-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 mb-6">
             <AlertTriangle size={16} className="text-rose-400 shrink-0 mt-0.5"/>
@@ -1036,12 +1121,9 @@ function AccountantEndShift({ sys, physTotals, variance }) {
           </div>
         )}
 
-        <button
-          onClick={handleFinalSync}
-          disabled={isFinalizing}
+        <button onClick={handleFinalSync} disabled={isFinalizing}
           className={`w-full bg-yellow-500 text-black font-black uppercase text-[12px] tracking-[0.15em]
-            py-6 rounded-2xl transition-all flex items-center justify-center gap-4
-            shadow-xl shadow-yellow-500/5
+            py-6 rounded-2xl transition-all flex items-center justify-center gap-4 shadow-xl shadow-yellow-500/5
             ${isFinalizing ? "opacity-70 cursor-not-allowed" : "hover:bg-yellow-400 hover:scale-[1.01]"}`}>
           {isFinalizing
             ? <><RefreshCw size={18} className="animate-spin"/> Closing Accounts…</>

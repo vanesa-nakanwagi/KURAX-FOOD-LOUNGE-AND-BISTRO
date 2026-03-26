@@ -16,28 +16,34 @@ function kampalaDate(d = new Date()) {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/today', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT * FROM daily_summary WHERE summary_date = $1 LIMIT 1`,
-      [kampalaDate()]
-    );
+    const today = kampalaDate();
+    const result = await pool.query(`
+      SELECT
+        $1::date                                                                     AS summary_date,
+        COALESCE(SUM(amount), 0)                                                     AS total_gross,
+        COALESCE(SUM(CASE WHEN method = 'Cash'        THEN amount ELSE 0 END), 0)   AS total_cash,
+        COALESCE(SUM(CASE WHEN method = 'Card'        THEN amount ELSE 0 END), 0)   AS total_card,
+        COALESCE(SUM(CASE WHEN method = 'Momo-MTN'    THEN amount ELSE 0 END), 0)   AS total_mtn,
+        COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0)   AS total_airtel,
+        COALESCE(SUM(CASE WHEN method = 'Credit'      THEN amount ELSE 0 END), 0)   AS total_credit,
+        COALESCE(SUM(CASE WHEN method = 'Mixed'       THEN amount ELSE 0 END), 0)   AS total_mixed,
+        COUNT(*)                                                                      AS order_count
+      FROM cashier_queue
+      WHERE status = 'Confirmed'
+    `, [today]);
+
     res.json(result.rows[0] || {
-      summary_date:  kampalaDate(),
-      total_gross:   0,
-      total_cash:    0,
-      total_card:    0,
-      total_mtn:     0,
-      total_airtel:  0,
-      total_credit:  0,
-      total_mixed:   0,
-      order_count:   0,
-      day_closed:    false,
-      closed_by:     null,
-      closed_at:     null,
+      summary_date: today,
+      total_gross: 0, total_cash: 0, total_card: 0,
+      total_mtn: 0, total_airtel: 0, total_credit: 0,
+      total_mixed: 0, order_count: 0,
     });
   } catch (err) {
+    console.error('Today summary error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. RANGE & MONTHLY (SALES DATA)

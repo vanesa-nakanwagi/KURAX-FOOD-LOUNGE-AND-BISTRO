@@ -1,13 +1,20 @@
 import express from 'express';
 import pool from '../db.js';
 import { updateDailySummary } from '../helpers/summaryHelper.js';
-import logActivity from '../utils/logsActivity.js'; // Added Logger
+import logActivity from '../utils/logsActivity.js';
 
 const router = express.Router();
 
-/**
- * 1. FETCH ALL ORDERS
- */
+// ── Kampala date helper ───────────────────────────────────────────────────────
+function kampalaDate() {
+  return new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Africa/Nairobi' })
+  ).toISOString().split('T')[0];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. FETCH ALL ORDERS
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -23,9 +30,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-/**
- * 2. POST NEW ORDER
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. POST NEW ORDER
+// ─────────────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   const { staffId, staffRole, isPermitted, tableName, items, total, paymentMethod } = req.body;
 
@@ -46,60 +53,54 @@ router.post('/', async (req, res) => {
         paymentMethod || 'Cash'
       ]
     );
-    
+
     const newOrder = result.rows[0];
 
-    // ─── LOG: ORDER CREATED ───
     await logActivity(pool, {
-      type: 'ORDER_SENT',
-      actor: `Staff ID: ${staffId}`,
-      role: staffRole,
+      type:    'ORDER_SENT',
+      actor:   `Staff ID: ${staffId}`,
+      role:    staffRole,
       message: `New order sent to kitchen for ${tableName}`,
-      meta: { order_id: newOrder.id, total, item_count: items.length }
+      meta:    { order_id: newOrder.id, total, item_count: items.length }
     });
 
-    console.log("✅ Order Synced and Logged Successfully!");
     res.status(201).json(newOrder);
   } catch (err) {
-    console.error("❌ DATABASE INSERT ERROR:", err.message);
+    console.error('POST Order Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * 3. PATCH ORDER STATUS (Updated for Voided + Reasons)
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. PATCH ORDER STATUS
+// ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status, staff_name, role, void_reason } = req.body; // Added void_reason here
+  const { status, staff_name, role, void_reason } = req.body;
 
-  // 1. Add 'Voided' to the allowed list
   const allowed = ['Pending', 'Preparing', 'Ready', 'Delayed', 'Served', 'Closed', 'Voided'];
   if (!allowed.includes(status)) {
     return res.status(400).json({ error: `Invalid status. Must be one of: ${allowed.join(', ')}` });
   }
 
   try {
-    // 2. Update the SQL to handle the void_reason column
-    // Note: Ensure you have added a 'void_reason' column to your 'orders' table in PostgreSQL
     const result = await pool.query(
       `UPDATE orders SET status = $1, void_reason = $2 WHERE id = $3 RETURNING *`,
       [status, void_reason || null, id]
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    
+
     const updatedOrder = result.rows[0];
 
-    // ─── LOG: STATUS UPDATE ───
     await logActivity(pool, {
-      type: status === 'Voided' ? 'ORDER_VOIDED' : 'STATUS_UPDATE',
-      actor: staff_name || 'System',
-      role: role || 'STAFF',
-      message: status === 'Voided' 
-        ? `Order #${id} was VOIDED. Reason: ${void_reason}` 
+      type:    status === 'Voided' ? 'ORDER_VOIDED' : 'STATUS_UPDATE',
+      actor:   staff_name || 'System',
+      role:    role || 'STAFF',
+      message: status === 'Voided'
+        ? `Order #${id} was VOIDED. Reason: ${void_reason}`
         : `Order #${id} (${updatedOrder.table_name}) is now ${status}`,
-      meta: { status, order_id: id, reason: void_reason }
+      meta:    { status, order_id: id, reason: void_reason }
     });
 
     res.json(updatedOrder);
@@ -109,9 +110,9 @@ router.patch('/:id/status', async (req, res) => {
   }
 });
 
-/**
- * 4. PATCH ORDER PAYMENT
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. PATCH ORDER PAYMENT
+// ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/pay', async (req, res) => {
   const { id } = req.params;
   const { status = 'Paid', payment_method, cashier_name } = req.body;
@@ -128,18 +129,18 @@ router.patch('/:id/pay', async (req, res) => {
        RETURNING *`,
       [status, payment_method, id]
     );
+
     if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
 
     const order = result.rows[0];
     await updateDailySummary({ amount: order.total, method: payment_method });
 
-    // ─── LOG: PAYMENT ───
     await logActivity(pool, {
-      type: 'PAYMENT_CONFIRMED',
-      actor: cashier_name || 'Cashier',
-      role: 'CASHIER',
+      type:    'PAYMENT_CONFIRMED',
+      actor:   cashier_name || 'Cashier',
+      role:    'CASHIER',
       message: `Confirmed ${payment_method} payment of UGX ${order.total} for ${order.table_name}`,
-      meta: { amount: order.total, method: payment_method, order_id: id }
+      meta:    { amount: order.total, method: payment_method, order_id: id }
     });
 
     res.json(order);
@@ -149,9 +150,11 @@ router.patch('/:id/pay', async (req, res) => {
   }
 });
 
-/**
- * 5. POST VOID ITEM REQUEST
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. POST VOID ITEM REQUEST
+//    Now captures table_name, waiter_name, chef_name, and station
+//    so the accountant sees full context on every void request.
+// ─────────────────────────────────────────────────────────────────────────────
 router.post('/void-item', async (req, res) => {
   const { order_id, item_name, reason, requested_by } = req.body;
 
@@ -160,19 +163,59 @@ router.post('/void-item', async (req, res) => {
   }
 
   try {
-    const voidRes = await pool.query(
-      `INSERT INTO void_requests (order_id, item_name, reason, requested_by, status, created_at)
-       VALUES ($1, $2, $3, $4, 'Pending', NOW())
-       RETURNING *`,
-      [order_id, item_name, reason, requested_by || 'Unknown Staff']
+    // ── Fetch order + waiter name ─────────────────────────────────────────
+    const orderRes = await pool.query(
+      `SELECT o.table_name, o.staff_id, o.items, COALESCE(s.name, $2) AS waiter_name
+       FROM orders o
+       LEFT JOIN staff s ON o.staff_id = s.id
+       WHERE o.id = $1`,
+      [order_id, requested_by || 'Unknown']
     );
 
-    const orderRes = await pool.query(`SELECT items FROM orders WHERE id = $1`, [order_id]);
+    const order      = orderRes.rows[0] || {};
+    const tableName  = order.table_name  || null;
+    const waiterName = order.waiter_name || requested_by || 'Unknown';
 
-    if (orderRes.rows.length > 0) {
-      let items = orderRes.rows[0].items;
-      if (typeof items === 'string') items = JSON.parse(items);
+    // ── Find chef assigned to this specific item ──────────────────────────
+    const chefRes = await pool.query(
+      `SELECT assigned_to FROM chef_assignments
+       WHERE order_id = $1 AND item_name = $2
+       ORDER BY assigned_at DESC LIMIT 1`,
+      [order_id, item_name]
+    );
+    const chefName = chefRes.rows[0]?.assigned_to || null;
 
+    // ── Determine station from items array ────────────────────────────────
+    let station = null;
+    if (order.items) {
+      const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+      const found = items.find(i => i.name === item_name);
+      station = found?.station || found?.category || null;
+    }
+
+    // ── Insert void request with full context ─────────────────────────────
+    const voidRes = await pool.query(
+      `INSERT INTO void_requests
+         (order_id, item_name, reason, requested_by,
+          table_name, waiter_name, chef_name, station,
+          status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Pending', NOW())
+       RETURNING *`,
+      [
+        order_id,
+        item_name,
+        reason,
+        requested_by || 'Unknown Staff',
+        tableName,
+        waiterName,
+        chefName,
+        station,
+      ]
+    );
+
+    // ── Mark item as voidRequested in orders.items ────────────────────────
+    if (order.items) {
+      const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
       let patched = false;
       const updatedItems = items.map(item => {
         if (!patched && item.name === item_name && !item.voidRequested) {
@@ -181,17 +224,15 @@ router.post('/void-item', async (req, res) => {
         }
         return item;
       });
-
       await pool.query(`UPDATE orders SET items = $1 WHERE id = $2`, [JSON.stringify(updatedItems), order_id]);
     }
 
-    // ─── LOG: VOID REQUESTED ───
     await logActivity(pool, {
-      type: 'VOID_REQUESTED',
-      actor: requested_by,
-      role: 'WAITER',
-      message: `Void requested for ${item_name} (Order #${order_id})`,
-      meta: { reason, order_id }
+      type:    'VOID_REQUESTED',
+      actor:   requested_by,
+      role:    'WAITER',
+      message: `Void requested for "${item_name}" on Order #${order_id} at ${tableName || 'Unknown Table'}`,
+      meta:    { reason, order_id, chef: chefName, table: tableName },
     });
 
     res.status(201).json(voidRes.rows[0]);
@@ -201,21 +242,29 @@ router.post('/void-item', async (req, res) => {
   }
 });
 
-/**
- * 6. GET PENDING VOID REQUESTS
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. GET PENDING VOID REQUESTS
+//    Returns only Pending requests with full context for the accountant.
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/void-requests', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT 
-         vr.*,
-         o.table_name,
-         o.total         AS order_total,
-         o.items         AS order_items,
-         COALESCE(s.name, vr.requested_by) AS waiter_name
+      `SELECT
+         vr.id,
+         vr.order_id,
+         vr.item_name,
+         vr.reason,
+         vr.status,
+         vr.created_at,
+         vr.resolved_by,
+         vr.resolved_at,
+         vr.station,
+         COALESCE(vr.table_name,  o.table_name)          AS table_name,
+         COALESCE(vr.waiter_name, vr.requested_by)        AS waiter_name,
+         vr.chef_name,
+         o.total AS order_total
        FROM void_requests vr
-       LEFT JOIN orders o  ON vr.order_id = o.id
-       LEFT JOIN staff  s  ON o.staff_id  = s.id
+       LEFT JOIN orders o ON vr.order_id = o.id
        WHERE vr.status = 'Pending'
        ORDER BY vr.created_at DESC`
     );
@@ -226,9 +275,47 @@ router.get('/void-requests', async (req, res) => {
   }
 });
 
-/**
- * 7. PATCH VOID REQUEST — APPROVE
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// 6b. GET VOID REQUESTS HISTORY  ← MUST be before /:id routes
+//     Returns today's Approved / Rejected / Expired void requests.
+//     Used by the accountant's Live Audit history ledger.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/void-requests/history', async (req, res) => {
+  try {
+    const today = kampalaDate();
+
+    const result = await pool.query(
+      `SELECT
+         vr.id,
+         vr.order_id,
+         vr.item_name,
+         vr.reason,
+         vr.status,
+         vr.created_at,
+         vr.resolved_by,
+         vr.resolved_at,
+         vr.station,
+         COALESCE(vr.table_name,  o.table_name)          AS table_name,
+         COALESCE(vr.waiter_name, vr.requested_by)        AS waiter_name,
+         vr.chef_name,
+         o.total AS order_total
+       FROM void_requests vr
+       LEFT JOIN orders o ON vr.order_id = o.id
+       WHERE vr.status IN ('Approved', 'Rejected', 'Expired')
+         AND DATE(vr.created_at AT TIME ZONE 'Africa/Nairobi') = $1
+       ORDER BY vr.resolved_at DESC NULLS LAST, vr.created_at DESC`,
+      [today]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Void history fetch error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. PATCH VOID REQUEST — APPROVE
+// ─────────────────────────────────────────────────────────────────────────────
 router.patch('/void-requests/:id/approve', async (req, res) => {
   const { id } = req.params;
   const { approved_by } = req.body;
@@ -239,10 +326,13 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
     const vr = vrRes.rows[0];
 
     await pool.query(
-      `UPDATE void_requests SET status = 'Approved', resolved_by = $1, resolved_at = NOW() WHERE id = $2`,
+      `UPDATE void_requests
+       SET status = 'Approved', resolved_by = $1, resolved_at = NOW()
+       WHERE id = $2`,
       [approved_by || 'Accountant', id]
     );
 
+    // ── Zero out the voided item in orders.items ──────────────────────────
     const orderRes = await pool.query(`SELECT items, total FROM orders WHERE id = $1`, [vr.order_id]);
     if (orderRes.rows.length > 0) {
       let items = orderRes.rows[0].items;
@@ -267,13 +357,12 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
       );
     }
 
-    // ─── LOG: VOID APPROVED ───
     await logActivity(pool, {
-      type: 'VOID_APPROVED',
-      actor: approved_by || 'Accountant',
-      role: 'ACCOUNTANT',
-      message: `Approved void for ${vr.item_name} on Order #${vr.order_id}`,
-      meta: { void_id: id, order_id: vr.order_id }
+      type:    'VOID_APPROVED',
+      actor:   approved_by || 'Accountant',
+      role:    'ACCOUNTANT',
+      message: `Approved void for "${vr.item_name}" on Order #${vr.order_id} (${vr.table_name || 'Unknown Table'})`,
+      meta:    { void_id: id, order_id: vr.order_id, item: vr.item_name, chef: vr.chef_name },
     });
 
     res.json({ success: true });
@@ -283,9 +372,9 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
   }
 });
 
-/**
- * 7. PATCH VOID REQUEST — REJECT
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. PATCH VOID REQUEST — REJECT
+// ─────────────────────────────────────────────────────────────────────────────
 router.patch('/void-requests/:id/reject', async (req, res) => {
   const { id } = req.params;
   const { rejected_by } = req.body;
@@ -296,10 +385,13 @@ router.patch('/void-requests/:id/reject', async (req, res) => {
     const vr = vrRes.rows[0];
 
     await pool.query(
-      `UPDATE void_requests SET status = 'Rejected', resolved_by = $1, resolved_at = NOW() WHERE id = $2`,
+      `UPDATE void_requests
+       SET status = 'Rejected', resolved_by = $1, resolved_at = NOW()
+       WHERE id = $2`,
       [rejected_by || 'Accountant', id]
     );
 
+    // ── Restore item's voidRequested flag ─────────────────────────────────
     const orderRes = await pool.query(`SELECT items FROM orders WHERE id = $1`, [vr.order_id]);
     if (orderRes.rows.length > 0) {
       let items = orderRes.rows[0].items;
@@ -317,13 +409,12 @@ router.patch('/void-requests/:id/reject', async (req, res) => {
       await pool.query(`UPDATE orders SET items = $1 WHERE id = $2`, [JSON.stringify(updatedItems), vr.order_id]);
     }
 
-    // ─── LOG: VOID REJECTED ───
     await logActivity(pool, {
-      type: 'VOID_REJECTED',
-      actor: rejected_by || 'Accountant',
-      role: 'ACCOUNTANT',
-      message: `Rejected void for ${vr.item_name} on Order #${vr.order_id}`,
-      meta: { void_id: id, order_id: vr.order_id }
+      type:    'VOID_REJECTED',
+      actor:   rejected_by || 'Accountant',
+      role:    'ACCOUNTANT',
+      message: `Rejected void for "${vr.item_name}" on Order #${vr.order_id} (${vr.table_name || 'Unknown Table'})`,
+      meta:    { void_id: id, order_id: vr.order_id, item: vr.item_name, chef: vr.chef_name },
     });
 
     res.json({ success: true });
@@ -333,9 +424,9 @@ router.patch('/void-requests/:id/reject', async (req, res) => {
   }
 });
 
-/**
- * 8. PATCH ASSIGN CHEF
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. PATCH ASSIGN CHEF
+// ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/assign-chef', async (req, res) => {
   const { id } = req.params;
   const { items, item_name, assigned_to, assigned_at, assigned_by } = req.body;
@@ -352,18 +443,32 @@ router.patch('/:id/assign-chef', async (req, res) => {
       [id, item_name, assigned_to, assigned_at, assigned_by]
     );
 
-    // ─── LOG: CHEF ASSIGNED ───
     await logActivity(pool, {
-      type: 'CHEF_ASSIGNED',
-      actor: assigned_by,
-      role: 'MANAGER',
-      message: `Assigned Chef ${assigned_to} to ${item_name} (Order #${id})`,
-      meta: { chef: assigned_to, item: item_name }
+      type:    'CHEF_ASSIGNED',
+      actor:   assigned_by,
+      role:    'MANAGER',
+      message: `Assigned Chef ${assigned_to} to "${item_name}" (Order #${id})`,
+      meta:    { chef: assigned_to, item: item_name },
     });
 
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Assign Chef Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREDITS ROUTES
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/credits', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM credits ORDER BY created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Credits fetch error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
