@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useData } from "../../customer/components/context/DataContext";
 import SideBar from "./SideBar";
+import MonthlyCosts from "./MonthlyCosts";
 import Footer from "../../customer/components/common/Foooter";
 import API_URL from "../../config/api";
 
@@ -267,6 +268,35 @@ export default function AccountantDashboard() {
   const [salesLoading,    setSalesLoading]    = useState(false);
   const [salesDate,       setSalesDate]       = useState(kampalaDate());
 
+  // --- Inside AccountantDashboard.jsx ---
+
+// 1. Add these states at the top with your other useStates
+const [profitData, setProfitData] = useState(null);
+const [profitLoad, setProfitLoad] = useState(false);
+const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7)); // e.g. "2026-03"
+
+// 2. Add the fetch function
+const fetchMonthlyData = useCallback(async () => {
+  setProfitLoad(true);
+  try {
+    // This endpoint should return { costs: { fixed_items: [...] } }
+    const res = await fetch(`${API_URL}/api/summaries/monthly-profit?month=${selectedMonth}`);
+    if (res.ok) {
+      const data = await res.json();
+      setProfitData(data);
+    }
+  } catch (e) {
+    console.error("Failed to fetch expenses:", e);
+  } finally {
+    setProfitLoad(false);
+  }
+}, [selectedMonth]);
+
+// 3. Trigger the fetch when the dashboard loads or the month changes
+useEffect(() => {
+  fetchMonthlyData();
+}, [fetchMonthlyData]);
+
   // ── Void requests polling ─────────────────────────────────────────────────
   const loadVoidRequests = useCallback(async () => {
     setVoidRequestsLoading(true);
@@ -450,34 +480,57 @@ export default function AccountantDashboard() {
               FINANCIAL HISTORY
           ══════════════════════════════════════════════════════ */}
           {activeSection === "FINANCIAL_HISTORY" && (
-            <div className="space-y-8 animate-in fade-in duration-500">
-              <div>
-                <h2 className="text-xl font-black text-white uppercase leading-none">Today's Revenue</h2>
-                <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from daily summaries — same source as all roles</p>
-              </div>
+  <div className="space-y-8 animate-in fade-in duration-500">
+    <div>
+      <h2 className="text-xl font-black text-white uppercase leading-none">Today's Revenue</h2>
+      <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from daily summaries — same source as all roles</p>
+    </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                <StatCard icon={<Banknote size={18}/>}    label="Cash"        value={sys.cash}   color="text-emerald-500"/>
-                <StatCard icon={<CreditCard size={18}/>}  label="Card"        value={sys.card}   color="text-blue-400"/>
-                <StatCard icon={<Smartphone size={18}/>}  label="MTN Momo"    value={sys.mtn}    color="text-yellow-500"/>
-                <StatCard icon={<Smartphone size={18}/>}  label="Airtel Momo" value={sys.airtel} color="text-red-500"/>
-                <StatCard icon={<BookOpen size={18}/>}    label="Credits"     value={sys.credit} color="text-purple-400" note="not in gross"/>
-                <StatCard icon={<Wallet size={18}/>}      label="Mixed"       value={sys.mixed}  color="text-orange-400"/>
-                <StatCard icon={<Receipt size={18}/>}     label="Orders"      value={sys.orders} color="text-zinc-400" isCount/>
-                <div className="bg-yellow-500 p-5 rounded-[2rem] border border-yellow-400 flex flex-col gap-2">
-                  <div className="p-2.5 w-fit rounded-xl bg-black/20 text-black"><TrendingUp size={18}/></div>
-                  <div>
-                    <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em] mb-1">Gross Revenue</p>
-                    <h3 className="text-xl font-black text-black italic tracking-tighter">
-                      <span className="text-[9px] mr-1 opacity-50 not-italic">UGX</span>{fmt(sys.gross)}
-                    </h3>
-                  </div>
-                </div>
-              </div>
+    {/* REVENUE STATS GRID */}
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      <StatCard icon={<Banknote size={18}/>}    label="Cash"        value={sys.cash}   color="text-emerald-500"/>
+      <StatCard icon={<CreditCard size={18}/>}  label="Card"        value={sys.card}   color="text-blue-400"/>
+      <StatCard icon={<Smartphone size={18}/>}  label="MTN Momo"    value={sys.mtn}    color="text-yellow-500"/>
+      <StatCard icon={<Smartphone size={18}/>}  label="Airtel Momo" value={sys.airtel} color="text-red-500"/>
+      <StatCard icon={<BookOpen size={18}/>}    label="Credits"     value={sys.credit} color="text-purple-400" note="not in gross"/>
+      <StatCard icon={<Wallet size={18}/>}      label="Mixed"       value={sys.mixed}  color="text-orange-400"/>
+      <StatCard icon={<Receipt size={18}/>}     label="Orders"      value={sys.orders} color="text-zinc-400" isCount/>
+      
+      <div className="bg-yellow-500 p-5 rounded-[2rem] border border-yellow-400 flex flex-col gap-2 shadow-lg shadow-yellow-500/10">
+        <div className="p-2.5 w-fit rounded-xl bg-black/20 text-black"><TrendingUp size={18}/></div>
+        <div>
+          <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em] mb-1">Gross Revenue</p>
+          <h3 className="text-xl font-black text-black italic tracking-tighter">
+            <span className="text-[9px] mr-1 opacity-50 not-italic">UGX</span>{fmt(sys.gross)}
+          </h3>
+        </div>
+      </div>
+    </div>
 
-             
-            </div>
-          )}
+    {/* MONTHLY EXPENSES SECTION */}
+    <div className="pt-4">
+      <div className="mb-4">
+        <h2 className="text-xl font-black text-white uppercase leading-none">Monthly Expenses</h2>
+        <p className="text-zinc-500 text-[11px] font-medium mt-1 italic uppercase tracking-wider">Fixed Costs & Operational Overheads</p>
+      </div>
+      
+      <MonthlyCosts 
+        month={selectedMonth}
+        monthLabel={selectedMonth} 
+        fixedItems={profitData?.costs?.fixed_items || []} 
+        profitLoad={profitLoad}
+        onRefresh={fetchMonthlyData}
+        API_URL={API_URL}
+        dark={true}
+        t={{
+          card: "bg-zinc-900/30",
+          divider: "border-white/5",
+          subtext: "text-zinc-500"
+        }}
+      />
+    </div>
+  </div>
+)}
 
           {/* ══════════════════════════════════════════════════════
               PHYSICAL COUNT
@@ -777,66 +830,148 @@ export default function AccountantDashboard() {
             </div>
           )}
 
+          {activeSection === "MONTHLY_COSTS" && (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div>
+        <h2 className="text-xl font-black text-white uppercase leading-none">Monthly Expenses</h2>
+        <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">
+          Manage recurring operational costs for Kurax Bistro
+        </p>
+      </div>
+
+      <div className="max-w-4xl">
+        <MonthlyCosts 
+          month={kampalaDate().substring(0, 7)} // Pass current YYYY-MM
+          monthLabel={new Date().toLocaleString("en-US", { month: "long", year: "numeric" })}
+          fixedItems={[]} // This will be populated by the fetch inside the component or via a parent effect
+          profitLoad={false} 
+          onRefresh={() => {}} // Optional: define if you want to refresh global state
+          dark={true} 
+          t={{
+            card: "bg-zinc-900/30 border-white/5",
+            divider: "border-white/5",
+            subtext: "text-zinc-500"
+          }}
+          API_URL={API_URL}
+        />
+      </div>
+    </div>
+  )}
+
         </main>
         <Footer/>
       </div>
     </div>
   );
 }
+
+
 function AccountantEndShift({ sys, physTotals, variance }) {
-  const [isFinalizing, setIsFinalizing] = React.useState(false);
-  const [done, setDone] = React.useState(false);
+  const { refreshData } = useData() || {};
 
-const handleFinalSync = async () => {
-  const confirm = window.confirm("Finalize all accounts? Cards will reset to 0.");
-  if (!confirm) return;
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const [done,         setDone]         = useState(false);
+  const [result,       setResult]       = useState(null);   // API response
+  const [error,        setError]        = useState(null);
 
-  setIsFinalizing(true);
-  try {
-    const res = await fetch(`${API_URL}/api/accountant/finalize-day`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        final_gross: sys.gross, 
-        recorded_by: JSON.parse(localStorage.getItem('kurax_user'))?.name 
-      })
-    });
+  const physTotal = (physTotals?.cash || 0)
+                  + (physTotals?.mtn  || 0)
+                  + (physTotals?.airtel || 0)
+                  + (physTotals?.card || 0);
 
-    if (res.ok) {
+  const handleFinalSync = async () => {
+    const confirmed = window.confirm(
+      "Close today's accounts?\n\n" +
+      "• All orders will be archived\n" +
+      "• Kitchen / barista / bar boards will clear\n" +
+      "• Revenue totals will reset to zero\n" +
+      "• Pending void requests will be expired\n\n" +
+      "This cannot be undone."
+    );
+    if (!confirmed) return;
+
+    setIsFinalizing(true);
+    setError(null);
+    try {
+      const actor = (() => {
+        try { return JSON.parse(localStorage.getItem("kurax_user") || "{}").name; }
+        catch { return "Accountant"; }
+      })();
+
+      const res = await fetch(`${API_URL}/api/accountant/finalize-day`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ final_gross: sys?.gross || 0, recorded_by: actor }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Server error — please try again.");
+        return;
+      }
+
+      // ── Success ─────────────────────────────────────────────────────────
+      setResult(data);
       setDone(true);
 
-      // --- THE MAGIC PART: MANUALLY ZERO OUT THE DASHBOARD ---
-      // Replace 'setRevenue' with whatever your state setter is called
-      if (typeof setRevenue === 'function') {
-        setRevenue({
-          cash: 0, card: 0, mtn: 0, airtel: 0, gross: 0, orders: 0, credits: 0
-        });
+      // Re-fetch all shared data so every dashboard goes blank immediately
+      if (typeof refreshData === "function") {
+        await refreshData();
+      } else {
+        // Hard reload as absolute fallback
+        setTimeout(() => window.location.reload(), 2500);
       }
-      
-      // Also clear the system totals state you use for the summary
-      if (typeof setSys === 'function') {
-        setSys({ gross: 0, cash: 0, mtn: 0, airtel: 0, card: 0 });
-      }
+
+    } catch (e) {
+      console.error("Finalize day error:", e);
+      setError("Network error — could not reach the server. Please try again.");
+    } finally {
+      setIsFinalizing(false);
     }
-  } catch (e) {
-    alert("Error finalizing day.");
-  }
-  setIsFinalizing(false);
-};
+  };
 
-
-  if (done) return (
-    <div className="flex flex-col items-center justify-center py-24 animate-in zoom-in-95 duration-700">
-      <div className="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-500 mb-8 border border-emerald-500/20">
-        <CheckCircle2 size={48} />
+  // ── SUCCESS SCREEN ───────────────────────────────────────────────────────
+  if (done && result) return (
+    <div className="flex flex-col items-center justify-center py-24 gap-6 animate-in zoom-in-95 duration-700">
+      <div className="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center
+        text-emerald-500 border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
+        <CheckCircle2 size={48}/>
       </div>
-      <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">Accounts Closed</h2>
-      <p className="text-zinc-600 text-[10px] mt-3 uppercase tracking-[0.3em] font-bold">Lounge dashboard has been reset</p>
+
+      <div className="text-center">
+        <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">
+          Accounts Closed
+        </h2>
+        <p className="text-zinc-600 text-[10px] mt-2 uppercase tracking-[0.3em] font-bold">
+          {result.date} · closed successfully
+        </p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4 w-full max-w-md">
+        {[
+          { label: "Orders Archived",   value: result.cleared_orders,  color: "text-yellow-400" },
+          { label: "Tickets Cleared",   value: result.cleared_tickets, color: "text-orange-400" },
+          { label: "Final Gross",       value: `UGX ${fmt(sys?.gross)}`, color: "text-emerald-400" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 text-center">
+            <p className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mb-1">{label}</p>
+            <p className={`text-lg font-black italic ${color}`}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-zinc-700 text-[9px] uppercase font-bold tracking-widest">
+        All dashboards will refresh automatically
+      </p>
     </div>
   );
 
+  // ── MAIN FORM ────────────────────────────────────────────────────────────
   return (
     <div className="max-w-3xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
+
       <div className="text-center">
         <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Day Finalization</h2>
         <p className="text-yellow-600 text-[12px] font-bold mt-2 uppercase tracking-widest italic opacity-80">
@@ -845,29 +980,27 @@ const handleFinalSync = async () => {
       </div>
 
       <div className="bg-zinc-900/40 border border-white/5 rounded-[3rem] p-10 shadow-2xl relative overflow-hidden">
-        {/* Subtle background accent */}
-        <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 blur-[60px] rounded-full" />
-        
-        <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.25em] mb-10 text-center">Verification Summary</h3>
-        
+        {/* Subtle bg accent */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 blur-[60px] rounded-full"/>
+
+        <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.25em] mb-10 text-center">
+          Verification Summary
+        </h3>
+
         <div className="space-y-6 mb-12">
           <div className="flex justify-between items-center border-b border-white/5 pb-6">
             <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">System Gross</span>
-            <span className="text-2xl font-black text-white italic">UGX {sys.gross.toLocaleString()}</span>
+            <span className="text-2xl font-black text-white italic">UGX {fmt(sys?.gross)}</span>
           </div>
-          
           <div className="flex justify-between items-center border-b border-white/5 pb-6">
             <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">Physical Total</span>
-            <span className="text-2xl font-black text-white italic">
-              UGX {(physTotals.cash + physTotals.mtn + physTotals.airtel + physTotals.card).toLocaleString()}
-            </span>
+            <span className="text-2xl font-black text-white italic">UGX {fmt(physTotal)}</span>
           </div>
-          
           <div className="flex justify-between items-center pt-4">
             <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">Closing Variance</span>
             <div className="text-right">
-              <span className={`text-2xl font-black italic ${variance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {variance >= 0 ? '+' : ''}UGX {variance.toLocaleString()}
+              <span className={`text-2xl font-black italic ${variance >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                {variance >= 0 ? "+" : ""}UGX {fmt(variance)}
               </span>
               <p className="text-[8px] font-black uppercase opacity-40 mt-1">
                 {variance === 0 ? "Balanced" : variance > 0 ? "Overage" : "Shortage"}
@@ -876,13 +1009,43 @@ const handleFinalSync = async () => {
           </div>
         </div>
 
-        <button 
+        {/* What will happen — checklist */}
+        <div className="bg-black/30 rounded-2xl p-5 mb-8 space-y-2.5">
+          <p className="text-[9px] font-black uppercase text-zinc-600 tracking-widest mb-3">This will</p>
+          {[
+            "Archive all today's orders across all staff",
+            "Clear kitchen, barista & bar ticket boards",
+            "Reset all gross / revenue totals to zero",
+            "Expire any pending void requests",
+            "Save a permanent audit record of today's close",
+          ].map((item, i) => (
+            <div key={i} className="flex items-center gap-2.5">
+              <div className="w-4 h-4 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center shrink-0">
+                <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"/>
+              </div>
+              <p className="text-[10px] font-bold text-zinc-400">{item}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Error message */}
+        {error && (
+          <div className="flex items-start gap-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 mb-6">
+            <AlertTriangle size={16} className="text-rose-400 shrink-0 mt-0.5"/>
+            <p className="text-[11px] font-bold text-rose-400">{error}</p>
+          </div>
+        )}
+
+        <button
           onClick={handleFinalSync}
           disabled={isFinalizing}
-          className="w-full bg-yellow-500 text-black font-black uppercase text-[12px] tracking-[0.15em] py-6 rounded-2xl hover:bg-yellow-400 hover:scale-[1.01] transition-all flex items-center justify-center gap-4 shadow-xl shadow-yellow-500/5"
-        >
-          {isFinalizing ? <RefreshCw className="animate-spin" size={18}/> : <RotateCcw size={18}/>}
-          Close Accounts & Reset Dashboard
+          className={`w-full bg-yellow-500 text-black font-black uppercase text-[12px] tracking-[0.15em]
+            py-6 rounded-2xl transition-all flex items-center justify-center gap-4
+            shadow-xl shadow-yellow-500/5
+            ${isFinalizing ? "opacity-70 cursor-not-allowed" : "hover:bg-yellow-400 hover:scale-[1.01]"}`}>
+          {isFinalizing
+            ? <><RefreshCw size={18} className="animate-spin"/> Closing Accounts…</>
+            : <><RotateCcw size={18}/> Close Accounts & Reset Dashboard</>}
         </button>
       </div>
     </div>

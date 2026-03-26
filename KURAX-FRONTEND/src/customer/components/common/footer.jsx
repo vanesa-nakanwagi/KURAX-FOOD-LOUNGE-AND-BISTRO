@@ -94,11 +94,10 @@ export default function FooterGlobal () {
 
   return (
     // The main container for the footer with a dark background and padding
-    <footer className="bg-black text-white py-12 px-6 sm:px-10 lg:px-20">
+    <footer className="bg-zinc-900 text-white py-12 px-6 sm:px-10 lg:px-20">
       <div className="max-w-7xl mx-auto">
         {/* Main Grid Layout for the three columns */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10 border-b border-white/10 pb-10">
-
           {/* 1. Logo and Description Column (Left) */}
           <div>
             
@@ -124,7 +123,7 @@ export default function FooterGlobal () {
             </p>
 
             {/* Highlighted Features */}
-            <div className="text-sm font-semibold text-yellow-600">
+            <div className="text-sm font-semibold text-yellow-900">
               <span className="mr-3">• Premium Dining</span>  
               <span className="mx-3">• Rooftop Ambiance</span> 
               <span className="ml-3">• Authentic Flavors</span> 
@@ -133,7 +132,7 @@ export default function FooterGlobal () {
 
           {/* 2. Quick Links Column (Middle) */}
           <div>
-            <h3 className="text-lg text-yellow-600 font-semibold mb-5">Quick Links</h3>
+            <h3 className="text-lg text-yellow-800 font-semibold mb-5">Quick Links</h3>
             <ul className="space-y-2">
               {quickLinks.map((link) => (
                 <li key={link.label}>
@@ -151,7 +150,7 @@ export default function FooterGlobal () {
 
           {/* 3. Connect With Us Column (Right) */}
           <div>
-            <h3 className="text-lg  text-yellow-600 font-semibold mb-5">Connect With Us</h3>
+            <h3 className="text-lg  text-yellow-800 font-semibold mb-5">Connect With Us</h3>
             
             {/* Social/Contact Icons (Using Social Media Links) */}
             <div className="flex space-x-3 mb-5">
@@ -178,7 +177,7 @@ export default function FooterGlobal () {
             </div>
 
 
-            <h3 className="text-lg text-yellow-600 font-semibold mb-5 mt-8 gap-4">We accept the following payment methods</h3>
+            <h3 className="text-lg text-yellow-800 font-semibold mb-5 mt-8 gap-4">We accept the following payment methods</h3>
             {/* Social/Contact Icons (Using Social Media Links) */}
            <div className="flex space-x-3 mb-5">
   {paymentmethods.map((item) => (

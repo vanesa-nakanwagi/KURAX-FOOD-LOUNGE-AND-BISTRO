@@ -21,7 +21,7 @@ export default function About() {
 
   return (
     // Main Container: Black background, full width, with internal padding
-    <div className="bg-black text-white min-h-screen font-[Outfit] pt-16 md:pt-24 pb-16">
+    <div className="bg-zinc-900 text-white min-h-screen font-[Outfit] pt-16 md:pt-24 pb-16">
       
       {/* Centered Content Wrapper */}
       <div className="max-w-7xl mx-auto px-6 md:px-10 lg:px-20">

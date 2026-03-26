@@ -8,7 +8,6 @@
 
 import express from 'express';
 import pool    from '../db.js';
-// ✅ IMPORT THE LOGGER (Ensure this matches your actual filename: logsActivity.js)
 import logActivity from '../utils/logsActivity.js';
 
 const router = express.Router();
@@ -21,7 +20,7 @@ function kampalaDate(date = new Date()) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1.  POST /api/kitchen/tickets
-//     Upsert a ticket. Now logs the "Sent to Kitchen" event.
+//     Upsert a ticket. Logs the "Sent to Kitchen" event.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/tickets', async (req, res) => {
   const { order_id, table_name, staff_name, staff_role, items = [], total = 0, status = 'Pending' } = req.body;
@@ -35,16 +34,13 @@ router.post('/tickets', async (req, res) => {
       [order_id, table_name, staff_name || 'System', staff_role || 'WAITER', JSON.stringify(items), Number(total), status, kampalaDate()]
     );
 
-    // ✅ LOG: Now specifically uses staff_name (The Waiter)
-    const itemCount = items.length;
-    // ✅ Inside POST /api/kitchen/tickets
-await logActivity(pool, {
-  type: 'ORDER',
-  actor: staff_name, // Make sure this is the string "BULAFU" and not the ID
-  role: staff_role,
-  message: `New order sent to kitchen — ${table_name}`,
-  meta: { table_name, staff_name, order_id },
-});
+    await logActivity(pool, {
+      type: 'ORDER',
+      actor: staff_name,
+      role: staff_role,
+      message: `New order sent to kitchen — ${table_name}`,
+      meta: { table_name, staff_name, order_id },
+    });
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -54,7 +50,7 @@ await logActivity(pool, {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2a. GET /api/kitchen/tickets/summary (Must be before /:id)
+// 2a. GET /api/kitchen/tickets/summary  (Must stay BEFORE /tickets/:id)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/tickets/summary', async (req, res) => {
   const date = req.query.date || kampalaDate();
@@ -93,32 +89,40 @@ router.get('/tickets/summary', async (req, res) => {
 router.get('/tickets', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
-    const result = await pool.query(`SELECT * FROM kitchen_tickets WHERE ticket_date = $1 ORDER BY created_at ASC`, [date]);
+    const result = await pool.query(
+      `SELECT * FROM kitchen_tickets WHERE ticket_date = $1 ORDER BY created_at ASC`, [date]
+    );
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 3.  PATCH /api/kitchen/tickets/:id/status
+// ─────────────────────────────────────────────────────────────────────────────
 router.patch('/tickets/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status, chef_name } = req.body; // Added chef_name to req.body
+  const { status, chef_name } = req.body;
 
   try {
     const result = await pool.query(
-       `UPDATE kitchen_tickets SET status = $1, ready_at = CASE WHEN $1 = 'Ready' THEN NOW() ELSE ready_at END, updated_at = NOW()
-        WHERE id = $2 RETURNING *`, [status, id]
+      `UPDATE kitchen_tickets
+       SET status = $1,
+           ready_at = CASE WHEN $1 = 'Ready' THEN NOW() ELSE ready_at END,
+           updated_at = NOW()
+       WHERE id = $2 RETURNING *`,
+      [status, id]
     );
     const ticket = result.rows[0];
 
-    // ✅ LOG: Order Ready (Shows which chef finished it if provided)
     if (status === 'Ready') {
       await logActivity(pool, {
         type: 'ORDER',
-        actor: chef_name || 'Kitchen', 
+        actor: chef_name || 'Kitchen',
         role: 'CHEF',
         message: `KITCHEN READY: ${ticket.table_name} (Order #${ticket.order_id})`,
-        meta: { table_name: ticket.table_name }
+        meta: { table_name: ticket.table_name },
       });
     }
 
@@ -130,7 +134,7 @@ router.patch('/tickets/:id/status', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4.  PATCH /api/kitchen/tickets/:id/assign-chef
-//     Logs which chef is handling specific items
+//     Logs which chef is handling specific items.
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/tickets/:id/assign-chef', async (req, res) => {
   const { id } = req.params;
@@ -141,7 +145,10 @@ router.patch('/tickets/:id/assign-chef', async (req, res) => {
   }
 
   try {
-    const ticketResult = await pool.query(`UPDATE kitchen_tickets SET items = $1, updated_at = NOW() WHERE id = $2 RETURNING *`, [JSON.stringify(items), id]);
+    const ticketResult = await pool.query(
+      `UPDATE kitchen_tickets SET items = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [JSON.stringify(items), id]
+    );
     if (!ticketResult.rows.length) return res.status(404).json({ error: 'Ticket not found' });
     const ticket = ticketResult.rows[0];
 
@@ -151,7 +158,6 @@ router.patch('/tickets/:id/assign-chef', async (req, res) => {
       [ticket.order_id, id, item_name, assigned_to, assigned_at || new Date().toISOString(), assigned_by || null]
     );
 
-    // ✅ LOG: CHEF ASSIGNED
     await logActivity(pool, {
       type: 'STAFF',
       actor: assigned_to,
@@ -167,7 +173,39 @@ router.patch('/tickets/:id/assign-chef', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5.  PATCH /api/kitchen/clear-shift
+// 5.  GET /api/kitchen/chef-assignments
+//     Returns all chef assignments with ticket info (table_name, order_id).
+//     Used by LiveOrderStatus to show which chef was assigned to each voided item.
+//
+//     Response shape:
+//     [{ id, order_id, item_name, assigned_to, assigned_by, assigned_at, table_name }]
+//
+//     Frontend lookup key: `${order_id}::${item_name}`
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/chef-assignments', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        ca.id,
+        ca.order_id,
+        ca.item_name,
+        ca.assigned_to,
+        ca.assigned_by,
+        ca.assigned_at,
+        COALESCE(kt.table_name, 'Unknown') AS table_name
+      FROM chef_assignments ca
+      LEFT JOIN kitchen_tickets kt ON ca.ticket_id = kt.id
+      ORDER BY ca.assigned_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Chef assignments fetch error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6.  PATCH /api/kitchen/clear-shift
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/clear-shift', async (req, res) => {
   const { cleared_by = 'Head Chef' } = req.body;
@@ -175,11 +213,13 @@ router.patch('/clear-shift', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `UPDATE kitchen_tickets SET cleared_by_kitchen = TRUE, cleared_at = NOW(), cleared_by = $1, updated_at = NOW()
-       WHERE ticket_date = $2 AND cleared_by_kitchen = FALSE RETURNING id`, [cleared_by, date]
+      `UPDATE kitchen_tickets
+       SET cleared_by_kitchen = TRUE, cleared_at = NOW(), cleared_by = $1, updated_at = NOW()
+       WHERE ticket_date = $2 AND cleared_by_kitchen = FALSE
+       RETURNING id`,
+      [cleared_by, date]
     );
 
-    // ✅ LOG: KITCHEN SHIFT CLEARED
     await logActivity(pool, {
       type: 'SHIFT',
       actor: cleared_by,

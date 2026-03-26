@@ -16,7 +16,7 @@ function MenuCard({ item, onOrder, isNew }) {
   
 
   return (
-    <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-zinc-800 hover:border-yellow-500/30 shadow-sm hover:shadow-xl">
+    <div className="group font-['Outfit'] relative bg-white dark:bg-black rounded-[2rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-zinc-800 hover:border-yellow-500/30 shadow-sm hover:shadow-xl">
       
       {/* INSIDE BADGE: Glassmorphism style with Sparkles */}
       {isNew && (

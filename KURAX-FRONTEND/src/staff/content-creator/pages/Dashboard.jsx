@@ -39,7 +39,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchLiveStats = async () => {
       try {
-        const response = await axios.get("http://localhost:5000/api/visits/today");
+        const response = await axios.get("http://localhost:5010/api/visits/today");
         setDailyVisits(response.data.totalVisits || 0);
       } catch (err) {
         console.error("Dashboard Stats Error:", err);
@@ -224,7 +224,7 @@ export default function Dashboard() {
           <div className="bg-zinc-900 border border-slate-800 w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden">
             <div className="h-56 bg-zinc-800 relative">
               <img 
-                src={`http://localhost:5000${selectedItem.image_url}`} 
+                src={`http://localhost:5010${selectedItem.image_url}`} 
                 className="w-full h-full object-cover" 
                 alt={selectedItem.name} 
                 crossOrigin="anonymous"

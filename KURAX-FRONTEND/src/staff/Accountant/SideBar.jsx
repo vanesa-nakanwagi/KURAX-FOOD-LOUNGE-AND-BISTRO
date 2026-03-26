@@ -2,7 +2,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Receipt, Calculator, CheckCircle2, X, LogOut,
-  RotateCcw, BookOpen, BarChart3
+  RotateCcw, BookOpen, BarChart3, Wallet
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
 
@@ -18,6 +18,7 @@ export default function SideBar({ activeSection, setActiveSection, isOpen, setIs
     { key: "FINANCIAL_HISTORY", label: "My Collections",    icon: <Receipt size={20}/>     },
     { key: "PHYSICAL_COUNT",    label: "Physical Finances", icon: <Calculator size={20}/>  },
     { key: "LIVE_AUDIT",        label: "Live Audit",        icon: <CheckCircle2 size={20}/> },
+   // { key: "MONTHLY_COSTS",     label: "Monthly Costs",     icon: <Wallet size={20}/>      },
     { key: "CREDITS",           label: "Credits",           icon: <BookOpen size={20}/>    },
     { key: "VIEW_SALES",        label: "View Sales",        icon: <BarChart3 size={20}/>   },
     { key: "END_OF_SHIFT",      label: "End of Shift",      icon: <RotateCcw size={20}/>   },

@@ -67,33 +67,39 @@ router.post('/', async (req, res) => {
 });
 
 /**
- * 3. PATCH ORDER STATUS
+ * 3. PATCH ORDER STATUS (Updated for Voided + Reasons)
  */
 router.patch('/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status, staff_name, role } = req.body;
+  const { status, staff_name, role, void_reason } = req.body; // Added void_reason here
 
-  const allowed = ['Pending', 'Preparing', 'Ready', 'Delayed', 'Served', 'Closed'];
+  // 1. Add 'Voided' to the allowed list
+  const allowed = ['Pending', 'Preparing', 'Ready', 'Delayed', 'Served', 'Closed', 'Voided'];
   if (!allowed.includes(status)) {
     return res.status(400).json({ error: `Invalid status. Must be one of: ${allowed.join(', ')}` });
   }
 
   try {
+    // 2. Update the SQL to handle the void_reason column
+    // Note: Ensure you have added a 'void_reason' column to your 'orders' table in PostgreSQL
     const result = await pool.query(
-      `UPDATE orders SET status = $1 WHERE id = $2 RETURNING *`,
-      [status, id]
+      `UPDATE orders SET status = $1, void_reason = $2 WHERE id = $3 RETURNING *`,
+      [status, void_reason || null, id]
     );
+
     if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
     
     const updatedOrder = result.rows[0];
 
     // ─── LOG: STATUS UPDATE ───
     await logActivity(pool, {
-      type: 'STATUS_UPDATE',
+      type: status === 'Voided' ? 'ORDER_VOIDED' : 'STATUS_UPDATE',
       actor: staff_name || 'System',
       role: role || 'STAFF',
-      message: `Order #${id} (${updatedOrder.table_name}) is now ${status}`,
-      meta: { status, order_id: id }
+      message: status === 'Voided' 
+        ? `Order #${id} was VOIDED. Reason: ${void_reason}` 
+        : `Order #${id} (${updatedOrder.table_name}) is now ${status}`,
+      meta: { status, order_id: id, reason: void_reason }
     });
 
     res.json(updatedOrder);

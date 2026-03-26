@@ -89,7 +89,6 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
           </div>
         </div>
 
-        {/* Per-chef breakdown from DB */}
         {stats.chefs && stats.chefs.length > 0 && (
           <div className="mb-6 text-left space-y-2">
             <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-3">Chef Breakdown</p>
@@ -136,7 +135,6 @@ function OrderCard({ order, onUpdateStatus, onAssignChef }) {
     <div className={`flex flex-col rounded-[2.5rem] border-2 bg-zinc-900 transition-all duration-500 h-[460px] overflow-hidden shadow-xl
       ${isReady ? "opacity-60 grayscale border-transparent" : isDelayed ? "border-rose-600" : "border-white/5"}`}>
 
-      {/* Header */}
       <div className={`p-5 shrink-0 ${headerBg}`}>
         <div className="flex justify-between items-start mb-2">
           <h2 className="text-2xl font-black italic tracking-tighter uppercase leading-none text-white">
@@ -165,7 +163,6 @@ function OrderCard({ order, onUpdateStatus, onAssignChef }) {
         </div>
       </div>
 
-      {/* Items */}
       <div className="p-5 flex-grow overflow-y-auto space-y-3 custom-scrollbar">
         {order.items.map((item, idx) => (
           <div key={idx} className="border-b border-white/5 pb-3 last:border-0">
@@ -186,7 +183,6 @@ function OrderCard({ order, onUpdateStatus, onAssignChef }) {
                 </div>
               </div>
 
-              {/* Chef badge */}
               <div className="shrink-0">
                 {item.assignedTo ? (
                   <div className="flex flex-col items-end gap-0.5">
@@ -212,7 +208,6 @@ function OrderCard({ order, onUpdateStatus, onAssignChef }) {
         ))}
       </div>
 
-      {/* Footer actions */}
       <div className="p-4 bg-black/20 border-t border-white/5 shrink-0">
         {order.status === "Pending" && (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
@@ -256,11 +251,9 @@ export default function KitchenDisplay() {
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalItems: 0, chefs: [] });
   const [assigningItem, setAssigningItem] = useState(null);
 
-  // ── Ticket map: orderId → kitchen_tickets.id ─────────────────────────────
-  // Persisted across renders in a ref so we never lose it on re-renders.
   const ticketMapRef = useRef({});
 
-  // ── On mount: load today's tickets so status buttons know the ticket id ───
+  // ── Load today's tickets on mount ─────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -273,18 +266,38 @@ export default function KitchenDisplay() {
     })();
   }, []);
 
-  // ── Filter to kitchen-relevant orders ─────────────────────────────────────
+  // ── Filter: only kitchen-relevant, non-cleared, non-day-closed orders ──────
+  // FIX: added day_cleared and shift_cleared checks so accountant close-day
+  //      immediately empties the kitchen board without needing a manual refresh.
   const filteredOrders = useMemo(() =>
     (orders || [])
       .filter(order => {
+        // ── Status gate: only active kitchen statuses ──────────────────────
         if (!["Pending", "Preparing", "Ready"].includes(order.status)) return false;
-        if (order.clearedByKitchen) return false;
+
+        // ── FIX 1: hide orders cleared by accountant end-of-day ───────────
+        const dayCleared =
+          order.day_cleared   === true || order.day_cleared   === "t" || order.day_cleared   === "true";
+
+        // ── FIX 2: hide orders cleared by waiter/kitchen end-of-shift ─────
+        const shiftCleared =
+          order.shift_cleared === true || order.shift_cleared === "t" || order.shift_cleared === "true";
+
+        // ── FIX 3: hide orders with in-memory kitchen clear flag ──────────
+        const kitchenCleared = order.clearedByKitchen === true;
+
+        if (dayCleared || shiftCleared || kitchenCleared) return false;
+
+        // ── Kitchen-only items (no barman / barista items = skip) ──────────
         if (!(order.items || []).some(i => i.station !== "Barman" && i.station !== "Barista")) return false;
+
+        // ── Search filter ──────────────────────────────────────────────────
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
           if (!(order.table_name || order.tableName || "").toLowerCase().includes(q) &&
               !String(order.id).includes(q)) return false;
         }
+
         return true;
       })
       .map(order => ({
@@ -298,38 +311,36 @@ export default function KitchenDisplay() {
       }),
   [orders, searchQuery]);
 
-  // ── Auto-upsert: Update this section in KitchenDisplay.js ──────
-const upsertedRef = useRef(new Set());
-useEffect(() => {
-  filteredOrders.forEach(async order => {
-    if (upsertedRef.current.has(order.id)) return;
-    upsertedRef.current.add(order.id);
-    try {
-      // ✅ Ensure we are grabbing the waiter info from the order object
-      const waiterName = order.staff_name || order.waiterName || "Staff";
-      const waiterRole = order.staff_role || "WAITER";
+  // ── Auto-upsert tickets to kitchen_tickets DB ─────────────────────────────
+  const upsertedRef = useRef(new Set());
+  useEffect(() => {
+    filteredOrders.forEach(async order => {
+      if (upsertedRef.current.has(order.id)) return;
+      upsertedRef.current.add(order.id);
+      try {
+        const waiterName = order.staff_name || order.waiterName || "Staff";
+        const waiterRole = order.staff_role || "WAITER";
+        const res = await fetch(`${API_URL}/api/kitchen/tickets`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            order_id:   order.id,
+            table_name: order.table_name || order.tableName || "WALK-IN",
+            staff_name: waiterName,
+            staff_role: waiterRole,
+            items:      order.items,
+            total:      order.total || 0,
+            status:     order.status,
+          }),
+        });
+        if (res.ok) {
+          const ticket = await res.json();
+          ticketMapRef.current[order.id] = ticket.id;
+        }
+      } catch (e) { console.error("Upsert ticket:", e); }
+    });
+  }, [filteredOrders]);
 
-      const res = await fetch(`${API_URL}/api/kitchen/tickets`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          order_id:   order.id,
-          table_name: order.table_name || order.tableName || "WALK-IN",
-          staff_name: waiterName, // ✅ Pass explicit name
-          staff_role: waiterRole, // ✅ Pass explicit role
-          items:      order.items,
-          total:      order.total || 0,
-          status:     order.status,
-        }),
-      });
-      if (res.ok) {
-        const ticket = await res.json();
-        ticketMapRef.current[order.id] = ticket.id;
-      }
-    } catch (e) { console.error("Upsert ticket:", e); }
-  });
-}, [filteredOrders]);
-
-  // ── Audio ─────────────────────────────────────────────────────────────────
+  // ── Audio: ding on new kitchen order ─────────────────────────────────────
   const prevLen = useRef(orders.length);
   const playDing = () => {
     new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3")
@@ -344,17 +355,14 @@ useEffect(() => {
     prevLen.current = orders.length;
   }, [orders, audioEnabled]);
 
-  // ── Update status — hits both orders API and kitchen_tickets API ──────────
+  // ── Update status ─────────────────────────────────────────────────────────
   const updateStatus = useCallback(async (orderId, ticketId, newStatus) => {
-    // Optimistic local update
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     try {
-      // 1. Update main orders table so waiters see it
       await fetch(`${API_URL}/api/orders/${orderId}/status`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      // 2. Update the persistent kitchen ticket
       const tId = ticketId || ticketMapRef.current[orderId];
       if (tId) {
         await fetch(`${API_URL}/api/kitchen/tickets/${tId}/status`, {
@@ -368,13 +376,12 @@ useEffect(() => {
     }
   }, [setOrders, refreshData]);
 
-  // ── Assign chef — hits both legacy orders route + new kitchen ticket ───────
+  // ── Assign chef ───────────────────────────────────────────────────────────
   const handleAssignChef = useCallback(async (chefInput) => {
     if (!chefInput || !assigningItem) return;
     const { orderId, ticketId, itemIdx, itemName } = assigningItem;
     const assignedAt = new Date().toISOString();
 
-    // Optimistic update
     setOrders(prev => prev.map(order => {
       if (order.id !== orderId) return order;
       const newItems = [...order.items];
@@ -390,13 +397,11 @@ useEffect(() => {
         i === itemIdx ? { ...item, assignedTo: chefInput, assignedAt } : item
       );
 
-      // 1. Legacy route (keeps orders.items in sync)
       await fetch(`${API_URL}/api/orders/${orderId}/assign-chef`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items: updatedItems, item_name: itemName, assigned_to: chefInput, assigned_at: assignedAt, assigned_by: chefName }),
       });
 
-      // 2. Kitchen ticket route (writes to chef_assignments log)
       const tId = ticketId || ticketMapRef.current[orderId];
       if (tId) {
         await fetch(`${API_URL}/api/kitchen/tickets/${tId}/assign-chef`, {
@@ -409,7 +414,6 @@ useEffect(() => {
 
   // ── End Shift ─────────────────────────────────────────────────────────────
   const handleShiftReset = async () => {
-    // Pull today's summary from DB to show accurate chef breakdown
     let chefs = [];
     try {
       const res = await fetch(`${API_URL}/api/kitchen/tickets/summary?date=${kampalaDateStr()}`);
@@ -421,7 +425,6 @@ useEffect(() => {
   };
 
   const confirmEndShift = async () => {
-    // 1. Archive tickets in DB — they stay visible to accountant, just hidden from kitchen
     try {
       await fetch(`${API_URL}/api/kitchen/clear-shift`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -429,7 +432,6 @@ useEffect(() => {
       });
     } catch (err) { console.error("Clear shift API:", err); }
 
-    // 2. Hide from local state (non-destructive — tickets still in DB)
     setOrders(prev => prev.map(order => {
       const isKitchenActive =
         ["Pending", "Preparing", "Ready"].includes(order.status) &&
@@ -438,7 +440,7 @@ useEffect(() => {
     }));
 
     setShowSummary(false);
-    upsertedRef.current.clear(); // reset so next shift's orders get upserted fresh
+    upsertedRef.current.clear();
   };
 
   const pendingCount   = filteredOrders.filter(o => o.status === "Pending").length;

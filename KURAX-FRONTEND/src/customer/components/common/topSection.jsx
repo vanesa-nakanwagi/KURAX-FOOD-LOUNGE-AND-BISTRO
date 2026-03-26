@@ -8,7 +8,7 @@ export default function TopSection({ searchPlaceholder }) {
   const { cart, setIsCartOpen } = useCart();
 
   return (
-    <header className="border-b border-yellow-500/20 sticky top-0 z-50 bg-white dark:bg-black transition-colors duration-300 font-[Outfit]">
+    <header className="border-b border-yellow-500/20 sticky top-0 z-50 bg-white dark:bg-zinc-900 transition-colors duration-300 font-[Outfit]">
       <div className="flex flex-col md:flex-row items-center md:justify-between px-4 md:px-8 py-4 gap-4 md:gap-0">
 
         {/* Logo */}

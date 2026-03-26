@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Lock, PlusCircle, ShieldAlert, 
-  ShieldCheck, RefreshCcw, Smartphone,
-  Menu as MenuIcon, X, History,
-  Zap, Bell
+  Lock, ShieldCheck, RefreshCcw, 
+  Menu as MenuIcon, X, Zap, Bell
 } from "lucide-react"; 
 
 // Component Imports
@@ -30,15 +28,10 @@ export default function ManagerLayout() {
   const { currentUser, isGranted } = useData();
   const isDark = theme === 'dark';
 
-  // ── Pull identity from currentUser or localStorage fallback ──────────────
   const savedUser      = (() => { try { return JSON.parse(localStorage.getItem('kurax_user') || '{}'); } catch { return {}; } })();
   const currentStaffId   = currentUser?.id   || savedUser?.id;
   const currentStaffName = currentUser?.name || savedUser?.name || "Manager";
 
-  // ── handleFinalizeShift ─────────────────────────────────────────────────────
-  // Calls PATCH /api/waiter/end-shift with role=MANAGER.
-  // Backend re-derives all totals from DB (orders + cashier_queue) and
-  // saves a staff_shifts row — which StaffAnalyticsModal polls every 8s.
   const handleFinalizeShift = async () => {
     if (isArchiving) return;
     setIsArchiving(true);
@@ -50,7 +43,7 @@ export default function ManagerLayout() {
           waiter_id:   currentStaffId,
           waiter_name: currentStaffName,
           role:        "MANAGER",
-          orderCount:  0,          // backend ignores this — derives count from DB
+          orderCount:  0, 
         }),
       });
       if (res.ok) {
@@ -68,7 +61,6 @@ export default function ManagerLayout() {
     }
   };
 
-  // --- Content Switcher ---
   const renderContent = () => {
     switch (activeTab) {
       case "order": 
@@ -94,7 +86,7 @@ export default function ManagerLayout() {
 
   return (
     <div className={`flex h-[100dvh] w-full font-[Outfit] overflow-hidden transition-colors duration-500 ${
-      isDark ? 'bg-black text-slate-100' : 'bg-zinc-50 text-zinc-900'
+      isDark ? 'bg-zinc-950 text-slate-100' : 'bg-zinc-50 text-zinc-900'
     }`}>
       
       {/* 1. MOBILE HEADER BAR */}
@@ -115,14 +107,17 @@ export default function ManagerLayout() {
         onClick={() => setIsMobileMenuOpen(false)}
       />
 
-      <aside className={`fixed inset-y-0 left-0 z-[70] w-72 transform lg:relative lg:translate-x-0 transition-all duration-500 ease-in-out ${
+      {/* 3. ASIDE (The Fix: Added background matching and relative positioning) */}
+      <aside className={`fixed inset-y-0 left-0 z-[70] w-72 transform lg:relative lg:translate-x-0 transition-all duration-500 ease-in-out border-r ${
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-      }`}>
+      } ${isDark ? 'bg-zinc-950 border-white/5' : 'bg-white border-black/5'}`}>
         <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} />
       </aside>
 
-      {/* 3. MAIN CONTENT AREA */}
-      <main className="flex-1 h-full overflow-y-auto relative flex flex-col min-w-0">
+      {/* 4. MAIN CONTENT AREA (The Fix: Background matches the Dashboard cards) */}
+      <main className={`flex-1 h-full overflow-y-auto flex flex-col min-w-0 transition-all duration-500 ${
+        isDark ? 'bg-[#0c0c0c]' : 'bg-zinc-50'
+      }`}>
         
         {/* AUTHORIZATION BADGE */}
         <div className="absolute top-6 right-6 z-50">
@@ -138,33 +133,11 @@ export default function ManagerLayout() {
            </div>
         </div>
 
-        {/* Dynamic Content */}
-        <div className={`flex-1 ${(activeTab === "order" || activeTab === "history") ? "pb-32" : "pb-10"}`}>
+        <div className="flex-1 pb-10">
           {renderContent()}
         </div>
       </main>
 
-      {/* 4. FOOTER TABS */}
-      {(activeTab === "order" || activeTab === "history") && (
-        <nav className={`fixed bottom-0 left-0 lg:left-72 right-0 px-10 py-4 pb-8 flex justify-center items-center gap-16 md:gap-32 z-[100] border-t ${
-          isDark ? 'bg-[#0a0a0a] border-white/5' : 'bg-white border-black/5 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]'
-        }`}>
-          <NavButton 
-            active={activeTab === "order"} 
-            onClick={() => setActiveTab("order")}
-            icon={<PlusCircle size={22} strokeWidth={2.5} />}
-            label="Take Order"
-          />
-          <NavButton 
-            active={activeTab === "history"} 
-            onClick={() => setActiveTab("history")}
-            icon={<History size={22} strokeWidth={2.5} />}
-            label="History"
-          />
-        </nav>
-      )}
-
-      {/* ── ShiftReportModal — must receive staffId + managerName ── */}
       <ShiftReportModal
         isOpen={isShiftModalOpen}
         onClose={() => setIsShiftModalOpen(false)}
@@ -175,26 +148,6 @@ export default function ManagerLayout() {
         theme={theme}
       />
     </div>
-  );
-}
-
-function NavButton({ icon, label, active, onClick }) {
-  return (
-    <button 
-      onClick={onClick} 
-      className={`flex flex-col items-center gap-2 transition-all duration-300 min-w-[90px] ${
-        active ? "text-yellow-500" : "text-zinc-600 opacity-60 hover:opacity-100"
-      }`}
-    >
-      <div className={`p-1.5 rounded-full border-2 transition-all duration-300 ${
-        active ? "border-yellow-500 scale-110 shadow-[0_0_15px_rgba(234,179,8,0.3)]" : "border-transparent"
-      }`}>
-        {icon}
-      </div>
-      <span className="text-[10px] font-black uppercase tracking-widest text-center leading-none">
-        {label}
-      </span>
-    </button>
   );
 }
 
@@ -210,7 +163,7 @@ function LockedView({ name, role, theme }) {
   const handleRequest = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/staff/request-permission', {
+      const res = await fetch(`${API_URL}/api/staff/request-permission`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ staffId: currentUser.id, staffName: currentUser.name })

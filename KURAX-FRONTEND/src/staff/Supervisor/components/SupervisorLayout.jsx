@@ -1,108 +1,54 @@
 import React, { useState, useEffect } from "react";
 import { Lock, ShieldCheck, RefreshCcw, Menu as MenuIcon, Zap, Bell } from "lucide-react";
+import { ClipboardList, Clock, History, Target } from "lucide-react";
 
-import NewOrder    from "./NewOrder";
+import NewOrder from "./NewOrder";
 import OrderHistory from "./OrderHistory";
-import ShiftModal  from "./ShiftModal";
-import LiveOrderStatus       from "./LiveOrderStatus";
-import Sidebar               from "./Sidebar";
+import LiveOrderStatus from "./LiveOrderStatus";
+import Sidebar from "./Sidebar";
+import StaffTargets from "./StaffTargets";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
-import { useData }  from "../../../customer/components/context/DataContext";
-import API_URL      from "../../../config/api";
-import StaffTargets          from "./StaffTargets";
+import { useData } from "../../../customer/components/context/DataContext";
+import API_URL from "../../../config/api";
 
-
-import { ClipboardList, Clock, History, Flag, Target } from "lucide-react";
+// ── MENU CONFIGURATION (Shift Removed) ──────────────────────────────────────
 const SUPERVISOR_MENU = [
   { id: "order",   label: "TAKE ORDER",         icon: <ClipboardList size={20} /> },
+  { id: "manage", label: "MANAGE ORDER",       icon: <History size={20} /> },
   { id: "status",  label: "VIEW ORDER STATUS",   icon: <Clock size={20} /> },
   { id: "targets", label: "STAFF TARGETS",       icon: <Target size={20} /> },
-  { id: "history", label: "ORDER HISTORY",       icon: <History size={20} /> },
-  { id: "shift",   label: "END SHIFT",           icon: <Flag size={20} /> },
 ];
 
 export default function SupervisorLayout() {
-  const [activeTab,        setActiveTab]        = useState("order");
-  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("order");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isArchiving,      setIsArchiving]      = useState(false);
 
   const { theme } = useTheme();
   const { currentUser, isGranted } = useData();
   const isDark = theme === "dark";
 
-  const savedUser        = (() => { try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); } catch { return {}; } })();
-  const currentStaffId   = currentUser?.id   || savedUser?.id;
-  const currentStaffName = currentUser?.name || savedUser?.name || "Supervisor";
-
+  const savedUser = (() => { 
+    try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); } 
+    catch { return {}; } 
+  })();
   
-  const today = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Africa/Nairobi" })
-  ).toISOString().split("T")[0];
-  const shiftSessionKey = `supervisor_shift_ended_${today}`;
-
-  const handleFinalizeShift = async () => {
-    if (isArchiving) return;
-
-    // Guard: already archived today in this session?
-    if (localStorage.getItem(shiftSessionKey)) {
-      setIsShiftModalOpen(false);
-      alert("Shift was already archived today.");
-      return;
-    }
-
-    setIsArchiving(true);
-    try {
-      const res = await fetch(`${API_URL}/api/waiter/end-shift`, {
-        method:  "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          waiter_id:   currentStaffId,
-          waiter_name: currentStaffName,
-          role:        "SUPERVISOR",
-        }),
-      });
-      if (res.ok) {
-        localStorage.setItem(shiftSessionKey, "1");
-        setIsShiftModalOpen(false);
-        alert("Shift archived successfully.");
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(`Failed to archive shift: ${err.error || "Unknown error"}`);
-      }
-    } catch (err) {
-      console.error("End shift error:", err);
-      alert("Network error — please try again.");
-    } finally {
-      setIsArchiving(false);
-    }
-  };
+  const currentStaffName = currentUser?.name || savedUser?.name || "Supervisor";
 
   // ── Tab → content map ─────────────────────────────────────────────────────
   const renderContent = () => {
     switch (activeTab) {
       case "order":
-        if (!isGranted) return <LockedView name={currentUser?.name} role="Supervisor" />;
+        if (!isGranted) return <LockedView name={currentStaffName} role="Supervisor" />;
         return <NewOrder />;
       case "status":
         return <LiveOrderStatus />;
       case "targets":
         return <StaffTargets />;
-      case "history":
+      case "manage":
         return <OrderHistory />;
       default:
         return <NewOrder />;
-    }
-  };
-
-  // ── Tab change — "shift" opens modal instead of switching view ────────────
-  const handleTabChange = (tabId) => {
-    if (tabId === "shift") {
-      setIsShiftModalOpen(true);
-    } else {
-      setActiveTab(tabId);
-      setIsMobileMenuOpen(false);
     }
   };
 
@@ -129,15 +75,16 @@ export default function SupervisorLayout() {
         onClick={() => setIsMobileMenuOpen(false)}
       />
 
-      {/* ── Sidebar — receives supervisor menu override ─────────────────────
-          The shared Sidebar component accepts an optional `menuItems` prop.
-          If your Sidebar doesn't support that yet, see note below.           */}
+      {/* ── Sidebar ────────────────────────────────────────────────────────── */}
       <aside className={`fixed inset-y-0 left-0 z-[70] w-64 transform lg:relative lg:translate-x-0 transition-all duration-500 ease-in-out ${
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       }`}>
         <Sidebar
           activeTab={activeTab}
-          setActiveTab={handleTabChange}
+          setActiveTab={(tabId) => {
+            setActiveTab(tabId);
+            setIsMobileMenuOpen(false);
+          }}
           menuItems={SUPERVISOR_MENU}
         />
       </aside>
@@ -145,7 +92,7 @@ export default function SupervisorLayout() {
       {/* ── Main content ───────────────────────────────────────────────────── */}
       <main className="flex-1 h-full overflow-y-auto relative flex flex-col min-w-0">
 
-        {/* Permission badge */}
+        {/* Status Badge */}
         <div className="absolute top-6 right-6 z-50">
           <div className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 backdrop-blur-md shadow-xl transition-all ${
             isGranted
@@ -163,26 +110,15 @@ export default function SupervisorLayout() {
           {renderContent()}
         </div>
       </main>
-
-      {/* ── Shift modal ───────────────────────────────────────────────────── */}
-      <ShiftModal
-        isOpen={isShiftModalOpen}
-        onClose={() => setIsShiftModalOpen(false)}
-        onConfirm={handleFinalizeShift}
-        isArchiving={isArchiving}
-        staffId={currentStaffId}
-        staffName={currentStaffName}
-        theme={theme}
-      />
     </div>
   );
 }
 
-// ── LockedView — shown on "order" tab when Director hasn't granted permission ─
+// ── LockedView ───────────────────────────────────────────────────────────────
 function LockedView({ name, role }) {
   const { currentUser } = useData();
   const [requestSent, setRequestSent] = useState(false);
-  const [loading,     setLoading]     = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (localStorage.getItem(`perm_req_${currentUser?.id}`)) setRequestSent(true);

@@ -183,9 +183,11 @@ export default function CashierDashboard() {
     const t = schedule(); return () => clearTimeout(t);
   }, []);
 
-  const todayTotals = useMemo(() => {
+   const todayTotals = useMemo(() => {
     const zero = { cash: 0, card: 0, momo_mtn: 0, momo_airtel: 0, credit: 0, gross: 0 };
-    return history.reduce((acc, row) => {
+
+    // ── Step 1: cashier-history (cashier_queue) ───────────────────────────────
+    const base = history.reduce((acc, row) => {
       const confirmedOn = toLocalDateStr(new Date(row.confirmed_at || row.created_at));
       if (row.status !== "Confirmed" || confirmedOn !== today) return acc;
       const amt = Number(row.amount) || 0;
@@ -199,7 +201,45 @@ export default function CashierDashboard() {
       }
       return acc;
     }, { ...zero });
-  }, [history, today]);
+
+    // ── Step 2: credit settlements (credits table) ────────────────────────────
+    // Settlements are recorded via PATCH /api/orders/credits/:id/settle.
+    // The cashier chooses a settle_method (Cash/Card/Momo-MTN/Momo-Airtel)
+    // which we use to route the amount into the correct gross bucket.
+    // paid_at is the settlement timestamp; fall back to updated_at or created_at.
+    credits.forEach(c => {
+      const isSettled =
+        c.paid    === true || c.paid    === "t" || c.paid    === "true"  ||
+        c.settled === true || c.settled === "t" || c.settled === "true"  ||
+        c.status  === "settled" || c.status === "Settled";
+      if (!isSettled) return;
+
+      // Only count settlements that happened today
+      const settledDate = toLocalDateStr(
+        new Date(c.paid_at || c.updated_at || c.created_at)
+      );
+      if (settledDate !== today) return;
+
+      // Use amount_paid (partial settlements allowed) or full amount
+      const amt = Number(c.amount_paid || c.amount || 0);
+      if (amt <= 0) return;
+
+      const method = c.settle_method || "Cash"; // default Cash if not stored
+      switch (method) {
+        case "Cash":        base.cash        += amt; base.gross += amt; break;
+        case "Card":        base.card        += amt; base.gross += amt; break;
+        case "Momo-MTN":    base.momo_mtn    += amt; base.gross += amt; break;
+        case "Momo-Airtel": base.momo_airtel += amt; base.gross += amt; break;
+        default:            base.gross       += amt; break;
+      }
+      // We intentionally do NOT subtract from base.credit here.
+      // base.credit was already counted when the cashier forwarded the
+      // original credit to the manager. The settlement is a new cash inflow
+      // on top — it's the resolution, not a duplicate.
+    });
+
+    return base;
+  }, [history, credits, today]);
 
   const netCashOnCounter = todayTotals.cash - pettyCashTotal;
 

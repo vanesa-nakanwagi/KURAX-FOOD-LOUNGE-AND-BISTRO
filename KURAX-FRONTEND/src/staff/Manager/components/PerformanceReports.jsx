@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../Director/components/shared/ThemeContext";
 import { RevenueChart } from "../components/charts";
@@ -13,14 +13,27 @@ import API_URL from "../../../config/api";
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function toLocalDateStr(date) {
   const d = date instanceof Date ? date : new Date(date);
-  return [d.getFullYear(), String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0")].join("-");
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
 }
-function fmt(n)  { return `UGX ${Number(n||0).toLocaleString()}`; }
+function fmt(n)  { return `UGX ${Number(n || 0).toLocaleString()}`; }
 function fmtK(n) {
-  const v = Number(n||0);
-  if (v >= 1_000_000) return `UGX ${(v/1_000_000).toFixed(1)}M`;
-  if (v >= 1_000)     return `UGX ${(v/1_000).toFixed(0)}K`;
+  const v = Number(n || 0);
+  if (v >= 1_000_000) return `UGX ${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000)     return `UGX ${(v / 1_000).toFixed(0)}K`;
   return `UGX ${v.toLocaleString()}`;
+}
+
+// isSettled — covers all DB representations (postgres bool, string, status field)
+function isSettledCredit(c) {
+  return (
+    c.paid    === true || c.paid    === "t" || c.paid    === "true"  ||
+    c.settled === true || c.settled === "t" || c.settled === "true"  ||
+    c.status  === "settled" || c.status  === "Settled"
+  );
 }
 
 // ─── STAT CARD ───────────────────────────────────────────────────────────────
@@ -28,7 +41,9 @@ function StatCard({ label, value, sub, icon, color, isDark }) {
   return (
     <div className={`p-5 rounded-[2rem] border transition-all duration-200 hover:scale-[1.02] hover:shadow-lg
       ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
-      <div className={`p-2.5 rounded-xl w-fit mb-3 ${isDark ? "bg-white/5" : "bg-zinc-100"}`}>{icon}</div>
+      <div className={`p-2.5 rounded-xl w-fit mb-3 ${isDark ? "bg-white/5" : "bg-zinc-100"}`}>
+        {icon}
+      </div>
       <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">{label}</p>
       <p className={`text-lg font-[900] italic tracking-tighter truncate ${color}`}>{value}</p>
       {sub && <p className="text-[8px] font-bold text-zinc-500 uppercase mt-1">{sub}</p>}
@@ -39,7 +54,7 @@ function StatCard({ label, value, sub, icon, color, isDark }) {
 // ─── CREDIT APPROVAL CARD ────────────────────────────────────────────────────
 function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
   const ageMin = Math.floor((Date.now() - new Date(row.created_at)) / 60000);
-  const ageStr = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin/60)}h ago`;
+  const ageStr = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ago`;
 
   return (
     <div className={`rounded-[2rem] overflow-hidden border transition-all
@@ -122,9 +137,10 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
 
 // ─── CREDIT LEDGER ROW ───────────────────────────────────────────────────────
 function CreditLedgerRow({ credit, isDark }) {
+  const settled = isSettledCredit(credit);
   return (
     <div className={`rounded-2xl p-4 border flex items-start justify-between gap-3 flex-wrap transition-all
-      ${credit.paid
+      ${settled
         ? isDark ? "bg-zinc-900/20 border-white/5 opacity-65" : "bg-zinc-50 border-zinc-100"
         : isDark ? "bg-purple-500/5 border-purple-500/20"     : "bg-purple-50 border-purple-200"}`}>
       <div className="flex-1 min-w-0">
@@ -132,7 +148,7 @@ function CreditLedgerRow({ credit, isDark }) {
           <span className={`font-black text-sm uppercase italic tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>
             {credit.table_name || "Table"}
           </span>
-          {credit.paid ? (
+          {settled ? (
             <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase">
               Settled ✓
             </span>
@@ -155,18 +171,18 @@ function CreditLedgerRow({ credit, isDark }) {
               <span className={isDark ? "text-zinc-400" : "text-zinc-500"}>{credit.client_phone}</span>
             </span>
           )}
-          {credit.pay_by && (
+          {credit.pay_by && !settled && (
             <span className="flex items-center gap-1">
               <Clock size={9} className="text-zinc-500"/>
               <span className={isDark ? "text-zinc-400" : "text-zinc-500"}>Pays: {credit.pay_by}</span>
             </span>
           )}
         </div>
-        {credit.paid && credit.settle_method && (
+        {settled && credit.settle_method && (
           <p className={`text-[8px] mt-1 font-mono ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
             Settled via {credit.settle_method}
-            {credit.settle_txn ? ` · ${credit.settle_txn}` : ""}
-            {credit.paid_at ? ` · ${toLocalDateStr(new Date(credit.paid_at))}` : ""}
+            {credit.settle_txn  ? ` · ${credit.settle_txn}` : ""}
+            {credit.paid_at     ? ` · ${toLocalDateStr(new Date(credit.paid_at))}` : ""}
           </p>
         )}
         <p className={`text-[8px] mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
@@ -177,7 +193,7 @@ function CreditLedgerRow({ credit, isDark }) {
         <p className="text-base font-[900] italic text-purple-400">
           UGX {Number(credit.amount).toLocaleString()}
         </p>
-        {credit.paid && credit.amount_paid && Number(credit.amount_paid) !== Number(credit.amount) && (
+        {settled && credit.amount_paid && Number(credit.amount_paid) !== Number(credit.amount) && (
           <p className="text-[9px] text-emerald-400 font-bold mt-0.5">
             Paid: UGX {Number(credit.amount_paid).toLocaleString()}
           </p>
@@ -189,7 +205,7 @@ function CreditLedgerRow({ credit, isDark }) {
 
 // ─── MAIN ────────────────────────────────────────────────────────────────────
 export default function PerformanceReports() {
-  const { theme }                              = useTheme();
+  const { theme }   = useTheme();
   const { orders = [], monthlyTargets = {}, currentUser } = useData();
   const isDark = theme === "dark";
 
@@ -200,23 +216,19 @@ export default function PerformanceReports() {
 
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
 
-  // ── Daily summary ────────────────────────────────────────────────────────
-  const [daySummary,  setDaySummary]  = useState(null);
-  const [dayLoading,  setDayLoading]  = useState(true);
-
-  // ── Monthly summary ──────────────────────────────────────────────────────
-  const [monthSummary, setMonthSummary] = useState(null);
-  const [monthLoading, setMonthLoading] = useState(true);
-
-  // ── Credits ──────────────────────────────────────────────────────────────
-  const [creditApprovals,   setCreditApprovals]   = useState([]);
-  const [creditsLedger,     setCreditsLedger]     = useState([]);
-  const [creditsLoading,    setCreditsLoading]    = useState(true);
-  const [approvingId,       setApprovingId]       = useState(null);
-  const [rejectingRow,      setRejectingRow]      = useState(null); // id
-  const [rejectReason,      setRejectReason]      = useState("");
-  const [ledgerExpanded,    setLedgerExpanded]    = useState(false);
-  const [creditFilter,      setCreditFilter]      = useState("all");
+  // ── Data state ───────────────────────────────────────────────────────────
+  const [daySummary,      setDaySummary]      = useState(null);
+  const [dayLoading,      setDayLoading]      = useState(true);
+  const [monthSummary,    setMonthSummary]    = useState(null);
+  const [monthLoading,    setMonthLoading]    = useState(true);
+  const [creditApprovals, setCreditApprovals] = useState([]);
+  const [creditsLedger,   setCreditsLedger]   = useState([]);
+  const [creditsLoading,  setCreditsLoading]  = useState(true);
+  const [approvingId,     setApprovingId]     = useState(null);
+  const [rejectingRow,    setRejectingRow]    = useState(null);
+  const [rejectReason,    setRejectReason]    = useState("");
+  const [ledgerExpanded,  setLedgerExpanded]  = useState(false);
+  const [creditFilter,    setCreditFilter]    = useState("all");
 
   const currentMonth = selectedDate.substring(0, 7);
 
@@ -229,8 +241,11 @@ export default function PerformanceReports() {
         ? `${API_URL}/api/summaries/today`
         : `${API_URL}/api/summaries/range?from=${selectedDate}&to=${selectedDate}`;
       const res = await fetch(url);
-      if (res.ok) { const d = await res.json(); setDaySummary(Array.isArray(d) ? (d[0] || null) : d); }
-    } catch(e) { console.error("Day summary:", e); }
+      if (res.ok) {
+        const d = await res.json();
+        setDaySummary(Array.isArray(d) ? (d[0] || null) : d);
+      }
+    } catch (e) { console.error("Day summary:", e); }
     finally { setDayLoading(false); }
   }, [selectedDate]);
 
@@ -239,7 +254,7 @@ export default function PerformanceReports() {
     try {
       const res = await fetch(`${API_URL}/api/summaries/monthly?month=${currentMonth}`);
       if (res.ok) setMonthSummary(await res.json());
-    } catch(e) { console.error("Month summary:", e); }
+    } catch (e) { console.error("Month summary:", e); }
     finally { setMonthLoading(false); }
   }, [currentMonth]);
 
@@ -252,13 +267,10 @@ export default function PerformanceReports() {
       if (aRes.ok) setCreditApprovals(await aRes.json());
       if (cRes.ok) {
         const rows = await cRes.json();
-        // Normalise pg boolean "t"/"f"
-        setCreditsLedger(rows.map(r => ({
-          ...r,
-          paid: r.paid === true || r.paid === "t" || r.paid === "true",
-        })));
+        // Normalise postgres boolean "t"/"f" → JS boolean
+        setCreditsLedger(rows.map(r => ({ ...r, paid: isSettledCredit(r) })));
       }
-    } catch(e) { console.error("Credits:", e); }
+    } catch (e) { console.error("Credits:", e); }
     finally { setCreditsLoading(false); }
   }, []);
 
@@ -266,10 +278,8 @@ export default function PerformanceReports() {
     fetchDaySummary();
     fetchMonthSummary();
     fetchCredits();
-
-    const today = new Date().toISOString().split("T")[0];
     const credId = setInterval(fetchCredits, 15000);
-
+    const today  = new Date().toISOString().split("T")[0];
     if (selectedDate === today) {
       const sumId = setInterval(fetchDaySummary, 10000);
       return () => { clearInterval(sumId); clearInterval(credId); };
@@ -286,6 +296,61 @@ export default function PerformanceReports() {
     creditFilter === "outstanding" ? outstanding :
     creditFilter === "settled"     ? settled     : creditsLedger;
 
+  // ── BUG FIX: enrich daySummary totals with today's settled credits ────────
+  // daySummary from /api/summaries/today only reflects cashier_queue payments.
+  // Credit settlements go via PATCH /api/orders/credits/:id/settle which writes
+  // to the credits table — never to daily_summary — so they were invisible.
+  // We add them here per settle_method so each bucket is accurate.
+  const settledTodayCredits = useMemo(() =>
+    creditsLedger.filter(c => {
+      if (!c.paid) return false;
+      const d = c.paid_at || c.updated_at || c.created_at;
+      return d && toLocalDateStr(new Date(d)) === selectedDate;
+    }),
+  [creditsLedger, selectedDate]);
+
+  const creditSettledByMethod = useMemo(() => {
+    const acc = { cash: 0, card: 0, mtn: 0, airtel: 0, total: 0 };
+    settledTodayCredits.forEach(c => {
+      const amt = Number(c.amount_paid || c.amount || 0);
+      switch (c.settle_method) {
+        case "Cash":        acc.cash   += amt; acc.total += amt; break;
+        case "Card":        acc.card   += amt; acc.total += amt; break;
+        case "Momo-MTN":    acc.mtn    += amt; acc.total += amt; break;
+        case "Momo-Airtel": acc.airtel += amt; acc.total += amt; break;
+        default:            acc.total  += amt; break;
+      }
+    });
+    return acc;
+  }, [settledTodayCredits]);
+
+  // Final display values — DB totals + credit settlement additions
+  const totalGross   = Number(daySummary?.total_gross  ?? 0) + creditSettledByMethod.total;
+  const totalCash    = Number(daySummary?.total_cash   ?? 0) + creditSettledByMethod.cash;
+  const totalCard    = Number(daySummary?.total_card   ?? 0) + creditSettledByMethod.card;
+  const totalMTN     = Number(daySummary?.total_mtn    ?? 0) + creditSettledByMethod.mtn;
+  const totalAirtel  = Number(daySummary?.total_airtel ?? 0) + creditSettledByMethod.airtel;
+  const orderCount   = Number(daySummary?.order_count  ?? 0);
+
+  // ── Monthly target progress ───────────────────────────────────────────────
+  const monthlyRevenue = Number(monthSummary?.totals?.total_gross ?? 0);
+  const monthTarget    = monthlyTargets[currentMonth]?.revenue ?? 6_000_000;
+  const progressPct    = Math.min((monthlyRevenue / monthTarget) * 100, 100).toFixed(1);
+
+  // ── Staff leaderboard ─────────────────────────────────────────────────────
+  const waiterStats = useMemo(() =>
+    orders
+      .filter(o => {
+        const ts = o.timestamp || o.date;
+        return ts && new Date(ts).toISOString().split("T")[0] === selectedDate;
+      })
+      .reduce((acc, o) => {
+        const n = (o.waiter_name || o.waiterName || o.waiter || "Staff").trim();
+        acc[n] = (acc[n] || 0) + Number(o.total || 0);
+        return acc;
+      }, {}),
+  [orders, selectedDate]);
+
   // ── Credit approve / reject ───────────────────────────────────────────────
   const handleApprove = async (queueId) => {
     setApprovingId(queueId);
@@ -299,7 +364,7 @@ export default function PerformanceReports() {
         setCreditApprovals(prev => prev.filter(r => r.id !== queueId));
         fetchCredits();
       }
-    } catch(e) { console.error("Approve:", e); }
+    } catch (e) { console.error("Approve:", e); }
     setApprovingId(null);
   };
 
@@ -312,36 +377,13 @@ export default function PerformanceReports() {
         body: JSON.stringify({ rejected_by: currentStaffName, reason: rejectReason }),
       });
       setCreditApprovals(prev => prev.filter(r => r.id !== rejectingRow));
-    } catch(e) { console.error("Reject:", e); }
+    } catch (e) { console.error("Reject:", e); }
     setRejectingRow(null);
     setRejectReason("");
   };
 
-  // ── Summary values ───────────────────────────────────────────────────────
-  const totalGross    = Number(daySummary?.total_gross   ?? 0);
-  const totalCash     = Number(daySummary?.total_cash    ?? 0);
-  const totalCard     = Number(daySummary?.total_card    ?? 0);
-  const totalMTN      = Number(daySummary?.total_mtn     ?? 0);
-  const totalAirtel   = Number(daySummary?.total_airtel  ?? 0);
-  const orderCount    = Number(daySummary?.order_count   ?? 0);
-  const monthlyRevenue = Number(monthSummary?.totals?.total_gross ?? 0);
-  const monthTarget    = monthlyTargets[currentMonth]?.revenue ?? 6_000_000;
-  const progressPct    = Math.min((monthlyRevenue / monthTarget) * 100, 100).toFixed(1);
-
-  // Staff leaderboard (from orders array — per-staff breakdown)
-  const waiterStats = orders
-    .filter(o => {
-      const ts = o.timestamp || o.date;
-      return ts && new Date(ts).toISOString().split("T")[0] === selectedDate;
-    })
-    .reduce((acc, o) => {
-      const n = (o.waiter_name || o.waiterName || o.waiter || "Staff").trim();
-      acc[n] = (acc[n] || 0) + Number(o.total || 0);
-      return acc;
-    }, {});
-
-  // Shared Tailwind shorthands
-  const card = isDark ? "bg-zinc-900/40 border-white/5" : "bg-white border-black/5 shadow-sm";
+  // ── Shared Tailwind shorthands ────────────────────────────────────────────
+  const card  = isDark ? "bg-zinc-900/40 border-white/5" : "bg-white border-black/5 shadow-sm";
   const muted = isDark ? "text-zinc-500" : "text-zinc-400";
 
   return (
@@ -355,31 +397,50 @@ export default function PerformanceReports() {
             Audit Date: {selectedDate}
           </p>
         </div>
-        <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
+        <input
+          type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
           className={`px-4 py-2 rounded-xl font-black text-[10px] border uppercase
-            ${isDark ? "bg-zinc-900 border-white/10 text-white" : "bg-white border-black/10 text-zinc-900"}`}/>
+            ${isDark ? "bg-zinc-900 border-white/10 text-white" : "bg-white border-black/10 text-zinc-900"}`}
+        />
       </div>
 
       {/* ── REVENUE STAT CARDS ── */}
+      {/* Note: values include today's settled credit amounts per payment method */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
-        <StatCard label="Gross Revenue" value={dayLoading ? "…" : fmt(totalGross)} sub={`${orderCount} orders`}
-          icon={<TrendingUp size={18}/>} color="text-emerald-500" isDark={isDark}/>
-        <StatCard label="MTN Momo"      value={dayLoading ? "…" : fmt(totalMTN)}
-          icon={<Smartphone size={18} className="text-yellow-400"/>} color="text-yellow-400" isDark={isDark}/>
-        <StatCard label="Airtel Money"  value={dayLoading ? "…" : fmt(totalAirtel)}
-          icon={<Smartphone size={18} className="text-rose-500"/>}   color="text-rose-500"   isDark={isDark}/>
-        <StatCard label="Card / POS"    value={dayLoading ? "…" : fmt(totalCard)}
-          icon={<CreditCard size={18} className="text-blue-500"/>}   color="text-blue-500"   isDark={isDark}/>
-        <StatCard label="Physical Cash" value={dayLoading ? "…" : fmt(totalCash)}
-          icon={<Wallet size={18} className="text-emerald-500"/>}    color="text-emerald-500" isDark={isDark}/>
+        <StatCard
+          label="Gross Revenue" isDark={isDark} color="text-emerald-500"
+          value={dayLoading ? "…" : fmt(totalGross)}
+          sub={`${orderCount} orders${settledTodayCredits.length > 0 ? ` · incl. ${settledTodayCredits.length} credit settlement${settledTodayCredits.length > 1 ? "s" : ""}` : ""}`}
+          icon={<TrendingUp size={18}/>}
+        />
+        <StatCard
+          label="MTN Momo" isDark={isDark} color="text-yellow-400"
+          value={dayLoading ? "…" : fmt(totalMTN)}
+          icon={<Smartphone size={18} className="text-yellow-400"/>}
+        />
+        <StatCard
+          label="Airtel Money" isDark={isDark} color="text-rose-500"
+          value={dayLoading ? "…" : fmt(totalAirtel)}
+          icon={<Smartphone size={18} className="text-rose-500"/>}
+        />
+        <StatCard
+          label="Card / POS" isDark={isDark} color="text-blue-500"
+          value={dayLoading ? "…" : fmt(totalCard)}
+          icon={<CreditCard size={18} className="text-blue-500"/>}
+        />
+        <StatCard
+          label="Physical Cash" isDark={isDark} color="text-emerald-500"
+          value={dayLoading ? "…" : fmt(totalCash)}
+          icon={<Wallet size={18} className="text-emerald-500"/>}
+        />
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════════════════════════════
           CREDITS SECTION
-      ══════════════════════════════════════════════════════════════════ */}
+      ══════════════════════════════════════════════════════════════════════ */}
       <div className={`rounded-[2.5rem] border overflow-hidden ${card}`}>
 
-        {/* ── Section title bar ── */}
+        {/* Section title */}
         <div className="flex items-center justify-between px-6 py-5">
           <div className="flex items-center gap-3">
             <div className={`p-2.5 rounded-xl ${isDark ? "bg-purple-500/10" : "bg-purple-100"}`}>
@@ -391,14 +452,15 @@ export default function PerformanceReports() {
               </h3>
               <p className={`text-[9px] mt-0.5 ${muted}`}>
                 {creditApprovals.length > 0 && (
-                  <span className="text-yellow-400 font-bold animate-pulse">{creditApprovals.length} pending approval · </span>
+                  <span className="text-yellow-400 font-bold animate-pulse">
+                    {creditApprovals.length} pending approval ·{" "}
+                  </span>
                 )}
                 {outstanding.length} outstanding · {settled.length} settled
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {/* Outstanding pill */}
             {totalOutstanding > 0 && (
               <span className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[9px] font-black uppercase animate-pulse">
                 <AlertCircle size={10}/> {fmtK(totalOutstanding)} unpaid
@@ -409,7 +471,6 @@ export default function PerformanceReports() {
                 <CheckCircle2 size={10}/> All Settled
               </span>
             )}
-            {/* Refresh */}
             <button onClick={fetchCredits}
               className={`p-2.5 rounded-xl transition-all ${isDark ? "bg-white/5 hover:bg-white/10" : "bg-zinc-100 hover:bg-zinc-200"}`}>
               <RefreshCw size={13} className={creditsLoading ? "animate-spin text-yellow-400" : muted}/>
@@ -417,29 +478,22 @@ export default function PerformanceReports() {
           </div>
         </div>
 
-        {/* ── Summary tiles ── */}
+        {/* Summary tiles */}
         <div className={`grid grid-cols-3 gap-3 px-6 pb-5 border-t pt-5 ${isDark ? "border-white/5" : "border-black/5"}`}>
-          {/* Outstanding */}
           <div className={`rounded-2xl p-4 ${isDark ? "bg-black/40 border border-purple-500/10" : "bg-purple-50 border border-purple-100"}`}>
-            <p className={`text-[8px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-purple-400"}`}>
-              Outstanding
-            </p>
+            <p className={`text-[8px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-purple-400"}`}>Outstanding</p>
             <p className="text-purple-400 font-[900] italic text-xl leading-none">{fmtK(totalOutstanding)}</p>
             <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-purple-400/60"}`}>
               {outstanding.length} client{outstanding.length !== 1 ? "s" : ""}
             </p>
           </div>
-          {/* Settled */}
           <div className={`rounded-2xl p-4 ${isDark ? "bg-black/40 border border-emerald-500/10" : "bg-emerald-50 border border-emerald-100"}`}>
-            <p className={`text-[8px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-emerald-500"}`}>
-              Settled
-            </p>
+            <p className={`text-[8px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-emerald-500"}`}>Settled</p>
             <p className="text-emerald-400 font-[900] italic text-xl leading-none">{fmtK(totalSettled)}</p>
             <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-emerald-500/60"}`}>
               {settled.length} record{settled.length !== 1 ? "s" : ""}
             </p>
           </div>
-          {/* All-time */}
           <div className="rounded-2xl p-4 bg-yellow-500">
             <p className="text-[8px] font-black uppercase tracking-widest mb-2 text-black/50">All Time</p>
             <p className="text-black font-[900] italic text-xl leading-none">{fmtK(totalOutstanding + totalSettled)}</p>
@@ -447,7 +501,7 @@ export default function PerformanceReports() {
           </div>
         </div>
 
-        {/* ── Pending approvals ── */}
+        {/* Pending approvals */}
         {creditApprovals.length > 0 && (
           <div className={`px-6 pb-6 border-t pt-5 space-y-3 ${isDark ? "border-white/5" : "border-black/5"}`}>
             <div className="flex items-center gap-2 mb-4">
@@ -472,21 +526,22 @@ export default function PerformanceReports() {
           </div>
         )}
 
-        {/* ── Ledger — collapsible toggle ── */}
+        {/* Ledger — collapsible */}
         <div className={`border-t ${isDark ? "border-white/5" : "border-black/5"}`}>
-          <button onClick={() => setLedgerExpanded(v => !v)}
+          <button
+            onClick={() => setLedgerExpanded(v => !v)}
             className={`w-full flex items-center justify-between px-6 py-4 transition-colors
               ${isDark ? "hover:bg-white/3" : "hover:bg-zinc-50"}`}>
             <div className="flex items-center gap-2">
               <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>Credit History</p>
               {creditsLedger.length > 0 && (
-                <span className={`px-2 py-0.5 rounded-full text-[8px] font-black ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
+                <span className={`px-2 py-0.5 rounded-full text-[8px] font-black
+                  ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
                   {creditsLedger.length}
                 </span>
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {/* Mobile outstanding pill */}
               {totalOutstanding > 0 && (
                 <span className="sm:hidden text-[9px] font-black text-rose-400">{fmtK(totalOutstanding)} unpaid</span>
               )}
@@ -531,7 +586,9 @@ export default function PerformanceReports() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {filteredCredits.map(c => <CreditLedgerRow key={c.id} credit={c} isDark={isDark}/>)}
+                  {filteredCredits.map(c => (
+                    <CreditLedgerRow key={c.id} credit={c} isDark={isDark}/>
+                  ))}
                 </div>
               )}
             </div>
@@ -548,7 +605,9 @@ export default function PerformanceReports() {
             Cash · Card · MTN · Airtel · Gross
           </p>
         </div>
-        <div className="w-full overflow-hidden"><RevenueChart/></div>
+        <div className="w-full overflow-hidden">
+          <RevenueChart/>
+        </div>
       </div>
 
       {/* ── MONTHLY PROGRESS ── */}
@@ -570,8 +629,10 @@ export default function PerformanceReports() {
           <span className="text-3xl font-[900] italic text-yellow-500">{progressPct}%</span>
         </div>
         <div className="w-full h-3 bg-black/20 rounded-full overflow-hidden border border-white/5">
-          <div className="h-full bg-yellow-500 transition-all duration-1000 shadow-[0_0_20px_rgba(234,179,8,0.3)]"
-            style={{ width: `${progressPct}%` }}/>
+          <div
+            className="h-full bg-yellow-500 transition-all duration-1000 shadow-[0_0_20px_rgba(234,179,8,0.3)]"
+            style={{ width: `${progressPct}%` }}
+          />
         </div>
         {!monthLoading && monthSummary?.totals && (
           <div className="flex flex-wrap gap-2 mt-4">
@@ -609,7 +670,8 @@ export default function PerformanceReports() {
             {Object.entries(waiterStats)
               .sort(([, a], [, b]) => b - a)
               .map(([name, total], idx) => {
-                const pct = Math.round((total / Math.max(...Object.values(waiterStats))) * 100);
+                const maxVal = Math.max(...Object.values(waiterStats));
+                const pct    = maxVal > 0 ? Math.round((total / maxVal) * 100) : 0;
                 return (
                   <div key={name} className={`flex items-center gap-4 p-4 rounded-2xl border
                     ${isDark ? "bg-black/20 border-white/5" : "bg-zinc-50 border-black/5"}`}>
@@ -624,9 +686,10 @@ export default function PerformanceReports() {
                     <div className="flex-1 min-w-0">
                       <p className="font-black uppercase text-xs italic truncate">{name}</p>
                       <div className={`w-full h-1 rounded-full mt-1.5 ${isDark ? "bg-white/5" : "bg-zinc-100"}`}>
-                        <div className={`h-full rounded-full transition-all duration-700
-                          ${idx === 0 ? "bg-yellow-500" : "bg-zinc-600"}`}
-                          style={{ width: `${pct}%` }}/>
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ${idx === 0 ? "bg-yellow-500" : "bg-zinc-600"}`}
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
                     </div>
                     <p className="text-emerald-500 font-[900] italic text-sm shrink-0">{fmt(total)}</p>
@@ -661,14 +724,17 @@ export default function PerformanceReports() {
               className={`w-full border rounded-2xl p-4 text-sm outline-none resize-none h-24 mb-6
                 ${isDark
                   ? "bg-black border-white/5 text-white placeholder-zinc-600 focus:border-red-500/30"
-                  : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-red-300"}`}/>
+                  : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-red-300"}`}
+            />
             <div className="flex gap-3">
-              <button onClick={() => setRejectingRow(null)}
+              <button
+                onClick={() => setRejectingRow(null)}
                 className={`flex-1 py-4 font-black text-[10px] uppercase rounded-2xl transition-all
                   ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}>
                 Cancel
               </button>
-              <button onClick={handleReject}
+              <button
+                onClick={handleReject}
                 className="flex-[2] py-4 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
                 <XCircle size={14}/> Confirm Reject
               </button>
