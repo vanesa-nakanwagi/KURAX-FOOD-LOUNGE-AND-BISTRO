@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import StaffOrderMenu from "./StaffOrderMenu";
+import ManagerOrderMenu from "./StaffOrderMenu";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { 
@@ -220,7 +220,7 @@ export default function NewOrder() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 custom-scrollbar">
-          <StaffOrderMenu 
+          <ManagerOrderMenu 
             onAddItem={addToCart} 
             searchQuery={searchQuery}
             activeCategory={activeCategory}

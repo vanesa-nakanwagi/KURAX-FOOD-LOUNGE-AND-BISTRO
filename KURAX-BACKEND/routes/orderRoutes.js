@@ -15,59 +15,98 @@ function kampalaDate() {
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. FETCH ALL ORDERS
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/', async (req, res) => {
+// backend/routes/orderRoutes.js (or similar)
+router.get('/tables/all', async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT o.*, COALESCE(s.name, 'Unknown Staff') as staff_name 
-      FROM orders o 
-      LEFT JOIN staff s ON o.staff_id = s.id 
-      ORDER BY o.timestamp DESC
-    `);
+    const query = `
+      SELECT 
+        t.name, 
+        t.status, 
+        t.last_order_id,
+        o.total AS current_total,
+        o.created_at AS order_start,
+        s.name AS waiter_name
+      FROM tables t
+      LEFT JOIN orders o ON t.last_order_id = o.id
+      LEFT JOIN staff s ON o.staff_id = s.id
+      ORDER BY t.name ASC
+    `;
+    const result = await pool.query(query);
     res.json(result.rows);
   } catch (err) {
-    console.error('Fetch Orders Error:', err.message);
-    res.status(500).json({ error: "Could not retrieve orders" });
+    console.error(err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. POST NEW ORDER
+// 2. POST NEW ORDER (Updated to handle Table Registration)
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
-  const { staffId, staffRole, isPermitted, tableName, items, total, paymentMethod } = req.body;
+  const { staffId, staffRole, tableName, items, total, paymentMethod } = req.body;
 
   try {
-    const result = await pool.query(
+    // 1. Insert the Order
+    const orderResult = await pool.query(
       `INSERT INTO orders (
-        staff_id, staff_role, is_permitted, table_name,
+        staff_id, staff_role, table_name,
         items, total, payment_method, status, date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'Pending', CURRENT_DATE)
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'Pending', CURRENT_DATE)
       RETURNING *`,
       [
-        staffId       || 1,
-        staffRole     || 'WAITER',
-        isPermitted   || false,
-        tableName     || 'WALK-IN',
+        staffId || 1,
+        staffRole || 'WAITER',
+        tableName || 'WALK-IN',
         JSON.stringify(items),
         total,
         paymentMethod || 'Cash'
       ]
     );
 
-    const newOrder = result.rows[0];
+    const newOrder = orderResult.rows[0];
+
+    // 2. NEW LOGIC: Upsert Table (Insert if new, update status if exists)
+    // This ensures the table shows up in "Manage Tables" immediately
+    if (tableName && tableName !== 'WALK-IN') {
+      await pool.query(
+        `INSERT INTO tables (name, status, last_order_id, updated_at)
+         VALUES ($1, 'Occupied', $2, NOW())
+         ON CONFLICT (name) 
+         DO UPDATE SET status = 'Occupied', last_order_id = $2, updated_at = NOW()`,
+        [tableName.toUpperCase(), newOrder.id]
+      );
+    }
 
     await logActivity(pool, {
-      type:    'ORDER_SENT',
-      actor:   `Staff ID: ${staffId}`,
-      role:    staffRole,
-      message: `New order sent to kitchen for ${tableName}`,
-      meta:    { order_id: newOrder.id, total, item_count: items.length }
+      type: 'ORDER_SENT',
+      actor: `Staff ID: ${staffId}`,
+      role: staffRole,
+      message: `New order sent for ${tableName}`,
+      meta: { order_id: newOrder.id, total }
     });
 
     res.status(201).json(newOrder);
   } catch (err) {
     console.error('POST Order Error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: FETCH ALL TABLES (For Manage Tables Page)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/tables/all', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT t.*, o.items as active_items, o.total as current_total, o.timestamp as order_start
+      FROM tables t
+      LEFT JOIN orders o ON t.last_order_id = o.id AND o.status NOT IN ('Paid', 'Closed', 'Voided')
+      ORDER BY t.name ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Fetch Tables Error:', err.message);
+    res.status(500).json({ error: "Could not retrieve table list" });
   }
 });
 
@@ -117,35 +156,30 @@ router.patch('/:id/pay', async (req, res) => {
   const { id } = req.params;
   const { status = 'Paid', payment_method, cashier_name } = req.body;
 
-  if (!payment_method) {
-    return res.status(400).json({ error: 'payment_method is required' });
-  }
-
   try {
     const result = await pool.query(
-      `UPDATE orders 
-       SET status = $1, payment_method = $2, paid_at = NOW() 
-       WHERE id = $3 
-       RETURNING *`,
+      `UPDATE orders SET status = $1, payment_method = $2, paid_at = NOW() 
+       WHERE id = $3 RETURNING *`,
       [status, payment_method, id]
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
 
     const order = result.rows[0];
+
+    // NEW LOGIC: Release the table
+    if (order.table_name) {
+      await pool.query(
+        `UPDATE tables SET status = 'Available', last_order_id = NULL, updated_at = NOW() 
+         WHERE name = $1`,
+        [order.table_name.toUpperCase()]
+      );
+    }
+
     await updateDailySummary({ amount: order.total, method: payment_method });
-
-    await logActivity(pool, {
-      type:    'PAYMENT_CONFIRMED',
-      actor:   cashier_name || 'Cashier',
-      role:    'CASHIER',
-      message: `Confirmed ${payment_method} payment of UGX ${order.total} for ${order.table_name}`,
-      meta:    { amount: order.total, method: payment_method, order_id: id }
-    });
-
+    // ... rest of your logActivity code
     res.json(order);
   } catch (err) {
-    console.error('Payment Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

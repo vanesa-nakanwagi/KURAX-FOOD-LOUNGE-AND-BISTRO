@@ -3,7 +3,7 @@ import { Bike, Plus, Trash2, Edit2, Phone, Check, X, UserCheck, UserX } from "lu
 import API_URL from "../../../config/api";
 
 export default function RidersSettings({ dark = true, t = {} }) {
-  const [riders,   setRiders]   = useState([]);
+  const [riders,   setRiders]   = useState([]); // Initialized as empty array
   const [loading,  setLoading]  = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editId,   setEditId]   = useState(null);
@@ -24,9 +24,20 @@ export default function RidersSettings({ dark = true, t = {} }) {
     try {
       const res  = await fetch(`${API_URL}/api/delivery/riders?includeInactive=1`);
       const data = await res.json();
-      setRiders(data);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
+      
+      // FIX: Ensure data is an array before setting state
+      if (Array.isArray(data)) {
+        setRiders(data);
+      } else {
+        console.error("Expected array from API, got:", data);
+        setRiders([]); // Fallback to empty array
+      }
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setRiders([]); // Fallback to empty array on network error
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchRiders(); }, [fetchRiders]);
@@ -47,7 +58,6 @@ export default function RidersSettings({ dark = true, t = {} }) {
     setError("");
     try {
       if (editId) {
-        // Update existing
         const res = await fetch(`${API_URL}/api/delivery/riders/${editId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -55,7 +65,6 @@ export default function RidersSettings({ dark = true, t = {} }) {
         });
         if (!res.ok) { const d = await res.json(); setError(d.error || "Update failed"); setSaving(false); return; }
       } else {
-        // Create new
         const res = await fetch(`${API_URL}/api/delivery/riders`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -80,8 +89,10 @@ export default function RidersSettings({ dark = true, t = {} }) {
     } catch { /* silent */ }
   };
 
-  const activeRiders   = riders.filter(r => r.active);
-  const inactiveRiders = riders.filter(r => !r.active);
+  // FIX: Added optional chaining and fallback to empty array for safety
+  const safeRiders = Array.isArray(riders) ? riders : [];
+  const activeRiders   = safeRiders.filter(r => r.active);
+  const inactiveRiders = safeRiders.filter(r => !r.active);
 
   return (
     <div className="space-y-4">

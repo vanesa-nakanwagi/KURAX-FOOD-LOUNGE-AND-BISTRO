@@ -389,7 +389,6 @@ router.get("/credits", async (req, res) => {
   }
 });
 
-// PATCH /api/orders/credits/:id/settle
 router.patch("/credits/:id/settle", async (req, res) => {
   const { id } = req.params;
   const { settled_by, settle_method, settle_transaction, settle_notes, amount_paid } = req.body;
@@ -399,13 +398,20 @@ router.patch("/credits/:id/settle", async (req, res) => {
     if (!cRes.rows.length) return res.status(404).json({ error: "Credit not found" });
     const credit = cRes.rows[0];
 
-    const paid_amount = Number(amount_paid) || Number(credit.amount);
-    const is_full     = paid_amount >= Number(credit.amount);
+    const paid_amount = Number(amount_paid) || 0;
+    if (paid_amount <= 0) {
+      return res.status(400).json({ error: "amount_paid must be greater than 0" });
+    }
+
+    const credit_total  = Number(credit.amount);
+    const already_paid  = Number(credit.amount_paid || 0);
+    const total_paid    = already_paid + paid_amount;        // cumulative
+    const is_full       = total_paid >= credit_total;
 
     await pool.query(
       `UPDATE credits
        SET paid             = $1,
-           paid_at          = NOW(),
+           paid_at          = CASE WHEN $1 THEN NOW() ELSE paid_at END,
            approved_by      = $2,
            settle_method    = $3,
            settle_txn       = $4,
@@ -418,26 +424,54 @@ router.patch("/credits/:id/settle", async (req, res) => {
         settle_method      || null,
         settle_transaction || null,
         settle_notes       || null,
-        paid_amount,
+        total_paid,         // ← cumulative, not just this payment
         id,
       ]
     );
 
-    if (is_full && credit.order_ids?.length) {
+    // ── Always update orders & gross — for BOTH full and partial ──────────
+    if (credit.order_ids?.length) {
       await pool.query(
         `UPDATE orders
-         SET status = 'Paid', payment_method = $1, paid_at = NOW()
-         WHERE id = ANY($2::int[])`,
-        [settle_method || "Cash", credit.order_ids]
+         SET status         = $1,
+             payment_method = $2,
+             paid_at        = NOW()
+         WHERE id = ANY($3::int[])`,
+        [
+          is_full ? 'Paid' : 'Credit',  // stays Credit if partial
+          settle_method || "Cash",
+          credit.order_ids,
+        ]
       );
-      await updateDailySummary({ amount: paid_amount, method: settle_method || 'Cash' });
     }
 
-    await logActivity(pool, 'CREDIT',
-      `Credit settled — ${credit.table_name || 'Table'} · ${credit.client_name || 'Client'} · UGX ${Number(paid_amount).toLocaleString()} via ${settle_method || 'Cash'} by ${settled_by || 'Cashier'}${is_full ? '' : ' (partial)'}`,
-      { credit_id: id, amount: paid_amount, method: settle_method, is_full }
+    // ── Insert a new cashier_queue row for this settlement ────────────────
+    // This ensures the settlement shows up in /today totals automatically
+    // since /today reads from cashier_queue WHERE status = 'Confirmed'
+    await pool.query(
+      `INSERT INTO cashier_queue
+         (order_ids, table_name, label, method, amount,
+          is_item, item_name, requested_by, status,
+          confirmed_by, confirmed_at, shift_cleared, created_at)
+       VALUES ($1, $2, $3, $4, $5, false, 'Credit Settlement',
+               $6, 'Confirmed', $7, NOW(), FALSE, NOW())`,
+      [
+        credit.order_ids || [],
+        credit.table_name,
+        `Credit Settlement — ${credit.client_name || 'Client'}${is_full ? '' : ' (partial)'}`,
+        settle_method || 'Cash',   // ← use the REAL method (Cash/Card/Momo)
+        paid_amount,               // ← only THIS payment, not cumulative
+        settled_by || 'Cashier',
+        settled_by || 'Cashier',
+      ]
     );
-    res.json({ success: true, fully_settled: is_full });
+
+    await logActivity(pool, 'CREDIT',
+      `Credit ${is_full ? 'fully' : 'partially'} settled — ${credit.table_name || 'Table'} · ${credit.client_name || 'Client'} · UGX ${Number(paid_amount).toLocaleString()} via ${settle_method || 'Cash'} by ${settled_by || 'Cashier'}`,
+      { credit_id: id, amount: paid_amount, total_paid, method: settle_method, is_full }
+    );
+
+    res.json({ success: true, fully_settled: is_full, total_paid });
   } catch (err) {
     console.error("settle credit failed:", err);
     res.status(500).json({ error: "Failed to settle credit" });

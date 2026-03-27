@@ -1,13 +1,30 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, Target, Clock, LogOut, Flag } from "lucide-react";
+import { 
+  ClipboardList, 
+  Clock, 
+  LogOut, 
+  LayoutGrid // Added for Manage Tables
+} from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 
-
 const DEFAULT_MENU = [
-  { id: "order",  label: "TAKE ORDER",        icon: <ClipboardList size={20} /> },
-  { id: "manage", label: "MANAGE ORDER",  icon: <Clock size={20} /> },
+  { 
+    id: "order",  
+    label: "TAKE ORDER",        
+    icon: <ClipboardList size={20} /> 
+  },
+  { 
+    id: "manage", 
+    label: "MANAGE ORDER",  
+    icon: <Clock size={20} /> 
+  },
+  { 
+    id: "tables", 
+    label: "MANAGE TABLES", 
+    icon: <LayoutGrid size={20} /> // New Item
+  },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, menuItems }) {

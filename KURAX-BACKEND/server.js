@@ -30,6 +30,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
+  'http://localhost:5174', // <--- Add this line
   'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app',
   /\.vercel\.app$/
 ];
@@ -70,7 +71,7 @@ app.use('/api/visits', siteVisits);
 app.use('/api/menus', menuRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/orders', sendToCashierRoute);       // ✅ Same prefix is fine if paths differ
+app.use('/api/cashier-ops', sendToCashierRoute); // Change this prefix      // ✅ Same prefix is fine if paths differ
 app.use('/api/events', eventRoutes);
 app.use('/api/manager', managerRoutes);
 app.use('/api/overview', overviewRoutes);

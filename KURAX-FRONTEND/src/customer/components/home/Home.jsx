@@ -287,49 +287,55 @@ function HomeMenuCard({ item, onOrder }) {
   const [imgLoaded, setImgLoaded] = useState(false);
 
   return (
-    <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-300 dark:border-zinc-800 hover:border-yellow-500/50 shadow-sm hover:shadow-xl">
+    <div className="group relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col h-full transition-all duration-500 hover:-translate-y-1 border border-zinc-100 dark:border-zinc-800 shadow-sm hover:shadow-xl">
+      
       {/* IMAGE CONTAINER */}
-      <div className="relative h-48 md:h-56 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
+      <div className="relative h-44 md:h-48 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
         {!imgLoaded && (
-          <div className="absolute inset-0 bg-zinc-200 dark:bg-zinc-800 animate-pulse" />
+          <div className="absolute inset-0 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
         )}
         <img
-          src={item.image_url?.startsWith('http') 
-    ? item.image_url 
-    : `${API_URL}${item.image_url}`
-  } 
+          src={item.image_url?.startsWith('http') ? item.image_url : `${API_URL}${item.image_url}`}
           alt={item.name}
           onLoad={() => setImgLoaded(true)}
-          className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 ${
+          className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${
             imgLoaded ? "opacity-100" : "opacity-0"
           }`}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+        {item.is_new && (
+           <div className="absolute top-3 right-3 bg-yellow-400 text-[8px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+             ✨ NEW
+           </div>
+        )}
       </div>
 
       {/* CONTENT SECTION */}
-      <div className="p-5 md:p-6 flex-1 flex flex-col gap-3 md:gap-4 text-left">
-        <div className="flex items-start justify-between gap-2">
-          <h4 className="text-xl md:text-2xl font-medium text-zinc-900 dark:text-white leading-tight">
+      <div className="p-4 md:p-5 flex-1 flex flex-col items-start text-left">
+        
+        {/* TITLE & PRICE ROW - Removed 'font-black' from Name */}
+        <div className="w-full flex justify-between items-start gap-2 mb-2 min-h-[2.5rem]">
+          <h4 className="text-sm md:text-base font-medium text-zinc-900 dark:text-white leading-tight uppercase tracking-tight flex-1">
             {item.name}
           </h4>
           <div className="text-right shrink-0">
-            <span className="text-base md:text-lg text-yellow-600 dark:text-yellow-400 font-bold">
+            <span className="text-sm md:text-base text-yellow-500 font-black tracking-tighter">
               {Number(item.price).toLocaleString()}
             </span>
-            <div className="text-[8px] md:text-[9px] tracking-widest text-zinc-500 uppercase">UGX</div>
+            <div className="text-[7px] font-bold text-zinc-400 uppercase -mt-1">UGX</div>
           </div>
         </div>
 
-        <p className="text-xs md:text-[13px] text-zinc-800 dark:text-zinc-400 line-clamp-2 leading-relaxed font-light">
-          {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
+        {/* DESCRIPTION - Fixed height for alignment */}
+        <p className="text-[11px] md:text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-snug mb-4 font-normal h-8 overflow-hidden">
+          {item.description || "Freshly prepared at Kurax Lounge."}
         </p>
 
+        {/* BUTTON - Stays at bottom */}
         <button
           onClick={() => onOrder(item)}
-          className="mt-2 md:mt-auto w-full py-3.5 md:py-4 rounded-xl md:rounded-2xl bg-yellow-400 text-black text-[10px] md:text-xs font-bold uppercase tracking-[0.15em] flex items-center justify-center gap-2 transition-all active:scale-95  "
+          className="mt-auto w-full py-2.5 rounded-xl bg-[#FFD700] hover:bg-[#FFC800] text-black text-[9px] font-black uppercase tracking-[0.15em] flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm"
         >
-          <Plus size={14} strokeWidth={3} />
+          <Plus size={12} strokeWidth={4} />
           Add to Order
         </button>
       </div>

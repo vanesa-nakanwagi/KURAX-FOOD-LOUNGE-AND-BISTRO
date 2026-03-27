@@ -1,24 +1,22 @@
+
 import React, { useState, useEffect, useMemo } from "react";
 import StaffOrderMenu from "./StaffOrderMenu";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { 
-  Plus, Minus, Trash2, Send, X, RefreshCcw, ChevronLeft, 
+  Plus, Minus, Trash2, Send, X, RefreshCcw, 
   ShoppingCart, UtensilsCrossed, Check, Printer, Search, LayoutGrid
 } from "lucide-react";
 import ThemeToggle from "../../../customer/components/context/ThemeToggle";
 import { getImageSrc } from "../../../utils/imageHelper";
 import API_URL from "../../../config/api";
 
-export default function NewOrder() {
+export default function NewOrder({ preSelectedTable, onClearSelection }) {
   const { orders = [], setOrders, menus = [], currentUser } = useData() || { setOrders: () => {}, orders: [], menus: [] };
   const { theme } = useTheme();
   
-  // --- 1. PERSISTENT STATE INITIALIZATION ---
-  const [tableName, setTableName] = useState(() => {
-    return localStorage.getItem("kurax_table_name") || "";
-  });
-  
+  // --- 1. STATE INITIALIZATION ---
+  const [tableName, setTableName] = useState(() => localStorage.getItem("kurax_table_name") || "");
   const [cart, setCart] = useState(() => {
     const savedCart = localStorage.getItem("kurax_staff_cart");
     return savedCart ? JSON.parse(savedCart) : [];
@@ -29,38 +27,48 @@ export default function NewOrder() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [activeCategory, setActiveCategory] = useState("Starters");
 
-  // --- 2. LOCAL STORAGE SYNC ---
+  // --- 2. THE BRIDGE: WATCH FOR REDIRECTS FROM MANAGE TABLES ---
+  useEffect(() => {
+    if (preSelectedTable) {
+      setTableName(preSelectedTable.name.toUpperCase());
+      // If the table already has items (Editing mode), load them
+      if (preSelectedTable.items && preSelectedTable.items.length > 0) {
+        setCart(preSelectedTable.items);
+      } else {
+        setCart([]); // Fresh table
+      }
+      setIsCartOpen(true); // Open cart immediately so waiter sees the context
+      onClearSelection(); // Reset the bridge in parent
+    }
+  }, [preSelectedTable, onClearSelection]);
+
+  // --- 3. LOCAL STORAGE SYNC ---
   useEffect(() => {
     localStorage.setItem("kurax_staff_cart", JSON.stringify(cart));
     localStorage.setItem("kurax_table_name", tableName);
   }, [cart, tableName]);
 
-  const currentWaiter = currentUser?.name || "Waiter";
-
-  // --- 3. CALCULATIONS ---
+  // --- 4. CALCULATIONS ---
   const cartTotal = useMemo(() => 
     cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0)
   , [cart]);
 
   const activeTables = useMemo(() => [
     ...new Set(orders
-      .filter(o => o.status !== "Served" && o.status !== "Paid")
+      .filter(o => !["Paid", "Cancelled"].includes(o.status))
       .map(o => o.tableName?.toUpperCase()))
   ].filter(Boolean), [orders]);
 
-  // --- 4. HANDLERS ---
+  const activeMenus = useMemo(() => (menus || []).filter(item => {
+    const isLive = item.status === 'live' || item.published === true || item.published === 't';
+    const itemCat = item.category?.toLowerCase().trim() || "";
+    const activeCat = activeCategory?.toLowerCase().trim() || "";
+    return isLive && itemCat === activeCat && item.name.toLowerCase().includes(searchQuery.toLowerCase());
+  }), [menus, activeCategory, searchQuery]);
+
+  // --- 5. HANDLERS ---
   const handleSelectTable = (name) => {
-    const upperName = name.toUpperCase();
-    setTableName(upperName);
-    
-    // Auto-merge logic if table already has an active order
-    const existingOrder = orders.find(
-      o => o.tableName?.toUpperCase() === upperName && !["Served", "Paid"].includes(o.status)
-    );
-    
-    if (existingOrder && cart.length === 0) {
-      setCart(existingOrder.items.map(item => ({ ...item, fromPrevious: true })));
-    }
+    setTableName(name.toUpperCase());
   };
 
   const addToCart = (item) => {
@@ -69,13 +77,7 @@ export default function NewOrder() {
       if (existingItem) {
         return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
       }
-      return [...prev, { 
-        ...item, 
-        quantity: 1, 
-        note: "", 
-        station: item.station || "Kitchen",
-        status: "Pending" 
-      }]; 
+      return [...prev, { ...item, quantity: 1, note: "", status: "Pending" }]; 
     });
   };
 
@@ -86,67 +88,46 @@ export default function NewOrder() {
     }));
   };
 
-  const clearCart = () => {
-    if (window.confirm("Clear the entire cart and table selection?")) {
-      setCart([]);
-      setTableName("");
-      localStorage.removeItem("kurax_staff_cart");
-      localStorage.removeItem("kurax_table_name");
-    }
-  };
-
   const handleProcessOrder = async () => {
-    if (!tableName) return alert("Please assign a table name/number.");
+    if (!tableName) return alert("Please assign a table name.");
     if (cart.length === 0) return alert("Cart is empty.");
 
-const orderData = {
+    const orderData = {
       staffId: currentUser?.id || 1,
-      staffRole: currentUser?.role || "WAITER", 
+      staffName: currentUser?.name || "Waiter",
       tableName: tableName.toUpperCase(),
       items: cart,
       total: cartTotal,
-      paymentMethod: "Cash"
+      status: "Pending"
     };
 
     try {
-     const response = await fetch(`${API_URL}/api/orders`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(orderData),
-});
+      const response = await fetch(`${API_URL}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData),
+      });
 
       const data = await response.json();
 
       if (response.ok) {
         setOrders(prev => [data, ...prev]);
         setShowSuccess(true);
-        // Clear everything on success
         setCart([]); 
         setTableName("");
         localStorage.removeItem("kurax_staff_cart");
         localStorage.removeItem("kurax_table_name");
       } else {
-        alert(data.error || "Order failed to sync.");
+        alert(data.error || "Order failed.");
       }
     } catch (err) {
-      console.error("Transmission Error:", err);
-      alert("Network error. Check if backend is running.");
+      alert("Network error. Backend might be down.");
     }
   };
-const activeMenus = useMemo(() => (menus || []).filter(item => {
-  // Check for 'live' status OR various boolean formats
-  const isLive = item.status === 'live' || item.published === true || item.published === 't';
-  
-  // Normalize strings (trim and lowercase) to avoid "Local Foods" vs "local foods"
-  const itemCat = item.category?.toLowerCase().trim() || "";
-  const activeCat = activeCategory?.toLowerCase().trim() || "";
-  
-  return isLive && itemCat === activeCat && item.name.toLowerCase().includes(searchQuery.toLowerCase());
-}), [menus, activeCategory, searchQuery]);
 
   return (
-    <div className={`flex flex-col lg:flex-row h-screen font-[Outfit] overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'bg-black text-white' : 'bg-gray-50 text-black'}`}>
-
+    <div className={`flex flex-col h-screen font-[Outfit] overflow-hidden transition-colors duration-500 ${theme === 'dark' ? 'bg-black text-white' : 'bg-gray-50 text-black'}`}>
+      
       <CartModal 
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
@@ -154,7 +135,7 @@ const activeMenus = useMemo(() => (menus || []).filter(item => {
         updateQuantity={updateQuantity}
         updateNote={(id, note) => setCart(prev => prev.map(i => i.id === id ? { ...i, note } : i))}
         removeFromCart={(id) => setCart(prev => prev.filter(i => i.id !== id))}
-        clearCart={clearCart}
+        clearCart={() => { if(window.confirm("Clear order?")) {setCart([]); setTableName("");} }}
         tableName={tableName}
         handleSelectTable={handleSelectTable}
         cartTotal={cartTotal}
@@ -167,16 +148,27 @@ const activeMenus = useMemo(() => (menus || []).filter(item => {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className={`p-6 border-b ${theme === 'dark' ? 'bg-black/80 border-white/5' : 'bg-white border-black/5'}`}>
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
-            <h2 className="text-3xl font-medium uppercase tracking-widest">Explore Menu</h2>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
+              <h2 className="text-3xl font-black uppercase tracking-widest leading-none">Explore Menu</h2>
+            </div>
+            {tableName && (
+              <div className="bg-yellow-500/10 border border-yellow-500/20 px-4 py-2 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-right">
+                <div className="flex flex-col">
+                  <span className="text-[8px] font-black uppercase text-yellow-600 tracking-widest">Active Table</span>
+                  <span className="text-sm font-black text-yellow-500">{tableName}</span>
+                </div>
+                <button onClick={() => setTableName("")} className="text-yellow-500 hover:text-white"><X size={14}/></button>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3 w-full">
             <div className="relative flex-grow">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
               <input 
-                type="text" placeholder="Search items..." value={searchQuery}
+                type="text" placeholder="Search menu..." value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={`w-full border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-bold outline-none transition-all ${
                   theme === 'dark' ? 'bg-zinc-900 text-white focus:ring-1 ring-yellow-500/50' : 'bg-zinc-100 text-zinc-900 focus:ring-1 ring-yellow-500'
@@ -184,14 +176,11 @@ const activeMenus = useMemo(() => (menus || []).filter(item => {
               />
             </div>
             <ThemeToggle />
-            <button 
-              onClick={() => setIsCartOpen(true)} 
-              className="relative w-12 h-12 rounded-full bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg active:scale-95 transition-transform"
-            >
+            <button onClick={() => setIsCartOpen(true)} className="relative w-14 h-14 rounded-2xl bg-yellow-500 flex items-center justify-center shrink-0 shadow-lg active:scale-95 transition-transform">
               <ShoppingCart size={24} className="text-black" />
               {cart.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-black text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-yellow-500">
-                  {cart.length}
+                <span className="absolute -top-2 -right-2 bg-black text-white text-[10px] font-black w-7 h-7 rounded-full flex items-center justify-center border-4 border-black">
+                  {cart.reduce((s, i) => s + i.quantity, 0)}
                 </span>
               )}
             </button>
@@ -211,6 +200,9 @@ const activeMenus = useMemo(() => (menus || []).filter(item => {
     </div>
   );
 }
+
+// ... Keep CartModal and SuccessOrderModal as they were in your snippet, 
+// but ensure CartModal uses the 'tableName' prop correctly for its input.
 
 function CartModal({ 
   isOpen, onClose, cart, updateQuantity, updateNote, removeFromCart, 

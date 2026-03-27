@@ -20,7 +20,7 @@ router.get('/today', async (req, res) => {
     const result = await pool.query(`
       SELECT
         $1::date                                                                     AS summary_date,
-        COALESCE(SUM(amount), 0)                                                     AS total_gross,
+        COALESCE(SUM(CASE WHEN method != 'Credit' THEN amount ELSE 0 END), 0)       AS total_gross,
         COALESCE(SUM(CASE WHEN method = 'Cash'        THEN amount ELSE 0 END), 0)   AS total_cash,
         COALESCE(SUM(CASE WHEN method = 'Card'        THEN amount ELSE 0 END), 0)   AS total_card,
         COALESCE(SUM(CASE WHEN method = 'Momo-MTN'    THEN amount ELSE 0 END), 0)   AS total_mtn,
@@ -30,6 +30,7 @@ router.get('/today', async (req, res) => {
         COUNT(*)                                                                      AS order_count
       FROM cashier_queue
       WHERE status = 'Confirmed'
+        AND DATE(confirmed_at AT TIME ZONE 'Africa/Nairobi') = $1
     `, [today]);
 
     res.json(result.rows[0] || {
@@ -43,7 +44,6 @@ router.get('/today', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. RANGE & MONTHLY (SALES DATA)

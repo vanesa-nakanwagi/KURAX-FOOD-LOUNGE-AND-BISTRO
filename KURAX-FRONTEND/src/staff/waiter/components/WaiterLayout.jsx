@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import NewOrder from "./NewOrder";
 import OrderHistory from "./OrderHistory";
+import ManageTables from "./ManageTables"; // 1. Import the new component
 import Sidebar from "./Sidebar";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData } from "../../../customer/components/context/DataContext";
@@ -23,13 +24,22 @@ export default function WaiterLayout() {
     }
   }, [waiterId, navigate, savedUser]);
 
-  // 2. NAVIGATION STATE
-  const [activeTab, setActiveTab] = useState("order"); // Matches Sidebar keys
+  // 2. NAVIGATION & SHARED STATE
+  const [activeTab, setActiveTab] = useState("order");
+  
+  // These states will allow ManageTables to "push" data into NewOrder
+  const [selectedTableData, setSelectedTableData] = useState(null);
 
   // 3. HANDLERS
   const handleLogout = () => {
     localStorage.removeItem("kurax_user");
     navigate("/staff/login");
+  };
+
+  // This function bridges ManageTables -> NewOrder
+  const handleEditTable = (tableInfo) => {
+    setSelectedTableData(tableInfo); // Pass the table name and existing items
+    setActiveTab("order");           // Switch view
   };
 
   return (
@@ -53,7 +63,9 @@ export default function WaiterLayout() {
         }`}>
           <div>
              <h1 className="text-lg font-black uppercase tracking-tighter">
-                {activeTab === 'order' ? 'New Order' : 'Order History'}
+                {activeTab === 'order' && 'New Order'}
+                {activeTab === 'manage' && 'Order History'}
+                {activeTab === 'tables' && 'Table Management'}
              </h1>
           </div>
           
@@ -69,10 +81,19 @@ export default function WaiterLayout() {
 
         {/* VIEW SWITCHER */}
         <main className="flex-1 overflow-y-auto custom-scrollbar">
-          {activeTab === "order" ? (
-             <NewOrder /> 
-          ) : (
+          {activeTab === "order" && (
+             <NewOrder 
+               preSelectedTable={selectedTableData} 
+               onClearSelection={() => setSelectedTableData(null)} 
+             /> 
+          )}
+
+          {activeTab === "manage" && (
              <OrderHistory />
+          )}
+
+          {activeTab === "tables" && (
+             <ManageTables onEditTable={handleEditTable} />
           )}
         </main>
       </div>

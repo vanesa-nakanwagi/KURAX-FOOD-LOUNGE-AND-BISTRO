@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
 import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
-import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine } from 'lucide-react'
+import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles } from 'lucide-react'
 import Footer from "../../../customer/components/common/Foooter";
 import { getImageSrc } from "../../../utils/imageHelper";
 import API_URL from "../../../config/api";
+import { useTheme } from "../../../customer/components/context/ThemeContext";
 
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
@@ -22,6 +23,7 @@ export default function Menus() {
   const { menus, setMenus } = useData()
   const [formVisible, setFormVisible] = useState(false)
   const [editingMenu, setEditingMenu] = useState(null)
+  const { theme } = useTheme();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -274,67 +276,107 @@ export default function Menus() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 pb-10">
-            {(menus || []).map(item => (
-              <div key={item.id} className="group bg-zinc-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/30 transition-all duration-300 flex flex-col shadow-sm">
-                <div className="h-44 md:h-48 bg-zinc-800 flex items-center justify-center relative flex-shrink-0">
-                  {item.image_url ? (
-  <img 
-     src={getImageSrc(item.image_url)}
-    alt={item.name} 
-    className="w-full h-full object-cover" 
-    onError={(e) => { e.target.src = "https://via.placeholder.com/150?text=No+Image"; }}
-  />
-) : (
-  <div className="flex flex-col items-center gap-2 text-slate-600">
-    <Utensils className="w-10 h-10" />
-    <span className="text-[10px] uppercase font-bold tracking-widest">No Cover</span>
-  </div>
-)}
-                  
-                  {/* NEW: TOP LEFT STATION TAG */}
-                  <div className="absolute top-3 left-3">
-                    <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border backdrop-blur-md ${
-                      item.station === 'Barista' ? 'bg-amber-900/40 text-amber-400 border-amber-500/30' : 
-                      item.station === 'Barman' ? 'bg-blue-900/40 text-blue-400 border-blue-500/30' : 
-                      'bg-emerald-900/40 text-emerald-400 border-emerald-500/30'
-                    }`}>
-                      {item.station === 'Barista' && <Coffee className="w-3 h-3" />}
-                      {item.station === 'Barman' && <Wine className="w-3 h-3" />}
-                      {item.station === 'Kitchen' && <Utensils className="w-3 h-3" />}
-                      {item.station}
-                    </span>
-                  </div>
+  {(menus || []).map((item) => {
+    // Logic for "NEW" badge (less than 48 hours old)
+    const isNew = item.created_at && (new Date() - new Date(item.created_at)) / (1000 * 60 * 60) <= 48;
 
-                  <div className="absolute top-3 right-3">
-                    <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-tighter backdrop-blur-md border ${
-    item.published 
-      ? "bg-green-500/20 text-green-400 border-green-500/30" 
-      : "bg-zinc-800/80 text-slate-500 border-slate-700"
-  }`}>
-    {item.published ? "Live" : "Draft"}
-  </span>
-                  </div>
-                </div>
-
-                <div className="p-5 md:p-6 flex-1 flex flex-col">
-                  <div className="flex justify-between items-start gap-2 mb-2">
-                    <h2 className="text-lg font-bold text-white truncate">{item.name}</h2>
-                    <span className="text-yellow-500 font-bold text-sm whitespace-nowrap">{formatUGX(item.price)}</span>
-                  </div>
-                  <p className="text-slate-400 text-xs md:text-sm line-clamp-2 mb-6 h-9 md:h-10">{item.description}</p>
-
-                  <div className="flex gap-2.5 pt-4 border-t border-slate-800 mt-auto">
-                    <button onClick={() => handleEdit(item)} className="flex-1 flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 py-2.5 rounded-xl transition text-[13px] font-bold text-slate-200">
-                      <Edit2 className="w-3.5 h-3.5" /> Edit
-                    </button>
-                    <button onClick={() => handleDelete(item.id)} className="px-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+    return (
+      <div 
+        key={item.id} 
+        className={`group relative rounded-[2rem] overflow-hidden flex flex-col h-full transition-all duration-300 border shadow-sm hover:shadow-xl hover:-translate-y-1
+          ${theme === 'dark' 
+            ? 'bg-[#111111] border-zinc-800 hover:border-yellow-500/30' 
+            : 'bg-zinc-900 border-slate-800 hover:border-yellow-500/30'}`}
+      >
+        {/* Image Section - Slimmer height consistent with Staff View */}
+        <div className="h-44 md:h-48 bg-zinc-800 relative overflow-hidden shrink-0">
+          
+          {/* TOP LEFT: Station Tag */}
+          <div className="absolute top-3 left-3 z-10">
+            <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border backdrop-blur-md shadow-sm ${
+              item.station === 'Barista' ? 'bg-amber-900/60 text-amber-200 border-amber-500/30' : 
+              item.station === 'Barman' ? 'bg-blue-900/60 text-blue-200 border-blue-500/30' : 
+              'bg-emerald-900/60 text-emerald-200 border-emerald-500/30'
+            }`}>
+              {item.station === 'Barista' && <Coffee size={10} />}
+              {item.station === 'Barman' && <Wine size={10} />}
+              {(item.station === 'Kitchen' || !item.station) && <Utensils size={10} />}
+              {item.station || 'Kitchen'}
+            </span>
           </div>
+
+          {/* TOP RIGHT: Live/Draft Status */}
+          <div className="absolute top-3 right-3 z-10 flex flex-col gap-2 items-end">
+            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border backdrop-blur-md ${
+              item.published 
+                ? "bg-green-500/20 text-green-400 border-green-500/30" 
+                : "bg-zinc-800/80 text-slate-500 border-slate-700"
+            }`}>
+              {item.published ? "Live" : "Draft"}
+            </span>
+            {isNew && (
+              <div className="bg-yellow-400 text-black text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1 uppercase tracking-widest border border-white/10">
+                <Sparkles size={8} fill="black" /> NEW
+              </div>
+            )}
+          </div>
+
+          {item.image_url ? (
+            <img 
+              src={getImageSrc(item.image_url)} 
+              alt={item.name}
+              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+              onError={(e) => { e.target.src = "https://via.placeholder.com/300?text=No+Image"; }}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-600">
+              <ImageIcon className="w-8 h-8 opacity-20" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
+        </div>
+
+        {/* Details Section - Left Aligned to match Staff/Manager View */}
+        <div className="p-4 md:p-5 flex-1 flex flex-col items-start text-left">
+          
+          {/* Title & Price Row - Fixed min-height for alignment */}
+          <div className="w-full flex justify-between items-start gap-2 mb-2 min-h-[2.5rem]">
+            <h4 className="text-sm md:text-base font-medium uppercase tracking-tight leading-tight flex-1 text-white">
+              {item.name}
+            </h4>
+            <div className="text-right shrink-0">
+              <span className="text-sm md:text-base text-yellow-500 font-black tracking-tighter">
+                {Number(item.price).toLocaleString()}
+              </span>
+              <div className="text-[7px] font-bold text-slate-500 uppercase -mt-1">UGX</div>
+            </div>
+          </div>
+          
+          {/* Description - Fixed height and left aligned */}
+          <p className="text-[11px] md:text-xs line-clamp-2 mb-6 leading-snug font-normal h-8 overflow-hidden text-slate-400">
+            {item.description || `Signature dish prepared fresh at Kurax.`}
+          </p>
+
+          {/* Action Buttons */}
+          <div className="mt-auto w-full flex gap-2 pt-4 border-t border-slate-800/50">
+            <button 
+              onClick={() => handleEdit(item)} 
+              className="flex-1 flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 py-2.5 rounded-xl transition text-[11px] font-black uppercase tracking-widest text-slate-200"
+            >
+              <Edit2 className="w-3.5 h-3.5 text-yellow-500" /> Edit
+            </button>
+            <button 
+              onClick={() => handleDelete(item.id)} 
+              className="px-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition flex items-center justify-center border border-red-500/10"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  })}
+</div>
         </main>
         <Footer />
       </div>
