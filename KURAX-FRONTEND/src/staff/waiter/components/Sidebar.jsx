@@ -22,7 +22,7 @@ const DEFAULT_MENU = [
   },
   { 
     id: "tables", 
-    label: "MANAGE TABLES", 
+    label: "MANAGE TABLE", 
     icon: <LayoutGrid size={20} /> // New Item
   },
 ];

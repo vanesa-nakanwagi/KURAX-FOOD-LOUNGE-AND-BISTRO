@@ -23,7 +23,7 @@ const StaffLogin = () => {
     try {
       console.log('🔐 Starting login...');
 
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5010';
       console.log('🌐 API URL:', API_URL);
 
       const response = await fetch(`${API_URL}/api/staff/login`, {

@@ -6,7 +6,7 @@ import {
   Search, ChevronDown, ChevronUp, Bell, X,
   AlertTriangle, Utensils, TrendingUp, Send, Receipt,
   BookOpen, User, Phone, CheckCircle, Clock, RotateCcw,
-  Coffee, Wine, Target, Calendar
+  Coffee, Wine, Target, Calendar, Plus
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
@@ -22,7 +22,6 @@ function getTodayLocal() { return toLocalDateStr(new Date()); }
 function getItemStation(item) {
   const station  = (item.station  || "").toLowerCase();
   const category = (item.category || "").toLowerCase();
-
   if (station === "barista" || category.includes("barista") || category.includes("coffee"))
     return "barista";
   if (station === "barman" || category.includes("bar") || category.includes("cocktail") || category.includes("drink"))
@@ -36,7 +35,7 @@ const STATION_CONFIG = {
   kitchen: { label: "Awaiting Kitchen", color: "text-zinc-400",   bg: "bg-zinc-500/10 border-zinc-500/20",     dot: "bg-zinc-400 animate-pulse",   icon: <Utensils size={9}/> },
 };
 
-// ─── PAYMENT METHODS ──────────────────────────────────────────────────────────
+// ─── PAYMENT METHODS ─────────────────────────────────────────────────────────
 const MOMO_CODES = {
   "Momo-MTN":    { merchant: "*165*3#", till: "KURAX-MTN-001" },
   "Momo-Airtel": { merchant: "*185*9#", till: "KURAX-AIR-002" },
@@ -49,7 +48,7 @@ const PAY_METHODS = [
   { key: "Credit",      label: "Credit",      icon: <BookOpen size={20}/>,   color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/30" },
 ];
 
-// ─── PAY MODAL ────────────────────────────────────────────────────────────────
+// ─── PAY MODAL ───────────────────────────────────────────────────────────────
 function PayModal({ target, onClose, onSend }) {
   const [method,      setMethod]      = useState(null);
   const [creditName,  setCreditName]  = useState("");
@@ -167,7 +166,7 @@ function PayModal({ target, onClose, onSend }) {
   );
 }
 
-// ─── VOID MODAL ───────────────────────────────────────────────────────────────
+// ─── VOID MODAL ──────────────────────────────────────────────────────────────
 function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
   const [reason, setReason]   = useState("");
   const [loading, setLoading] = useState(false);
@@ -221,8 +220,9 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
   );
 }
 
-// ─── ORDER CARD ───────────────────────────────────────────────────────────────
-function OrderCard({ order, theme, sentItems, onMarkServed, onUnserve, onPayItem, onPayTable, onVoidItem }) {
+// ─── ORDER CARD ──────────────────────────────────────────────────────────────
+// ── ADDED: onAddItems prop ───────────────────────────────────────────────────
+function OrderCard({ order, theme, sentItems, onMarkServed, onUnserve, onPayItem, onPayTable, onVoidItem, onAddItems }) {
   const [expanded, setExpanded] = useState(false);
 
   const isReady      = order.status === "Ready";
@@ -307,7 +307,6 @@ function OrderCard({ order, theme, sentItems, onMarkServed, onUnserve, onPayItem
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            {/* Table name */}
             <div className="flex items-center gap-2 mb-1">
               <span className={`font-black text-[15px] uppercase tracking-tight leading-none
                 ${theme === "dark" ? "text-white" : "text-zinc-900"}`}>
@@ -318,7 +317,6 @@ function OrderCard({ order, theme, sentItems, onMarkServed, onUnserve, onPayItem
                 #{order.displayId}
               </span>
             </div>
-            {/* Sub info */}
             <p className={`text-[10px] font-bold ${theme === "dark" ? "text-zinc-600" : "text-zinc-400"}`}>
               {order.items.length} item{order.items.length !== 1 ? "s" : ""}&nbsp;·&nbsp;
               <span className={theme === "dark" ? "text-zinc-400" : "text-zinc-600"}>
@@ -498,6 +496,23 @@ function OrderCard({ order, theme, sentItems, onMarkServed, onUnserve, onPayItem
                   )}
                 </div>
               )}
+
+              {/* ── ADD ITEMS — switches to Take Order tab with this table pre-filled ── */}
+              {!allItemsVoided && onAddItems && (
+                <button
+                  onClick={() => onAddItems({
+                    name:  order.tableName,
+                    items: order.items,
+                    id:    order.orderIds?.[0],
+                  })}
+                  className={`py-2.5 px-3.5 rounded-xl border font-black text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shrink-0
+                    ${theme === "dark"
+                      ? "border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10"
+                      : "border-yellow-500/40 text-yellow-600 hover:bg-yellow-50"}`}
+                >
+                  <Plus size={12}/> Add Items
+                </button>
+              )}
             </>
           )}
         </div>
@@ -506,19 +521,16 @@ function OrderCard({ order, theme, sentItems, onMarkServed, onUnserve, onPayItem
   );
 }
 
-// ─── ITEM KEY ─────────────────────────────────────────────────────────────────
+// ─── ITEM KEY ────────────────────────────────────────────────────────────────
 function itemKey(tableName, item) {
   return `${tableName}::${item.name}::${item._itemIndex ?? ""}`;
 }
 
-// ─── CREDITS PANEL ────────────────────────────────────────────────────────────
+// ─── CREDITS PANEL ───────────────────────────────────────────────────────────
 function CreditsPanel({ credits, staffName, theme }) {
   const isDark = theme === "dark";
-
-  // Split into outstanding vs settled
   const outstanding = credits.filter(c => !c.paid && !c.settled && c.status === "Confirmed");
   const settled     = credits.filter(c => c.paid || c.settled);
-
   const totalOutstanding = outstanding.reduce((s, c) => s + Number(c.amount || 0), 0);
   const totalSettled     = settled.reduce((s, c) => s + Number(c.amount || 0), 0);
 
@@ -530,12 +542,8 @@ function CreditsPanel({ credits, staffName, theme }) {
           <BookOpen size={28} className="text-purple-400/60"/>
         </div>
         <div className="text-center">
-          <p className={`text-xs font-black uppercase tracking-[0.25em] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-            No credit orders
-          </p>
-          <p className={`text-[10px] mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
-            Credits assigned to you will appear here
-          </p>
+          <p className={`text-xs font-black uppercase tracking-[0.25em] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>No credit orders</p>
+          <p className={`text-[10px] mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>Credits assigned to you will appear here</p>
         </div>
       </div>
     );
@@ -543,51 +551,31 @@ function CreditsPanel({ credits, staffName, theme }) {
 
   return (
     <div className="space-y-5 pb-8">
-
-      {/* Summary row */}
       <div className="grid grid-cols-2 gap-3">
         <div className={`rounded-2xl border p-4 ${isDark ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50 border-purple-100"}`}>
           <p className="text-[8px] font-black uppercase tracking-widest text-purple-400 mb-1">Outstanding</p>
           <p className="text-xl font-black text-purple-400">UGX {totalOutstanding.toLocaleString()}</p>
-          <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            {outstanding.length} credit{outstanding.length !== 1 ? "s" : ""} unpaid
-          </p>
+          <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{outstanding.length} credit{outstanding.length !== 1 ? "s" : ""} unpaid</p>
         </div>
         <div className={`rounded-2xl border p-4 ${isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"}`}>
           <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400 mb-1">Settled</p>
           <p className="text-xl font-black text-emerald-400">UGX {totalSettled.toLocaleString()}</p>
-          <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            {settled.length} credit{settled.length !== 1 ? "s" : ""} cleared
-          </p>
+          <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{settled.length} credit{settled.length !== 1 ? "s" : ""} cleared</p>
         </div>
       </div>
-
-      {/* Outstanding credits */}
       {outstanding.length > 0 && (
         <div className="space-y-2">
-          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            Outstanding · {outstanding.length}
-          </p>
-          {outstanding.map((credit, i) => (
-            <CreditRow key={i} credit={credit} isDark={isDark} settled={false}/>
-          ))}
+          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Outstanding · {outstanding.length}</p>
+          {outstanding.map((credit, i) => <CreditRow key={i} credit={credit} isDark={isDark} settled={false}/>)}
         </div>
       )}
-
-      {/* Settled credits */}
       {settled.length > 0 && (
         <div className="space-y-2">
-          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            Settled · {settled.length}
-          </p>
-          {settled.map((credit, i) => (
-            <CreditRow key={i} credit={credit} isDark={isDark} settled={true}/>
-          ))}
+          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Settled · {settled.length}</p>
+          {settled.map((credit, i) => <CreditRow key={i} credit={credit} isDark={isDark} settled={true}/>)}
         </div>
       )}
-
-      <div className={`text-center text-[9px] font-bold uppercase tracking-widest pt-2
-        ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
+      <div className={`text-center text-[9px] font-bold uppercase tracking-widest pt-2 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
         Credits persist until end of month · Contact accountant to settle
       </div>
     </div>
@@ -596,103 +584,71 @@ function CreditsPanel({ credits, staffName, theme }) {
 
 function CreditRow({ credit, isDark, settled }) {
   const date = credit.confirmed_at || credit.created_at;
-  const dateStr = date ? new Date(date).toLocaleDateString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-  }) : "—";
-
+  const dateStr = date ? new Date(date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
   return (
     <div className={`rounded-2xl border p-4 flex items-start justify-between gap-3 transition-all
       ${settled
         ? isDark ? "bg-zinc-900/20 border-white/5 opacity-70" : "bg-zinc-50 border-black/5 opacity-70"
         : isDark ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50/60 border-purple-200"}`}>
-
       <div className="flex-1 min-w-0">
-        {/* Table + status */}
         <div className="flex items-center gap-2 flex-wrap mb-1.5">
-          <span className={`font-black text-sm uppercase tracking-tight
-            ${isDark ? "text-white" : "text-zinc-900"}`}>
-            {credit.table_name || "Table"}
-          </span>
+          <span className={`font-black text-sm uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</span>
           {settled ? (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase">
-              <CheckCircle size={8}/> Settled
-            </span>
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase"><CheckCircle size={8}/> Settled</span>
           ) : (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[8px] font-black uppercase animate-pulse">
-              <Clock size={8}/> Outstanding
-            </span>
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[8px] font-black uppercase animate-pulse"><Clock size={8}/> Outstanding</span>
           )}
         </div>
-
-        {/* Client info — from credit_info stored in cashier_queue */}
         {credit.client_name && (
           <div className="flex items-center gap-1 mb-1">
             <User size={9} className="text-zinc-500 shrink-0"/>
-            <span className={`text-[10px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
-              {credit.client_name}
-            </span>
-            {credit.client_phone && (
-              <span className={`text-[9px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                · {credit.client_phone}
-              </span>
-            )}
+            <span className={`text-[10px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{credit.client_name}</span>
+            {credit.client_phone && <span className={`text-[9px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>· {credit.client_phone}</span>}
           </div>
         )}
-
-        {/* Pay-by note */}
         {credit.pay_by && !settled && (
           <div className="flex items-center gap-1 mb-1">
             <Calendar size={9} className="text-amber-400 shrink-0"/>
-            <span className="text-[9px] font-black text-amber-400 uppercase tracking-wider">
-              Pay by: {credit.pay_by}
-            </span>
+            <span className="text-[9px] font-black text-amber-400 uppercase tracking-wider">Pay by: {credit.pay_by}</span>
           </div>
         )}
-
-        {/* Label / order info */}
-        {credit.label && (
-          <p className={`text-[9px] font-bold truncate ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-            {credit.label}
-          </p>
-        )}
-
-        <p className={`text-[8px] font-bold mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
-          {dateStr}
-        </p>
+        {credit.label && <p className={`text-[9px] font-bold truncate ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{credit.label}</p>}
+        <p className={`text-[8px] font-bold mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>{dateStr}</p>
       </div>
-
-      {/* Amount */}
       <div className="text-right shrink-0">
-        <p className={`text-lg font-black ${settled ? "text-emerald-400" : "text-purple-400"}`}>
-          UGX {Number(credit.amount || 0).toLocaleString()}
-        </p>
+        <p className={`text-lg font-black ${settled ? "text-emerald-400" : "text-purple-400"}`}>UGX {Number(credit.amount || 0).toLocaleString()}</p>
       </div>
     </div>
   );
 }
 
-// ─── MAIN ─────────────────────────────────────────────────────────────────────
-export default function OrderHistory({ shiftEnded = false }) {
+// ─── MAIN ────────────────────────────────────────────────────────────────────
+// ── ADDED: onAddItems prop ──
+export default function OrderHistory({ shiftEnded = false, onAddItems }) {
   const { orders = [], currentUser, refreshData } = useData() || {};
   const { theme } = useTheme();
 
-  const savedUser        = useMemo(() => { try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); } catch { return {}; } }, []);
-  const currentStaffId   = currentUser?.id   || savedUser?.id;
-  const currentStaffName = currentUser?.name || savedUser?.name || "Staff Member";
+  // ── BUG FIX: read identity from BOTH context and localStorage ─────────────
+  // context can be null on first render → orders filter returns [] → blank screen.
+  // Using ?? (nullish) not || so we don't fall back on falsy id=0.
+  const savedUser = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); }
+    catch { return {}; }
+  }, []);
 
-  const [activeTab,   setActiveTab]   = useState("Live");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [payTarget,   setPayTarget]   = useState(null);
-  const [voidItem,    setVoidItem]    = useState(null);
-  const [sentItems,   setSentItems]   = useState(new Set());
+  const currentStaffId   = currentUser?.id   ?? savedUser?.id;
+  const currentStaffName = currentUser?.name ?? savedUser?.name ?? "Staff Member";
+
+  const [activeTab,      setActiveTab]      = useState("Live");
+  const [searchQuery,    setSearchQuery]    = useState("");
+  const [payTarget,      setPayTarget]      = useState(null);
+  const [voidItem,       setVoidItem]       = useState(null);
+  const [sentItems,      setSentItems]      = useState(new Set());
   const [confirmedQueue, setConfirmedQueue] = useState([]);
   const [creditsQueue,   setCreditsQueue]   = useState([]);
 
-  // ─── STAFF TARGETS — fetched from DB (supervisor-assigned per staff) ────────
-  // Matches working pattern: GET /api/staff/performance-list → find by id
-  // DB fields: daily_order_target, monthly_income_target
   const [staffTargets, setStaffTargets] = useState({
-    daily_order_target:    null, // null = not yet loaded
+    daily_order_target:    null,
     monthly_income_target: null,
   });
 
@@ -704,29 +660,22 @@ export default function OrderHistory({ shiftEnded = false }) {
         if (res.ok) {
           const list = await res.json();
           const me   = list.find(s => String(s.id) === String(currentStaffId));
-          if (me) {
-            setStaffTargets({
-              daily_order_target:    Number(me.daily_order_target)    || 0,
-              monthly_income_target: Number(me.monthly_income_target) || 0,
-            });
-          }
+          if (me) setStaffTargets({
+            daily_order_target:    Number(me.daily_order_target)    || 0,
+            monthly_income_target: Number(me.monthly_income_target) || 0,
+          });
         }
-      } catch { /* silently ignore — targets stay null */ }
+      } catch {}
     };
     load();
   }, [currentStaffId]);
 
-  // Friendly fallbacks while loading or when supervisor hasn't set targets yet
   const dailyOrderTarget     = staffTargets.daily_order_target    ?? 0;
   const monthlyRevenueTarget = staffTargets.monthly_income_target ?? 0;
   const targetsLoaded        = staffTargets.daily_order_target !== null;
 
-  // ─── CASHIER QUEUE POLLING ────────────────────────────────────────────────
   useEffect(() => {
-    if (shiftEnded) {
-      setConfirmedQueue([]);
-      return;
-    }
+    if (shiftEnded) { setConfirmedQueue([]); return; }
     const poll = async () => {
       try {
         const res = await fetch(`${API_URL}/api/orders/cashier-history`);
@@ -738,52 +687,38 @@ export default function OrderHistory({ shiftEnded = false }) {
     return () => clearInterval(id);
   }, [shiftEnded]);
 
-  // ─── CREDITS QUEUE — persists across day-close, clears at month-end only ──
-  // Credits are cashier_queue rows where method = 'Credit'.
-  // We fetch them separately and NEVER zero them when dayIsClosed so the waiter
-  // can track outstanding credits across multiple days until month-end.
   useEffect(() => {
     const loadCredits = async () => {
       try {
         const res = await fetch(`${API_URL}/api/orders/cashier-history`);
         if (!res.ok) return;
         const all = await res.json();
-        // Keep only Credit rows confirmed by this waiter — no date filter,
-        // so they survive day-close and persist until settled or month-end.
-        const myCredits = all.filter(row =>
-          row.method === "Credit" &&
-          row.requested_by === currentStaffName
-        );
-        setCreditsQueue(myCredits);
+        setCreditsQueue(all.filter(row =>
+          row.method === "Credit" && row.requested_by === currentStaffName
+        ));
       } catch {}
     };
     loadCredits();
-    const id = setInterval(loadCredits, 30000); // slower poll — credits rarely change
+    const id = setInterval(loadCredits, 30000);
     return () => clearInterval(id);
   }, [currentStaffName]);
 
-  // ─── DAY CLOSED FLAG — poll daily_summary to detect accountant close ────────
-  // When accountant closes the day, daily_summary.day_closed becomes true.
-  // We read that flag here so gross today / monthly revenue zero out immediately
-  // on the next poll cycle without waiting for the waiter to refresh manually.
   const [dayIsClosed, setDayIsClosed] = useState(false);
   useEffect(() => {
     if (shiftEnded) { setDayIsClosed(true); return; }
-    const checkClosed = async () => {
+    const check = async () => {
       try {
         const res = await fetch(`${API_URL}/api/summaries/today`);
         if (res.ok) {
-          const data = await res.json();
-          // daily_summary returns day_closed = true after accountant finalizes
+          const data   = await res.json();
           const closed = data.day_closed === true || data.day_closed === "t" || data.day_closed === "true";
           setDayIsClosed(closed);
-          // If day just closed, also wipe the confirmed queue so gross drops to 0
           if (closed) setConfirmedQueue([]);
         }
       } catch {}
     };
-    checkClosed();
-    const id = setInterval(checkClosed, 15000); // check every 15s
+    check();
+    const id = setInterval(check, 15000);
     return () => clearInterval(id);
   }, [shiftEnded]);
 
@@ -799,31 +734,45 @@ export default function OrderHistory({ shiftEnded = false }) {
     return () => clearTimeout(t);
   }, []);
 
-  // ─── DAILY STAFF ORDERS — from DB via DataContext ─────────────────────────
-  const dailyStaffOrders = useMemo(() =>
-    (orders || []).filter(o => {
+  // ── BUG FIX: robust staff matching — id OR name, guards against undefined ──
+  // The old code used String(o.staff_id) === String(currentStaffId) which
+  // returns false whenever currentStaffId is undefined (context not yet loaded),
+  // causing the list to appear empty on every fresh page load until the next
+  // DataContext poll fires 10s later.
+  //
+  // Fix: use name as fallback, and only filter when we have at least one
+  // identifier. This means orders show immediately on mount.
+  const dailyStaffOrders = useMemo(() => {
+    if (!currentStaffId && !currentStaffName) return [];
+
+    return (orders || []).filter(o => {
       const ts = o.timestamp || o.created_at;
       if (!ts) return false;
-      const mine =
-        String(o.staff_id || o.staffId) === String(currentStaffId) ||
-        (o.staff_name || o.waiterName) === currentStaffName;
-      const cleared = o.shift_cleared === true || o.shift_cleared === "t" || o.shift_cleared === "true";
-      return mine && toLocalDateStr(new Date(ts)) === today && !cleared;
-    }),
-  [orders, currentStaffId, currentStaffName, today]);
 
-  // ─── MONTHLY REVENUE — from confirmedQueue filtered to current month ───────
-  // Also zeros when accountant closes the day so the progress bar resets.
+      const idMatch = currentStaffId
+        ? String(o.staff_id ?? o.staffId ?? "") === String(currentStaffId)
+        : false;
+
+      const nameMatch = currentStaffName && currentStaffName !== "Staff Member"
+        ? (o.staff_name ?? o.waiterName ?? o.staffName ?? "")
+            .toLowerCase() === currentStaffName.toLowerCase()
+        : false;
+
+      const mine    = idMatch || nameMatch;
+      const cleared = o.shift_cleared === true || o.shift_cleared === "t" || o.shift_cleared === "true";
+      const sameDay = toLocalDateStr(new Date(ts)) === today;
+
+      return mine && sameDay && !cleared;
+    });
+  }, [orders, currentStaffId, currentStaffName, today]);
+
   const monthlyRevenue = useMemo(() => {
-    if (shiftEnded || dayIsClosed) return 0; // ← zero out when day is closed
-    const now          = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear  = now.getFullYear();
+    if (shiftEnded || dayIsClosed) return 0;
+    const now = new Date();
     return confirmedQueue.reduce((sum, row) => {
-      if (row.status !== "Confirmed") return sum;
-      if (row.requested_by !== currentStaffName) return sum;
+      if (row.status !== "Confirmed" || row.requested_by !== currentStaffName) return sum;
       const d = new Date(row.confirmed_at || row.created_at);
-      if (d.getMonth() !== currentMonth || d.getFullYear() !== currentYear) return sum;
+      if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return sum;
       return sum + (Number(row.amount) || 0);
     }, 0);
   }, [confirmedQueue, currentStaffName, shiftEnded, dayIsClosed]);
@@ -833,7 +782,7 @@ export default function OrderHistory({ shiftEnded = false }) {
     dailyStaffOrders.forEach(order => {
       const key     = (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase();
       const rowPaid = order.status === "Paid" || order.status === "Credit"
-                      || order.status === "Mixed" || order.is_paid || order.isPaid;
+                   || order.status === "Mixed" || order.is_paid || order.isPaid;
       const rowSent = order.sent_to_cashier || order.sentToCashier || false;
 
       if (!groups[key]) {
@@ -849,10 +798,7 @@ export default function OrderHistory({ shiftEnded = false }) {
       g.total += Number(order.total) || 0;
       g.orderIds.push(order.id);
       g._rows.push({ id: order.id, paid: rowPaid, sent: rowSent, total: Number(order.total) || 0 });
-
-      (order.items || []).forEach(item => {
-        g.items.push({ ...item, _orderId: order.id, _rowPaid: rowPaid });
-      });
+      (order.items || []).forEach(item => g.items.push({ ...item, _orderId: order.id, _rowPaid: rowPaid }));
 
       const rank = { Served: 5, Ready: 4, Delayed: 3, Preparing: 2, Pending: 1 };
       if ((rank[order.status] || 0) > (rank[g.status] || 0)) g.status = order.status;
@@ -861,7 +807,6 @@ export default function OrderHistory({ shiftEnded = false }) {
     Object.values(groups).forEach(g => {
       g.items = g.items.map((item, idx) => ({ ...item, _itemIndex: idx }));
     });
-
     return groups;
   }, [dailyStaffOrders]);
 
@@ -878,18 +823,15 @@ export default function OrderHistory({ shiftEnded = false }) {
   const filteredOrders = useMemo(() =>
     enrichedGroups
       .filter(g => {
-        const allVoided  = g.items.length > 0 && g.items.every(item => item.voidProcessed === true || item.status === "VOIDED");
-        const anyVoided  = g.items.some(item => item.voidProcessed === true || item.status === "VOIDED");
+        const allVoided   = g.items.length > 0 && g.items.every(i => i.voidProcessed === true || i.status === "VOIDED");
+        const anyVoided   = g.items.some(i => i.voidProcessed === true || i.status === "VOIDED");
         const matchSearch = g.tableName.toLowerCase().includes(searchQuery.toLowerCase());
         const matchTab =
           activeTab === "Live"
-            // Live: active-status tables — exclude fully voided (partially voided still show here too)
             ? ["Pending","Preparing","Ready","Delayed"].includes(g.status) && !allVoided
             : activeTab === "Served"
-            // Served: same — exclude fully voided
             ? ["Served","Paid","Closed","Credit","Mixed"].includes(g.status) && !allVoided
             : activeTab === "Voided"
-            // Voided: ANY table with at least one void-approved item (partial OR full)
             ? anyVoided
             : false;
         return matchSearch && matchTab;
@@ -903,15 +845,12 @@ export default function OrderHistory({ shiftEnded = false }) {
       }),
   [enrichedGroups, searchQuery, activeTab]);
 
-  // ─── PAYMENT TOTALS — from confirmedQueue only ────────────────────────────
-  // Returns zeros when: (a) shift ended, OR (b) accountant has closed the day.
   const totals = useMemo(() => {
     const acc = { Cash: 0, Card: 0, MTN: 0, Airtel: 0, Momo: 0, all: 0 };
-    if (shiftEnded || dayIsClosed) return acc; // ← zero out when day is closed
+    if (shiftEnded || dayIsClosed) return acc;
     confirmedQueue.forEach(row => {
       if (row.status !== "Confirmed") return;
-      const confirmedOn = toLocalDateStr(new Date(row.confirmed_at || row.created_at));
-      if (confirmedOn !== today) return;
+      if (toLocalDateStr(new Date(row.confirmed_at || row.created_at)) !== today) return;
       if (row.requested_by !== currentStaffName) return;
       const amt = Number(row.amount) || 0;
       switch (row.method) {
@@ -925,33 +864,20 @@ export default function OrderHistory({ shiftEnded = false }) {
     return acc;
   }, [confirmedQueue, today, currentStaffName, shiftEnded, dayIsClosed]);
 
-  // isAllVoided  — every item on the group is void-approved (fully cancelled)
-  // hasAnyVoided — at least one item is void-approved (partial or full void)
-  const isAllVoided = (o) =>
-    o.items.length > 0 && o.items.every(item => item.voidProcessed === true || item.status === "VOIDED");
-  const hasAnyVoided = (o) =>
-    o.items.some(item => item.voidProcessed === true || item.status === "VOIDED");
+  const isAllVoided  = o => o.items.length > 0 && o.items.every(i => i.voidProcessed === true || i.status === "VOIDED");
+  const hasAnyVoided = o => o.items.some(i => i.voidProcessed === true || i.status === "VOIDED");
 
-  const readyCount  = useMemo(() => enrichedGroups.filter(o => o.status === "Ready" && !isAllVoided(o)).length, [enrichedGroups]);
-  const liveCount   = useMemo(() => enrichedGroups.filter(o => ["Pending","Preparing","Ready","Delayed"].includes(o.status) && !isAllVoided(o)).length, [enrichedGroups]);
-  const servedCount = useMemo(() => enrichedGroups.filter(o => ["Served","Paid","Closed","Credit","Mixed"].includes(o.status) && !isAllVoided(o)).length, [enrichedGroups]);
-  // Voided tab shows ANY table that has at least one void-approved item
-  const voidedCount = useMemo(() => enrichedGroups.filter(o => hasAnyVoided(o)).length, [enrichedGroups]);
-  // Credits tab — outstanding (unpaid) credit entries from cashier_queue
-  const outstandingCredits = useMemo(() =>
-    creditsQueue.filter(row => row.status === "Confirmed" && !row.paid && !row.settled),
-  [creditsQueue]);
+  const readyCount   = useMemo(() => enrichedGroups.filter(o => o.status === "Ready"  && !isAllVoided(o)).length, [enrichedGroups]);
+  const liveCount    = useMemo(() => enrichedGroups.filter(o => ["Pending","Preparing","Ready","Delayed"].includes(o.status) && !isAllVoided(o)).length, [enrichedGroups]);
+  const servedCount  = useMemo(() => enrichedGroups.filter(o => ["Served","Paid","Closed","Credit","Mixed"].includes(o.status) && !isAllVoided(o)).length, [enrichedGroups]);
+  const voidedCount  = useMemo(() => enrichedGroups.filter(o => hasAnyVoided(o)).length, [enrichedGroups]);
+  const outstandingCredits = useMemo(() => creditsQueue.filter(r => r.status === "Confirmed" && !r.paid && !r.settled), [creditsQueue]);
   const creditsCount = outstandingCredits.length;
-  const paidCount   = dailyStaffOrders.filter(o => o.status === "Paid" || o.is_paid).length;
-  const firstName   = currentStaffName.split(" ")[0] || "Staff";
+  const firstName    = currentStaffName.split(" ")[0] || "Staff";
 
-  // Progress values
-  const orderProgressPct   = dailyOrderTarget > 0
-    ? Math.min((dailyStaffOrders.length / dailyOrderTarget) * 100, 100) : 0;
-  const revenueProgressPct = monthlyRevenueTarget > 0
-    ? Math.min((monthlyRevenue / monthlyRevenueTarget) * 100, 100) : 0;
+  const orderProgressPct   = dailyOrderTarget > 0 ? Math.min((dailyStaffOrders.length / dailyOrderTarget) * 100, 100) : 0;
+  const revenueProgressPct = monthlyRevenueTarget > 0 ? Math.min((monthlyRevenue / monthlyRevenueTarget) * 100, 100) : 0;
 
-  // ── Action handlers ───────────────────────────────────────────────────────
   const handleMarkServed = useCallback(async (order) => {
     try {
       await Promise.all(order.orderIds.map(id =>
@@ -1032,15 +958,10 @@ export default function OrderHistory({ shiftEnded = false }) {
   return (
     <div className={`min-h-screen font-[Outfit] pb-28 transition-colors duration-300 ${theme === "dark" ? "bg-zinc-950 text-white" : "bg-zinc-100 text-zinc-900"}`}>
 
-      {/* ═══════════════════════════════════════════════════════
-          HEADER — sticky, identity + quick numbers
-      ═══════════════════════════════════════════════════════ */}
+      {/* ═══ HEADER ════════════════════════════════════════════════════════ */}
       <div className={`sticky top-0 z-20 w-full border-b px-4 md:px-8 py-3 flex items-center justify-between gap-4
-        ${theme === "dark"
-          ? "bg-zinc-950/90 backdrop-blur-2xl border-white/[0.06]"
-          : "bg-white/90 backdrop-blur-2xl border-black/[0.06] shadow-sm"}`}>
+        ${theme === "dark" ? "bg-zinc-950/90 backdrop-blur-2xl border-white/[0.06]" : "bg-white/90 backdrop-blur-2xl border-black/[0.06] shadow-sm"}`}>
 
-        {/* Left — avatar + name */}
         <div className="flex items-center gap-3 shrink-0">
           <div className="relative">
             <div className="w-9 h-9 rounded-xl bg-yellow-500 flex items-center justify-center font-black text-black text-sm leading-none shrink-0 shadow-lg shadow-yellow-500/30">
@@ -1056,47 +977,30 @@ export default function OrderHistory({ shiftEnded = false }) {
           </div>
         </div>
 
-        {/* Centre — desktop quick stats */}
         <div className="hidden lg:flex items-center gap-6 flex-1 justify-center">
-          {/* Orders bubble */}
           <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border ${theme === "dark" ? "bg-white/3 border-white/5" : "bg-zinc-50 border-black/5"}`}>
-            <div className="w-7 h-7 rounded-lg bg-orange-500/15 flex items-center justify-center">
-              <ClipboardList size={13} className="text-orange-400" />
-            </div>
+            <div className="w-7 h-7 rounded-lg bg-orange-500/15 flex items-center justify-center"><ClipboardList size={13} className="text-orange-400" /></div>
             <div>
               <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-0.5">Orders Today</p>
-              <p className="text-sm font-black leading-none">
-                {dailyStaffOrders.length}
-                {dailyOrderTarget > 0 && <span className="text-zinc-500 font-bold text-xs"> /{dailyOrderTarget}</span>}
-              </p>
+              <p className="text-sm font-black leading-none">{dailyStaffOrders.length}{dailyOrderTarget > 0 && <span className="text-zinc-500 font-bold text-xs"> /{dailyOrderTarget}</span>}</p>
             </div>
           </div>
-          {/* Gross bubble */}
           <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border ${theme === "dark" ? "bg-white/3 border-white/5" : "bg-zinc-50 border-black/5"}`}>
-            <div className="w-7 h-7 rounded-lg bg-yellow-500/15 flex items-center justify-center">
-              <TrendingUp size={13} className="text-yellow-500" />
-            </div>
+            <div className="w-7 h-7 rounded-lg bg-yellow-500/15 flex items-center justify-center"><TrendingUp size={13} className="text-yellow-500" /></div>
             <div>
               <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-0.5">Gross Today</p>
               <p className="text-sm font-black text-yellow-500 leading-none">UGX {totals.all.toLocaleString()}</p>
             </div>
           </div>
-          {/* Monthly bubble */}
           <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border ${theme === "dark" ? "bg-white/3 border-white/5" : "bg-zinc-50 border-black/5"}`}>
-            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center">
-              <Target size={13} className="text-emerald-400" />
-            </div>
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center"><Target size={13} className="text-emerald-400" /></div>
             <div>
               <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-0.5">This Month</p>
-              <p className="text-sm font-black text-emerald-400 leading-none">
-                UGX {monthlyRevenue.toLocaleString()}
-                {monthlyRevenueTarget > 0 && <span className="text-zinc-500 font-bold text-xs"> / {monthlyRevenueTarget.toLocaleString()}</span>}
-              </p>
+              <p className="text-sm font-black text-emerald-400 leading-none">UGX {monthlyRevenue.toLocaleString()}{monthlyRevenueTarget > 0 && <span className="text-zinc-500 font-bold text-xs"> / {monthlyRevenueTarget.toLocaleString()}</span>}</p>
             </div>
           </div>
         </div>
 
-        {/* Right — ready alert */}
         {readyCount > 0 && (
           <div className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500 rounded-xl shrink-0 shadow-lg shadow-emerald-500/30 animate-pulse">
             <Bell size={12} className="text-black" />
@@ -1105,20 +1009,16 @@ export default function OrderHistory({ shiftEnded = false }) {
         )}
       </div>
 
-      {/* ═══════════════════════════════════════════════════════
-          PERFORMANCE PANEL — targets + progress bars
-      ═══════════════════════════════════════════════════════ */}
+      {/* ═══ PERFORMANCE PANEL ═════════════════════════════════════════════ */}
       <div className="px-4 md:px-8 pt-5">
 
-        {/* Mobile stat chips — shown only below lg */}
         <div className="lg:hidden flex gap-2 mb-4 overflow-x-auto pb-1">
           {[
             { label: "Orders", value: `${dailyStaffOrders.length}${dailyOrderTarget > 0 ? `/${dailyOrderTarget}` : ""}`, color: "text-orange-400", dot: "bg-orange-500" },
-            { label: "Gross",  value: `UGX ${totals.all.toLocaleString()}`,         color: "text-yellow-500",  dot: "bg-yellow-500" },
-            { label: "Month",  value: `UGX ${monthlyRevenue.toLocaleString()}`,     color: "text-emerald-400", dot: "bg-emerald-500" },
+            { label: "Gross",  value: `UGX ${totals.all.toLocaleString()}`,     color: "text-yellow-500",  dot: "bg-yellow-500" },
+            { label: "Month",  value: `UGX ${monthlyRevenue.toLocaleString()}`, color: "text-emerald-400", dot: "bg-emerald-500" },
           ].map(({ label, value, color, dot }) => (
-            <div key={label} className={`flex items-center gap-2 px-3 py-2 rounded-xl border shrink-0
-              ${theme === "dark" ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
+            <div key={label} className={`flex items-center gap-2 px-3 py-2 rounded-xl border shrink-0 ${theme === "dark" ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
               <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">{label}</span>
               <span className={`text-xs font-black ${color}`}>{value}</span>
@@ -1126,200 +1026,135 @@ export default function OrderHistory({ shiftEnded = false }) {
           ))}
         </div>
 
-        {/* Progress card */}
-        <div className={`rounded-[1.5rem] border mb-5 overflow-hidden
-          ${theme === "dark" ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-black/[0.06] shadow-sm"}`}>
-
-          {/* Card header */}
-          <div className={`px-5 pt-4 pb-3 border-b flex items-center justify-between
-            ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
+        <div className={`rounded-[1.5rem] border mb-5 overflow-hidden ${theme === "dark" ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-black/[0.06] shadow-sm"}`}>
+          <div className={`px-5 pt-4 pb-3 border-b flex items-center justify-between ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
             <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Performance Targets</p>
-            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest
-              ${targetsLoaded
-                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                : "bg-zinc-500/10 text-zinc-500 border border-zinc-500/20"}`}>
+            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${targetsLoaded ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-zinc-500/10 text-zinc-500 border border-zinc-500/20"}`}>
               {targetsLoaded ? "Live" : "Loading"}
             </span>
           </div>
-
           <div className="p-5 space-y-5">
-            {/* Daily orders bar */}
             <div>
               <div className="flex items-end justify-between mb-2.5">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-orange-500/15 flex items-center justify-center">
-                    <Activity size={11} className="text-orange-400" />
-                  </div>
+                  <div className="w-6 h-6 rounded-lg bg-orange-500/15 flex items-center justify-center"><Activity size={11} className="text-orange-400" /></div>
                   <span className="text-[11px] font-black text-zinc-400 uppercase tracking-wider">Daily Orders</span>
                 </div>
                 <div className="text-right">
                   <span className="text-[11px] font-black text-orange-400">
-                    {targetsLoaded
-                      ? dailyOrderTarget > 0
-                        ? `${dailyStaffOrders.length} / ${dailyOrderTarget}`
-                        : `${dailyStaffOrders.length} · No target`
-                      : "—"}
+                    {targetsLoaded ? dailyOrderTarget > 0 ? `${dailyStaffOrders.length} / ${dailyOrderTarget}` : `${dailyStaffOrders.length} · No target` : "—"}
                   </span>
-                  {targetsLoaded && dailyOrderTarget > 0 && (
-                    <span className="ml-2 text-[9px] font-black text-zinc-600">{Math.round(orderProgressPct)}%</span>
-                  )}
+                  {targetsLoaded && dailyOrderTarget > 0 && <span className="ml-2 text-[9px] font-black text-zinc-600">{Math.round(orderProgressPct)}%</span>}
                 </div>
               </div>
               <div className={`w-full h-2.5 rounded-full overflow-hidden ${theme === "dark" ? "bg-zinc-800" : "bg-zinc-100"}`}>
-                <div className="h-full rounded-full bg-gradient-to-r from-orange-600 to-amber-400 transition-all duration-1000 ease-out relative"
-                  style={{ width: `${orderProgressPct}%` }}>
-                  {orderProgressPct > 5 && (
-                    <div className="absolute inset-0 bg-white/20 rounded-full" style={{ width: "30%" }} />
-                  )}
+                <div className="h-full rounded-full bg-gradient-to-r from-orange-600 to-amber-400 transition-all duration-1000 ease-out relative" style={{ width: `${orderProgressPct}%` }}>
+                  {orderProgressPct > 5 && <div className="absolute inset-0 bg-white/20 rounded-full" style={{ width: "30%" }} />}
                 </div>
               </div>
             </div>
-
-            {/* Monthly revenue bar */}
             <div>
               <div className="flex items-end justify-between mb-2.5">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-yellow-500/15 flex items-center justify-center">
-                    <Target size={11} className="text-yellow-400" />
-                  </div>
+                  <div className="w-6 h-6 rounded-lg bg-yellow-500/15 flex items-center justify-center"><Target size={11} className="text-yellow-400" /></div>
                   <span className="text-[11px] font-black text-zinc-400 uppercase tracking-wider">Monthly Revenue</span>
                 </div>
                 <div className="text-right">
                   <span className="text-[11px] font-black text-yellow-400">
-                    {targetsLoaded
-                      ? monthlyRevenueTarget > 0
-                        ? `UGX ${monthlyRevenue.toLocaleString()} / ${monthlyRevenueTarget.toLocaleString()}`
-                        : `UGX ${monthlyRevenue.toLocaleString()} · No target`
-                      : "—"}
+                    {targetsLoaded ? monthlyRevenueTarget > 0 ? `UGX ${monthlyRevenue.toLocaleString()} / ${monthlyRevenueTarget.toLocaleString()}` : `UGX ${monthlyRevenue.toLocaleString()} · No target` : "—"}
                   </span>
-                  {targetsLoaded && monthlyRevenueTarget > 0 && (
-                    <span className="ml-2 text-[9px] font-black text-zinc-600">{Math.round(revenueProgressPct)}%</span>
-                  )}
+                  {targetsLoaded && monthlyRevenueTarget > 0 && <span className="ml-2 text-[9px] font-black text-zinc-600">{Math.round(revenueProgressPct)}%</span>}
                 </div>
               </div>
               <div className={`w-full h-2.5 rounded-full overflow-hidden ${theme === "dark" ? "bg-zinc-800" : "bg-zinc-100"}`}>
-                <div className="h-full rounded-full bg-gradient-to-r from-yellow-600 to-yellow-400 transition-all duration-1000 ease-out relative"
-                  style={{ width: `${revenueProgressPct}%` }}>
-                  {revenueProgressPct > 5 && (
-                    <div className="absolute inset-0 bg-white/20 rounded-full" style={{ width: "30%" }} />
-                  )}
+                <div className="h-full rounded-full bg-gradient-to-r from-yellow-600 to-yellow-400 transition-all duration-1000 ease-out relative" style={{ width: `${revenueProgressPct}%` }}>
+                  {revenueProgressPct > 5 && <div className="absolute inset-0 bg-white/20 rounded-full" style={{ width: "30%" }} />}
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* ═══════════════════════════════════════════════════════
-            TABS + SEARCH
-        ═══════════════════════════════════════════════════════ */}
+        {/* ═══ TABS + SEARCH ══════════════════════════════════════════════ */}
         <div className="flex items-center gap-3 mb-5 flex-wrap">
-
-          {/* Tab pills */}
           <div className={`flex gap-1 p-1 rounded-2xl shrink-0 ${theme === "dark" ? "bg-zinc-900 border border-white/5" : "bg-zinc-200/70 border border-black/5"}`}>
             {[
-              { key: "Live",    count: liveCount,    accent: "yellow"  },
-              { key: "Served",  count: servedCount,  accent: "yellow"  },
-              { key: "Credits", count: creditsCount, accent: "purple"  },
-              { key: "Voided",  count: voidedCount,  accent: "red"     },
+              { key: "Live",    count: liveCount,    accent: "yellow" },
+              { key: "Served",  count: servedCount,  accent: "yellow" },
+              { key: "Credits", count: creditsCount, accent: "purple" },
+              { key: "Voided",  count: voidedCount,  accent: "red"    },
             ].map(({ key, count, accent }) => {
-              const isActive  = activeTab === key;
-              const isRed     = accent === "red";
-              const isPurple  = accent === "purple";
-              const activeClass = isRed
-                ? "bg-red-500 text-white shadow-lg shadow-red-500/25"
-                : isPurple
-                  ? "bg-purple-500 text-white shadow-lg shadow-purple-500/25"
-                  : "bg-yellow-500 text-black shadow-lg shadow-yellow-500/25";
+              const isActive = activeTab === key;
+              const isRed    = accent === "red";
+              const isPurple = accent === "purple";
+              const activeClass = isRed ? "bg-red-500 text-white shadow-lg shadow-red-500/25"
+                : isPurple ? "bg-purple-500 text-white shadow-lg shadow-purple-500/25"
+                : "bg-yellow-500 text-black shadow-lg shadow-yellow-500/25";
               const badgeClass = isActive
                 ? isRed ? "bg-white/20 text-white" : isPurple ? "bg-white/20 text-white" : "bg-black/15 text-black"
-                : isRed
-                  ? "bg-red-500/15 text-red-400"
-                  : isPurple
-                    ? "bg-purple-500/15 text-purple-400"
-                    : theme === "dark" ? "bg-white/8 text-zinc-400" : "bg-black/8 text-zinc-500";
+                : isRed ? "bg-red-500/15 text-red-400"
+                : isPurple ? "bg-purple-500/15 text-purple-400"
+                : theme === "dark" ? "bg-white/8 text-zinc-400" : "bg-black/8 text-zinc-500";
               return (
                 <button key={key} onClick={() => setActiveTab(key)}
                   className={`relative px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all duration-200 flex items-center gap-1.5
-                    ${isActive
-                      ? activeClass
-                      : theme === "dark"
-                        ? "text-zinc-500 hover:text-zinc-300"
-                        : "text-zinc-500 hover:text-zinc-700"}`}>
+                    ${isActive ? activeClass : theme === "dark" ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-500 hover:text-zinc-700"}`}>
                   {key}
-                  {count > 0 && (
-                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md leading-none ${badgeClass}`}>
-                      {count}
-                    </span>
-                  )}
+                  {count > 0 && <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md leading-none ${badgeClass}`}>{count}</span>}
                 </button>
               );
             })}
           </div>
 
-          {/* Search */}
           <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" size={13} />
             <input type="text" placeholder="Search table…" value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className={`w-full py-2.5 pl-10 pr-4 rounded-xl text-xs font-bold outline-none border transition-all
-                ${theme === "dark"
-                  ? "bg-zinc-900 border-white/5 focus:border-yellow-500/40 text-white placeholder-zinc-600"
-                  : "bg-white border-black/5 focus:border-yellow-500/60 text-zinc-900 placeholder-zinc-400 shadow-sm"}`} />
+                ${theme === "dark" ? "bg-zinc-900 border-white/5 focus:border-yellow-500/40 text-white placeholder-zinc-600" : "bg-white border-black/5 focus:border-yellow-500/60 text-zinc-900 placeholder-zinc-400 shadow-sm"}`} />
           </div>
         </div>
 
-        {/* ═══════════════════════════════════════════════════════
-            ORDERS GRID
-        ═══════════════════════════════════════════════════════ */}
-        {/* ── CREDITS PANEL — shown instead of order grid when Credits tab active ── */}
+        {/* ═══ ORDERS GRID ════════════════════════════════════════════════ */}
         {activeTab === "Credits" ? (
-          <CreditsPanel
-            credits={creditsQueue}
-            staffName={currentStaffName}
-            theme={theme}
-          />
+          <CreditsPanel credits={creditsQueue} staffName={currentStaffName} theme={theme} />
         ) : (
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredOrders.length === 0 ? (
-            <div className="col-span-full flex flex-col items-center justify-center py-28 gap-4">
-              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center
-                ${activeTab === "Voided"
-                  ? "bg-red-500/10 border border-red-500/20"
-                  : theme === "dark" ? "bg-white/4 border border-white/5" : "bg-zinc-200 border border-black/5"}`}>
-                {activeTab === "Voided"
-                  ? <X size={28} className="text-red-400/60" />
-                  : <ClipboardList size={28} className="text-zinc-500/50" />}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredOrders.length === 0 ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-28 gap-4">
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center
+                  ${activeTab === "Voided" ? "bg-red-500/10 border border-red-500/20" : theme === "dark" ? "bg-white/4 border border-white/5" : "bg-zinc-200 border border-black/5"}`}>
+                  {activeTab === "Voided" ? <X size={28} className="text-red-400/60" /> : <ClipboardList size={28} className="text-zinc-500/50" />}
+                </div>
+                <div className="text-center">
+                  <p className={`text-xs font-black uppercase tracking-[0.25em] ${theme === "dark" ? "text-zinc-600" : "text-zinc-400"}`}>
+                    {activeTab === "Voided" ? "No voided orders" : `No ${activeTab.toLowerCase()} orders`}
+                  </p>
+                  <p className={`text-[10px] mt-1 ${theme === "dark" ? "text-zinc-700" : "text-zinc-400"}`}>
+                    {activeTab === "Live" ? "New orders will appear here" : activeTab === "Served" ? "Served orders will appear here" : "Cancelled orders appear here"}
+                  </p>
+                </div>
               </div>
-              <div className="text-center">
-                <p className={`text-xs font-black uppercase tracking-[0.25em] ${theme === "dark" ? "text-zinc-600" : "text-zinc-400"}`}>
-                  {activeTab === "Voided" ? "No voided orders" : `No ${activeTab.toLowerCase()} orders`}
-                </p>
-                <p className={`text-[10px] mt-1 ${theme === "dark" ? "text-zinc-700" : "text-zinc-400"}`}>
-                  {activeTab === "Live" ? "New orders will appear here" : activeTab === "Served" ? "Served orders will appear here" : "Cancelled orders appear here"}
-                </p>
-              </div>
-            </div>
-          ) : filteredOrders.map(order => (
-            <OrderCard
-              key={order.tableName}
-              order={order}
-              theme={theme}
-              sentItems={sentItems}
-              onMarkServed={handleMarkServed}
-              onUnserve={handleUnserve}
-              onPayItem={handlePayItem}
-              onPayTable={handlePayTable}
-              onVoidItem={(item, ord) => setVoidItem({ item, order: ord })} />
-          ))}
-        </div>
+            ) : filteredOrders.map(order => (
+              <OrderCard
+                key={order.tableName}
+                order={order}
+                theme={theme}
+                sentItems={sentItems}
+                onMarkServed={handleMarkServed}
+                onUnserve={handleUnserve}
+                onPayItem={handlePayItem}
+                onPayTable={handlePayTable}
+                onVoidItem={(item, ord) => setVoidItem({ item, order: ord })}
+                onAddItems={onAddItems}
+              />
+            ))}
+          </div>
         )}
       </div>
 
-      {payTarget && (
-        <PayModal target={payTarget} onClose={() => setPayTarget(null)} onSend={handleSend} />
-      )}
-      {voidItem && (
+      {payTarget && <PayModal target={payTarget} onClose={() => setPayTarget(null)} onSend={handleSend} />}
+      {voidItem  && (
         <VoidModal
           item={voidItem.item}
           tableName={voidItem.order.tableName}

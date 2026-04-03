@@ -59,7 +59,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             time || null, 
             imageUrl, 
             isPublished, 
-            JSON.stringify(tagsData)
+            tagsData
         ];
         
         const newEvent = await pool.query(query, values);

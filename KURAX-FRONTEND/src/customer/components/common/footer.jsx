@@ -1,209 +1,168 @@
 import React from 'react';
+import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom'; // Added for navigation
+import { 
+  Instagram, 
+  Twitter, 
+  Facebook, 
+  MessageCircle, 
+  ArrowUpRight, 
+  Mail, 
+  ChevronRight,
+  Sparkles
+} from 'lucide-react';
+
+// Import your assets
 import logo from "../../assets/images/logo.jpeg";
 import airtelLogo from "../../assets/images/airtell.jpeg";
 import mtnLogo from "../../assets/images/mtn.jpeg";
 import visaLogo from "../../assets/images/visa.jpeg";
 
-const Footer = ({ icon, link }) => {
-  return (
-    <a
-      href={link}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="
-        w-10 h-10 flex items-center justify-center 
-        rounded-full 
-        border border-white/50 text-white/90 
-        hover:border-yellow-600 hover:text-yellow-600 
-        transition
-      "
-    >
-      {icon}
-    </a>
-  );
-};
-
-// SVG Icons for Social Media (using simple paths for consistency)
-const InstagramIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 fill-current" viewBox="0 0 24 24">
-    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.068 1.644.068 4.849 0 3.204-.012 3.584-.07 4.85-.148 3.252-1.691 4.771-4.919 4.919-1.266.058-1.644.068-4.849.068-3.204 0-3.584-.012-4.85-.07-3.251-.148-4.771-1.691-4.919-4.919-.058-1.265-.068-1.644-.068-4.849 0-3.204.012-3.584.07-4.85.148-3.251 1.691-4.771 4.919-4.919 1.266-.057 1.645-.068 4.849-.068zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.78-2.618 6.979-6.98.058-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.162 6.162 6.162 6.162-2.759 6.162-6.162c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.791-4-4s1.791-4 4-4 4 1.791 4 4-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44 1.44-.645 1.44-1.44-.645-1.44-1.44-1.44z"/>
-  </svg>
-);
-const XIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 fill-current" viewBox="0 0 24 24">
-    <path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.795-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.379 0-6.128 2.758-6.128 6.127 0 .484.053.955.158 1.409-5.106-.255-9.626-2.718-12.651-6.417-.527.907-.833 1.956-.833 3.064 0 2.134 1.082 4.072 2.71 5.195-1.001-.033-1.949-.307-2.783-.761-.001.026-.001.053-.001.081 0 2.981 2.17 5.464 5.034 6.031-.529.146-1.083.218-1.647.218-.403 0-.795-.039-1.177-.113.8 2.491 3.125 4.305 5.889 4.356-2.14 1.679-4.717 2.684-7.525 2.684-.489 0-.97-.029-1.442-.084 2.784 1.79 6.091 2.83 9.658 2.83 11.583 0 17.893-9.588 17.893-17.892 0-.272-.006-.543-.014-.813.97-.698 1.815-1.568 2.476-2.556z"/>
-  </svg>
-);
-const FacebookIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 fill-current" viewBox="0 0 24 24">
-    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-3 7h-1.924c-.443 0-.676.516-.676 1.118v1.882h3l-.367 3h-2.633v7h-3v-7h-2v-3h2v-2.193c0-2.454 1.488-3.807 3.673-3.807h2.327v3z"/>
-  </svg>
-);
-const TikTokIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 fill-current" viewBox="0 0 24 24">
-    <path d="M12 0c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm-2.5 17c0-3.313 2.5-3.5 2.5-3.5v-6.5c0-1.657-1.343-3-3-3s-3 1.343-3 3 1.343 3 3 3v2c-2.761 0-5 2.239-5 5h-2c0-4.962 4.037-9 9-9v-2c-3.866 0-7 3.134-7 7h2zm6.5-12h2v10h-2v-10z"/>
-  </svg>
-);
-const ChatIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 fill-current" viewBox="0 0 24 24">
-    <path d="M24 1h-24v16.981h4v5.019l7-5.019h13z"/>
-  </svg>
+const SocialIcon = ({ icon: Icon, link }) => (
+  <motion.a
+    href={link}
+    target="_blank"
+    rel="noopener noreferrer"
+    whileHover={{ y: -4, backgroundColor: 'rgba(202, 138, 4, 0.1)' }}
+    className="w-11 h-11 flex items-center justify-center border border-white/10 text-white/50 hover:text-yellow-500 hover:border-yellow-600/50 transition-all duration-500 rounded-none bg-white/5 backdrop-blur-sm"
+  >
+    <Icon size={20} strokeWidth={1.5} />
+  </motion.a>
 );
 
-export default function FooterGlobal () {
+export default function FooterGlobal() {
+  const navigate = useNavigate(); // Hook for hidden portal navigation
+
   const quickLinks = [
     { label: 'Home', href: '/#hero' },
     { label: 'Menu', href: '/#menus' },
     { label: 'About', href: '/#about' },
-    { label: 'Services', href: '/#services' },
     { label: 'Location', href: '/#visit' },
-    { label: 'Events & Bookings', href: '/#events' },
-    { label: 'Contact', href: '/#contact' },
+    { label: 'Bookings', href: '/#events' },
   ];
-   const paymentmethods = [
-  { label: 'Airtel', img: airtelLogo },
-  { label: 'MTN', img: mtnLogo },
-  { label: 'VISA', img: visaLogo },
-];
 
- 
-
-  // Define the social media links using the data from your CONNECT section
-  const socialMediaLinks = [
-    { 
-      label: 'Instagram', 
-      link: "https://www.instagram.com/kuraxfoodloungebistro?igsh=djl0bzltY3lnbmI1",
-      icon: <InstagramIcon />,
-    },
-    { 
-      label: 'Twitter', 
-      link: "https://x.com/kuraxfoodlounge?t=zSh1NNW0EPSeRwzyoOqinQ&s=09",
-      icon: <XIcon />,
-    },
-    { 
-      label: 'Facebook', 
-      link: "https://www.facebook.com/kuraxfoodlounge",
-      icon: <FacebookIcon />,
-    },
-    { 
-      label: 'Whatsapp', 
-      link: "https://wa.kurax/256709913676",
-      icon: <ChatIcon />,
-    },
+  const paymentMethods = [
+    { label: 'Airtel', img: airtelLogo },
+    { label: 'MTN', img: mtnLogo },
+    { label: 'VISA', img: visaLogo },
   ];
 
   return (
-    // The main container for the footer with a dark background and padding
-    <footer className="bg-zinc-900 text-white py-12 px-6 sm:px-10 lg:px-20">
-      <div className="max-w-7xl mx-auto">
-        {/* Main Grid Layout for the three columns */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10 border-b border-white/10 pb-10">
-          {/* 1. Logo and Description Column (Left) */}
-          <div>
-            
-            {/* Logo */}
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={logo}
-                        alt="Kurax Logo"
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                      <div className="leading-tight">
-                        <h1 className="text-white font-semibold tracking-wide text-base sm:text-lg md:text-xl">
-                          <span className="block sm:inline">KURAX FOOD LOUNGE</span>
-                          <span className="block sm:inline sm:ml-1">&amp; BISTRO</span>
-                        </h1>
-                      
-                      </div>
-                    </div>
+    <footer className="relative bg-[#030303] text-white pt-24 pb-12 px-6 sm:px-12 lg:px-24 overflow-hidden font-['Outfit']">
+      
+      {/* Background Glow Elements */}
+      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-yellow-600/5 blur-[150px] rounded-full -translate-y-1/2 translate-x-1/4 pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-yellow-900/10 blur-[120px] rounded-full translate-y-1/2 -translate-x-1/4 pointer-events-none" />
 
-            {/* Description Text */}
-            <p className="text-sm text-white/70 mb-4 max-w-sm">
-             Luxury dining, signature drinks & rooftop vibes
+      <div className="max-w-7xl mx-auto relative z-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-16 lg:gap-12 pb-20">
+          
+          {/* 1. BRAND IDENTITY */}
+          <div className="lg:col-span-1 space-y-8">
+            <motion.div whileHover={{ scale: 1.02 }} className="flex items-center gap-4 group">
+              <div className="relative">
+                <img src={logo} alt="Kurax" className="w-16 h-16 object-cover border border-white/10" />
+                <div className="absolute -inset-1 border border-yellow-600/20 scale-110 group-hover:scale-100 transition-transform duration-700" />
+              </div>
+              <div className="leading-tight">
+                <h2 className="text-xl font-serif font-black tracking-tighter uppercase">Kurax Food Lounge</h2>
+                <p className="text-[9px] tracking-[0.5em] text-yellow-600 font-bold">& BISTRO</p>
+              </div>
+            </motion.div>
+            <p className="text-zinc-400 font-light leading-relaxed text-sm max-w-xs">
+              A sanctuary of refined taste. From our rooftop ambiance to our signature mixology, we redefine the Kyanja dining experience.
             </p>
-
-            {/* Highlighted Features */}
-            <div className="text-sm font-semibold text-yellow-900">
-              <span className="mr-3">• Premium Dining</span>  
-              <span className="mx-3">• Rooftop Ambiance</span> 
-              <span className="ml-3">• Authentic Flavors</span> 
-            </div>
           </div>
 
-          {/* 2. Quick Links Column (Middle) */}
+          {/* 2. NAVIGATION */}
           <div>
-            <h3 className="text-lg text-yellow-800 font-semibold mb-5">Quick Links</h3>
-            <ul className="space-y-2">
+            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-yellow-600 mb-8 flex items-center gap-2">
+              <span className="w-4 h-[1px] bg-yellow-600" /> Navigation
+            </h3>
+            <ul className="space-y-4">
               {quickLinks.map((link) => (
                 <li key={link.label}>
-                  <a 
-                    href={link.href}
-                    className="text-sm text-white/70 hover:text-yellow-600 transition"
-                  >
-                    {link.label}
+                  <a href={link.href} className="group relative inline-block text-sm text-zinc-500 hover:text-white transition-colors duration-500">
+                    <span className="relative z-10 flex items-center gap-2">
+                      {link.label} 
+                      <ChevronRight size={12} className="opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-yellow-600" />
+                    </span>
+                    <span className="absolute bottom-0 left-0 w-0 h-[1px] bg-yellow-600/50 transition-all duration-500 group-hover:w-full" />
                   </a>
                 </li>
               ))}
             </ul>
           </div>
-          
 
-          {/* 3. Connect With Us Column (Right) */}
+          {/* 3. CONNECT */}
           <div>
-            <h3 className="text-lg  text-yellow-800 font-semibold mb-5">Connect With Us</h3>
-            
-            {/* Social/Contact Icons (Using Social Media Links) */}
-            <div className="flex space-x-3 mb-5">
-              {socialMediaLinks.map((item) => (
-                <Footer 
-                  key={item.label}
-                  link={item.link}
-                  icon={item.icon}
+            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-yellow-600 mb-8 flex items-center gap-2">
+              <span className="w-4 h-[1px] bg-yellow-600" /> Connect
+            </h3>
+            <div className="space-y-6">
+              <div className="flex gap-2">
+                <SocialIcon icon={Instagram} link="https://instagram.com/kurax" />
+                <SocialIcon icon={Twitter} link="https://x.com/kurax" />
+                <SocialIcon icon={Facebook} link="https://facebook.com/kurax" />
+                <SocialIcon icon={MessageCircle} link="#" />
+              </div>
+              <div className="space-y-4 pt-4">
+                <a href="mailto:hello@kurax.ug" className="flex items-center gap-4 text-sm text-zinc-400 hover:text-yellow-500 transition-all group">
+                  <div className="w-8 h-8 bg-white/5 flex items-center justify-center group-hover:bg-yellow-600 group-hover:text-black transition-all">
+                    <Mail size={14} />
+                  </div>
+                  hello@kurax.ug
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. VIBRANT PAYMENT METHODS */}
+          <div className="space-y-10">
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-yellow-600 mb-6 italic">Secure Payment</h3>
+              <div className="flex gap-4">
+                {paymentMethods.map((method) => (
+                  <motion.div 
+                    key={method.label}
+                    whileHover={{ scale: 1.05, borderColor: 'rgba(255, 255, 255, 0.2)' }}
+                    className="w-14 h-10 bg-white shadow-lg border border-white/5 flex items-center justify-center p-1.5 rounded-none overflow-hidden"
+                  >
+                    <img 
+                      src={method.img} 
+                      alt={method.label} 
+                      className="w-full h-full object-contain" 
+                    />
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-white/5">
+              <p className="text-[10px] tracking-[0.2em] text-zinc-500 uppercase mb-4">Newsletter</p>
+              <div className="flex border-b border-white/20 pb-2 focus-within:border-yellow-600 transition-all">
+                <input 
+                  type="email" 
+                  placeholder="Your Email" 
+                  className="bg-transparent border-none outline-none text-xs w-full font-light tracking-widest placeholder:text-zinc-700"
                 />
-              ))}
-
+                <button className="text-yellow-600 hover:text-white transition-colors">
+                  <ArrowUpRight size={18} />
+                </button>
+              </div>
             </div>
-
-            {/* Contact Details */}
-            <div className="space-y-1 ">
-              <p className="text-sm text-white/70">
-                <span className="font-semibold text-white/90">Email:</span> 
-                <a href="mailto:hello@kurax.ug" className="ml-1 hover:text-yellow-600">hello@kurax.ug</a>
-              </p>
-              <p className="text-sm text-white/70">
-                <span className="font-semibold text-white/90">Phone:</span> 
-                <a href="tel:+256700123456" className="ml-1 hover:text-yellow-600">+256 700 123 456</a>
-              </p>
-            </div>
-
-
-            <h3 className="text-lg text-yellow-800 font-semibold mb-5 mt-8 gap-4">We accept the following payment methods</h3>
-            {/* Social/Contact Icons (Using Social Media Links) */}
-           <div className="flex space-x-3 mb-5">
-  {paymentmethods.map((item) => (
-    <img
-      key={item.label}
-      src={item.img}
-      alt={item.label}
-      className="w-10 h-10 object-contain" // adjust size as needed
-    />
-  ))}
-</div>
           </div>
         </div>
 
-       {/* Copyright and Bottom Info (Bottom Row) */}
-<div className="flex flex-col items-center justify-center pt-6 text-xs text-white/50 text-center">
-  <p>
-    © 2026 Kurax Food Lounge & Bistro. All rights reserved. | Designed to elevate your{" "}
-    <a 
-      href="/staff/login" 
-      className="hover:text-white/60 transition-colors duration-500 cursor-default"
-    >
-      dining experience
-    </a>.
-  </p>
-</div>
+        {/* BOTTOM BAR - CENTERED & HIDDEN PORTAL LINK */}
+        <div className="pt-12 border-t border-white/5 flex justify-center items-center text-center">
+          <button 
+            onClick={() => navigate('/staff/login')}
+            className="text-[10px] tracking-[0.3em] text-zinc-600 uppercase hover:text-yellow-600/50 transition-all duration-700 cursor-default"
+          >
+            © 2026 Kurax Food Lounge & Bistro.
+          </button>
+        </div>
       </div>
     </footer>
   );

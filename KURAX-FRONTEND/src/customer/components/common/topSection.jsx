@@ -1,103 +1,136 @@
-import { Search, ShoppingCart } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
+import { Search, ShoppingCart, Menu, X } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import ThemeToggle from "../context/ThemeToggle";
 import logo from "../../assets/images/logo.jpeg";
 
 export default function TopSection({ searchPlaceholder }) {
   const { cart, setIsCartOpen } = useCart();
+  const { scrollY } = useScroll();
+  const location = useLocation();
+
+  // Scroll animations for glassmorphism effect
+  const headerBg = useTransform(
+    scrollY,
+    [0, 100],
+    ["rgba(255, 255, 255, 0)", "rgba(255, 255, 255, 0.8)"]
+  );
+  const headerBlur = useTransform(scrollY, [0, 100], ["blur(0px)", "blur(12px)"]);
+  const borderOpacity = useTransform(scrollY, [0, 100], [0, 1]);
 
   return (
-    <header className="border-b border-yellow-500/20 sticky top-0 z-50 bg-white dark:bg-zinc-900 transition-colors duration-300 font-[Outfit]">
-      <div className="flex flex-col md:flex-row items-center md:justify-between px-4 md:px-8 py-4 gap-4 md:gap-0">
+    <motion.header
+      initial={{ y: -100, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.8, ease: "easeOut" }}
+      style={{ 
+        backgroundColor: headerBg, 
+        backdropFilter: headerBlur,
+        borderBottom: `1px solid rgba(202, 138, 4, 0.2)` 
+      }}
+      className="sticky top-0 z-50 transition-colors duration-300 font-['Outfit']"
+    >
+      {/* Scroll Progress Indicator */}
+      <motion.div 
+        className="absolute bottom-0 left-0 h-[2px] bg-yellow-500 z-50"
+        style={{ scaleX: useTransform(scrollY, [0, 1000], [0, 1]), originX: 0 }}
+      />
 
-        {/* Logo */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <img
-            src={logo}
-            alt="Kurax Logo"
-            className="w-12 h-12 rounded-full object-cover"
-          />
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center md:justify-between px-6 py-4 gap-4 md:gap-0">
+
+        {/* --- LOGO SECTION --- */}
+        <motion.div 
+          whileHover={{ scale: 1.02 }}
+          className="flex items-center gap-4 flex-shrink-0 group cursor-pointer"
+        >
+          <div className="relative">
+            <img
+              src={logo}
+              alt="Kurax Logo"
+              className="w-14 h-14 rounded-full object-cover border-2 border-yellow-500/30 group-hover:border-yellow-500 transition-colors duration-500"
+            />
+            <div className="absolute inset-0 rounded-full bg-yellow-500/20 blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
           <div>
-            <h1 className="text-lg md:text-xl font-semibold text-black dark:text-white">
-              KURAX FOOD LOUNGE & BISTRO
+            <h1 className="text-xl md:text-2xl font-serif font-bold tracking-tight text-black dark:text-white leading-tight">
+              KURAX FOOD LOUNGE<span className="text-yellow-600"> & BISTRO </span>
             </h1>
-            <p className="text-sm md:text-base text-yellow-500">
-              Luxury dining, signature drinks & rooftop vibes
+            <p className="text-[10px] uppercase tracking-[0.3em] font-bold text-yellow-600/80">
+              Luxury Dining & Rooftop Vibes
             </p>
           </div>
-        </div>
+        </motion.div>
 
-        {/* Search + Cart + Theme Toggle */}
-        <div className="w-full sm:w-3/4 md:w-1/3 flex items-center gap-2">
-
-          {/* Search */}
-          <div className="flex-1 relative">
+        {/* --- SEARCH + CART + THEME --- */}
+        <div className="w-full md:w-auto flex items-center gap-4">
+          
+          {/* Premium Search Bar */}
+          <div className="relative group flex-1 md:w-64">
             <input
               type="text"
               placeholder={searchPlaceholder}
-              className="w-full rounded-full bg-gray-100 dark:bg-white-800 text-black dark:text-white px-5 py-2 pr-12 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition-colors duration-300"
+              className="w-full rounded-full bg-zinc-100 dark:bg-zinc-800/50 border border-transparent focus:border-yellow-500/50 text-sm px-5 py-2.5 pr-12 focus:outline-none focus:ring-4 focus:ring-yellow-500/10 transition-all duration-300"
             />
-            <button
-              className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center transition"
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center shadow-lg shadow-yellow-500/20"
             >
-              <Search size={15} className="text-black" />
-            </button>
+              <Search size={14} className="text-black stroke-[3px]" />
+            </motion.button>
           </div>
 
-          {/* Cart */}
-          <button
+          {/* Interactive Cart */}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={() => setIsCartOpen(true)}
-            className="relative w-10 h-10 rounded-full bg-yellow-500 flex items-center justify-center transition"
-            aria-label="Open cart"
+            className="relative w-11 h-11 rounded-full bg-yellow-500 flex items-center justify-center shadow-xl shadow-yellow-500/20 group"
           >
-            <ShoppingCart size={18} className="text-black" />
-            {cart.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1">
-                {cart.length}
-              </span>
-            )}
-          </button>
+            <ShoppingCart size={20} className="text-black" />
+            <AnimatePresence>
+              {cart.length > 0 && (
+                <motion.span 
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0 }}
+                  className="absolute -top-1 -right-1 bg-black text-yellow-500 text-[10px] font-black min-w-[20px] h-[20px] rounded-full flex items-center justify-center border-2 border-yellow-500"
+                >
+                  {cart.length}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
 
-          {/* Theme Toggle */}
           <ThemeToggle />
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex justify-center gap-6 py-4 text-sm md:text-base transition-colors duration-300">
-        <Link
-  to="/#hero"
-  className="text-black dark:text-white hover:text-yellow-500 transition"
->
-  Home
-</Link>
-
-<Link
-  to="/menus"
-  className="text-black dark:text-white hover:text-yellow-500 transition"
->
-  Menus
-</Link>
-
-<Link
-  to="/events"
-  className="text-black dark:text-white hover:text-yellow-500 transition"
->
-  Events
-</Link>
-
-<Link
-  to="/#reservations"
-  className="text-black dark:text-white hover:text-yellow-500 transition"
->
-  Reservations
-</Link>
-
-
-
-        
+      {/* --- NAVIGATION LINKS --- */}
+      <nav className="flex justify-center items-center gap-10 py-4 border-t border-yellow-500/5">
+        {[
+          { name: "Home", path: "/" },
+          { name: "Menus", path: "/menus" },
+          { name: "Events", path: "/events" },
+          { name: "Reservations", path: "/reservations" }
+        ].map((link) => (
+          <Link
+            key={link.name}
+            to={link.path}
+            className="relative group text-xs uppercase tracking-[0.2em] font-bold text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white transition-colors"
+          >
+            {link.name}
+            {/* Gold Underline Animation */}
+            <motion.span 
+              className="absolute -bottom-1 left-0 w-0 h-[2px] bg-yellow-500 transition-all duration-300 group-hover:w-full" 
+              initial={false}
+              animate={location.pathname === link.path ? { width: "100%" } : {}}
+            />
+          </Link>
+        ))}
       </nav>
-    </header>
+    </motion.header>
   );
 }

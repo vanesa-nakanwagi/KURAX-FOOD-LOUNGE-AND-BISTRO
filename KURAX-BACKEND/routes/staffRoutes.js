@@ -19,10 +19,14 @@ const transporter = nodemailer.createTransport({
  * 1. FETCH ALL STAFF
  * Updated to include 'is_requesting' for the Director's dashboard alerts.
  */
+/**
+ * 1. FETCH ALL STAFF
+ * Added 'pin' to the selection list
+ */
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, name, email, role, is_permitted, is_requesting FROM staff ORDER BY name ASC'
+      'SELECT id, name, email, role, pin, is_permitted, is_requesting FROM staff ORDER BY name ASC'
     );
     res.json(result.rows);
   } catch (err) {
@@ -261,6 +265,39 @@ router.get('/permission/:id', async (req, res) => {
     res.json({ is_granted: result.rows[0].is_permitted });
   } catch (err) {
     res.status(500).json({ error: "Sync error" });
+  }
+});
+
+/**
+ * 10. UPDATE STAFF DETAILS (General)
+ * Fixes the 404 error for /api/staff/update/:id
+ */
+router.patch('/update/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, email, role, pin } = req.body;
+
+  try {
+    // We use COALESCE to keep existing values if a specific field isn't sent
+    const result = await pool.query(
+      `UPDATE staff 
+       SET name = COALESCE($1, name), 
+           email = COALESCE($2, email), 
+           role = COALESCE($3, role),
+           pin = COALESCE($4, pin)
+       WHERE id = $5 
+       RETURNING id, name, email, role`,
+      [name, email, role, pin, id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Staff member not found" });
+    }
+
+    console.log(`👤 STAFF UPDATED | ID: ${id} | Name: ${result.rows[0].name}`);
+    res.json({ success: true, staff: result.rows[0] });
+  } catch (err) {
+    console.error('Update Staff Error:', err.message);
+    res.status(500).json({ error: "Failed to update staff details" });
   }
 });
 

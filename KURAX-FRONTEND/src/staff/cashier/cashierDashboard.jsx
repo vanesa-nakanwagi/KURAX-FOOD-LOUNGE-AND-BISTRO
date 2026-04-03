@@ -1038,96 +1038,56 @@ export default function CashierDashboard() {
   );
 }
 
-// ─── LIVE ORDER CARD ──────────────────────────────────────────────────────────
-function LiveOrderCard({ order, onConfirm, onRequestApproval, onDelivery, isAnimating }) {
-  const age      = Math.floor((Date.now() - new Date(order.created_at)) / 60000);
-  const isOld    = age >= 5;
-  const isCredit = order.method === "Credit";
-  const { color, icon } = methodStyle(order.method);
-
+function LiveOrderCard({ order, onConfirm, onDelivery }) {
   return (
-    <div className={`bg-zinc-900/20 border border-white/5 rounded-[2.5rem] overflow-hidden transition-all duration-500
-      ${isOld    ? "border-orange-500/30 shadow-[0_0_20px_rgba(249,115,22,0.08)]" : ""}
-      ${isCredit ? "border-purple-500/20" : ""}
-      ${isAnimating ? "opacity-0 scale-90" : "opacity-100"}`}
-    >
-      {isOld && (
-        <div className="bg-orange-500 px-4 py-1.5 flex items-center justify-center gap-2">
-          <Clock size={11} className="text-black" />
-          <p className="text-[9px] font-black text-black uppercase tracking-widest">
-            Waiting {age}m — Action Needed
+    <div className="bg-zinc-900/40 border border-white/5 rounded-[2.5rem] p-6 hover:border-yellow-500/20 transition-all">
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <span className="text-[10px] font-black text-yellow-500 uppercase tracking-widest">
+            {order.table_name}
+          </span>
+          <h3 className="text-lg font-black text-white uppercase tracking-tighter">
+            Order #{order.id}
+          </h3>
+          <p className="text-zinc-500 text-[10px] font-bold uppercase mt-1">
+            Waiter: {order.waiter_name} • {timeAgo(order.created_at)}
           </p>
         </div>
-      )}
-      {isCredit && !isOld && (
-        <div className="bg-purple-500/20 border-b border-purple-500/20 px-4 py-1.5 flex items-center justify-center gap-2">
-          <BookOpen size={11} className="text-purple-400" />
-          <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest">
-            Credit — Requires Manager Approval
+        <div className="text-right">
+          <p className="text-xl font-black text-white italic tracking-tighter">
+            {Number(order.total).toLocaleString()} <span className="text-[10px] not-italic text-zinc-500">UGX</span>
           </p>
         </div>
-      )}
-      <div className="p-6 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-6">
-          <div className={`p-5 rounded-2xl bg-black border border-white/5 shadow-inner ${color}`}>{icon}</div>
-          <div>
-            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-              <h4 className="font-black text-white italic uppercase tracking-tighter text-base">
-                {order.table_name || "TABLE"}
-              </h4>
-              <span className="text-zinc-700 font-black">•</span>
-              <h4 className="font-black text-yellow-500 italic uppercase tracking-tighter text-base">
-                {order.label || `#${String(order.id).slice(-5)}`}
-              </h4>
-              {isCredit && order.credit_name && (
-                <span className="text-[9px] bg-purple-500/10 border border-purple-500/20 text-purple-400 px-2 py-0.5 rounded-lg font-black uppercase tracking-widest">
-                  {order.credit_name}
-                </span>
-              )}
+      </div>
+
+      {/* ─── ADD THIS SECTION TO SHOW ITEMS ─── */}
+      <div className="space-y-2 mb-6 bg-black/20 rounded-2xl p-4 border border-white/5">
+        <p className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-1">Items Summary</p>
+        {order.items && order.items.map((item, idx) => (
+          <div key={idx} className="flex justify-between items-center text-[11px]">
+            <div className="flex gap-2">
+              <span className="font-black text-yellow-500">{item.quantity}x</span>
+              <span className="text-zinc-300 font-bold uppercase">{item.name}</span>
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">STAFF: {order.requested_by}</p>
-              <div className="w-1 h-1 bg-zinc-700 rounded-full" />
-              <span className={`text-[10px] font-black uppercase tracking-widest ${color}`}>{order.method}</span>
-              <div className="w-1 h-1 bg-zinc-700 rounded-full" />
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{timeAgo(order.created_at)}</p>
-            </div>
+            <span className="text-zinc-600 italic text-[9px]">{item.station}</span>
           </div>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap justify-end">
-          <div className="text-right">
-            <p className="text-xl font-black text-white italic tracking-tighter">
-              UGX {Number(order.amount).toLocaleString()}
-            </p>
-            <span className={`text-[9px] font-black uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded ${color}`}>
-              {order.method}
-            </span>
-          </div>
-          {!isCredit && onDelivery && (
-            <button
-              onClick={onDelivery}
-              title="Send for delivery"
-              className="p-3 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all active:scale-95"
-            >
-              <Bike size={16} />
-            </button>
-          )}
-          {isCredit ? (
-            <button
-              onClick={onConfirm}
-              className="group bg-purple-500 text-white px-8 py-4 rounded-[1.5rem] text-[11px] font-black uppercase italic shadow-2xl shadow-purple-500/10 hover:bg-purple-400 transition-all active:scale-95 flex items-center gap-2"
-            >
-              <Send size={14} /> Request Approval
-            </button>
-          ) : (
-            <button
-              onClick={onConfirm}
-              className="group bg-yellow-500 text-black px-8 py-4 rounded-[1.5rem] text-[11px] font-black uppercase italic shadow-2xl shadow-yellow-500/10 hover:bg-yellow-400 transition-all active:scale-95 flex items-center gap-2"
-            >
-              Confirm <ArrowRightLeft size={14} className="group-hover:translate-x-1 transition-transform" />
-            </button>
-          )}
-        </div>
+        ))}
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex gap-3">
+        <button 
+          onClick={onConfirm}
+          className="flex-1 py-3 bg-white text-black font-black text-[10px] uppercase rounded-xl hover:bg-yellow-500 transition-all"
+        >
+          Process Payment
+        </button>
+        <button 
+          onClick={onDelivery}
+          className="p-3 bg-zinc-800 text-zinc-400 rounded-xl hover:text-orange-400 transition-all"
+        >
+          <Bike size={16} />
+        </button>
       </div>
     </div>
   );

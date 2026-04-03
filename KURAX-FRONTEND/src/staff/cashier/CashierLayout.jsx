@@ -38,24 +38,28 @@ export default function CashierLayout() {
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [endingShift, setEndingShift] = useState(false);
 
-  // ── Fetch Gross Sales ───────────────────────────────────────────────────────
-  const fetchGrossCash = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/orders/cashier-history`);
-      if (!res.ok) return;
-      const rows = await res.json();
-      const total = rows
-        .filter(r => r.status === "Confirmed" && r.method === "Cash")
-        .reduce((s, r) => s + Number(r.amount || 0), 0);
-      setGrossCash(total);
-    } catch (err) { console.error("Gross fetch error:", err); }
-  }, []);
-
-  useEffect(() => {
-    fetchGrossCash();
-    const id = setInterval(fetchGrossCash, 30000);
-    return () => clearInterval(id);
-  }, [fetchGrossCash]);
+ const fetchGrossCash = useCallback(async () => {
+  try {
+    // 1. Point to the correct endpoint
+    const res = await fetch(`${API_URL}/api/orders/cashier-queue`); 
+    if (!res.ok) return;
+    
+    const rows = await res.json();
+    
+    // 2. Filter using the correct field names: 'status', 'payment_method', and 'total'
+    const total = rows
+      .filter(r => 
+        // We count orders that are ready to be paid or already served
+        (r.status === "Served" || r.status === "Paid") && 
+        r.payment_method === "Cash"
+      )
+      .reduce((s, r) => s + Number(r.total || 0), 0);
+    
+    setGrossCash(total);
+  } catch (err) { 
+    console.error("Gross fetch error:", err); 
+  }
+}, []);
 
   // ── End Shift Handler ───────────────────────────────────────────────────────
   const handleEndShift = async () => {

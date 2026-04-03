@@ -1,135 +1,158 @@
-// ContactPage.jsx
 import React from 'react';
+import { motion } from 'framer-motion';
+import { MapPin, Navigation, Clock, Phone, Mail, Sparkles, ArrowUpRight } from 'lucide-react';
 
-// Custom components to handle the repetitive icon/text layout (unchanged)
-const VisitUs = ({ icon, title, content }) => {
-  // Styles based on the image: soft reddish-brown icon color and font styling
-  const iconColor = 'text-yellow-700'; 
-  const contentColor = 'text-gray-700';
-
+// --- Sharp Info Card Component ---
+const InfoCard = ({ icon: Icon, title, content, delay }) => {
   return (
-    <div className="flex items-start gap-4">
-      {/* Icon Circle */}
-      <div className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 ${iconColor}`}>
-        {icon}
-      </div>
-      
-      {/* Text Content */}
-      <div className="flex flex-col text-left">
-        <h3 className={`text-xl font-serif mb-1 ${iconColor}`}>{title}</h3>
-        {/* Render content as a React node to handle simple text or lists */}
-        <div className={`text-base ${contentColor}`}>
-          {content}
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.6, delay }}
+      whileHover={{ y: -5 }}
+      className="group relative p-6 bg-white dark:bg-white/5 backdrop-blur-xl border border-slate-200 dark:border-white/10 rounded-none shadow-sm hover:shadow-xl transition-all duration-500"
+    >
+      <div className="flex items-start gap-5">
+        <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-none bg-yellow-50 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-500 group-hover:bg-yellow-600 group-hover:text-white transition-all duration-500">
+          <Icon size={24} strokeWidth={1.5} />
+        </div>
+        
+        <div className="flex flex-col">
+          <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-yellow-700 dark:text-yellow-500 mb-2">
+            {title}
+          </h3>
+          <div className="text-slate-700 dark:text-zinc-300 font-light leading-relaxed">
+            {content}
+          </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
-// --- Main Page Component ---
 export default function ContactPage() {
-    
-  // Data for the location based on your input (Kyanja)
   const kuraxLocation = {
     address: 'Kyanja-Kisasi Rd, Opposite Pentagon',
     city: 'Kampala, Uganda',
     hours: 'Monday - Sunday: 8:00 AM - 1:00 AM',
     contact: {
-      phone: '+256 700 123 456', // Using phone from original footer
-      email: 'hello@kurax.ug', // Using email from original footer
+      phone: '+256 700 123 456',
+      email: 'hello@kurax.ug',
     },
-    // Updated Business Proximity to reflect the Kyanja location
     proximity: [
       '5 mins from Kyanja Market',
       '2 mins from Pentagon',
       '10 mins from Ntinda Town',
     ],
   };
-    
-  // SVG Icons (unchanged)
-  const LocationIcon = <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-4.97 0-9 4.03-9 9 0 6.63 7.6 14.15 8.78 15.15l.22.2c.16.14.36.21.57.21s.41-.07.57-.21l.22-.2c1.18-1 8.78-8.52 8.78-15.15 0-4.97-4.03-9-9-9zm0 12c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/></svg>;
-  const ProximityIcon = <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 rotate-90" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12l-18 12v-24l18 12z"/></svg>;
-  const HoursIcon = <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-5.523 0-10 4.477-10 10s4.477 10 10 10 10-4.477 10-10-4.477-10-10-10zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm-1-14h2v6h-2v-6zm0 8h2v2h-2v-2z"/></svg>;
 
-  // Google Maps Iframe Embed Source for Kyanja, Kisasi Rd, Kampala
-  // NOTE: I am using the standard Google Maps embed URL. This should be verified on a live site.
-  const mapEmbedUrl = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3989.7245659521773!2d32.58999677379755!3d0.3927875639068974!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x177db1ab7be5202b%3A0x55dcbff7cac98cf9!2sKurax%20Foods!5e0!3m2!1sen!2sug!4v1768804364287!5m2!1sen!2sug" ;
+  // --- UPDATED MAP URL ---
+  const mapEmbedUrl = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3989.7245659521773!2d32.58999677379755!3d0.3927875639068974!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x177db1ab7be5202b%3A0x55dcbff7cac98cf9!2sKurax%20Foods!5e0!3m2!1sen!2sug!4v1768804364287!5m2!1sen!2sug";
 
   return (
-    // Main container with soft off-white background
-    <div className="bg-stone-50 min-h-screen py-16 px-4 sm:px-8 md:px-16 font-[Outfit]">
-      <div className="max-w-6xl mx-auto">
+    <section className="relative bg-stone-50 dark:bg-[#030303] min-h-screen py-24 px-6 transition-colors duration-500 font-['Outfit'] overflow-hidden">
+      
+      {/* Background Glow */}
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+        <div className="absolute top-[10%] left-[-5%] w-[40%] h-[40%] bg-yellow-500/5 dark:bg-yellow-500/10 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[10%] right-[-5%] w-[30%] h-[30%] bg-yellow-600/5 dark:bg-yellow-600/10 blur-[100px] rounded-full" />
+      </div>
 
-        {/* ================= VISIT US (Location & Hours) ================= */}
-        <section className="mb-16 text-center">
-          <h1 className="text-4xl sm:text-5xl font-serif text-gray-800 mb-2">
-            Visit Us
+      <div className="max-w-7xl mx-auto relative z-10">
+        
+        {/* Header */}
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-20"
+        >
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <div className="h-[1px] w-8 bg-yellow-600" />
+            <p className="text-yellow-600 dark:text-yellow-500 font-bold tracking-[0.4em] text-xs uppercase flex items-center gap-2">
+              <Sparkles size={14} /> Plan a Visit
+            </p>
+            <div className="h-[1px] w-8 bg-yellow-600" />
+          </div>
+          
+          <h1 className="text-5xl md:text-7xl font-serif font-bold text-slate-900 dark:text-white mb-6">
+            Find Us in <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 italic">Kyanja</span>
           </h1>
-          <p className="text-gray-600 max-w-xl mx-auto mb-12">
-            Located in the heart of Kyanja, right opposite Pentagon
-          </p>
+        </motion.div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center text-left">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-start">
+          
+          {/* --- 🗺️ LEFT: SHARP MAP CONTAINER --- */}
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.98 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            className="relative group"
+          >
+            <div className="absolute -inset-4 border border-yellow-600/20 rounded-none -z-10 group-hover:border-yellow-600/40 transition-colors duration-700" />
             
-            {/* Left: ACTUAL Google Maps Embed */}
-            <div className="rounded-xl overflow-hidden shadow-2xl h-96">
+            <div className="relative h-[500px] md:h-[650px] rounded-none overflow-hidden shadow-2xl border border-white/10 bg-zinc-900">
               <iframe
                 src={mapEmbedUrl}
                 width="100%"
                 height="100%"
-                style={{ border: 0 }}
+                style={{ border: 0, filter: 'grayscale(0.3) contrast(1.1)' }}
                 allowFullScreen=""
                 loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                aria-label="Google Map showing location of Kurax on Kyanja-Kisasi Road, Kampala"
+                title="Kurax Location Map"
+                className="transition-transform duration-[2s] group-hover:scale-105"
               ></iframe>
-            </div>
-            
-            {/* Right: Location Details */}
-            <div className="space-y-8">
               
-              {/* Address */}
-              <VisitUs
-                icon={LocationIcon}
-                title="Address"
-                content={
-                  <>
-                    <p>{kuraxLocation.address}</p>
-                    <p>{kuraxLocation.city}</p>
-                  </>
-                }
-              />
-
-              {/* Business Proximity */}
-              <VisitUs
-                icon={ProximityIcon}
-                title="Business Proximity"
-                content={
-                  <ul className="list-disc list-inside space-y-1 text-sm">
-                    {kuraxLocation.proximity.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                }
-              />
-
-              {/* Hours */}
-              <VisitUs
-                icon={HoursIcon}
-                title="Hours"
-                content={
-                  <>
-                    <p>{kuraxLocation.hours}</p>
-                    <p className="font-bold">{kuraxLocation.sunday}</p>
-                  </>
-                }
-              />
+              <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
+              
+              <a 
+                href={mapEmbedUrl} 
+                target="_blank" 
+                rel="noreferrer"
+                className="absolute bottom-8 right-8 flex items-center gap-3 px-8 py-5 bg-yellow-600 text-black font-black text-xs uppercase tracking-widest rounded-none shadow-xl hover:bg-yellow-500 transition-all"
+              >
+                Get Directions <ArrowUpRight size={18} />
+              </a>
             </div>
-          </div>
-        </section>
+          </motion.div>
+          
+          {/* --- 🧱 RIGHT: INFO CARDS --- */}
+          <div className="grid grid-cols-1 gap-6">
+            <InfoCard 
+              icon={MapPin} 
+              title="Location" 
+              delay={0.2}
+              content={<p className="text-lg">{kuraxLocation.address}, <br /> {kuraxLocation.city}</p>}
+            />
 
-        
+            <InfoCard 
+              icon={Navigation} 
+              title="Proximity" 
+              delay={0.3}
+              content={
+                <ul className="space-y-2">
+                  {kuraxLocation.proximity.map((item, i) => (
+                    <li key={i} className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-none bg-yellow-600" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              }
+            />
+
+            <InfoCard 
+              icon={Clock} 
+              title="Opening Hours" 
+              delay={0.4}
+              content={<p className="text-lg font-medium">{kuraxLocation.hours}</p>}
+            />
+
+          
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

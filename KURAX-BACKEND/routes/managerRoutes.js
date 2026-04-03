@@ -46,29 +46,33 @@ router.get('/floor-monitor', async (req, res) => {
   }
 });
 
-// 3. DYNAMIC TARGET PROGRESS
-// Pulls the actual goal set by the Director from the database
 router.get('/target-progress', async (req, res) => {
   try {
     const monthKey = new Date().toISOString().substring(0, 7);
     
     const query = `
       SELECT 
-        (SELECT COALESCE(SUM(total), 0) FROM orders WHERE timestamp >= date_trunc('month', CURRENT_DATE) AND is_archived = true) AS current_total,
+        (SELECT COALESCE(SUM(total), 0) FROM orders 
+         WHERE timestamp >= date_trunc('month', CURRENT_DATE) 
+         AND status IN ('Paid', 'Closed')) AS current_total,
         (SELECT revenue_goal FROM business_targets WHERE month_key = $1) AS target_goal
     `;
     const result = await pool.query(query, [monthKey]);
     
+    // Fallback to 6,000,000 if the database row doesn't exist yet
+    const targetGoal = result.rows[0].target_goal ? parseFloat(result.rows[0].target_goal) : 6000000;
     const currentTotal = parseFloat(result.rows[0].current_total || 0);
-    const targetGoal = parseFloat(result.rows[0].target_goal || 6000000); // Default to 6M if not set
     
+    const percentage = targetGoal > 0 ? ((currentTotal / targetGoal) * 100).toFixed(2) : 0;
+
     res.json({
       target: targetGoal,
       current: currentTotal,
-      percentage: targetGoal > 0 ? ((currentTotal / targetGoal) * 100).toFixed(2) : 0
+      percentage: parseFloat(percentage)
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Target Progress Crash:", err.message);
+    res.status(500).json({ error: "Check if business_targets table exists in DB." });
   }
 });
 

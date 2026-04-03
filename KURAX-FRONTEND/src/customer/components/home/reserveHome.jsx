@@ -1,6 +1,7 @@
 import React from 'react';
+import { motion } from "framer-motion";
 import diningImage from '../../assets/images/dining.jpg'; 
-import { Users, DoorClosed, Briefcase, ArrowRight } from "lucide-react"; // ADDED ArrowRight
+import { Users, DoorClosed, Briefcase, ArrowRight, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const Reserve = () => {
@@ -28,65 +29,133 @@ const Reserve = () => {
     },
   ];
 
+  const staggerContainer = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.2 }
+    }
+  };
+
+  const fadeInUp = {
+    hidden: { opacity: 0, y: 30 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } }
+  };
+
   return (
-    <div className="bg-gray-100 text-black font-['Outfit'] py-16"> 
-      <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-10 px-5">
-        
-        {/* Left Image Panel */}
-        <div className="relative flex-1 overflow-hidden rounded-none">
-          <img
-            src={diningImage}
-            alt="Elegant corporate dining room"
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 flex items-end justify-center p-4 sm:p-6 bg-black/10">
-            <p className="text-center text-sm sm:text-base md:text-lg lg:text-xl font-semibold text-white/90 px-3 sm:px-4 py-2 rounded max-w-full md:max-w-[90%]">
-              "Where Business Meets Elegance"
-            </p>
-          </div>
-        </div>
+    <section className="relative w-full py-24 md:py-32 overflow-hidden bg-white dark:bg-[#030303] transition-colors duration-500 font-['Outfit']">
+      
+      {/* --- 💡 LUXURY BACKGROUND GLOW --- */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full pointer-events-none overflow-hidden">
+        <div className="absolute top-[20%] right-[-10%] w-96 h-96 bg-yellow-500/5 dark:bg-yellow-500/10 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[20%] left-[-10%] w-96 h-96 bg-yellow-600/5 dark:bg-yellow-600/10 blur-[120px] rounded-full" />
+      </div>
 
-        {/* Right Text Panel */}
-        <div className="flex-1 flex flex-col justify-center pt-5 lg:pt-0 min-h-[300px] lg:min-h-[450px]">
-          <p className="text-lg tracking-widest uppercase text-yellow-900 mb-2">
-            DINING AND RESERVATIONS
-          </p>
-          <h2 className="text-4xl font-extrabold leading-tight mb-5">
-            Executive Dining & Private Events
-          </h2>
+      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12">
+        <div className="flex flex-col lg:flex-row gap-16 lg:gap-24 items-center">
           
-          <p className="text-base leading-relaxed text-gray-900 mb-8">
-            Kurax provides the ideal setting for business professionals seeking a 
-            refined atmosphere for meetings, networking, and corporate events.
-          </p>
+          {/* --- 🖼️ LEFT IMAGE PANEL (SHARP EDGES) --- */}
+          <motion.div 
+            initial={{ opacity: 0, x: -50 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            className="relative flex-1 group"
+          >
+            {/* Sharp Decorative Gold Frame */}
+            <div className="absolute -inset-3 border border-yellow-600/20 rounded-none -z-10 group-hover:border-yellow-600/40 transition-colors duration-700" />
+            
+            {/* Sharp Container */}
+            <div className="relative aspect-[4/5] rounded-none overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.4)]">
+              <motion.img
+                whileHover={{ scale: 1.05 }}
+                transition={{ duration: 1.5 }}
+                src={diningImage}
+                alt="Elegant corporate dining room"
+                className="w-full h-full object-cover rounded-none"
+              />
+              
+              {/* Cinematic Overlay */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-80" />
 
-          <div className="mb-10">
-            {features.map((feature, index) => (
-              <div className="flex items-start py-5" key={index}>
-                <div className="flex items-center justify-center w-10 h-10 mr-4 border border-yellow-700/40 rounded-lg bg-yellow-700/5">
-                  <feature.icon className="w-5 h-5 text-yellow-700" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold mb-1">{feature.title}</h3>
-                  <p className="text-sm text-gray-900">{feature.description}</p>
+              {/* Glassmorphism Caption (Sharp) */}
+              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[85%]">
+                <div className="bg-white/10 dark:bg-black/30 backdrop-blur-xl border border-white/10 p-6 rounded-none text-center shadow-2xl">
+                  <p className="text-white text-lg md:text-xl font-serif italic tracking-wide">
+                    "Where Business Meets Elegance"
+                  </p>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          </motion.div>
 
-          {/* DESIGNED TO MATCH EXPLORE MENU/EVENTS BUTTON */}
-          <div className="mt-4">
-            <button 
-              onClick={goToReserve} 
-              className="inline-flex items-center gap-3 px-10 py-4 border-2 border-yellow-400 text-zinc-900 dark:text-zinc-900 font-bold uppercase tracking-[0.2em] text-[15px] hover:bg-yellow-400 hover:text-black transition-all rounded-none group"
-            >
-              RESERVE TABLE
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-            </button>
-          </div>
+          {/* --- 📝 RIGHT TEXT PANEL --- */}
+          <motion.div 
+            variants={staggerContainer}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            className="flex-1 space-y-10"
+          >
+            <motion.div variants={fadeInUp} className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="h-[1px] w-8 bg-yellow-600" />
+                <span className="text-sm font-bold tracking-[0.4em] text-yellow-600 uppercase flex items-center gap-2">
+                   Dining & Reservations
+                </span>
+              </div>
+              <h2 className="text-4xl md:text-6xl font-serif font-bold leading-[1.1] text-slate-900 dark:text-white">
+                Executive <br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 italic">
+                  Private Dining
+                </span>
+              </h2>
+              <p className="text-lg text-slate-500 dark:text-zinc-400 font-light leading-relaxed max-w-lg">
+                Kurax provides the ideal setting for business professionals seeking a 
+                refined atmosphere for high-stakes meetings and elite celebrations.
+              </p>
+            </motion.div>
+
+            {/* --- FEATURES LIST --- */}
+            <motion.div variants={fadeInUp} className="space-y-8">
+              {features.map((feature, index) => (
+                <motion.div 
+                  key={index}
+                  whileHover={{ x: 10 }}
+                  className="flex items-start gap-6 group cursor-default"
+                >
+                  {/* Sharp Icon Container */}
+                  <div className="flex-shrink-0 w-14 h-14 bg-yellow-50 dark:bg-white/5 border border-yellow-200 dark:border-white/10 rounded-none flex items-center justify-center transition-all duration-500 group-hover:bg-yellow-600 group-hover:border-yellow-600">
+                    <feature.icon className="w-6 h-6 text-yellow-700 dark:text-yellow-500 group-hover:text-white transition-colors duration-500" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
+                      {feature.title}
+                    </h3>
+                    <p className="text-sm text-slate-500 dark:text-zinc-400 font-light leading-relaxed">
+                      {feature.description}
+                    </p>
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+
+            {/* --- LUXURY CTA BUTTON --- */}
+            <motion.div variants={fadeInUp} className="pt-6">
+              <button 
+                onClick={goToReserve} 
+                className="relative overflow-hidden group inline-flex items-center gap-4 px-12 py-5 bg-yellow-600 text-black font-black uppercase tracking-[0.2em] text-xs rounded-none shadow-lg hover:bg-yellow-500 transition-all duration-500"
+              >
+                <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+                RESERVE A TABLE
+                <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-2" />
+              </button>
+            </motion.div>
+          </motion.div>
+          
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 

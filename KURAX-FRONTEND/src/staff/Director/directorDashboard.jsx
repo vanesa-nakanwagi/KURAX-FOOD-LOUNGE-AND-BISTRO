@@ -25,7 +25,7 @@ import Footer       from "../../customer/components/common/Foooter";
 import API_URL      from "../../config/api";
 
 const NAV = [
-  { icon: <LayoutDashboard size={18} />, label: "Overview",  tab: "OVERVIEW"  },
+  { icon: <LayoutDashboard size={18} />, label: "Dahboard",  tab: "OVERVIEW"  },
   { icon: <Users size={18} />,           label: "Staff",     tab: "STAFF"     },
   { icon: <BarChart3 size={18} />,       label: "Finances & Credits",  tab: "FINANCES"  },
   { icon: <History size={18} />,         label: "History",   tab: "HISTORY"   },

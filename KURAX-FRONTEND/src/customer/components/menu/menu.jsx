@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, Sparkles } from "lucide-react";
+import { motion } from "framer-motion";
 import CartModal from "./cart/CartModal.jsx";
 import TopSection from "../common/topSection.jsx";
 import { useCart } from "../context/CartContext.jsx";
@@ -8,67 +9,77 @@ import { getImageSrc } from "../../../utils/imageHelper.js";
 import API_URL from "../../../config/api";
 
 /* =========================
-   IMPROVED MENU CARD COMPONENT
+   CONSISTENT MENU CARD COMPONENT
 ========================= */
 function MenuCard({ item, onOrder, isNew }) {
   const [imgLoaded, setImgLoaded] = useState(false);
+  const imageUrl = item.image_url?.startsWith('http') 
+    ? item.image_url 
+    : `${API_URL}${item.image_url}`;
 
   return (
-    <div className="group relative bg-white dark:bg-[#111111] rounded-[2rem] overflow-hidden flex flex-col h-full transition-all duration-500 hover:-translate-y-1 border border-zinc-100 dark:border-zinc-800 shadow-sm hover:shadow-xl">
+    <div className="group relative flex flex-col bg-white dark:bg-[#0A0A0A] rounded-[2.5rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
       
-      {/* NEW BADGE: Slimmer & Sparkly */}
+      {/* NEW BADGE: Consistent with Signature Cards */}
       {isNew && (
-        <div className="absolute top-3 right-3 z-30 bg-yellow-400 text-black text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1 uppercase tracking-widest border border-white/10">
-          <Sparkles size={8} fill="black" />
-          NEW
+        <div className="absolute top-4 left-4 z-30">
+          <div className="bg-yellow-500 text-white text-[8px] font-black px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
+            <Sparkles size={8} /> NEW
+          </div>
         </div>
       )}
 
       {/* IMAGE CONTAINER */}
-      <div className="relative h-44 md:h-48 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
+      <div className="relative h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
         {!imgLoaded && (
           <div className="absolute inset-0 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
         )}
         <img
-          src={item.image_url?.startsWith('http') ? item.image_url : `${API_URL}${item.image_url}`} 
+          src={imageUrl}
           alt={item.name}
           onLoad={() => setImgLoaded(true)}
-          className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${
+          className={`w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 ${
             imgLoaded ? "opacity-100" : "opacity-0"
           }`}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
       </div>
 
-      {/* CONTENT SECTION - Left Aligned & Scaled Down */}
-      <div className="p-4 md:p-5 flex-1 flex flex-col items-start text-left">
-        
-        {/* TITLE & PRICE ROW - min-h keeps rows aligned */}
-        <div className="w-full flex justify-between items-start gap-2 mb-2 min-h-[2.5rem]">
-          <h4 className="text-sm md:text-base font-medium text-zinc-900 dark:text-white leading-tight uppercase tracking-tight flex-1">
+      {/* CONTENT SECTION */}
+      <div className="p-6 flex-1 flex flex-col justify-between">
+        <div className="space-y-2 text-left">
+          <h4 className="text-lg font-serif  text-zinc-900 dark:text-white uppercase tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
             {item.name}
           </h4>
-          <div className="text-right shrink-0">
-            <span className="text-sm md:text-base text-yellow-500 font-black tracking-tighter">
-              {Number(item.price).toLocaleString()}
-            </span>
-            <div className="text-[7px] font-bold text-zinc-400 uppercase -mt-1">UGX</div>
-          </div>
+          <p className="text-zinc-500 dark:text-zinc-400 text-[11px] font-light leading-relaxed line-clamp-2 italic">
+            {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
+          </p>
         </div>
 
-        {/* DESCRIPTION - Fixed height prevents card layout break */}
-        <p className="text-[11px] md:text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-snug mb-4 font-normal h-8 overflow-hidden">
-          {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
-        </p>
+        {/* INTERACTION BAR (Button Left | Price Right) */}
+        <div className="flex items-center justify-between pt-5 mt-4 border-t border-zinc-50 dark:border-zinc-800/50">
+          
+          {/* ACTION: ORDER BUTTON WITH PLUS ICON */}
+          <button
+            onClick={() => onOrder(item)}
+            className="group/btn flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
+          >
+            {/* Plus Icon adds a clear 'Add' intent */}
+            <Plus size={14} strokeWidth={3} className="transition-transform group-hover/btn:rotate-90" />
+            Order Now
+          </button>
 
-        {/* BUTTON - Stays at bottom */}
-        <button
-          onClick={() => onOrder(item)}
-          className="mt-auto w-full py-2.5 rounded-xl bg-[#FFD700] hover:bg-[#FFC800] text-black text-[9px] font-black uppercase tracking-[0.15em] flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm"
-        >
-          <Plus size={12} strokeWidth={4} />
-          Add to Order
-        </button>
+          {/* DISPLAY: PRICE */}
+          <div className="text-right">
+            <span className="block text-xl  text-zinc-900 dark:text-white tracking-tighter leading-none">
+              {Number(item.price).toLocaleString()}
+            </span>
+            <span className="text-[9px] text-yellow-600 font-bold uppercase tracking-widest leading-none">
+              UGX
+            </span>
+          </div>
+          
+        </div>
       </div>
     </div>
   );
@@ -133,7 +144,10 @@ export default function Menu() {
               >
                 {cat}
                 {selectedCategory === cat && (
-                  <span className="absolute bottom-0 left-0 w-full h-[3px] bg-yellow-500 rounded-full" />
+                  <motion.span 
+                    layoutId="underline"
+                    className="absolute bottom-0 left-0 w-full h-[3px] bg-yellow-500 rounded-full" 
+                  />
                 )}
               </button>
             ))}
@@ -146,7 +160,7 @@ export default function Menu() {
         <div className="flex flex-row items-center justify-between gap-2 border-b border-zinc-100 dark:border-zinc-900 pb-8">
           <div className="flex items-center gap-2 md:gap-3">
             <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
-            <h2 className="text-lg md:text-2xl font-medium uppercase tracking-widest whitespace-nowrap">
+            <h2 className="text-lg md:text-2xl font-serif font-bold uppercase tracking-widest whitespace-nowrap">
               Explore Menu
             </h2>
           </div>
@@ -166,7 +180,7 @@ export default function Menu() {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-64 bg-zinc-100 dark:bg-zinc-900 rounded-[2rem] animate-pulse" />
+              <div key={i} className="h-64 bg-zinc-100 dark:bg-zinc-900 rounded-[2.5rem] animate-pulse" />
             ))}
           </div>
         ) : filteredMenus.length === 0 ? (

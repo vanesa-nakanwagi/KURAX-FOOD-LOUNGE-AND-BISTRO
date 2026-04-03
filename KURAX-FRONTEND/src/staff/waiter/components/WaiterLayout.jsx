@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import NewOrder from "./NewOrder";
 import OrderHistory from "./OrderHistory";
-import ManageTables from "./ManageTables"; // 1. Import the new component
+import ManageTables from "./ManageTables";
 import Sidebar from "./Sidebar";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData } from "../../../customer/components/context/DataContext";
@@ -27,7 +27,7 @@ export default function WaiterLayout() {
   // 2. NAVIGATION & SHARED STATE
   const [activeTab, setActiveTab] = useState("order");
   
-  // These states will allow ManageTables to "push" data into NewOrder
+  // These states allow ManageTables / OrderHistory to "push" data into NewOrder
   const [selectedTableData, setSelectedTableData] = useState(null);
 
   // 3. HANDLERS
@@ -36,7 +36,7 @@ export default function WaiterLayout() {
     navigate("/staff/login");
   };
 
-  // This function bridges ManageTables -> NewOrder
+  // This function bridges ManageTables / OrderHistory -> NewOrder
   const handleEditTable = (tableInfo) => {
     setSelectedTableData(tableInfo); // Pass the table name and existing items
     setActiveTab("order");           // Switch view
@@ -57,7 +57,7 @@ export default function WaiterLayout() {
       {/* ── MAIN CONTENT ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         
-        {/* HEADER */}
+        {/* HEADER 
         <header className={`flex items-center justify-between px-6 py-4 border-b ${
           theme === "dark" ? "bg-zinc-950/50 border-white/5" : "bg-white border-black/5"
         }`}>
@@ -77,7 +77,7 @@ export default function WaiterLayout() {
                 {firstName}
             </span>
           </div>
-        </header>
+        </header>*/}
 
         {/* VIEW SWITCHER */}
         <main className="flex-1 overflow-y-auto custom-scrollbar">
@@ -89,7 +89,8 @@ export default function WaiterLayout() {
           )}
 
           {activeTab === "manage" && (
-             <OrderHistory />
+            // ── FIXED: pass onAddItems so OrderHistory can bridge back to NewOrder ──
+            <OrderHistory onAddItems={handleEditTable} />
           )}
 
           {activeTab === "tables" && (
