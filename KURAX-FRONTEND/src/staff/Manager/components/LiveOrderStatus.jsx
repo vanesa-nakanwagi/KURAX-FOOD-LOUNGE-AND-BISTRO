@@ -4,7 +4,7 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 import {
   AlertCircle, CheckCircle2, Clock, SearchX,
   Banknote, Timer, User, XCircle, ChefHat,
-  BookOpen, Phone, Calendar, CheckCircle
+  BookOpen, Phone, Calendar, CheckCircle, Hourglass
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
@@ -91,14 +91,11 @@ export default function LiveOrderStatus() {
   }, []);
 
   // ── Credits ledger — current month only, polls every 30s ─────────────────
-  // Persists across day-close (not filtered by day_cleared).
-  // Clears automatically at month-end when getCurrentMonth() changes.
-  // Each row has a status field: "outstanding" or "settled" (set by accountant).
   const [creditsLedger, setCreditsLedger] = useState([]);
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/orders/credits`);
+        const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
         if (!res.ok) return;
         const all = await res.json();
         const thisMonth = getCurrentMonth();
@@ -115,10 +112,7 @@ export default function LiveOrderStatus() {
     return () => clearInterval(id);
   }, []);
 
-  // ── voidedLedger — approved void_requests for today, persists after day_cleared ──
-  // After accountant closes the day, orders get day_cleared=true and disappear
-  // from todayOrders. The voidedLedger polls void_requests directly so the
-  // Voided pill count + list stays intact even after day-close.
+  // ── voidedLedger — approved void_requests for today ──────────────────────
   const [voidedLedger, setVoidedLedger] = useState([]);
   useEffect(() => {
     const load = async () => {
@@ -127,7 +121,6 @@ export default function LiveOrderStatus() {
         const res = await fetch(`${API_URL}/api/orders/void-requests`);
         if (!res.ok) return;
         const rows = await res.json();
-        // Keep only approved voids from today
         setVoidedLedger(
           rows.filter(r => {
             const isApproved =
@@ -179,11 +172,31 @@ export default function LiveOrderStatus() {
   const delayedOrders  = useMemo(() => todayOrders.filter(o => categorize(o) === "Delayed"),  [todayOrders]);
   const closedOrders   = useMemo(() => todayOrders.filter(o => categorize(o) === "Closed"),   [todayOrders]);
   const voidedOrders   = useMemo(() => todayOrders.filter(o => categorize(o) === "Voided"),   [todayOrders]);
-  // Credited: use the credits ledger (current month) so it persists across day-close
-  const creditedOrders = useMemo(() => creditsLedger, [creditsLedger]);
 
-  // Voided count: take the larger of the two sources so it never drops to 0
-  // after day-close (voidedLedger persists; voidedOrders disappears when day_cleared).
+  // FIXED: Credits with proper status filtering
+  // Statuses: 
+  // - PendingCashier: waiting for cashier to forward
+  // - PendingManagerApproval: waiting for manager approval
+  // - Approved: approved by manager, awaiting payment
+  // - FullySettled: paid in full
+  // - PartiallySettled: partially paid
+  // - Rejected: rejected by manager or cashier
+  const pendingCashier = creditsLedger.filter(c => c.status === "PendingCashier");
+  const pendingManager = creditsLedger.filter(c => c.status === "PendingManagerApproval");
+  const approved = creditsLedger.filter(c => c.status === "Approved");
+  const settled = creditsLedger.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled");
+  const rejected = creditsLedger.filter(c => c.status === "Rejected");
+
+  const totalPendingCashier = pendingCashier.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const totalPendingManager = pendingManager.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const totalApproved = approved.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const totalSettled = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
+  const totalRejected = rejected.reduce((s, c) => s + Number(c.amount || 0), 0);
+
+  // For display in the Credits tab - show all non-settled, non-rejected credits
+  const displayCredits = [...pendingCashier, ...pendingManager, ...approved, ...settled];
+  const rejectedCredits = rejected;
+
   const voidedCount = Math.max(voidedOrders.length, voidedLedger.length);
 
   const counts = {
@@ -191,18 +204,15 @@ export default function LiveOrderStatus() {
     Delayed:  delayedOrders.length,
     Closed:   closedOrders.length,
     Voided:   voidedCount,
-    Credited: creditedOrders.length,
+    Credited: displayCredits.length,
   };
 
-  // For Voided: merge live voidedOrders + ledger-only rows that aren't in live orders.
-  // De-dupe by order id so no row appears twice.
+  // For Voided: merge live voidedOrders + ledger-only rows
   const mergedVoidedDisplay = useMemo(() => {
     const liveIds = new Set(voidedOrders.map(o => String(o.id || o.order_id)));
-    // ledger rows that don't have a matching live order
     const ledgerExtra = voidedLedger
       .filter(r => !liveIds.has(String(r.order_id || r.id)))
       .map(r => ({
-        // normalise ledger row to look like an order for OrderStatusCard
         id:         r.order_id || r.id,
         table_name: r.table_name || r.table,
         staff_name: r.waiter_name || r.requested_by,
@@ -220,7 +230,7 @@ export default function LiveOrderStatus() {
     filter === "Open"     ? openOrders          :
     filter === "Delayed"  ? delayedOrders        :
     filter === "Voided"   ? mergedVoidedDisplay  :
-    filter === "Credited" ? []                   : // Credits use a separate panel
+    filter === "Credited" ? []                   :
     closedOrders;
 
   const TABS = [
@@ -275,9 +285,18 @@ export default function LiveOrderStatus() {
         })}
       </div>
 
-      {/* CREDITS PANEL */}
+      {/* CREDITS PANEL - FIXED WITH PROPER STATUS FILTERING */}
       {filter === "Credited" ? (
-        <CreditsPanel credits={creditedOrders} isDark={isDark} />
+        <CreditsPanel 
+          credits={displayCredits} 
+          rejectedCredits={rejectedCredits}
+          pendingCashierCount={pendingCashier.length}
+          pendingManagerCount={pendingManager.length}
+          approvedCount={approved.length}
+          settledCount={settled.length}
+          rejectedCount={rejected.length}
+          isDark={isDark} 
+        />
       ) : (
         /* ORDERS LIST */
         <div className="space-y-3 md:space-y-4">
@@ -315,15 +334,21 @@ export default function LiveOrderStatus() {
   );
 }
 
-// ─── CREDITS PANEL ────────────────────────────────────────────────────────────
-function CreditsPanel({ credits, isDark }) {
-  const outstanding = credits.filter(c => !c.paid && !c.settled && c.status !== "settled");
-  const settled     = credits.filter(c =>  c.paid ||  c.settled || c.status === "settled");
+// ─── CREDITS PANEL - FIXED WITH PROPER STATUS DISPLAY ────────────────────────────
+function CreditsPanel({ credits, rejectedCredits, pendingCashierCount, pendingManagerCount, approvedCount, settledCount, rejectedCount, isDark }) {
+  // Separate credits by status
+  const pendingCashier = credits.filter(c => c.status === "PendingCashier");
+  const pendingManager = credits.filter(c => c.status === "PendingManagerApproval");
+  const approved = credits.filter(c => c.status === "Approved");
+  const settled = credits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled");
+  
+  const totalPendingCashier = pendingCashier.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const totalPendingManager = pendingManager.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const totalApproved = approved.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const totalSettled = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
+  const totalRejected = rejectedCredits.reduce((s, c) => s + Number(c.amount || 0), 0);
 
-  const totalOut = outstanding.reduce((s, c) => s + Number(c.amount || 0), 0);
-  const totalSet = settled.reduce((s, c)     => s + Number(c.amount || 0), 0);
-
-  if (credits.length === 0) {
+  if (credits.length === 0 && rejectedCredits.length === 0) {
     return (
       <div className="py-24 flex flex-col items-center justify-center opacity-20">
         <BookOpen size={48} strokeWidth={1} />
@@ -339,91 +364,195 @@ function CreditsPanel({ credits, isDark }) {
 
   return (
     <div className="space-y-5">
-      {/* Summary tiles */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className={`rounded-2xl border p-4 ${isDark ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50 border-purple-100"}`}>
-          <p className="text-[8px] font-black uppercase tracking-widest text-purple-400 mb-1">Outstanding</p>
-          <p className="text-xl font-black text-purple-400">UGX {totalOut.toLocaleString()}</p>
-          <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            {outstanding.length} unpaid
-          </p>
-        </div>
-        <div className={`rounded-2xl border p-4 ${isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"}`}>
-          <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400 mb-1">Settled</p>
-          <p className="text-xl font-black text-emerald-400">UGX {totalSet.toLocaleString()}</p>
-          <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            {settled.length} cleared
-          </p>
-        </div>
+      {/* Summary tiles - 5 columns for all statuses */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {pendingCashier.length > 0 && (
+          <div className={`rounded-2xl border p-4 ${isDark ? "bg-yellow-500/5 border-yellow-500/20" : "bg-yellow-50 border-yellow-100"}`}>
+            <p className="text-[8px] font-black uppercase tracking-widest text-yellow-400 mb-1">Wait for Cashier</p>
+            <p className="text-xl font-black text-yellow-400">UGX {totalPendingCashier.toLocaleString()}</p>
+            <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              {pendingCashier.length} pending
+            </p>
+          </div>
+        )}
+        
+        {pendingManager.length > 0 && (
+          <div className={`rounded-2xl border p-4 ${isDark ? "bg-orange-500/5 border-orange-500/20" : "bg-orange-50 border-orange-100"}`}>
+            <p className="text-[8px] font-black uppercase tracking-widest text-orange-400 mb-1">Wait for Manager</p>
+            <p className="text-xl font-black text-orange-400">UGX {totalPendingManager.toLocaleString()}</p>
+            <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              {pendingManager.length} pending
+            </p>
+          </div>
+        )}
+        
+        {approved.length > 0 && (
+          <div className={`rounded-2xl border p-4 ${isDark ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50 border-purple-100"}`}>
+            <p className="text-[8px] font-black uppercase tracking-widest text-purple-400 mb-1">Approved</p>
+            <p className="text-xl font-black text-purple-400">UGX {totalApproved.toLocaleString()}</p>
+            <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              {approved.length} approved
+            </p>
+          </div>
+        )}
+        
+        {settled.length > 0 && (
+          <div className={`rounded-2xl border p-4 ${isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"}`}>
+            <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400 mb-1">Settled</p>
+            <p className="text-xl font-black text-emerald-400">UGX {totalSettled.toLocaleString()}</p>
+            <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              {settled.length} paid
+            </p>
+          </div>
+        )}
+        
+        {rejectedCredits.length > 0 && (
+          <div className={`rounded-2xl border p-4 ${isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"}`}>
+            <p className="text-[8px] font-black uppercase tracking-widest text-red-400 mb-1">Rejected</p>
+            <p className="text-xl font-black text-red-400">UGX {totalRejected.toLocaleString()}</p>
+            <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              {rejectedCredits.length} rejected
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Outstanding list */}
-      {outstanding.length > 0 && (
+      {/* Pending Cashier Section */}
+      {pendingCashier.length > 0 && (
         <div className="space-y-2">
-          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            Outstanding · {outstanding.length}
-          </p>
-          {outstanding.map((c, i) => <CreditLedgerRow key={i} credit={c} isDark={isDark} isSettled={false}/>)}
+          <div className="flex items-center gap-2">
+            <Hourglass size={10} className="text-yellow-400" />
+            <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              Wait for Cashier · {pendingCashier.length}
+            </p>
+          </div>
+          {pendingCashier.map((c, i) => <CreditLedgerRow key={i} credit={c} isDark={isDark} status="pendingCashier"/>)}
         </div>
       )}
 
-      {/* Settled list */}
+      {/* Pending Manager Section */}
+      {pendingManager.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Hourglass size={10} className="text-orange-400" />
+            <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              Wait for Manager · {pendingManager.length}
+            </p>
+          </div>
+          {pendingManager.map((c, i) => <CreditLedgerRow key={i} credit={c} isDark={isDark} status="pendingManager"/>)}
+        </div>
+      )}
+
+      {/* Approved Section */}
+      {approved.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle size={10} className="text-purple-400" />
+            <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              Approved Credits · {approved.length}
+            </p>
+          </div>
+          {approved.map((c, i) => <CreditLedgerRow key={i} credit={c} isDark={isDark} status="approved"/>)}
+        </div>
+      )}
+
+      {/* Settled Section */}
       {settled.length > 0 && (
         <div className="space-y-2">
-          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-            Settled · {settled.length}
-          </p>
-          {settled.map((c, i) => <CreditLedgerRow key={i} credit={c} isDark={isDark} isSettled={true}/>)}
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={10} className="text-emerald-400" />
+            <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              Settled Credits · {settled.length}
+            </p>
+          </div>
+          {settled.map((c, i) => <CreditLedgerRow key={i} credit={c} isDark={isDark} status="settled"/>)}
+        </div>
+      )}
+
+      {/* Rejected Section - Show separately so they don't appear as outstanding */}
+      {rejectedCredits.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <XCircle size={10} className="text-red-400" />
+            <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              Rejected Credits · {rejectedCredits.length}
+            </p>
+          </div>
+          {rejectedCredits.map((c, i) => <CreditLedgerRow key={i} credit={c} isDark={isDark} status="rejected"/>)}
         </div>
       )}
 
       <p className={`text-center text-[9px] font-bold uppercase tracking-widest pt-2 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
-        Credits clear at month-end · Accountant settles outstanding credits
+        Credits clear at month-end · Accountant settles approved credits
       </p>
     </div>
   );
 }
 
-function CreditLedgerRow({ credit, isDark, isSettled }) {
+// ─── CREDIT LEDGER ROW - Shows proper status badges ───────────────────────────
+function CreditLedgerRow({ credit, isDark, status }) {
   const date    = credit.confirmed_at || credit.created_at;
   const dateStr = date
     ? new Date(date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
     : "—";
 
-  return (
-    <div className={`rounded-[1.5rem] md:rounded-[2.2rem] border p-4 md:p-5 flex items-start justify-between gap-3 transition-all
-      ${isSettled
-        ? isDark ? "bg-zinc-900/20 border-white/5 opacity-70" : "bg-zinc-50 border-black/5 opacity-70"
-        : isDark ? "bg-purple-500/5 border-purple-500/20"     : "bg-purple-50/60 border-purple-200"}`}>
+  const statusConfig = {
+    pendingCashier: {
+      bg: isDark ? "bg-yellow-500/5 border-yellow-500/20" : "bg-yellow-50 border-yellow-100",
+      badge: "bg-yellow-500/10 border-yellow-500/20 text-yellow-400",
+      icon: <Hourglass size={12}/>,
+      label: "Wait for Cashier"
+    },
+    pendingManager: {
+      bg: isDark ? "bg-orange-500/5 border-orange-500/20" : "bg-orange-50 border-orange-100",
+      badge: "bg-orange-500/10 border-orange-500/20 text-orange-400",
+      icon: <Hourglass size={12}/>,
+      label: "Wait for Manager"
+    },
+    approved: {
+      bg: isDark ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50 border-purple-100",
+      badge: "bg-purple-500/10 border-purple-500/20 text-purple-400",
+      icon: <CheckCircle size={12}/>,
+      label: "Approved"
+    },
+    settled: {
+      bg: isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-100",
+      badge: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+      icon: <CheckCircle2 size={12}/>,
+      label: "Settled"
+    },
+    rejected: {
+      bg: isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100",
+      badge: "bg-red-500/10 border-red-500/20 text-red-400",
+      icon: <XCircle size={12}/>,
+      label: "Rejected"
+    }
+  };
 
+  const config = statusConfig[status] || statusConfig.pendingCashier;
+  const displayAmount = status === "settled" ? (credit.amount_paid || credit.amount) : credit.amount;
+
+  return (
+    <div className={`rounded-[1.5rem] md:rounded-[2.2rem] border p-4 md:p-5 flex items-start justify-between gap-3 transition-all ${config.bg}`}>
       <div className="flex items-start gap-3 md:gap-4 min-w-0 flex-1">
         {/* Icon */}
-        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0
-          ${isSettled ? "bg-emerald-500/10 text-emerald-400" : "bg-purple-500/10 text-purple-400"}`}>
-          {isSettled ? <CheckCircle size={20}/> : <BookOpen size={20}/>}
+        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${config.badge}`}>
+          {config.icon}
         </div>
 
         <div className="min-w-0 flex-1">
           {/* Table + status badge */}
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <h3 className={`text-base md:text-xl font-black uppercase tracking-tighter
-              ${isDark ? "text-white" : "text-zinc-900"}`}>
+            <h3 className={`text-base md:text-xl font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>
               {credit.table_name || "Table"}
             </h3>
-            {isSettled ? (
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase">
-                <CheckCircle size={8}/> Settled
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[8px] font-black uppercase animate-pulse">
-                <Clock size={8}/> Outstanding
-              </span>
-            )}
+            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black uppercase ${config.badge}`}>
+              {config.icon} {config.label}
+            </span>
           </div>
 
           {/* Client info */}
-          <div className={`flex items-center gap-3 flex-wrap text-[10px] font-bold uppercase tracking-widest
-            ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+          <div className={`flex items-center gap-3 flex-wrap text-[10px] font-bold uppercase tracking-widest ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
             {credit.client_name && (
               <div className="flex items-center gap-1">
                 <User size={10}/>
@@ -436,20 +565,30 @@ function CreditLedgerRow({ credit, isDark, isSettled }) {
                 <span>{credit.client_phone}</span>
               </div>
             )}
-            {credit.requested_by && (
+            {credit.waiter_name && (
               <div className="flex items-center gap-1">
                 <User size={10}/>
-                <span className="normal-case">{credit.requested_by}</span>
+                <span className="normal-case">{credit.waiter_name}</span>
               </div>
             )}
           </div>
 
-          {/* Pay-by date */}
-          {credit.pay_by && !isSettled && (
+          {/* Pay-by date - only for non-settled, non-rejected */}
+          {credit.pay_by && status !== "settled" && status !== "rejected" && (
             <div className="flex items-center gap-1 mt-1">
               <Calendar size={9} className="text-amber-400 shrink-0"/>
               <span className="text-[9px] font-black text-amber-400 uppercase tracking-wider">
                 Pay by: {credit.pay_by}
+              </span>
+            </div>
+          )}
+
+          {/* Rejection reason */}
+          {status === "rejected" && credit.reject_reason && (
+            <div className="flex items-center gap-1 mt-1">
+              <AlertCircle size={9} className="text-red-400 shrink-0"/>
+              <span className="text-[9px] font-black text-red-400 uppercase tracking-wider">
+                Reason: {credit.reject_reason}
               </span>
             </div>
           )}
@@ -460,12 +599,12 @@ function CreditLedgerRow({ credit, isDark, isSettled }) {
         </div>
       </div>
 
-      {/* Amount + settlement note */}
+      {/* Amount */}
       <div className="text-right shrink-0">
-        <p className={`text-lg font-black ${isSettled ? "text-emerald-400" : "text-purple-400"}`}>
-          UGX {Number(credit.amount || 0).toLocaleString()}
+        <p className={`text-lg font-black ${status === "settled" ? "text-emerald-400" : status === "rejected" ? "text-red-400" : "text-purple-400"}`}>
+          UGX {Number(displayAmount || 0).toLocaleString()}
         </p>
-        {isSettled && credit.settle_method && (
+        {status === "settled" && credit.settle_method && (
           <p className={`text-[8px] font-bold mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
             via {credit.settle_method}
           </p>
@@ -483,7 +622,6 @@ function OrderStatusCard({ order, category, isDark, chefMap, creditInfo }) {
   const waiterName  = order.staff_name  || order.waiterName || "Staff";
   const orderId     = order.id ? String(order.id).slice(-5) : "00000";
   const total       = Number(order.total) || 0;
-  // _fromLedger = this row was synthesised from void_requests, not a real order
   const fromLedger  = order._fromLedger === true;
 
   let items = order.items || [];
@@ -503,7 +641,10 @@ function OrderStatusCard({ order, category, isDark, chefMap, creditInfo }) {
   const orderVoidReason = order.void_reason || order.reason;
 
   // Credit settlement status from ledger
-  const isCreditSettled = creditInfo && (creditInfo.paid === true || creditInfo.paid === "t" || creditInfo.settled === true || creditInfo.status === "settled");
+  const isCreditSettled = creditInfo && (creditInfo.status === "FullySettled" || creditInfo.status === "PartiallySettled");
+  const isCreditApproved = creditInfo && creditInfo.status === "Approved";
+  const isCreditPending = creditInfo && (creditInfo.status === "PendingCashier" || creditInfo.status === "PendingManagerApproval");
+  const isCreditRejected = creditInfo && creditInfo.status === "Rejected";
 
   const styles = {
     Delayed: {
@@ -520,9 +661,9 @@ function OrderStatusCard({ order, category, isDark, chefMap, creditInfo }) {
     },
     Credited: {
       card:     isDark ? "bg-purple-500/5 border-purple-500/20"     : "bg-purple-50 border-purple-100",
-      icon:     isCreditSettled ? "bg-emerald-500/10 text-emerald-400" : "bg-purple-500/10 text-purple-400",
-      badge:    isCreditSettled ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-purple-500/10 border-purple-500/20 text-purple-400",
-      iconType: isCreditSettled ? <CheckCircle size={20}/> : <BookOpen size={20}/>,
+      icon:     isCreditSettled ? "bg-emerald-500/10 text-emerald-400" : isCreditRejected ? "bg-red-500/10 text-red-400" : "bg-purple-500/10 text-purple-400",
+      badge:    isCreditSettled ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : isCreditRejected ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-purple-500/10 border-purple-500/20 text-purple-400",
+      iconType: isCreditSettled ? <CheckCircle size={20}/> : isCreditRejected ? <XCircle size={20}/> : <BookOpen size={20}/>,
     },
     Voided: {
       card:     isDark ? "bg-zinc-900/10 border-white/5 opacity-80" : "bg-zinc-100 border-black/10",
@@ -540,10 +681,15 @@ function OrderStatusCard({ order, category, isDark, chefMap, creditInfo }) {
 
   const s = styles[category] || styles.Open;
 
-  const badgeLabel =
-    category === "Voided"   ? "Cancelled" :
-    category === "Credited" ? (isCreditSettled ? "Settled" : "Outstanding") :
-    (order.status || category);
+  let badgeLabel = "";
+  if (category === "Voided") badgeLabel = "Cancelled";
+  else if (category === "Credited") {
+    if (isCreditSettled) badgeLabel = "Settled";
+    else if (isCreditApproved) badgeLabel = "Approved";
+    else if (isCreditPending) badgeLabel = "Pending";
+    else if (isCreditRejected) badgeLabel = "Rejected";
+    else badgeLabel = "Outstanding";
+  } else badgeLabel = order.status || category;
 
   return (
     <div className={`rounded-[1.5rem] md:rounded-[2.2rem] border p-4 md:p-6 flex flex-col gap-4 transition-all ${s.card}`}>
@@ -607,10 +753,16 @@ function OrderStatusCard({ order, category, isDark, chefMap, creditInfo }) {
               )}
             </div>
           )}
-          {creditInfo.pay_by && !isCreditSettled && (
+          {creditInfo.pay_by && !isCreditSettled && !isCreditRejected && (
             <div className={`flex items-center justify-between px-3 py-2 ${isDark ? "bg-amber-500/5" : "bg-amber-50"}`}>
               <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">Pay by</span>
               <span className="text-[9px] font-black text-amber-400">{creditInfo.pay_by}</span>
+            </div>
+          )}
+          {creditInfo.status === "Rejected" && (
+            <div className={`flex items-center justify-between px-3 py-2 ${isDark ? "bg-red-500/5" : "bg-red-50"}`}>
+              <span className="text-[9px] font-black uppercase tracking-wider text-red-400">Rejected</span>
+              <span className="text-[9px] font-black text-red-400">{creditInfo.reject_reason || "No reason provided"}</span>
             </div>
           )}
           {isCreditSettled && creditInfo.settle_method && (

@@ -11,7 +11,8 @@ import {
   ChevronRight,
   Menu,
   X,
-  History, 
+  History,
+  Table, // Add Table icon for manage tables
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData } from "../../../customer/components/context/DataContext";
@@ -19,8 +20,9 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 
 const NAV_ITEMS = [
   { id: "order",   label: "Take Order",       short: "Order",   icon: ClipboardList },
-  { id: "history", label: "Manage Orders",     short: "History", icon: History }, 
-  { id: "tables",  label: "All Floor",        short: "Floor",   icon: LayoutDashboard },
+  { id: "history", label: "Manage Orders",     short: "History", icon: History },
+  { id: "manage",  label: "Manage Table",      short: "Table",   icon: Table }, // NEW ITEM - Manage Table
+  { id: "floor",   label: "All Floor",        short: "Floor",   icon: LayoutDashboard },
   { id: "status",  label: "Order Status",     short: "Status",  icon: Clock },
   { id: "reports", label: "Sales & Credits",  short: "Reports", icon: BarChart3 },
   { id: "target",  label: "Set Target",       short: "Target",  icon: Target },
@@ -50,7 +52,7 @@ export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 
   const NavBtn = ({ item, showLabel = true }) => {
     const Icon = item.icon;
     const isActive = activeTab === item.id;
-    const hasBadge = item.id === "tables" && debtorCount > 0;
+    const hasBadge = item.id === "floor" && debtorCount > 0; // Changed from "tables" to "floor"
 
     return (
       <button

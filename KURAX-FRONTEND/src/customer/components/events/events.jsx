@@ -79,16 +79,23 @@ export default function Events() {
               className="flex items-center gap-4"
             >
               <span className="h-[1px] w-12 bg-yellow-500/50" />
-              <span className="text-yellow-600 dark:text-yellow-500 text-[10px] font-black uppercase tracking-[0.8em]">
+              <span className="text-yellow-600 dark:text-yellow-500 text-xs font-black uppercase tracking-[0.3em]">
                 Exclusive Experiences
-              </span>
+              </span> 
             </motion.div>
 
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
               Upcoming <br />
-              <span className="italic font-light text-transparent bg-clip-text bg-gradient-to-r from-[#C5A059] via-[#F3D081] to-[#9A7B42]">
-                at Kurax
-              </span>
+              <span
+                  style={{
+                    background: "linear-gradient(135deg, #f59e0b 0%, #fde68a 45%, #d97706 100%)",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    backgroundClip: "text",
+                  }}
+                >
+                  At Kurax
+                </span>
             </h1>
           </div>
 
@@ -158,14 +165,7 @@ export default function Events() {
         <div className="flex flex-col lg:flex-row gap-16 items-center">
           <div className="w-full lg:w-3/5 relative h-[500px] md:h-[650px] group shadow-[0_0_50px_rgba(0,0,0,0.3)]">
             <div className="absolute top-8 left-8 z-30 mix-blend-difference overflow-hidden">
-              <motion.span 
-                key={activeIndex}
-                initial={{ y: "100%" }}
-                animate={{ y: 0 }}
-                className="block text-4xl font-serif italic text-white opacity-40"
-              >
-                0{activeIndex + 1}
-              </motion.span>
+              
             </div>
 
             <AnimatePresence mode="wait">
@@ -200,27 +200,28 @@ export default function Events() {
               <div className="space-y-4">
                 <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} className="flex items-center gap-3">
                   <div className="h-[1px] w-8 bg-yellow-600/40" />
-                  <span className="text-yellow-600 text-[10px] font-black uppercase tracking-[0.6em]">Atmosphere</span>
+                  <span className="text-yellow-600 text-[13px] font-black uppercase tracking-[0.6em]">Atmosphere</span>
                 </motion.div>
                 <h2 className="text-6xl md:text-7xl font-serif leading-[0.95] tracking-tight">
                   Where <br/>
-                  <span className="italic font-light text-transparent bg-clip-text bg-gradient-to-r from-[#C5A059] via-[#F3D081] to-[#9A7B42]">
-                    Style
-                  </span> <br/>
+                   <span
+                  style={{
+                    background: "linear-gradient(135deg, #f59e0b 0%, #fde68a 45%, #d97706 100%)",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    backgroundClip: "text",
+                  }}
+                >
+                Style
+                </span> <br/>
                   Meets the Sky.
                 </h2>
               </div>
               <div className="space-y-6">
-                <p className="text-zinc-500 dark:text-zinc-400 text-xl font-light leading-relaxed border-l-2 border-yellow-500/10 pl-6">
+                <p className="text-zinc-700  dark:text-zinc-400 text-md font-light leading-relaxed border-l-2 border-yellow-500/10 pl-6">
                   Step into a world where high-energy nightlife effortlessly merges with the art of fine dining. At Kurax, every detail is a curated experience designed for the elite.
                 </p>
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="group relative flex items-center gap-8 pl-4 pr-1 text-zinc-900 dark:text-white border border-zinc-200 dark:border-white/10 rounded-full py-1 overflow-hidden">
-                  <span className="text-[11px] font-black uppercase tracking-[0.2em] relative z-10">Explore Gallery</span>
-                  <div className="p-4 bg-yellow-500 rounded-full text-black relative z-10 transition-transform group-hover:rotate-45">
-                    <ArrowRight size={18} />
-                  </div>
-                  <div className="absolute inset-0 bg-yellow-500/5 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                </motion.button>
+    
               </div>
             </div>
           </div>

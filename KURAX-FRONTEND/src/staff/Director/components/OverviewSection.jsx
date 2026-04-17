@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { TrendingUp, Banknote, Smartphone, CreditCard, BookOpen, CheckCircle2, Clock, User, Phone, ChevronDown, ChevronUp, Wallet, Trash2, PlusCircle, RefreshCw } from "lucide-react";
+import { TrendingUp, Banknote, Smartphone, CreditCard, BookOpen, CheckCircle2, Clock, User, Phone, ChevronDown, ChevronUp, Wallet, Trash2, PlusCircle, RefreshCw, Hourglass, XCircle } from "lucide-react";
 import { useTheme } from "./shared/ThemeContext";
 import { StatCard, ShiftMiniCard, fmtK } from "./shared/UIHelpers";
 import LiveLogs from "./liveLogs";
@@ -12,6 +12,32 @@ const PETTY_CATEGORIES = [
   "Utilities","Maintenance","Transport","Staff Welfare","Packaging","Miscellaneous",
 ];
 
+// ─── CREDIT STATUS BADGE ────────────────────────────────────────────────────
+function CreditStatusBadge({ status }) {
+  const normalizedStatus = String(status || '').toLowerCase();
+  
+  const statusMap = {
+    'pendingcashier': { label: 'Wait for Cashier', icon: <Hourglass size={10} />, color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
+    'pendingmanagerapproval': { label: 'Wait for Manager', icon: <Clock size={10} />, color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
+    'approved': { label: 'Approved', icon: <CheckCircle2 size={10} />, color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
+    'fullysettled': { label: 'Settled', icon: <CheckCircle2 size={10} />, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+    'partiallysettled': { label: 'Partially Settled', icon: <CheckCircle2 size={10} />, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+    'rejected': { label: 'Rejected', icon: <XCircle size={10} />, color: 'bg-red-500/20 text-red-400 border-red-500/30' }
+  };
+  
+  const config = statusMap[normalizedStatus] || { 
+    label: status || 'Unknown', 
+    icon: <BookOpen size={10} />, 
+    color: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30' 
+  };
+  
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black uppercase ${config.color}`}>
+      {config.icon} {config.label}
+    </span>
+  );
+}
+
 export default function OverviewSection({ onViewRegistry }) {
   const { dark, t } = useTheme();
 
@@ -21,7 +47,7 @@ export default function OverviewSection({ onViewRegistry }) {
   const [shifts,         setShifts]     = useState([]);
   const [shiftsLoading,  setShiftsLoad] = useState(true);
 
-  // Credits ledger
+  // Credits ledger - FIXED to use proper API endpoint
   const [creditsLedger,   setCreditsLedger]   = useState([]);
   const [creditsLoading,  setCreditsLoading]  = useState(true);
   const [creditsExpanded, setCreditsExpanded] = useState(false);
@@ -50,6 +76,19 @@ export default function OverviewSection({ onViewRegistry }) {
     new Date().toLocaleString("en-US", { timeZone: "Africa/Nairobi" })
   ).toISOString().split("T")[0];
 
+  // ── Helper to normalize credit status ───────────────────────────────────────
+  const getNormalizedStatus = (status) => {
+    if (!status) return 'unknown';
+    const s = String(status).toLowerCase();
+    if (s === 'pendingcashier') return 'pendingCashier';
+    if (s === 'pendingmanagerapproval') return 'pendingManager';
+    if (s === 'approved') return 'approved';
+    if (s === 'fullysettled') return 'settled';
+    if (s === 'partiallysettled') return 'settled';
+    if (s === 'rejected') return 'rejected';
+    return s;
+  };
+
   // ── Fetchers ─────────────────────────────────────────────────────────────────
   const fetchSummary = async () => {
     try {
@@ -59,12 +98,13 @@ export default function OverviewSection({ onViewRegistry }) {
     finally { setSumLoad(false); }
   };
 
+  // FIXED: Use the correct API endpoint for credits
   const fetchCredits = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/orders/credits`);
+      const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
       if (res.ok) {
         const rows = await res.json();
-        setCreditsLedger(rows.map(r => ({ ...r, paid: r.paid === true || r.paid === "t" || r.paid === "true" })));
+        setCreditsLedger(rows);
       }
     } catch (e) { console.error("Credits fetch failed:", e); }
     finally { setCreditsLoading(false); }
@@ -86,7 +126,6 @@ export default function OverviewSection({ onViewRegistry }) {
     const summaryInterval = setInterval(fetchSummary, 10000);
     const creditsInterval = setInterval(fetchCredits, 30000);
     const pettyInterval   = setInterval(fetchPetty,   30000);
-
 
     (async () => {
       try {
@@ -144,15 +183,41 @@ export default function OverviewSection({ onViewRegistry }) {
     setDeletingPettyId(null);
   };
 
-  // ── Derived values ──────────────────────────────────────────────────────────
-  const outstanding      = creditsLedger.filter(c => !c.paid);
-  const settled          = creditsLedger.filter(c => c.paid);
-  const totalOutstanding = outstanding.reduce((s, c) => s + Number(c.amount || 0), 0);
-  const totalSettled     = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
-  const filteredCredits  = creditFilter === "outstanding" ? outstanding
-                         : creditFilter === "settled"     ? settled
-                         : creditsLedger;
+  // ── FIXED: Credit statistics with proper status separation ──────────────────
+  const creditStats = {
+    pendingCashier: creditsLedger.filter(c => getNormalizedStatus(c.status) === 'pendingCashier').length,
+    pendingManager: creditsLedger.filter(c => getNormalizedStatus(c.status) === 'pendingManager').length,
+    approved: creditsLedger.filter(c => getNormalizedStatus(c.status) === 'approved').length,
+    settled: creditsLedger.filter(c => getNormalizedStatus(c.status) === 'settled').length,
+    rejected: creditsLedger.filter(c => getNormalizedStatus(c.status) === 'rejected').length,
+  };
 
+  const pendingCashierCredits = creditsLedger.filter(c => getNormalizedStatus(c.status) === 'pendingCashier');
+  const pendingManagerCredits = creditsLedger.filter(c => getNormalizedStatus(c.status) === 'pendingManager');
+  const approvedCredits = creditsLedger.filter(c => getNormalizedStatus(c.status) === 'approved');
+  const settledCredits = creditsLedger.filter(c => getNormalizedStatus(c.status) === 'settled');
+  const rejectedCredits = creditsLedger.filter(c => getNormalizedStatus(c.status) === 'rejected');
+
+  const totalOutstanding = [...pendingCashierCredits, ...pendingManagerCredits, ...approvedCredits]
+    .reduce((s, c) => s + Number(c.amount || 0), 0);
+  const totalSettled = settledCredits.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
+  const totalRejected = rejectedCredits.reduce((s, c) => s + Number(c.amount || 0), 0);
+
+  // Filter credits based on selected tab
+  const getFilteredCredits = () => {
+    switch (creditFilter) {
+      case 'pendingCashier': return pendingCashierCredits;
+      case 'pendingManager': return pendingManagerCredits;
+      case 'approved': return approvedCredits;
+      case 'settled': return settledCredits;
+      case 'rejected': return rejectedCredits;
+      default: return creditsLedger;
+    }
+  };
+
+  const filteredCredits = getFilteredCredits();
+
+  // REVENUE - NOT deducted by petty expenses
   const totalGross  = Number(summary?.total_gross  ?? 0);
   const totalCash   = Number(summary?.total_cash   ?? 0);
   const totalCard   = Number(summary?.total_card   ?? 0);
@@ -161,39 +226,52 @@ export default function OverviewSection({ onViewRegistry }) {
   const totalMomo   = totalMTN + totalAirtel;
   const orderCount  = Number(summary?.order_count  ?? 0);
 
-  // ✅ Gross after petty deduction — matches cashier view
-  const pettyOut      = Number(pettyData.total_out ?? 0);
-  const netGross      = totalGross - pettyOut;
-  const netCashOnHand = totalCash  - pettyOut;
+  // PETTY CASH - separate tracking (does NOT affect revenue)
+  const pettyOut = Number(pettyData.total_out ?? 0);
+  const pettyIn = Number(pettyData.total_in ?? 0);
+  const pettyNet = pettyIn - pettyOut;
+
+  // Cash on Hand = Gross cash collected (NO deduction)
+  const cashOnHand = totalCash;
+  
+  // Net Revenue = Gross revenue (NO deduction - petty is separate expense)
+  const netRevenue = totalGross;
 
   const pettyEntries = pettyData.entries || [];
   const filteredPetty = pettyFilter === "OUT" ? pettyEntries.filter(e => e.direction === "OUT")
                       : pettyFilter === "IN"  ? pettyEntries.filter(e => e.direction === "IN")
                       : pettyEntries;
 
+  // Credit tabs configuration
+  const creditTabs = [
+    { key: "all", label: "All", count: creditsLedger.length, color: "zinc" },
+    { key: "pendingCashier", label: "Wait for Cashier", count: creditStats.pendingCashier, color: "yellow" },
+    { key: "pendingManager", label: "Wait for Manager", count: creditStats.pendingManager, color: "orange" },
+    { key: "approved", label: "Approved", count: creditStats.approved, color: "purple" },
+    { key: "settled", label: "Settled", count: creditStats.settled, color: "green" },
+    { key: "rejected", label: "Rejected", count: creditStats.rejected, color: "red" },
+  ];
 
   return (
     <div className="space-y-4">
 
       {/* ── Stat Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* ✅ Gross now shows net-of-petty */}
         <StatCard
-          label="Net Revenue"
-          value={summaryLoading || pettyLoading ? null : netGross}
-          trend={orderCount > 0 ? `${orderCount} orders · −${fmtK(pettyOut)} petty` : null}
+          label="Gross Revenue"
+          value={summaryLoading ? null : netRevenue}
+          trend={orderCount > 0 ? `${orderCount} orders` : null}
           color="text-emerald-500"
           icon={<TrendingUp size={12} />}
-          loading={summaryLoading || pettyLoading}
+          loading={summaryLoading}
         />
-        {/* ✅ Cash on hand = confirmed cash − petty OUT */}
         <StatCard
           label="Cash on Hand"
-          value={summaryLoading || pettyLoading ? null : netCashOnHand}
-          trend={pettyOut > 0 ? `−${fmtK(pettyOut)} expenses` : null}
+          value={summaryLoading ? null : cashOnHand}
+          trend={pettyOut > 0 ? `${fmtK(pettyOut)} expenses` : null}
           color="text-white"
           icon={<Banknote size={12} />}
-          loading={summaryLoading || pettyLoading}
+          loading={summaryLoading}
         />
         <StatCard
           label="MoMo"
@@ -216,7 +294,6 @@ export default function OverviewSection({ onViewRegistry }) {
 
       {/* ── PETTY CASH LEDGER PANEL ─────────────────────────────────────────── */}
       <div className={`${t.card} border rounded-2xl overflow-hidden`}>
-        {/* Header */}
         <button
           onClick={() => setPettyExpanded(v => !v)}
           className="w-full flex items-center justify-between px-5 py-4 hover:bg-white/3 transition-colors">
@@ -228,9 +305,9 @@ export default function OverviewSection({ onViewRegistry }) {
               <p className={`text-[10px] font-black uppercase tracking-widest ${t.subtext}`}>Petty Cash Ledger</p>
               <p className="text-[9px] text-zinc-600 mt-0.5">
                 {pettyEntries.length} entries today ·{" "}
-                <span className="text-rose-400 font-bold">OUT {fmtK(pettyData.total_out ?? 0)}</span>
-                {(pettyData.total_in ?? 0) > 0 &&
-                  <span className="text-emerald-400 font-bold"> · IN {fmtK(pettyData.total_in)}</span>}
+                <span className="text-rose-400 font-bold">OUT {fmtK(pettyOut)}</span>
+                {pettyIn > 0 &&
+                  <span className="text-emerald-400 font-bold"> · IN {fmtK(pettyIn)}</span>}
               </p>
             </div>
           </div>
@@ -246,23 +323,22 @@ export default function OverviewSection({ onViewRegistry }) {
 
         {pettyExpanded && (
           <div className={`border-t px-5 pb-5 pt-4 space-y-4 ${dark ? "border-white/5" : "border-black/5"}`}>
-
             {/* Summary row */}
             <div className="grid grid-cols-3 gap-3">
               <div className={`${dark ? "bg-black/40" : "bg-zinc-50"} rounded-2xl p-4`}>
                 <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Total OUT</p>
-                <p className="text-rose-400 font-black text-base">{fmtK(pettyData.total_out ?? 0)}</p>
+                <p className="text-rose-400 font-black text-base">{fmtK(pettyOut)}</p>
                 <p className="text-[9px] text-zinc-600">{pettyEntries.filter(e => e.direction === "OUT").length} entries</p>
               </div>
               <div className={`${dark ? "bg-black/40" : "bg-zinc-50"} rounded-2xl p-4`}>
                 <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Total IN</p>
-                <p className="text-emerald-400 font-black text-base">{fmtK(pettyData.total_in ?? 0)}</p>
+                <p className="text-emerald-400 font-black text-base">{fmtK(pettyIn)}</p>
                 <p className="text-[9px] text-zinc-600">{pettyEntries.filter(e => e.direction === "IN").length} entries</p>
               </div>
-              <div className={`rounded-2xl p-4 ${(pettyData.net ?? 0) >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"}`}>
+              <div className={`rounded-2xl p-4 ${pettyNet >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"}`}>
                 <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Net</p>
-                <p className={`font-black text-base ${(pettyData.net ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                  {(pettyData.net ?? 0) >= 0 ? "+" : ""}UGX {Math.abs(pettyData.net ?? 0).toLocaleString()}
+                <p className={`font-black text-base ${pettyNet >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                  {pettyNet >= 0 ? "+" : ""}UGX {Math.abs(pettyNet).toLocaleString()}
                 </p>
                 <p className="text-[9px] text-zinc-600">IN − OUT</p>
               </div>
@@ -348,7 +424,7 @@ export default function OverviewSection({ onViewRegistry }) {
         )}
       </div>
 
-      {/* ── CREDITS LEDGER PANEL ── */}
+      {/* ── CREDITS LEDGER PANEL - FIXED with proper status tabs ── */}
       <div className={`${t.card} border rounded-2xl overflow-hidden`}>
         <button
           onClick={() => setCreditsExpanded(v => !v)}
@@ -361,20 +437,18 @@ export default function OverviewSection({ onViewRegistry }) {
               <p className={`text-[10px] font-black uppercase tracking-widest ${t.subtext}`}>Credits Ledger</p>
               <p className="text-[9px] text-zinc-600 mt-0.5">
                 {creditsLedger.length} total ·{" "}
-                <span className="text-rose-400 font-bold">{outstanding.length} outstanding</span>
-                {settled.length > 0 && <span className="text-emerald-400 font-bold"> · {settled.length} settled</span>}
+                <span className="text-yellow-400 font-bold">{creditStats.pendingCashier} wait cashier</span>
+                {creditStats.pendingManager > 0 && <span className="text-orange-400 font-bold"> · {creditStats.pendingManager} wait manager</span>}
+                {creditStats.approved > 0 && <span className="text-purple-400 font-bold"> · {creditStats.approved} approved</span>}
+                {creditStats.settled > 0 && <span className="text-emerald-400 font-bold"> · {creditStats.settled} settled</span>}
+                {creditStats.rejected > 0 && <span className="text-red-400 font-bold"> · {creditStats.rejected} rejected</span>}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {totalOutstanding > 0 && (
-              <span className="px-3 py-1 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-black uppercase animate-pulse">
-                UGX {fmtK(totalOutstanding)} unpaid
-              </span>
-            )}
-            {totalOutstanding === 0 && creditsLedger.length > 0 && (
-              <span className="px-3 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase">
-                All Settled ✓
+              <span className="px-3 py-1 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[10px] font-black uppercase">
+                UGX {fmtK(totalOutstanding)} pending
               </span>
             )}
             {creditsExpanded ? <ChevronUp size={14} className="text-zinc-500"/> : <ChevronDown size={14} className="text-zinc-500"/>}
@@ -383,32 +457,60 @@ export default function OverviewSection({ onViewRegistry }) {
 
         {creditsExpanded && (
           <div className={`border-t px-5 pb-5 pt-4 space-y-4 ${dark ? "border-white/5" : "border-black/5"}`}>
-            <div className="grid grid-cols-3 gap-3">
-              <div className={`${dark ? "bg-black/40" : "bg-zinc-50"} rounded-2xl p-4`}>
-                <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Outstanding</p>
-                <p className="text-purple-400 font-black text-base">{fmtK(totalOutstanding)}</p>
-                <p className="text-[9px] text-zinc-600">{outstanding.length} client{outstanding.length !== 1 ? "s" : ""}</p>
+            {/* Summary Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className={`${dark ? "bg-yellow-500/10 border-yellow-500/20" : "bg-yellow-50 border-yellow-200"} rounded-2xl p-3 border`}>
+                <p className="text-[7px] font-black uppercase text-yellow-400">Wait for Cashier</p>
+                <p className="text-xl font-black text-yellow-400">{creditStats.pendingCashier}</p>
+                <p className="text-[8px] text-zinc-500">UGX {pendingCashierCredits.reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString()}</p>
               </div>
-              <div className={`${dark ? "bg-black/40" : "bg-zinc-50"} rounded-2xl p-4`}>
-                <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Settled</p>
-                <p className="text-emerald-400 font-black text-base">{fmtK(totalSettled)}</p>
-                <p className="text-[9px] text-zinc-600">{settled.length} record{settled.length !== 1 ? "s" : ""}</p>
+              <div className={`${dark ? "bg-orange-500/10 border-orange-500/20" : "bg-orange-50 border-orange-200"} rounded-2xl p-3 border`}>
+                <p className="text-[7px] font-black uppercase text-orange-400">Wait for Manager</p>
+                <p className="text-xl font-black text-orange-400">{creditStats.pendingManager}</p>
+                <p className="text-[8px] text-zinc-500">UGX {pendingManagerCredits.reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString()}</p>
               </div>
-              <div className="bg-yellow-500 rounded-2xl p-4">
-                <p className="text-[8px] font-black uppercase text-black/60 tracking-widest mb-1">All Time</p>
-                <p className="text-black font-black text-base">{fmtK(totalOutstanding + totalSettled)}</p>
-                <p className="text-[9px] text-black/50">{creditsLedger.length} entries</p>
+              <div className={`${dark ? "bg-purple-500/10 border-purple-500/20" : "bg-purple-50 border-purple-200"} rounded-2xl p-3 border`}>
+                <p className="text-[7px] font-black uppercase text-purple-400">Approved</p>
+                <p className="text-xl font-black text-purple-400">{creditStats.approved}</p>
+                <p className="text-[8px] text-zinc-500">UGX {approvedCredits.reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString()}</p>
+              </div>
+              <div className={`${dark ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-200"} rounded-2xl p-3 border`}>
+                <p className="text-[7px] font-black uppercase text-emerald-400">Settled</p>
+                <p className="text-xl font-black text-emerald-400">{creditStats.settled}</p>
+                <p className="text-[8px] text-zinc-500">UGX {totalSettled.toLocaleString()}</p>
+              </div>
+              <div className={`${dark ? "bg-red-500/10 border-red-500/20" : "bg-red-50 border-red-200"} rounded-2xl p-3 border`}>
+                <p className="text-[7px] font-black uppercase text-red-400">Rejected</p>
+                <p className="text-xl font-black text-red-400">{creditStats.rejected}</p>
+                <p className="text-[8px] text-zinc-500">UGX {totalRejected.toLocaleString()}</p>
               </div>
             </div>
 
-            <div className="flex gap-1 p-1 rounded-xl w-fit" style={{background: dark ? "#18181b" : "#f4f4f5"}}>
-              {[{k:"all",l:"All"},{k:"outstanding",l:"Outstanding"},{k:"settled",l:"Settled"}].map(({k,l}) => (
-                <button key={k} onClick={() => setCreditFilter(k)}
-                  className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all
-                    ${creditFilter === k ? "bg-yellow-500 text-black shadow" : dark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-700"}`}>
-                  {l}
-                </button>
-              ))}
+            {/* Credit Tabs */}
+            <div className="flex flex-wrap gap-1 p-1 rounded-xl w-fit" style={{background: dark ? "#18181b" : "#f4f4f5"}}>
+              {creditTabs.map(({ key, label, count, color }) => {
+                let activeColor = "";
+                if (creditFilter === key) {
+                  if (color === 'yellow') activeColor = "bg-yellow-500 text-black";
+                  else if (color === 'orange') activeColor = "bg-orange-500 text-white";
+                  else if (color === 'purple') activeColor = "bg-purple-500 text-white";
+                  else if (color === 'green') activeColor = "bg-emerald-500 text-white";
+                  else if (color === 'red') activeColor = "bg-red-500 text-white";
+                  else activeColor = "bg-yellow-500 text-black";
+                }
+                return (
+                  <button key={key} onClick={() => setCreditFilter(key)}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all
+                      ${creditFilter === key ? activeColor : dark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-700"}`}>
+                    {label}
+                    {count > 0 && (
+                      <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[8px] font-black ${creditFilter === key ? "bg-white/20" : dark ? "bg-white/10" : "bg-black/5"}`}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {creditsLoading ? (
@@ -418,12 +520,14 @@ export default function OverviewSection({ onViewRegistry }) {
             ) : filteredCredits.length === 0 ? (
               <div className={`py-10 text-center border-2 border-dashed rounded-2xl ${dark ? "border-white/5" : "border-zinc-200"}`}>
                 <BookOpen size={24} className="mx-auto mb-2 text-zinc-600"/>
-                <p className={`text-[9px] font-black uppercase tracking-widest ${dark ? "text-zinc-600" : "text-zinc-400"}`}>No {creditFilter} credits</p>
+                <p className={`text-[9px] font-black uppercase tracking-widest ${dark ? "text-zinc-600" : "text-zinc-400"}`}>
+                  No {creditFilter} credits
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
                 {filteredCredits.map(credit => (
-                  <DirectorCreditRow key={credit.id} credit={credit} dark={dark} t={t}/>
+                  <DirectorCreditRow key={credit.id} credit={credit} dark={dark} t={t} />
                 ))}
               </div>
             )}
@@ -437,12 +541,12 @@ export default function OverviewSection({ onViewRegistry }) {
         <div className="w-full overflow-hidden"><RevenueChart /></div>
       </div>
 
-      {/* ── LIVE ACTIVITY FEED — full-width, proper component ── */}
+      {/* ── LIVE ACTIVITY FEED ── */}
       <div className={`${t.card} border rounded-2xl p-4 md:p-6`} style={{ minHeight: 480 }}>
         <LiveLogs dark={dark} t={t} />
       </div>
 
-            {/* Shift Liquidations */}
+      {/* Shift Liquidations */}
       <div className={`${t.card} border rounded-2xl p-4 md:p-8`}>
         <div className="flex justify-between items-center mb-4">
           <div>
@@ -490,12 +594,12 @@ export default function OverviewSection({ onViewRegistry }) {
         )}
       </div>
 
-      {/* ── PETTY CASH ADD MODAL ─────────────────────────────────────────────── */}
+      {/* ── PETTY CASH ADD MODAL ── */}
       {showPettyModal && (
         <div className="fixed inset-0 z-[500] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className={`w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl space-y-5 border
             ${dark ? "bg-[#111] border-white/10" : "bg-white border-zinc-200"}`}>
-
+            {/* Modal content - same as before */}
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black italic uppercase text-yellow-500 tracking-widest">New Petty Entry</h3>
               <button onClick={() => setShowPettyModal(false)}
@@ -503,8 +607,6 @@ export default function OverviewSection({ onViewRegistry }) {
                 ✕
               </button>
             </div>
-
-            {/* Direction */}
             <div className="grid grid-cols-2 gap-2">
               {[
                 { key: "OUT", label: "Expense (OUT)", color: "bg-rose-500/20 border-rose-500/40 text-rose-300" },
@@ -517,8 +619,6 @@ export default function OverviewSection({ onViewRegistry }) {
                 </button>
               ))}
             </div>
-
-            {/* Category */}
             <div>
               <p className={`text-[9px] font-black uppercase tracking-widest mb-2 ${dark ? "text-zinc-500" : "text-zinc-400"}`}>Category</p>
               <select value={pettyCategory} onChange={e => setPettyCategory(e.target.value)}
@@ -527,8 +627,6 @@ export default function OverviewSection({ onViewRegistry }) {
                 {PETTY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-
-            {/* Description */}
             <div>
               <p className={`text-[9px] font-black uppercase tracking-widest mb-2 ${dark ? "text-zinc-500" : "text-zinc-400"}`}>Description</p>
               <input value={pettyDescription} onChange={e => setPettyDescription(e.target.value)}
@@ -536,8 +634,6 @@ export default function OverviewSection({ onViewRegistry }) {
                 className={`w-full rounded-xl p-4 text-xs outline-none border
                   ${dark ? "bg-black border-white/5 text-white focus:border-yellow-500/50" : "bg-zinc-50 border-zinc-200 text-zinc-800"}`}/>
             </div>
-
-            {/* Amount */}
             <div>
               <p className={`text-[9px] font-black uppercase tracking-widest mb-2 ${dark ? "text-zinc-500" : "text-zinc-400"}`}>Amount (UGX)</p>
               <input type="number" value={pettyAmount} onChange={e => setPettyAmount(e.target.value)}
@@ -545,7 +641,6 @@ export default function OverviewSection({ onViewRegistry }) {
                 className={`w-full rounded-xl p-4 text-white font-black text-lg text-center outline-none border
                   ${dark ? "bg-black border-white/5 focus:border-yellow-500/50" : "bg-zinc-50 border-zinc-200 text-zinc-800"}`}/>
             </div>
-
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowPettyModal(false)}
                 className="flex-1 py-4 text-zinc-500 font-black text-[10px] uppercase">Discard</button>
@@ -562,7 +657,7 @@ export default function OverviewSection({ onViewRegistry }) {
         </div>
       )}
 
-      {/* ── SHIFT DETAIL MODAL (director taps a staff card) ─────────────────── */}
+      {/* ── SHIFT DETAIL MODAL ── */}
       {selectedShift && (
         <ShiftDetailModal shift={selectedShift} dark={dark} onClose={() => setSelectedShift(null)} />
       )}
@@ -570,55 +665,60 @@ export default function OverviewSection({ onViewRegistry }) {
   );
 }
 
-// ─── DIRECTOR CREDIT ROW ─────────────────────────────────────────────────────
+// ─── DIRECTOR CREDIT ROW - FIXED with proper status badge ────────────────────
 function DirectorCreditRow({ credit, dark, t }) {
   const toLocalDateStr = (date) => {
     const d = date instanceof Date ? date : new Date(date);
     return [d.getFullYear(), String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0")].join("-");
   };
+  
+  const isSettled = credit.status === "FullySettled" || credit.status === "PartiallySettled";
+  const isRejected = credit.status === "Rejected";
+  const displayAmount = isSettled ? (credit.amount_paid || credit.amount) : credit.amount;
+  
   return (
     <div className={`rounded-2xl p-4 border flex items-start justify-between gap-3 flex-wrap transition-all
-      ${credit.paid
+      ${isSettled
         ? dark ? "bg-emerald-500/5 border-emerald-500/15 opacity-70" : "bg-emerald-50 border-emerald-200 opacity-80"
-        : dark ? "bg-purple-500/5 border-purple-500/20"             : "bg-purple-50 border-purple-200"}`}>
+        : isRejected
+        ? dark ? "bg-red-500/5 border-red-500/15" : "bg-red-50 border-red-200"
+        : dark ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50 border-purple-200"}`}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <span className={`font-black text-sm uppercase italic tracking-tighter ${dark ? "text-white" : "text-zinc-900"}`}>
             {credit.table_name || "Table"}
           </span>
-          {credit.paid
-            ? <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase">Settled ✓</span>
-            : <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[8px] font-black uppercase animate-pulse">Outstanding</span>
-          }
+          <CreditStatusBadge status={credit.status} />
         </div>
         <div className="flex items-center gap-3 flex-wrap text-[9px]">
-          {credit.client_name  && <span className="flex items-center gap-1"><User  size={9} className="text-zinc-500"/><span className={dark ? "text-zinc-300" : "text-zinc-700"}>{credit.client_name}</span></span>}
+          {credit.client_name  && <span className="flex items-center gap-1"><User size={9} className="text-zinc-500"/><span className={dark ? "text-zinc-300" : "text-zinc-700"}>{credit.client_name}</span></span>}
           {credit.client_phone && <span className="flex items-center gap-1"><Phone size={9} className="text-zinc-500"/><span className={dark ? "text-zinc-400" : "text-zinc-500"}>{credit.client_phone}</span></span>}
-          {credit.pay_by       && <span className="flex items-center gap-1"><Clock size={9} className="text-zinc-500"/><span className={dark ? "text-zinc-400" : "text-zinc-500"}>Pays: {credit.pay_by}</span></span>}
+          {!isSettled && !isRejected && credit.pay_by && (
+            <span className="flex items-center gap-1"><Clock size={9} className="text-amber-400"/><span className="text-amber-400 font-black">Pay by: {credit.pay_by}</span></span>
+          )}
         </div>
-        {credit.paid && credit.settle_method && (
+        {isSettled && credit.settle_method && (
           <p className={`text-[8px] mt-1 font-mono ${dark ? "text-zinc-600" : "text-zinc-400"}`}>
             Settled via {credit.settle_method}{credit.settle_txn ? ` · ${credit.settle_txn}` : ""}
             {credit.paid_at ? ` · ${toLocalDateStr(new Date(credit.paid_at))}` : ""}
           </p>
         )}
         <p className={`text-[8px] mt-0.5 ${dark ? "text-zinc-700" : "text-zinc-400"}`}>
-          Approved by {credit.approved_by} · {toLocalDateStr(new Date(credit.created_at))}
+          {credit.approved_by ? `Approved by ${credit.approved_by} · ` : ""}
+          {toLocalDateStr(new Date(credit.created_at))}
         </p>
       </div>
       <div className="text-right shrink-0">
-        <p className="text-base font-black text-purple-400 italic">UGX {Number(credit.amount).toLocaleString()}</p>
-        {credit.paid && credit.amount_paid && Number(credit.amount_paid) !== Number(credit.amount) && (
+        <p className={`text-base font-black italic ${isSettled ? "text-emerald-400" : isRejected ? "text-red-400" : "text-purple-400"}`}>
+          UGX {Number(displayAmount).toLocaleString()}
+        </p>
+        {isSettled && credit.amount_paid && Number(credit.amount_paid) !== Number(credit.amount) && (
           <p className="text-[9px] text-emerald-400 font-bold mt-0.5">Paid: UGX {Number(credit.amount_paid).toLocaleString()}</p>
         )}
       </div>
     </div>
   );
 }
-
-// ─── LIVE LOG ROW ─────────────────────────────────────────────────────────────
-// Compact row for the real-time operations feed.
-// Each event type gets its own accent colour and icon letter.
 
 // ─── SHIFT DETAIL MODAL (director view) ──────────────────────────────────────
 function ShiftDetailModal({ shift, dark, onClose }) {
@@ -642,12 +742,10 @@ function ShiftDetailModal({ shift, dark, onClose }) {
       <div className={`w-full sm:max-w-md rounded-t-[2rem] sm:rounded-[2rem] overflow-hidden shadow-2xl border
         ${dark ? "bg-[#0f0f0f] border-white/10" : "bg-white border-zinc-200"}`}>
 
-        {/* Drag handle mobile */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className={`w-10 h-1 rounded-full ${dark ? "bg-white/20" : "bg-zinc-200"}`} />
         </div>
 
-        {/* Header */}
         <div className={`flex items-center justify-between px-6 pt-4 pb-4 sm:pt-6 border-b ${dark ? "border-white/8" : "border-zinc-100"}`}>
           <div>
             <p className={`text-[10px] font-black tracking-[0.2em] uppercase mb-1 ${dark ? "text-zinc-600" : "text-zinc-400"}`}>
@@ -671,8 +769,6 @@ function ShiftDetailModal({ shift, dark, onClose }) {
         </div>
 
         <div className="overflow-y-auto max-h-[70vh] sm:max-h-none px-5 pb-6 pt-4 space-y-3">
-
-          {/* Cash block */}
           <div className={`border rounded-2xl p-4 space-y-3 ${dark ? "bg-white/3 border-white/7" : "bg-zinc-50 border-zinc-100"}`}>
             <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${dark ? "text-zinc-600" : "text-zinc-400"}`}>Cash</p>
             <div className="flex justify-between items-center">
@@ -687,7 +783,6 @@ function ShiftDetailModal({ shift, dark, onClose }) {
             )}
           </div>
 
-          {/* Digital block */}
           <div className={`border rounded-2xl p-4 ${dark ? "bg-white/3 border-white/7" : "bg-zinc-50 border-zinc-100"}`}>
             <p className={`text-[9px] font-black uppercase tracking-[0.2em] mb-3 ${dark ? "text-zinc-600" : "text-zinc-400"}`}>Digital Settlements</p>
             <div className="grid grid-cols-2 gap-2">
@@ -707,7 +802,6 @@ function ShiftDetailModal({ shift, dark, onClose }) {
             </div>
           </div>
 
-          {/* Summary row — orders count */}
           {shift.total_orders > 0 && (
             <div className={`border rounded-2xl px-4 py-3 flex items-center justify-between ${dark ? "bg-white/3 border-white/7" : "bg-zinc-50 border-zinc-100"}`}>
               <span className={`text-xs font-bold ${dark ? "text-zinc-400" : "text-zinc-500"}`}>Orders Handled</span>
@@ -715,7 +809,6 @@ function ShiftDetailModal({ shift, dark, onClose }) {
             </div>
           )}
 
-          {/* Gross total banner */}
           <div className={`rounded-2xl p-4 flex items-center justify-between border
             ${dark ? "bg-yellow-500/6 border-yellow-500/20" : "bg-yellow-50 border-yellow-200"}`}>
             <div>
@@ -734,7 +827,6 @@ function ShiftDetailModal({ shift, dark, onClose }) {
             </div>
           </div>
 
-          {/* Close */}
           <button onClick={onClose}
             className={`w-full py-4 rounded-xl font-black uppercase italic text-sm tracking-widest transition-all active:scale-[0.98]
               ${dark ? "bg-zinc-900 border border-white/10 text-zinc-400 hover:text-white" : "bg-zinc-100 border border-zinc-200 text-zinc-500 hover:text-zinc-800"}`}>

@@ -23,6 +23,9 @@ import waiterRoutes from './routes/waiterRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
 import deliveryRoutes from './routes/deliveryRoutes.js';
 
+// --- NEW CREDIT ROUTE IMPORT ---
+import creditRoutes, { initCreditTables } from './routes/creditRoutes.js';
+
 dotenv.config();
 const app = express();
 
@@ -30,7 +33,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-  'http://localhost:5174', // <--- Add this line
+  'http://localhost:5174',
   'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app',
   /\.vercel\.app$/
 ];
@@ -60,7 +63,7 @@ app.use(helmet({
 // 3. BODY PARSER
 app.use(express.json());
 
-// 4. STATIC FILES — with explicit CORP header ✅
+// 4. STATIC FILES
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
@@ -71,11 +74,11 @@ app.use('/api/visits', siteVisits);
 app.use('/api/menus', menuRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/cashier-ops', sendToCashierRoute); // Change this prefix      // ✅ Same prefix is fine if paths differ
+app.use('/api/cashier-ops', sendToCashierRoute);
 app.use('/api/events', eventRoutes);
 app.use('/api/manager', managerRoutes);
 app.use('/api/overview', overviewRoutes);
-app.use('/api/overview', weeklyRevenueRoutes);    // ✅ Same prefix is fine if paths differ
+app.use('/api/overview', weeklyRevenueRoutes);
 app.use('/api/summaries', summaryRoutes);
 app.use('/api/accountant', accountantRoutes);
 app.use('/api/kitchen', kitchenRoutes);
@@ -84,24 +87,52 @@ app.use('/api/barman', barmanRoutes);
 app.use('/api/waiter', waiterRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/delivery', deliveryRoutes);
-// ❌ Removed duplicate: app.use('/api/accountant', waiterRoutes)
+
+// --- REGISTER CREDIT ROUTES ---
+app.use('/api/credits', creditRoutes);
 
 // 6. HEALTH CHECK
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Backend working' });
 });
 
-// 7. DATABASE VERIFICATION
+// 7. DATABASE VERIFICATION & INITIALIZATION
 const verifyDB = async () => {
   try {
+    // Check connection
     await pool.query('SELECT NOW()');
     console.log('✅ Database connected to Neon');
+
+    // Run Credit Table Setup
+    await initCreditTables();
+    console.log('✅ Credit tables verified/initialized');
+
   } catch (err) {
-    console.error('❌ DB Error:', err.message);
+    console.error('❌ DB/Init Error:', err.message);
   }
 };
 
 const PORT = process.env.PORT || 5010;
+
+// ERROR HANDLING
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, '\nReason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+});
+
+process.on('SIGTERM', () => {
+  console.warn('⚠️ Received SIGTERM, shutting down gracefully.');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.warn('⚠️ Received SIGINT, shutting down gracefully.');
+  process.exit(0);
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   verifyDB();

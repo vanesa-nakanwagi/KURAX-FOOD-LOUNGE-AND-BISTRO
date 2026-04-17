@@ -54,7 +54,7 @@ export default function Services() {
   };
 
   return (
-    <section className="relative w-full py-24 md:py-32 overflow-hidden bg-white dark:bg-[#030303] transition-colors duration-500">
+    <section className="relative w-full py-20 md:py-20 overflow-hidden bg-white dark:bg-[#030303] transition-colors duration-500">
       
       {/* --- 💡 LUXURY BACKGROUND ELEMENTS --- */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
@@ -81,10 +81,10 @@ export default function Services() {
           </div>
           
           <h2 className="text-4xl md:text-6xl font-serif font-bold text-slate-900 dark:text-white mb-6 tracking-tight">
-            Savor Every <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 italic">Moment</span>
+            Savor Every <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 ">Moment</span>
           </h2>
           
-          <p className="text-slate-500 dark:text-zinc-400 max-w-2xl mx-auto text-lg font-light leading-relaxed">
+          <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-lg font-light leading-relaxed">
             Experience exceptional dining, entertainment, and hospitality crafted 
             with precision to provide comfort and culinary excellence.
           </p>
@@ -121,11 +121,11 @@ export default function Services() {
                     </div>
                   </div>
 
-                  <h3 className="text-sm font-black text-slate-900 dark:text-white mb-4 uppercase tracking-[0.2em] group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
+                  <h3 className="text-sm font-black text-yellow-700 dark:text-white mb-4 uppercase tracking-[0.2em] group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
                     {service.title}
                   </h3>
 
-                  <p className="text-sm text-slate-500 dark:text-zinc-400 leading-relaxed font-light">
+                  <p className="text-sm text-zinc-700 dark:text-zinc-400 leading-relaxed font-light">
                     {service.description}
                   </p>
 

@@ -32,7 +32,8 @@ function isSettledCredit(c) {
   return (
     c.paid    === true || c.paid    === "t" || c.paid    === "true"  ||
     c.settled === true || c.settled === "t" || c.settled === "true"  ||
-    c.status  === "settled" || c.status  === "Settled"
+    c.status  === "settled" || c.status  === "Settled" ||
+    c.status  === "FullySettled"
   );
 }
 
@@ -51,7 +52,7 @@ function StatCard({ label, value, sub, icon, color, isDark }) {
   );
 }
 
-// ─── CREDIT APPROVAL CARD ────────────────────────────────────────────────────
+// ─── CREDIT APPROVAL CARD ────────────────────────────────────────────────
 function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
   const ageMin = Math.floor((Date.now() - new Date(row.created_at)) / 60000);
   const ageStr = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ago`;
@@ -69,7 +70,7 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
           <span className={`text-[9px] font-bold ${isDark ? "text-zinc-600" : "text-yellow-700/60"}`}>· {ageStr}</span>
         </div>
         <span className={`text-[9px] font-bold ${isDark ? "text-zinc-500" : "text-yellow-700/60"}`}>
-          via {row.confirmed_by || "Cashier"}
+          via {row.confirmed_by || row.requested_by || "Cashier"}
         </span>
       </div>
 
@@ -258,28 +259,41 @@ export default function PerformanceReports() {
     finally { setMonthLoading(false); }
   }, [currentMonth]);
 
+  // FIXED: Fetch credits and pending approvals
   const fetchCredits = useCallback(async () => {
     try {
-      const [aRes, cRes] = await Promise.all([
-        fetch(`${API_URL}/api/orders/credit-approvals`),
-        fetch(`${API_URL}/api/orders/credits`),
-      ]);
-      if (aRes.ok) setCreditApprovals(await aRes.json());
-      if (cRes.ok) {
-        const rows = await cRes.json();
-        // Normalise postgres boolean "t"/"f" → JS boolean
+      // Get pending credit approvals from cashier_queue
+      const approvalsRes = await fetch(`${API_URL}/api/cashier-ops/credit-approvals`);
+      if (approvalsRes.ok) {
+        const approvals = await approvalsRes.json();
+        console.log("📋 Pending approvals:", approvals.length);
+        setCreditApprovals(approvals);
+      } else {
+        console.error("Failed to fetch approvals:", approvalsRes.status);
+      }
+      
+      // Get all credits from credits table
+      const creditsRes = await fetch(`${API_URL}/api/cashier-ops/credits`);
+      if (creditsRes.ok) {
+        const rows = await creditsRes.json();
         setCreditsLedger(rows.map(r => ({ ...r, paid: isSettledCredit(r) })));
       }
-    } catch (e) { console.error("Credits:", e); }
+    } catch (e) { 
+      console.error("Credits fetch error:", e); 
+    }
     finally { setCreditsLoading(false); }
   }, []);
 
+  // Initial fetch and polling
   useEffect(() => {
     fetchDaySummary();
     fetchMonthSummary();
     fetchCredits();
-    const credId = setInterval(fetchCredits, 15000);
+    
+    // Poll for new approvals every 10 seconds
+    const credId = setInterval(fetchCredits, 10000);
     const today  = new Date().toISOString().split("T")[0];
+    
     if (selectedDate === today) {
       const sumId = setInterval(fetchDaySummary, 10000);
       return () => { clearInterval(sumId); clearInterval(credId); };
@@ -296,11 +310,7 @@ export default function PerformanceReports() {
     creditFilter === "outstanding" ? outstanding :
     creditFilter === "settled"     ? settled     : creditsLedger;
 
-  // ── BUG FIX: enrich daySummary totals with today's settled credits ────────
-  // daySummary from /api/summaries/today only reflects cashier_queue payments.
-  // Credit settlements go via PATCH /api/orders/credits/:id/settle which writes
-  // to the credits table — never to daily_summary — so they were invisible.
-  // We add them here per settle_method so each bucket is accurate.
+  // ── Credit settlement additions ───────────────────────────────────────────
   const settledTodayCredits = useMemo(() =>
     creditsLedger.filter(c => {
       if (!c.paid) return false;
@@ -324,7 +334,6 @@ export default function PerformanceReports() {
     return acc;
   }, [settledTodayCredits]);
 
-  // Final display values — DB totals + credit settlement additions
   const totalGross   = Number(daySummary?.total_gross  ?? 0) + creditSettledByMethod.total;
   const totalCash    = Number(daySummary?.total_cash   ?? 0) + creditSettledByMethod.cash;
   const totalCard    = Number(daySummary?.total_card   ?? 0) + creditSettledByMethod.card;
@@ -351,35 +360,61 @@ export default function PerformanceReports() {
       }, {}),
   [orders, selectedDate]);
 
-  // ── Credit approve / reject ───────────────────────────────────────────────
+  // ─── FIXED: Credit approve - stays visible until action completes ─────────
   const handleApprove = async (queueId) => {
     setApprovingId(queueId);
     try {
-      const res = await fetch(`${API_URL}/api/orders/credit-approvals/${queueId}/approve`, {
+      const res = await fetch(`${API_URL}/api/cashier-ops/credit-approvals/${queueId}/approve`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approved_by: currentStaffName }),
       });
+      
       if (res.ok) {
+        // Remove from approvals list
         setCreditApprovals(prev => prev.filter(r => r.id !== queueId));
-        fetchCredits();
+        await fetchCredits();
+        alert("✅ Credit approved successfully!");
+      } else {
+        const error = await res.json();
+        alert(error.error || "Failed to approve credit");
+        // Refresh to show any changes
+        await fetchCredits();
       }
-    } catch (e) { console.error("Approve:", e); }
+    } catch (e) { 
+      console.error("Approve error:", e);
+      alert("Network error while approving");
+    }
     setApprovingId(null);
   };
 
+  // ─── FIXED: Credit reject - stays visible until action completes ──────────
   const handleReject = async () => {
     if (!rejectingRow) return;
+    setApprovingId(rejectingRow);
     try {
-      await fetch(`${API_URL}/api/orders/credit-approvals/${rejectingRow}/reject`, {
+      const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${rejectingRow}/reject`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rejected_by: currentStaffName, reason: rejectReason }),
+        body: JSON.stringify({ reason: rejectReason || "Rejected by manager" }),
       });
-      setCreditApprovals(prev => prev.filter(r => r.id !== rejectingRow));
-    } catch (e) { console.error("Reject:", e); }
+      
+      if (res.ok) {
+        setCreditApprovals(prev => prev.filter(r => r.id !== rejectingRow));
+        await fetchCredits();
+        alert("❌ Credit rejected successfully!");
+      } else {
+        const error = await res.json();
+        alert(error.error || "Failed to reject credit");
+        await fetchCredits();
+      }
+    } catch (e) { 
+      console.error("Reject error:", e);
+      alert("Network error while rejecting");
+    }
     setRejectingRow(null);
     setRejectReason("");
+    setApprovingId(null);
   };
 
   // ── Shared Tailwind shorthands ────────────────────────────────────────────
@@ -405,7 +440,6 @@ export default function PerformanceReports() {
       </div>
 
       {/* ── REVENUE STAT CARDS ── */}
-      {/* Note: values include today's settled credit amounts per payment method */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
         <StatCard
           label="Gross Revenue" isDark={isDark} color="text-emerald-500"
@@ -436,7 +470,7 @@ export default function PerformanceReports() {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          CREDITS SECTION
+          CREDITS SECTION WITH PERSISTENT APPROVAL BUTTONS
       ══════════════════════════════════════════════════════════════════════ */}
       <div className={`rounded-[2.5rem] border overflow-hidden ${card}`}>
 
@@ -501,8 +535,8 @@ export default function PerformanceReports() {
           </div>
         </div>
 
-        {/* Pending approvals */}
-        {creditApprovals.length > 0 && (
+        {/* PENDING APPROVALS SECTION - APPROVAL BUTTONS PERSIST HERE */}
+        {creditApprovals.length > 0 ? (
           <div className={`px-6 pb-6 border-t pt-5 space-y-3 ${isDark ? "border-white/5" : "border-black/5"}`}>
             <div className="flex items-center gap-2 mb-4">
               <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse shrink-0"/>
@@ -523,6 +557,18 @@ export default function PerformanceReports() {
                 onReject={() => { setRejectingRow(row.id); setRejectReason(""); }}
               />
             ))}
+          </div>
+        ) : (
+          // Show message when no pending approvals
+          <div className={`px-6 pb-6 border-t pt-5 ${isDark ? "border-white/5" : "border-black/5"}`}>
+            <div className="flex items-center justify-center py-8 opacity-50">
+              <div className="text-center">
+                <CheckCircle2 size={24} className="mx-auto mb-2 text-emerald-500" />
+                <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">
+                  No pending credit approvals
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -610,100 +656,9 @@ export default function PerformanceReports() {
         </div>
       </div>
 
-      {/* ── MONTHLY PROGRESS ── */}
-      <div className={`rounded-[2.5rem] border p-6 md:p-8 ${card}`}>
-        <div className="flex justify-between items-end mb-5">
-          <div>
-            <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${muted}`}>
-              Monthly Target — {currentMonth}
-            </p>
-            {monthLoading ? (
-              <div className={`h-8 w-52 rounded-xl animate-pulse ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`}/>
-            ) : (
-              <h3 className="text-2xl md:text-3xl font-[900] italic tracking-tighter">
-                {fmt(monthlyRevenue)}
-                <span className="text-xs text-zinc-500 ml-2">/ {fmt(monthTarget)}</span>
-              </h3>
-            )}
-          </div>
-          <span className="text-3xl font-[900] italic text-yellow-500">{progressPct}%</span>
-        </div>
-        <div className="w-full h-3 bg-black/20 rounded-full overflow-hidden border border-white/5">
-          <div
-            className="h-full bg-yellow-500 transition-all duration-1000 shadow-[0_0_20px_rgba(234,179,8,0.3)]"
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
-        {!monthLoading && monthSummary?.totals && (
-          <div className="flex flex-wrap gap-2 mt-4">
-            {[
-              { label: "Cash",   value: monthSummary.totals.total_cash,   color: "bg-emerald-500/10 text-emerald-400" },
-              { label: "Card",   value: monthSummary.totals.total_card,   color: "bg-blue-500/10 text-blue-400"      },
-              { label: "MTN",    value: monthSummary.totals.total_mtn,    color: "bg-yellow-500/10 text-yellow-400"  },
-              { label: "Airtel", value: monthSummary.totals.total_airtel, color: "bg-rose-500/10 text-rose-400"      },
-              { label: "Credit", value: monthSummary.totals.total_credit, color: "bg-zinc-500/10 text-zinc-400"      },
-            ].map(({ label, value, color }) => (
-              <div key={label} className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${color}`}>
-                {label}: {fmt(value)}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+     
 
-      {/* ── STAFF LEADERBOARD ── */}
-      <div className={`rounded-[2.5rem] border p-6 md:p-8 ${card}`}>
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h2 className="font-[900] italic uppercase text-lg">Staff Performance</h2>
-            <p className={`text-[8px] font-bold uppercase mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-              Orders on {selectedDate}
-            </p>
-          </div>
-          <button className="hidden md:flex items-center gap-2 bg-yellow-500 text-black px-5 py-3 rounded-xl font-black text-[10px] uppercase italic tracking-widest hover:bg-yellow-400 transition-all">
-            <Download size={12}/> Export
-          </button>
-        </div>
-
-        {Object.entries(waiterStats).length > 0 ? (
-          <div className="space-y-2">
-            {Object.entries(waiterStats)
-              .sort(([, a], [, b]) => b - a)
-              .map(([name, total], idx) => {
-                const maxVal = Math.max(...Object.values(waiterStats));
-                const pct    = maxVal > 0 ? Math.round((total / maxVal) * 100) : 0;
-                return (
-                  <div key={name} className={`flex items-center gap-4 p-4 rounded-2xl border
-                    ${isDark ? "bg-black/20 border-white/5" : "bg-zinc-50 border-black/5"}`}>
-                    <span className={`text-[10px] font-black w-5 text-center
-                      ${idx === 0 ? "text-yellow-500" : "text-zinc-600"}`}>
-                      #{idx + 1}
-                    </span>
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black italic text-sm shrink-0
-                      ${idx === 0 ? "bg-yellow-500 text-black" : "bg-yellow-500/10 text-yellow-500"}`}>
-                      {name.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-black uppercase text-xs italic truncate">{name}</p>
-                      <div className={`w-full h-1 rounded-full mt-1.5 ${isDark ? "bg-white/5" : "bg-zinc-100"}`}>
-                        <div
-                          className={`h-full rounded-full transition-all duration-700 ${idx === 0 ? "bg-yellow-500" : "bg-zinc-600"}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                    <p className="text-emerald-500 font-[900] italic text-sm shrink-0">{fmt(total)}</p>
-                  </div>
-                );
-              })}
-          </div>
-        ) : (
-          <div className="py-14 text-center opacity-25">
-            <Users size={36} className="mx-auto mb-3"/>
-            <p className="text-[9px] font-black uppercase tracking-widest">No staff activity on {selectedDate}</p>
-          </div>
-        )}
-      </div>
+     
 
       {/* ── REJECT MODAL ── */}
       {rejectingRow && (
@@ -735,8 +690,13 @@ export default function PerformanceReports() {
               </button>
               <button
                 onClick={handleReject}
-                className="flex-[2] py-4 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
-                <XCircle size={14}/> Confirm Reject
+                disabled={approvingId === rejectingRow}
+                className="flex-[2] py-4 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50">
+                {approvingId === rejectingRow ? (
+                  <><RefreshCw size={14} className="animate-spin"/> Processing...</>
+                ) : (
+                  <><XCircle size={14}/> Confirm Reject</>
+                )}
               </button>
             </div>
           </div>

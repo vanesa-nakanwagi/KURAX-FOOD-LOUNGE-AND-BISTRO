@@ -40,24 +40,17 @@ export default function CashierLayout() {
 
  const fetchGrossCash = useCallback(async () => {
   try {
-    // 1. Point to the correct endpoint
-    const res = await fetch(`${API_URL}/api/orders/cashier-queue`); 
+    const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue`);
     if (!res.ok) return;
-    
+
     const rows = await res.json();
-    
-    // 2. Filter using the correct field names: 'status', 'payment_method', and 'total'
     const total = rows
-      .filter(r => 
-        // We count orders that are ready to be paid or already served
-        (r.status === "Served" || r.status === "Paid") && 
-        r.payment_method === "Cash"
-      )
-      .reduce((s, r) => s + Number(r.total || 0), 0);
-    
+      .filter(r => r.method === 'Cash')
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+
     setGrossCash(total);
-  } catch (err) { 
-    console.error("Gross fetch error:", err); 
+  } catch (err) {
+    console.error("Gross fetch error:", err);
   }
 }, []);
 

@@ -18,6 +18,8 @@ import BarmanRoutes from "./staff/routes/BarmanRoutes";
 import BaristaRoutes from "./staff/routes/BaristaRoutes"; 
 import SupervisorRoutes from "./staff/routes/SupervisorRoutes";
 import StaffRoutes from './staff/routes/StaffLoginRoutes';
+import NewOrder  from './staff/waiter/components/NewOrder.jsx';
+
 export default function App() {
   return (
     <>
@@ -28,6 +30,8 @@ export default function App() {
       <Route path="/menus" element={<MenusPage />} />
       <Route path="/events" element={<EventsPage />} />
       <Route path="/reservations" element={<ReservationsPage />} />
+      // Look for this in App.jsx
+<Route path="/staff/waiter/menu" element={<NewOrder />} /> 
 
       {/* --- STAFF DIRECT URL ACCESS --- */}
 

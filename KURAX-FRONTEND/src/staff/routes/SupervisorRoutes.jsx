@@ -1,7 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import SupervisorLayout from "../Supervisor/components/SupervisorLayout";
 import NewOrder from "../Manager/components/NewOrder";
-import OrderHistory from "../Manager/components/OrderHistory";
+import  PerformanceDashboard from "../Manager/components/PerformanceDashboard";
 
 const SupervisorRoutes = () => {
   return (
@@ -11,7 +11,7 @@ const SupervisorRoutes = () => {
        
         <Route index element={<Navigate to="new-order" replace />} />
         <Route path="new-order" element={<NewOrder />} />
-        <Route path="history" element={<OrderHistory />} />
+        <Route path="history" element={<PerformanceDashboard />} />
 
       </Route>
     </Routes>

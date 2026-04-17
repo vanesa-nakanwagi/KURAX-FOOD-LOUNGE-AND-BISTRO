@@ -2,7 +2,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import logo from "../../customer/assets/images/logo.jpeg";
 import { 
-  LayoutDashboard, Bike, RotateCcw, LogOut, X, Wallet 
+  LayoutDashboard, Bike, RotateCcw, LogOut, X, Wallet, BookOpen
 } from "lucide-react";
 
 export default function SideBar({ 
@@ -13,12 +13,14 @@ export default function SideBar({
   onEndShift,
   stats,
   deliveryBadge = 0,
+  creditBadge   = 0,   // ← NEW: number of credits needing cashier action
 }) {
   const navigate = useNavigate();
 
   const menuItems = [
     { id: "PENDING",    label: "My Collection",  icon: <LayoutDashboard size={20} /> },
     { id: "CLOSED",     label: "Order Status",   icon: <RotateCcw size={20} /> },
+    { id: "CREDITS",    label: "Credit Ledger",  icon: <BookOpen size={20} /> },   // ← NEW
     { id: "PETTY CASH", label: "Log Petty Cash", icon: <Wallet size={20} /> },
     { id: "DELIVERIES", label: "Riders",         icon: <Bike size={20} /> },
   ];
@@ -49,7 +51,7 @@ export default function SideBar({
               <img src={logo} alt="logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
               <div className="flex flex-col">
                 <h1 className="text-[14px] font-black text-white uppercase tracking-tighter leading-tight">
-                  KURAX FOOD LOUNG & BISTRO
+                  KURAX FOOD LOUNGE & BISTRO
                 </h1>
                 <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest leading-tight">
                   Staff Panel
@@ -70,23 +72,35 @@ export default function SideBar({
           {menuItems.map((item) => {
             const isActive     = activeSection === item.id;
             const isDeliveries = item.id === "DELIVERIES";
+            const isCredits    = item.id === "CREDITS";
+
+            // Badge value for this item
+            const badge = isDeliveries ? deliveryBadge
+                        : isCredits    ? creditBadge
+                        : 0;
+
+            // Badge color: orange for deliveries, orange pulse for credits needing action
+            const badgeBg = isCredits ? "bg-orange-500" : "bg-orange-500";
+
             return (
               <button
                 key={item.id}
                 onClick={() => { setActiveSection(item.id); setIsOpen(false); }}
                 className={`w-full flex items-center gap-4 px-4 py-4 rounded-2xl transition-all font-bold uppercase text-[11px] tracking-widest ${
                   isActive
-                    ? "bg-yellow-500 text-black shadow-lg shadow-yellow-500/10"
+                    ? isCredits
+                      ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
+                      : "bg-yellow-500 text-black shadow-lg shadow-yellow-500/10"
                     : "text-zinc-500 hover:bg-white/5"
                 }`}
               >
                 {item.icon}
                 <span className="flex-1 text-left">{item.label}</span>
 
-                {/* Orange badge — active deliveries count */}
-                {isDeliveries && deliveryBadge > 0 && !isActive && (
-                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-orange-500 text-black text-[9px] font-black shrink-0">
-                    {deliveryBadge > 9 ? "9+" : deliveryBadge}
+                {/* Badge — active count */}
+                {badge > 0 && !isActive && (
+                  <span className={`flex items-center justify-center w-5 h-5 rounded-full ${badgeBg} text-black text-[9px] font-black shrink-0`}>
+                    {badge > 9 ? "9+" : badge}
                   </span>
                 )}
               </button>

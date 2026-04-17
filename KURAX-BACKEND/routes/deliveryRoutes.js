@@ -10,10 +10,6 @@ function kampalaDate(d = new Date()) {
 }
 
 // ── SMS helper via Africa's Talking ──────────────────────────────────────────
-// Set these env vars in your backend:
-//   AT_API_KEY=your_key
-//   AT_USERNAME=your_username  (use 'sandbox' for testing)
-//   AT_SENDER_ID=KURAX          (optional branded sender)
 async function sendSMS(phone, message) {
   const apiKey   = process.env.AT_API_KEY;
   const username = process.env.AT_USERNAME || 'sandbox';
@@ -21,7 +17,6 @@ async function sendSMS(phone, message) {
 
   if (!apiKey || !phone) return { success: false, reason: 'no api key or phone' };
 
-  // Normalise Uganda phone: 0771... → +256771...
   let e164 = phone.trim().replace(/\s+/g, '');
   if (e164.startsWith('0'))   e164 = '+256' + e164.slice(1);
   if (!e164.startsWith('+'))  e164 = '+256' + e164;
@@ -44,7 +39,6 @@ async function sendSMS(phone, message) {
     });
     const data = await res.json();
     const ok   = data?.SMSMessageData?.Recipients?.[0]?.status === 'Success';
-    console.log(`📱 SMS → ${e164}: ${ok ? '✅' : '❌'}`, data?.SMSMessageData?.Recipients?.[0]?.status);
     return { success: ok, data };
   } catch (err) {
     console.error('SMS send error:', err.message);
@@ -62,7 +56,6 @@ async function logSMS(orderId, phone, message, event, status) {
 }
 
 // ── GET /api/delivery/riders ──────────────────────────────────────────────────
-// Returns all active riders (used by cashier dropdown)
 router.get('/riders', async (req, res) => {
   try {
     const { includeInactive } = req.query;
@@ -79,9 +72,8 @@ router.get('/riders', async (req, res) => {
 });
 
 // ── POST /api/delivery/riders ─────────────────────────────────────────────────
-// Director adds a new rider
 router.post('/riders', async (req, res) => {
-  const { name, phone } = req.body;
+  const { name, phone } = req.body || {};
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   try {
     const result = await pool.query(
@@ -95,10 +87,9 @@ router.post('/riders', async (req, res) => {
 });
 
 // ── PATCH /api/delivery/riders/:id ───────────────────────────────────────────
-// Director updates name/phone or deactivates
 router.patch('/riders/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, phone, active } = req.body;
+  const { name, phone, active } = req.body || {};
   try {
     const result = await pool.query(
       `UPDATE delivery_riders
@@ -117,7 +108,6 @@ router.patch('/riders/:id', async (req, res) => {
 });
 
 // ── DELETE /api/delivery/riders/:id ──────────────────────────────────────────
-// Soft delete — sets active = false
 router.delete('/riders/:id', async (req, res) => {
   try {
     await pool.query(`UPDATE delivery_riders SET active = FALSE WHERE id = $1`, [req.params.id]);
@@ -128,7 +118,6 @@ router.delete('/riders/:id', async (req, res) => {
 });
 
 // ── GET /api/delivery/orders ──────────────────────────────────────────────────
-// All delivery orders today (director/manager view)
 router.get('/orders', async (req, res) => {
   const today = kampalaDate();
   try {
@@ -156,18 +145,17 @@ router.get('/orders', async (req, res) => {
 });
 
 // ── POST /api/delivery/create ─────────────────────────────────────────────────
-// Cashier creates a delivery order from existing order items
-// Body: { order_id, cashier_queue_id?, rider_id, client_name, client_phone, delivery_address, delivery_note, cashier_name }
 router.post('/create', async (req, res) => {
-  const { order_id, cashier_queue_id, rider_id, client_name, client_phone, delivery_address, delivery_note, cashier_name } = req.body;
+  const {
+    order_id, cashier_queue_id, rider_id,
+    client_name, client_phone, delivery_address, delivery_note, cashier_name
+  } = req.body || {};
+
   if (!rider_id || !client_phone) {
     return res.status(400).json({ error: 'rider_id and client_phone are required' });
   }
 
-  // Resolve the actual orders.id — could be sent directly or we look it up
-  // from the cashier_queue row's order_ids array
   let resolvedOrderId = order_id;
-
   if (!resolvedOrderId && cashier_queue_id) {
     try {
       const qRes = await pool.query(`SELECT order_ids FROM cashier_queue WHERE id = $1`, [cashier_queue_id]);
@@ -178,16 +166,14 @@ router.post('/create', async (req, res) => {
   }
 
   if (!resolvedOrderId) {
-    return res.status(400).json({ error: 'Could not resolve order_id — send order_id or cashier_queue_id' });
+    return res.status(400).json({ error: 'Could not resolve order_id' });
   }
 
   try {
-    // Fetch rider name
     const riderRes = await pool.query(`SELECT name, phone FROM delivery_riders WHERE id = $1`, [rider_id]);
     if (!riderRes.rows.length) return res.status(404).json({ error: 'Rider not found' });
     const rider = riderRes.rows[0];
 
-    // Update order as delivery
     const updatedRes = await pool.query(
       `UPDATE orders SET
          order_type       = 'delivery',
@@ -203,10 +189,9 @@ router.post('/create', async (req, res) => {
       [rider_id, rider.name, client_name?.trim() || 'Client', client_phone.trim(),
        delivery_address?.trim() || null, delivery_note?.trim() || null, resolvedOrderId]
     );
-    if (!updatedRes.rows.length) return res.status(404).json({ error: `Order #${resolvedOrderId} not found in orders table` });
+    if (!updatedRes.rows.length) return res.status(404).json({ error: `Order #${resolvedOrderId} not found` });
     const order = updatedRes.rows[0];
 
-    // SMS: order confirmed
     const confirmMsg = `Hello ${order.client_name || 'there'}! Your order at KURAX Food Lounge has been confirmed. Total: UGX ${Number(order.total).toLocaleString()}. Your rider ${rider.name} will deliver shortly.`;
     const smsResult  = await sendSMS(client_phone, confirmMsg);
     await logSMS(resolvedOrderId, client_phone, confirmMsg, 'order_confirmed', smsResult.success);
@@ -219,7 +204,6 @@ router.post('/create', async (req, res) => {
 });
 
 // ── PATCH /api/delivery/orders/:id/dispatch ───────────────────────────────────
-// Cashier marks rider as dispatched → SMS client
 router.patch('/orders/:id/dispatch', async (req, res) => {
   const { id } = req.params;
   try {
@@ -247,10 +231,17 @@ router.patch('/orders/:id/dispatch', async (req, res) => {
 });
 
 // ── PATCH /api/delivery/orders/:id/delivered ──────────────────────────────────
-// Cashier marks order as delivered (rider returned with payment)
+// FIXED: guard req.body against undefined — was crashing at line 253 with
+// "Cannot destructure property 'payment_confirmed' of undefined"
 router.patch('/orders/:id/delivered', async (req, res) => {
   const { id } = req.params;
-  const { payment_confirmed } = req.body; // true when cashier confirms payment received
+  const {
+    payment_confirmed = false,
+    payment_method    = 'Cash',
+    amount_collected  = null,
+    confirmed_by      = 'Cashier',
+  } = req.body || {};   // ← THE FIX: `|| {}` prevents the crash
+
   try {
     const newStatus = payment_confirmed ? 'paid' : 'delivered';
     const result = await pool.query(
@@ -264,20 +255,44 @@ router.patch('/orders/:id/delivered', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Order not found' });
     const order = result.rows[0];
 
-    if (order.client_phone && payment_confirmed) {
-      const msg = `Thank you ${order.client_name || 'for your order'}! Your KURAX delivery has been completed. We hope you enjoy your meal! UGX ${Number(order.total).toLocaleString()} received. Thank you for choosing KURAX Food Lounge.`;
-      const sms = await sendSMS(order.client_phone, msg);
-      await logSMS(Number(id), order.client_phone, msg, 'delivered', sms.success);
+    // ── When rider brings cash/momo back, record in cashier_queue ────────────
+    // This makes the payment show up in today's totals on the cashier dashboard.
+    if (payment_confirmed) {
+      try {
+        await pool.query(
+          `INSERT INTO cashier_queue
+             (order_ids, table_name, label, method, amount, status,
+              confirmed_by, confirmed_at, created_at)
+           VALUES ($1::jsonb, $2, $3, $4, $5, 'Confirmed', $6, NOW(), NOW())`,
+          [
+            JSON.stringify([Number(id)]),
+            order.table_name || 'DELIVERY',
+            `Delivery Return – ${order.client_name || order.table_name || 'Order'}`,
+            payment_method,
+            Number(amount_collected || order.total || 0),
+            confirmed_by,
+          ]
+        );
+      } catch (qErr) {
+        // Non-fatal — delivery still marked paid even if history fails
+        console.warn('cashier_queue delivery insert skipped:', qErr.message);
+      }
+
+      if (order.client_phone) {
+        const msg = `Thank you ${order.client_name || ''}! Your KURAX delivery is complete. UGX ${Number(order.total).toLocaleString()} received. Thank you for choosing KURAX Food Lounge!`;
+        const sms = await sendSMS(order.client_phone, msg);
+        await logSMS(Number(id), order.client_phone, msg, 'delivered', sms.success);
+      }
     }
 
     res.json({ success: true, order });
   } catch (err) {
+    console.error('delivered patch error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ── GET /api/delivery/stats ───────────────────────────────────────────────────
-// Quick stats for director overview card
 router.get('/stats', async (req, res) => {
   const today = kampalaDate();
   try {
@@ -294,35 +309,29 @@ router.get('/stats', async (req, res) => {
          AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $1`,
       [today]
     );
-    res.json(result.rows[0]);
+    // Always return an object — never crash
+    res.json(result.rows[0] || { total:0, out_for_delivery:0, delivered_unpaid:0, paid:0, pending:0, revenue:0 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Delivery stats error:', err.message);
+    res.json({ total:0, out_for_delivery:0, delivered_unpaid:0, paid:0, pending:0, revenue:0 });
   }
 });
 
 // ── GET /api/delivery/rider-ledger ────────────────────────────────────────────
-// Per-rider daily breakdown — director view.
-// Query params: ?date=YYYY-MM-DD (defaults to today Kampala)
 router.get('/rider-ledger', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
-    // Summary row per rider
     const summaryRes = await pool.query(
       `SELECT
-         o.rider_id,
-         o.rider_name,
+         o.rider_id, o.rider_name,
          COUNT(*)                                                          AS total_orders,
-         -- paid_orders = delivery marked paid OR cashier confirmed payment
-         COUNT(*) FILTER (
-           WHERE o.delivery_status = 'paid' OR o.status = 'Paid'
-         )                                                                 AS paid_orders,
+         COUNT(*) FILTER (WHERE o.delivery_status='paid' OR o.status='Paid') AS paid_orders,
          COUNT(*) FILTER (WHERE o.delivery_status = 'out')                AS out_orders,
          COUNT(*) FILTER (WHERE o.delivery_status = 'pending')            AS pending_orders,
          COUNT(*) FILTER (WHERE o.delivery_status = 'delivered')          AS delivered_unpaid,
          COALESCE(SUM(o.total), 0)                                        AS gross_total,
-         -- collected = delivery_status=paid OR order already marked Paid by cashier
          COALESCE(SUM(o.total) FILTER (
-           WHERE o.delivery_status = 'paid' OR o.status = 'Paid'
+           WHERE o.delivery_status='paid' OR o.status='Paid'
          ), 0) AS collected
        FROM orders o
        WHERE o.order_type = 'delivery'
@@ -333,19 +342,14 @@ router.get('/rider-ledger', async (req, res) => {
       [date]
     );
 
-    // Individual order rows per rider (for drill-down)
     const ordersRes = await pool.query(
       `SELECT
          o.id, o.rider_id, o.rider_name,
-         o.client_name, o.client_phone,
-         o.delivery_address,
-         CASE
-           WHEN o.delivery_status = 'paid' OR o.status = 'Paid' THEN 'paid'
-           ELSE COALESCE(o.delivery_status, 'pending')
-         END AS delivery_status,
-         o.total, o.table_name,
-         o.dispatched_at, o.delivered_at, o.created_at,
-         COALESCE(s.name, 'Unknown') AS cashier_name
+         o.client_name, o.client_phone, o.delivery_address,
+         CASE WHEN o.delivery_status='paid' OR o.status='Paid' THEN 'paid'
+              ELSE COALESCE(o.delivery_status,'pending') END AS delivery_status,
+         o.total, o.table_name, o.dispatched_at, o.delivered_at, o.created_at,
+         COALESCE(s.name,'Unknown') AS cashier_name
        FROM orders o
        LEFT JOIN staff s ON s.id = o.staff_id
        WHERE o.order_type = 'delivery'
@@ -355,7 +359,6 @@ router.get('/rider-ledger', async (req, res) => {
       [date]
     );
 
-    // Group individual orders under each rider
     const ordersByRider = ordersRes.rows.reduce((acc, row) => {
       const key = row.rider_id;
       if (!acc[key]) acc[key] = [];

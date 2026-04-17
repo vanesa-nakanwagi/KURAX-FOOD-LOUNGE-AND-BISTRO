@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, BarChart3,
   History, Target, Bell, Sun, Moon, Menu, X, LogOut, Bike,
+  BookOpen, CheckCircle2, XCircle, Clock, Hourglass
 } from "lucide-react";
 
 // ── Local components ──────────────────────────────────────────────────────────
@@ -17,20 +18,62 @@ import DirectorTargetView            from "./DirectorTargetView";
 import RidersSettings from "./components/RiderSettings";
 import RiderLedger   from "./components/RiderLedger";
 
-
 // ── Shared app context ────────────────────────────────────────────────────────
 import { useData }  from "../../customer/components/context/DataContext";
 import Logo         from "../../customer/assets/images/logo.jpeg";
 import Footer       from "../../customer/components/common/Foooter";
 import API_URL      from "../../config/api";
 
+// ── THEME TOGGLE COMPONENT ────────────────────────────────────────────────────
+function ThemeToggle({ isDark, onToggle }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="relative w-12 h-6 rounded-full bg-gradient-to-r from-yellow-500 to-yellow-600 p-0.5 transition-all duration-300 hover:scale-105 focus:outline-none"
+    >
+      <div className={`absolute inset-0 rounded-full bg-black/20 transition-opacity duration-300 ${isDark ? 'opacity-0' : 'opacity-100'}`} />
+      <div className={`relative w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-300 flex items-center justify-center ${isDark ? 'translate-x-6' : 'translate-x-0'}`}>
+        {isDark ? <Moon size={10} className="text-zinc-800" /> : <Sun size={10} className="text-yellow-500" />}
+      </div>
+    </button>
+  );
+}
+
+// ── CREDIT STATUS BADGE COMPONENT - FIXED to handle all possible statuses ────
+function CreditStatusBadge({ status }) {
+  // Normalize status string (handle case variations)
+  const normalizedStatus = String(status || '').toLowerCase();
+  
+  // Map backend statuses to display (case-insensitive)
+  const statusMap = {
+    'pendingcashier': { label: 'Wait for Cashier', icon: <Hourglass size={10} />, color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
+    'pendingmanagerapproval': { label: 'Wait for Manager', icon: <Clock size={10} />, color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
+    'approved': { label: 'Approved', icon: <CheckCircle2 size={10} />, color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
+    'fullysettled': { label: 'Settled', icon: <CheckCircle2 size={10} />, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+    'partiallysettled': { label: 'Partially Settled', icon: <CheckCircle2 size={10} />, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+    'rejected': { label: 'Rejected', icon: <XCircle size={10} />, color: 'bg-red-500/20 text-red-400 border-red-500/30' }
+  };
+  
+  const config = statusMap[normalizedStatus] || { 
+    label: status || 'Unknown', 
+    icon: <BookOpen size={10} />, 
+    color: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30' 
+  };
+  
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black uppercase ${config.color}`}>
+      {config.icon} {config.label}
+    </span>
+  );
+}
+
 const NAV = [
-  { icon: <LayoutDashboard size={18} />, label: "Dahboard",  tab: "OVERVIEW"  },
-  { icon: <Users size={18} />,           label: "Staff",     tab: "STAFF"     },
+  { icon: <LayoutDashboard size={18} />, label: "Dashboard",  tab: "OVERVIEW"  },
+  { icon: <Users size={18} />,           label: "Staff",      tab: "STAFF"     },
   { icon: <BarChart3 size={18} />,       label: "Finances & Credits",  tab: "FINANCES"  },
-  { icon: <History size={18} />,         label: "History",   tab: "HISTORY"   },
-  { icon: <Target size={18} />,          label: "Targets",   tab: "TARGETS"   },
-    { icon: <Bike size={18} />,            label: "Riders",    tab: "RIDERS"    },
+  { icon: <History size={18} />,         label: "History",    tab: "HISTORY"   },
+  { icon: <Target size={18} />,          label: "Targets",    tab: "TARGETS"   },
+  { icon: <Bike size={18} />,            label: "Riders",     tab: "RIDERS"    },
 ];
 
 export default function DirectorDashboard() {
@@ -42,6 +85,8 @@ export default function DirectorDashboard() {
   const [editingStaff,    setEditingStaff]   = useState(null);
   const [showCreateModal, setShowCreate]     = useState(false);
   const [staffModalData,  setStaffModal]     = useState(null);
+  const [creditsData,     setCreditsData]    = useState([]);
+  const [creditsLoading,  setCreditsLoading] = useState(false);
 
   const { staffList, setStaffList, orders = [] } = useData();
   const t = buildTheme(dark);
@@ -62,10 +107,92 @@ export default function DirectorDashboard() {
     (async () => {
       try {
         const res = await fetch(`${API_URL}/api/staff`);
-        if (res.ok) setStaffList(Array.isArray(await res.json()) ? await (await fetch(`${API_URL}/api/staff`)).json() : []);
+        if (res.ok) {
+          const data = await res.json();
+          setStaffList(Array.isArray(data) ? data : []);
+        }
       } catch (e) { console.error("Staff pull failed:", e); }
     })();
   }, [setStaffList]);
+
+  // ── Fetch credits data with debug ─────────────────────────────────────────
+  const fetchCredits = useCallback(async () => {
+    setCreditsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
+      if (res.ok) {
+        const data = await res.json();
+        // Debug: Log all statuses
+        console.log("=== CREDIT STATUS DEBUG ===");
+        console.log("Total credits:", data.length);
+        const statuses = [...new Set(data.map(c => c.status))];
+        console.log("Unique statuses found:", statuses);
+        data.forEach(c => {
+          console.log(`Credit ${c.id}: status="${c.status}", paid=${c.paid}, amount=${c.amount}`);
+        });
+        setCreditsData(data);
+      }
+    } catch (e) { console.error("Credits fetch failed:", e); }
+    setCreditsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchCredits();
+    const interval = setInterval(fetchCredits, 30000);
+    return () => clearInterval(interval);
+  }, [fetchCredits]);
+
+  // ── Credit statistics - FIXED to correctly identify statuses ───────────────
+  const creditStats = useMemo(() => {
+    // Normalize status function
+    const getNormalizedStatus = (status) => {
+      if (!status) return 'unknown';
+      const s = String(status).toLowerCase();
+      if (s === 'pendingcashier') return 'pendingCashier';
+      if (s === 'pendingmanagerapproval') return 'pendingManager';
+      if (s === 'approved') return 'approved';
+      if (s === 'fullysettled') return 'settled';
+      if (s === 'partiallysettled') return 'settled';
+      if (s === 'rejected') return 'rejected';
+      // Also check by paid flag
+      return s;
+    };
+    
+    const pendingCashier = creditsData.filter(c => getNormalizedStatus(c.status) === 'pendingCashier');
+    const pendingManager = creditsData.filter(c => getNormalizedStatus(c.status) === 'pendingManager');
+    const approved = creditsData.filter(c => getNormalizedStatus(c.status) === 'approved');
+    // Also check if paid flag is true but status is not settled
+    const settled = creditsData.filter(c => getNormalizedStatus(c.status) === 'settled' || c.paid === true);
+    const rejected = creditsData.filter(c => getNormalizedStatus(c.status) === 'rejected');
+    
+    // Outstanding = not yet paid (pending cashier, pending manager, approved, and NOT settled/rejected)
+    const outstanding = creditsData.filter(c => {
+      const status = getNormalizedStatus(c.status);
+      return status === 'pendingCashier' || status === 'pendingManager' || status === 'approved';
+    });
+    
+    console.log("Credit Stats Debug:", {
+      total: creditsData.length,
+      pendingCashier: pendingCashier.length,
+      pendingManager: pendingManager.length,
+      approved: approved.length,
+      settled: settled.length,
+      rejected: rejected.length,
+      outstanding: outstanding.length
+    });
+    
+    return {
+      pendingCashier: pendingCashier.length,
+      pendingManager: pendingManager.length,
+      approved: approved.length,
+      settled: settled.length,
+      rejected: rejected.length,
+      totalOutstanding: outstanding.reduce((s, c) => s + Number(c.amount || 0), 0),
+      totalSettled: settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0),
+      totalRejected: rejected.reduce((s, c) => s + Number(c.amount || 0), 0),
+      allCredits: creditsData
+    };
+  }, [creditsData]);
 
   // ── Staff actions ──────────────────────────────────────────────────────────
   const handleSaveStaff = async (payload) => {
@@ -105,6 +232,9 @@ export default function DirectorDashboard() {
   const handleLogout   = () => { localStorage.removeItem("kurax_user"); navigate("/staff/login"); };
   const handleCardClick = useCallback((staff, stats) => setStaffModal({ staff, stats }), []);
 
+  // ── Theme toggle handler ───────────────────────────────────────────────────
+  const toggleTheme = () => setDark(prev => !prev);
+
   // ── Loading spinner ────────────────────────────────────────────────────────
   if (!currentUser) return (
     <div className="h-[100dvh] bg-black flex items-center justify-center">
@@ -124,17 +254,17 @@ export default function DirectorDashboard() {
 
         {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
         <aside className={`
-          fixed inset-y-0 left-0 z-50 w-60 ${t.sidebar} border-r p-5 flex flex-col
+          fixed inset-y-0 left-0 z-50 w-64 ${t.sidebar} border-r p-5 flex flex-col
           transition-transform duration-300
           ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
           md:relative md:translate-x-0
         `}>
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-2 min-w-0">
-              <img src={Logo} alt="" className="w-8 h-8 rounded-xl object-cover border border-yellow-500/20 shrink-0" />
+              <img src={Logo} alt="" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/20 shrink-0" />
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-tighter leading-none truncate">KURAX FOOD LOUNGE</p>
-                <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest">ADMIN PANEL</p>
+                <p className="text-[11px] font-black uppercase tracking-tighter leading-none truncate">KURAX FOOD LOUNGE</p>
+                <p className="text-yellow-500 text-[8px] font-bold uppercase tracking-widest">DIRECTOR PANEL</p>
               </div>
             </div>
             <button className="md:hidden p-1.5" onClick={() => setSidebarOpen(false)}>
@@ -146,22 +276,16 @@ export default function DirectorDashboard() {
             {NAV.map(({ icon, label, tab }) => (
               <button key={tab}
                 onClick={() => { setActiveTab(tab); setSidebarOpen(false); }}
-                className={`flex items-center gap-3 px-3 py-3 rounded-2xl text-sm font-bold transition-all w-full text-left
+                className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all w-full text-left
                   ${activeTab === tab ? t.navActive : t.navIdle}`}>
                 {icon} {label}
               </button>
             ))}
           </nav>
 
-          <div className={`mt-auto pt-5 border-t ${t.divider} space-y-1.5`}>
-            <button onClick={() => setDark(p => !p)}
-              className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-2xl text-sm font-bold transition-all
-                ${dark ? "text-zinc-400 hover:text-yellow-500 hover:bg-white/5" : "text-zinc-500 hover:text-yellow-600 hover:bg-zinc-100"}`}>
-              {dark ? <Sun size={15} /> : <Moon size={15} />}
-              {dark ? "Light Mode" : "Dark Mode"}
-            </button>
+          <div className={`mt-auto pt-5 border-t ${t.divider}`}>
             <button onClick={handleLogout}
-              className="flex items-center gap-3 text-zinc-500 hover:text-rose-500 transition-colors text-sm font-bold w-full px-3 py-2.5">
+              className="flex items-center gap-3 text-zinc-500 hover:text-rose-500 transition-colors text-sm font-bold w-full px-3 py-2.5 rounded-xl hover:bg-white/5">
               <LogOut size={15} /> Logout
             </button>
           </div>
@@ -170,7 +294,7 @@ export default function DirectorDashboard() {
         {/* ── MAIN ────────────────────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-          {/* Header */}
+          {/* Header with Theme Toggle */}
           <header className={`px-4 py-3 border-b flex justify-between items-center sticky top-0 z-30 backdrop-blur-md shrink-0 ${t.header}`}>
             <div className="flex items-center gap-3 min-w-0">
               <button className={`md:hidden p-2 rounded-xl shrink-0 ${dark ? "bg-zinc-900" : "bg-zinc-100"}`}
@@ -186,18 +310,25 @@ export default function DirectorDashboard() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button onClick={() => setDark(p => !p)}
-                className={`p-1.5 rounded-full border transition-all
-                  ${dark ? "bg-zinc-900 border-white/5 text-zinc-400 hover:text-yellow-500" : "bg-white border-zinc-200 text-zinc-500 hover:text-yellow-600"}`}>
-                {dark ? <Sun size={14} /> : <Moon size={14} />}
-              </button>
-              <div className={`relative p-1.5 rounded-full border cursor-pointer ${dark ? "border-white/5" : "border-zinc-200"}`}>
-                <Bell size={15} />
-                <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-rose-500 rounded-full" />
+            <div className="flex items-center gap-3 shrink-0">
+              {/* Theme Toggle */}
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${dark ? "bg-white/5 border border-white/10" : "bg-gray-100 border border-gray-200"}`}>
+                <span className={`text-[9px] font-black uppercase tracking-widest ${dark ? "text-zinc-500" : "text-gray-500"}`}>Theme</span>
+                <ThemeToggle isDark={dark} onToggle={toggleTheme} />
               </div>
+              {/* Notification Bell with Credit Count */}
+              {(creditStats.pendingCashier > 0 || creditStats.pendingManager > 0) && (
+                <div className={`relative p-1.5 rounded-full border cursor-pointer ${dark ? "border-white/5 hover:bg-white/5" : "border-gray-200 hover:bg-gray-100"}`}>
+                  <Bell size={15} />
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center">
+                    <span className="text-[8px] font-black text-white">{creditStats.pendingCashier + creditStats.pendingManager}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </header>
+
+          
 
           {/* Scrollable body */}
           <main className="flex-1 overflow-y-auto overscroll-contain">
@@ -226,17 +357,24 @@ export default function DirectorDashboard() {
                 />
               )}
 
-              {activeTab === "FINANCES" && <FinancesSection />}
+              {activeTab === "FINANCES" && (
+                <FinancesSection 
+                  creditsData={creditsData}
+                  creditStats={creditStats}
+                  CreditStatusBadge={CreditStatusBadge}
+                />
+              )}
+              
               {activeTab === "HISTORY"  && <HistorySection />}
 
-     {activeTab === "RIDERS" && (
-  <div className="animate-in fade-in duration-500 space-y-10">
-    <RiderLedger dark={dark} t={t} />
-    <div className={`border-t pt-8 ${dark ? "border-white/5" : "border-zinc-100"}`}>
-      <RidersSettings dark={dark} t={t} />
-    </div>
-  </div>
-)}
+              {activeTab === "RIDERS" && (
+                <div className="animate-in fade-in duration-500 space-y-10">
+                  <RiderLedger dark={dark} t={t} />
+                  <div className={`border-t pt-8 ${dark ? "border-white/5" : "border-zinc-100"}`}>
+                    <RidersSettings dark={dark} t={t} />
+                  </div>
+                </div>
+              )}
             </div>
             <Footer />
           </main>

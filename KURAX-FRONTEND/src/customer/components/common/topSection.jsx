@@ -12,13 +12,7 @@ export default function TopSection({ searchPlaceholder }) {
   const location = useLocation();
 
   // Scroll animations for glassmorphism effect
-  const headerBg = useTransform(
-    scrollY,
-    [0, 100],
-    ["rgba(255, 255, 255, 0)", "rgba(255, 255, 255, 0.8)"]
-  );
   const headerBlur = useTransform(scrollY, [0, 100], ["blur(0px)", "blur(12px)"]);
-  const borderOpacity = useTransform(scrollY, [0, 100], [0, 1]);
 
   return (
     <motion.header
@@ -26,9 +20,8 @@ export default function TopSection({ searchPlaceholder }) {
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.8, ease: "easeOut" }}
       style={{ 
-        backgroundColor: headerBg, 
         backdropFilter: headerBlur,
-        borderBottom: `1px solid rgba(202, 138, 4, 0.2)` 
+        // Removed borderBottom from here
       }}
       className="sticky top-0 z-50 transition-colors duration-300 font-['Outfit']"
     >
@@ -54,10 +47,10 @@ export default function TopSection({ searchPlaceholder }) {
             <div className="absolute inset-0 rounded-full bg-yellow-500/20 blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           <div>
-            <h1 className="text-xl md:text-2xl font-serif font-bold tracking-tight text-black dark:text-white leading-tight">
-              KURAX FOOD LOUNGE<span className="text-yellow-600"> & BISTRO </span>
+            <h1 className="text-xl md:text-2xl font-outfit font-bold tracking-tight text-black dark:text-white leading-tight">
+              KURAX FOOD LOUNGE & BISTRO
             </h1>
-            <p className="text-[10px] uppercase tracking-[0.3em] font-bold text-yellow-600/80">
+            <p className="text-[10px] uppercase tracking-[0.4em] font-bold text-yellow-700">
               Luxury Dining & Rooftop Vibes
             </p>
           </div>
@@ -65,8 +58,6 @@ export default function TopSection({ searchPlaceholder }) {
 
         {/* --- SEARCH + CART + THEME --- */}
         <div className="w-full md:w-auto flex items-center gap-4">
-          
-          {/* Premium Search Bar */}
           <div className="relative group flex-1 md:w-64">
             <input
               type="text"
@@ -82,7 +73,6 @@ export default function TopSection({ searchPlaceholder }) {
             </motion.button>
           </div>
 
-          {/* Interactive Cart */}
           <motion.button
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
@@ -109,7 +99,8 @@ export default function TopSection({ searchPlaceholder }) {
       </div>
 
       {/* --- NAVIGATION LINKS --- */}
-      <nav className="flex justify-center items-center gap-10 py-4 border-t border-yellow-500/5">
+      {/* Removed border-t and border-yellow-500/5 from the className below */}
+      <nav className="flex justify-center items-center gap-10 py-4">
         {[
           { name: "Home", path: "/" },
           { name: "Menus", path: "/menus" },
@@ -119,10 +110,9 @@ export default function TopSection({ searchPlaceholder }) {
           <Link
             key={link.name}
             to={link.path}
-            className="relative group text-xs uppercase tracking-[0.2em] font-bold text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white transition-colors"
+            className="relative group text-xs uppercase tracking-[0.2em] font-bold text-zinc-700 dark:text-zinc-400 hover:text-black dark:hover:text-white transition-colors"
           >
             {link.name}
-            {/* Gold Underline Animation */}
             <motion.span 
               className="absolute -bottom-1 left-0 w-0 h-[2px] bg-yellow-500 transition-all duration-300 group-hover:w-full" 
               initial={false}

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from 'react-router-dom';
 import StaffOrderMenu from "./StaffOrderMenu";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { 
-  Plus, Trash2, Send, X, RefreshCcw, 
+  Plus, Trash2, Send, X, RefreshCcw, ArrowLeft,
   ShoppingCart, UtensilsCrossed, Check, Printer, Search, LayoutGrid, ChevronDown, ChevronUp
 } from "lucide-react";
 import ThemeToggle from "../../../customer/components/context/ThemeToggle";
@@ -13,6 +14,7 @@ import API_URL from "../../../config/api";
 export default function NewOrder({ preSelectedTable, onClearSelection }) {
   const { orders = [], setOrders, menus = [], currentUser } = useData() || { setOrders: () => {}, orders: [], menus: [] };
   const { theme } = useTheme();
+  const navigate = useNavigate();
   
   // --- 1. STATE ---
   const [tableName, setTableName]           = useState(() => localStorage.getItem("kurax_table_name") || "");
@@ -20,35 +22,27 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
     const saved = localStorage.getItem("kurax_staff_cart");
     return saved ? JSON.parse(saved) : [];
   });
-  // ── FIXED: existing items shown as read-only context, never put in cart ──
   const [existingItems, setExistingItems]   = useState([]);
-
   const [searchQuery, setSearchQuery]       = useState("");
   const [isCartOpen, setIsCartOpen]         = useState(false);
   const [showSuccess, setShowSuccess]       = useState(false);
   const [activeCategory, setActiveCategory] = useState("Starters");
 
-  // --- 2. BRIDGE: watch for redirects from Manage Order / Manage Tables ---
+  // --- 2. BRIDGE ---
   useEffect(() => {
     if (preSelectedTable) {
       setTableName(preSelectedTable.name.toUpperCase());
-
-      // ── KEY FIX: existing items are READ-ONLY context, not the cart ──
-      // Cart must start empty so only NEW items get posted as a new order.
-      // Putting old items in the cart caused them to be re-sent to kitchen.
       const incoming = preSelectedTable.items || [];
       const activeOnly = incoming.filter(
         i => i.voidProcessed !== true && i.status !== "VOIDED"
       );
-      setExistingItems(activeOnly); // shown as "already ordered" reference
-      setCart([]);                  // always start fresh for new additions
-
+      setExistingItems(activeOnly);
+      setCart([]); // Fresh cart for new additions
       setIsCartOpen(true);
       onClearSelection();
     }
   }, [preSelectedTable, onClearSelection]);
 
-  // Clear existing items when table is cleared
   useEffect(() => {
     if (!tableName) setExistingItems([]);
   }, [tableName]);
@@ -104,7 +98,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
       staffId:   currentUser?.id   || 1,
       staffName: currentUser?.name || "Waiter",
       tableName: tableName.toUpperCase(),
-      items:     cart,           // ← only the NEW items, never old ones
+      items:     cart,
       total:     cartTotal,
       status:    "Pending",
     };
@@ -159,12 +153,28 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
       <SuccessOrderModal isOpen={showSuccess} onClose={() => setShowSuccess(false)} theme={theme} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* --- DYNAMIC HEADER --- */}
         <div className={`p-6 border-b ${theme === 'dark' ? 'bg-black/80 border-white/5' : 'bg-white border-black/5'}`}>
           <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
-              <h2 className="text-3xl font-black uppercase tracking-widest leading-none">Explore Menu</h2>
+            <div className="flex items-center gap-4">
+              {/* Conditional Arrow: Only shows if coming from a pre-selected table action */}
+              {preSelectedTable && (
+                <button 
+                  onClick={() => navigate(-1)}
+                  className={`p-2.5 rounded-2xl transition-all active:scale-90 animate-in fade-in slide-in-from-left duration-300 ${
+                    theme === 'dark' ? 'bg-zinc-900 text-zinc-400 hover:text-white' : 'bg-zinc-100 text-zinc-600'
+                  }`}
+                >
+                  <ArrowLeft size={22} />
+                </button>
+              )}
+              
+              <div className="flex items-center gap-3">
+                <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
+                <h2 className="text-3xl font-black uppercase tracking-widest leading-none">Explore Menu</h2>
+              </div>
             </div>
+
             {tableName && (
               <div className="bg-yellow-500/10 border border-yellow-500/20 px-4 py-2 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-right">
                 <div className="flex flex-col">
@@ -222,6 +232,8 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
     </div>
   );
 }
+
+// ... CartModal and SuccessOrderModal remain identical to previous versions ...
 
 // ─── CART MODAL ───────────────────────────────────────────────────────────────
 function CartModal({ 

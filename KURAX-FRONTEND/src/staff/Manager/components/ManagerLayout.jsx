@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { 
   Lock, ShieldCheck, RefreshCcw, 
-  Menu as MenuIcon, X, Zap, Bell
+  Menu as MenuIcon, Zap, Bell, CreditCard 
 } from "lucide-react"; 
 
 // Component Imports
 import NewOrder           from "./NewOrder";
-import OrderHistory       from "./OrderHistory";
+import PerformanceDashboard      from "./PerformanceDashboard";
 import TargetSettings     from "./TargetSettings"; 
 import Sidebar            from "./Sidebar"; 
 import ShiftReportModal   from "./ShiftModal";
 import LiveOrderStatus    from "./LiveOrderStatus";
 import LiveTableGrid      from "./LiveTableGrid"; 
 import PerformanceReports from "./PerformanceReports";
+import ManagerCreditPanel from "./ManagerCreditPanel"; // <--- Integrated Component
+import OrderHistory from "./ManageTables";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData }  from "../../../customer/components/context/DataContext";
@@ -28,7 +30,12 @@ export default function ManagerLayout() {
   const { currentUser, isGranted } = useData();
   const isDark = theme === 'dark';
 
-  const savedUser      = (() => { try { return JSON.parse(localStorage.getItem('kurax_user') || '{}'); } catch { return {}; } })();
+  // Safe User Retrieval from localStorage or Context
+  const savedUser = (() => { 
+    try { return JSON.parse(localStorage.getItem('kurax_user') || '{}'); } 
+    catch { return {}; } 
+  })();
+  
   const currentStaffId   = currentUser?.id   || savedUser?.id;
   const currentStaffName = currentUser?.name || savedUser?.name || "Manager";
 
@@ -61,16 +68,19 @@ export default function ManagerLayout() {
     }
   };
 
+  // Main Content Switcher
   const renderContent = () => {
     switch (activeTab) {
       case "order": 
-        if (!isGranted) return <LockedView name={currentUser?.name} role={currentUser?.role} theme={theme} />;
+        if (!isGranted) return <LockedView name={currentStaffName} role={currentUser?.role} theme={theme} />;
         return <NewOrder />;
       case "status":  return <LiveOrderStatus />;
       case "tables":  return <LiveTableGrid />; 
       case "target":  return <TargetSettings />;
-      case "history": return <OrderHistory />;
+      case "history": return <PerformanceDashboard />;
+       case "manage": return <OrderHistory />;
       case "reports": return <PerformanceReports />;
+      case "credits": return <ManagerCreditPanel managerName={currentStaffName} theme={theme} />; // <--- Credit Panel Integration
       default:        return <NewOrder />;
     }
   };
@@ -107,15 +117,15 @@ export default function ManagerLayout() {
         onClick={() => setIsMobileMenuOpen(false)}
       />
 
-      {/* 3. ASIDE (The Fix: Added background matching and relative positioning) */}
+      {/* 3. ASIDE (Sidebar Container) */}
       <aside className={`fixed inset-y-0 left-0 z-[70] w-72 transform lg:relative lg:translate-x-0 transition-all duration-500 ease-in-out border-r ${
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       } ${isDark ? 'bg-zinc-950 border-white/5' : 'bg-white border-black/5'}`}>
         <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} />
       </aside>
 
-      {/* 4. MAIN CONTENT AREA (The Fix: Background matches the Dashboard cards) */}
-      <main className={`flex-1 h-full overflow-y-auto flex flex-col min-w-0 transition-all duration-500 ${
+      {/* 4. MAIN CONTENT AREA */}
+      <main className={`flex-1 h-full overflow-y-auto flex flex-col min-w-0 transition-all duration-500 relative ${
         isDark ? 'bg-[#0c0c0c]' : 'bg-zinc-50'
       }`}>
         
@@ -133,11 +143,13 @@ export default function ManagerLayout() {
            </div>
         </div>
 
-        <div className="flex-1 pb-10">
+        {/* Dynamic Content Wrapper */}
+        <div className="flex-1 pb-10 px-4 pt-20 lg:pt-10">
           {renderContent()}
         </div>
       </main>
 
+      {/* Shift Archive Modal */}
       <ShiftReportModal
         isOpen={isShiftModalOpen}
         onClose={() => setIsShiftModalOpen(false)}
@@ -151,6 +163,9 @@ export default function ManagerLayout() {
   );
 }
 
+/**
+ * LockedView: Shown when a manager isn't granted 'taking orders' permission.
+ */
 function LockedView({ name, role, theme }) {
   const { currentUser } = useData();
   const [requestSent, setRequestSent] = useState(false);

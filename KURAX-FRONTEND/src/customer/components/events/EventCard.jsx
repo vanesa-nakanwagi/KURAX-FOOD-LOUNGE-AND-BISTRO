@@ -32,7 +32,7 @@ export default function EventCard({ event = {}, onBook }) {
 
   return (
     <>
-      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[2.5rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-white/5 shadow-sm hover:shadow-2xl h-full">
+      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[1.5rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-white/5 shadow-sm hover:shadow-2xl h-full">
         
         {/* IMAGE SECTION */}
         <div className="relative h-64 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
@@ -57,10 +57,10 @@ export default function EventCard({ event = {}, onBook }) {
         {/* CONTENT SECTION */}
         <div className="p-8 flex flex-col flex-1 gap-4">
           <div className="space-y-2">
-            <h3 className="font-serif text-3xl font-medium text-zinc-900 dark:text-white leading-tight">
+            <h3 className="font-[Outfit] text-2xl font-small text-zinc-900 dark:text-white">
               {title}
             </h3>
-            <p className="text-[13px] text-zinc-500 dark:text-zinc-400 leading-relaxed font-light line-clamp-3">
+            <p className="text-[13px] text-zinc-900 font-[Outfit] dark:text-zinc-400 leading-relaxed font-light line-clamp-3">
               {event.description || "Join us for an exclusive experience at Kurax Food Lounge & Bistro."}
             </p>
           </div>

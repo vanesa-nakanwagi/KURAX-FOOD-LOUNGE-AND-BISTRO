@@ -38,19 +38,47 @@ export default function StaffTargets() {
   const handleSave = async () => {
     if (!selected || saving) return;
     setSaving(true);
+
+    const income_target = Number(selected.monthly_income_target) || 0;
+    const order_target  = Number(selected.daily_order_target) || 0;
+
     try {
-      await fetch(`${API_URL}/api/staff/update-targets`, {
+      const res = await fetch(`${API_URL}/api/staff/update-targets`, {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           staff_id:      selected.id,
-          income_target: selected.monthly_income_target,
-          order_target:  selected.daily_order_target,
+          income_target,
+          order_target,
         }),
       });
+
+      if (!res.ok) {
+        console.error("Failed to save staff targets", await res.text());
+        return;
+      }
+
+      const updated = staff.map(s =>
+        s.id === selected.id
+          ? {
+              ...s,
+              monthly_income_target: income_target,
+              daily_order_target:    order_target,
+            }
+          : s
+      );
+      setStaff(updated);
+      setSelected(prev => prev ? {
+        ...prev,
+        monthly_income_target: income_target,
+        daily_order_target:    order_target,
+      } : prev);
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const scroll = (dir) => {

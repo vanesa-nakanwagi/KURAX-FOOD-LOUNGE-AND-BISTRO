@@ -43,7 +43,7 @@ const Reserve = () => {
   };
 
   return (
-    <section className="relative w-full py-24 md:py-32 overflow-hidden bg-white dark:bg-[#030303] transition-colors duration-500 font-['Outfit']">
+    <section className="relative w-full py-20 md:py-20 overflow-hidden bg-white dark:bg-[#030303] transition-colors duration-500 font-['Outfit']">
       
       {/* --- 💡 LUXURY BACKGROUND GLOW --- */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full pointer-events-none overflow-hidden">
@@ -80,7 +80,7 @@ const Reserve = () => {
 
               {/* Glassmorphism Caption (Sharp) */}
               <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[85%]">
-                <div className="bg-white/10 dark:bg-black/30 backdrop-blur-xl border border-white/10 p-6 rounded-none text-center shadow-2xl">
+                <div className=" p-6 rounded-none text-center shadow-2xl">
                   <p className="text-white text-lg md:text-xl font-serif italic tracking-wide">
                     "Where Business Meets Elegance"
                   </p>
@@ -106,11 +106,11 @@ const Reserve = () => {
               </div>
               <h2 className="text-4xl md:text-6xl font-serif font-bold leading-[1.1] text-slate-900 dark:text-white">
                 Executive <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 italic">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800">
                   Private Dining
                 </span>
               </h2>
-              <p className="text-lg text-slate-500 dark:text-zinc-400 font-light leading-relaxed max-w-lg">
+              <p className="text-md text-slate-700 dark:text-zinc-400 font-light leading-relaxed max-w-lg">
                 Kurax provides the ideal setting for business professionals seeking a 
                 refined atmosphere for high-stakes meetings and elite celebrations.
               </p>
@@ -129,10 +129,10 @@ const Reserve = () => {
                     <feature.icon className="w-6 h-6 text-yellow-700 dark:text-yellow-500 group-hover:text-white transition-colors duration-500" />
                   </div>
                   <div className="space-y-1">
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
+                    <h3 className="text-xl font-bold text-yellow-700 dark:text-white group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
                       {feature.title}
                     </h3>
-                    <p className="text-sm text-slate-500 dark:text-zinc-400 font-light leading-relaxed">
+                    <p className="text-sm text-slate-700 dark:text-zinc-400 font-light leading-relaxed">
                       {feature.description}
                     </p>
                   </div>
@@ -144,7 +144,7 @@ const Reserve = () => {
             <motion.div variants={fadeInUp} className="pt-6">
               <button 
                 onClick={goToReserve} 
-                className="relative overflow-hidden group inline-flex items-center gap-4 px-12 py-5 bg-yellow-600 text-black font-black uppercase tracking-[0.2em] text-xs rounded-none shadow-lg hover:bg-yellow-500 transition-all duration-500"
+                className="relative overflow-hidden group inline-flex items-center gap-4 px-12 py-5 bg-yellow-400 text-black font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-lg hover:bg-yellow-500 transition-all duration-500"
               >
                 <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
                 RESERVE A TABLE

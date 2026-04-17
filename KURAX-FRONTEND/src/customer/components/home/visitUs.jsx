@@ -71,13 +71,13 @@ export default function ContactPage() {
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="h-[1px] w-8 bg-yellow-600" />
             <p className="text-yellow-600 dark:text-yellow-500 font-bold tracking-[0.4em] text-xs uppercase flex items-center gap-2">
-              <Sparkles size={14} /> Plan a Visit
+             Plan a Visit
             </p>
             <div className="h-[1px] w-8 bg-yellow-600" />
           </div>
           
           <h1 className="text-5xl md:text-7xl font-serif font-bold text-slate-900 dark:text-white mb-6">
-            Find Us in <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 italic">Kyanja</span>
+            Find Us in <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800">Kyanja</span>
           </h1>
         </motion.div>
 

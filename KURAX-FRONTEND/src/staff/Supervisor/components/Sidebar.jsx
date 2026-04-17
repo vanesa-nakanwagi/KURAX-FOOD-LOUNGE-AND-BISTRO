@@ -1,19 +1,21 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, Target, Clock, LogOut } from "lucide-react";
+import { ClipboardList, Target, Clock, LogOut, History, LayoutGrid } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData }  from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 
 const DEFAULT_MENU = [
-  { id: "order",  label: "TAKE ORDER",        icon: <ClipboardList size={20} /> },
-  { id: "status", label: "VIEW ORDER STATUS",  icon: <Clock size={20} /> },
-  { id: "targets", label: "SET STAFF TARGETS",   icon: <Target size={20} /> },
+  { id: "order",   label: "TAKE ORDER",         icon: <ClipboardList size={20} /> },
+  { id: "status",  label: "VIEW ORDER STATUS",  icon: <Clock size={20} /> },
+  { id: "history", label: "MANAGE ORDER",       icon: <History size={20} /> },      // Manage Order
+  { id: "tables",  label: "MANAGE TABLE",       icon: <LayoutGrid size={20} /> },   // Manage Table (NEW)
+  { id: "targets", label: "SET STAFF TARGETS",  icon: <Target size={20} /> },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
   const { theme } = useTheme();
-  const { currentUser } = useData(); // Pulling current user for name
+  const { currentUser } = useData();
   const navigate  = useNavigate();
   const isDark = theme === "dark";
 
@@ -55,7 +57,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
         </div>
       </div>
 
-      {/* ── Active User Section (Added based on your image) ───────────────── */}
+      {/* ── Active User Section ───────────────────────────────────────────── */}
       <div className={`mx-4 mt-4 p-4 rounded-[1.5rem] border flex items-center gap-3 ${
         isDark ? "bg-zinc-900/50 border-white/5" : "bg-zinc-50 border-black/5"
       }`}>

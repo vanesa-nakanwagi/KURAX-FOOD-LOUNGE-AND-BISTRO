@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import NewOrder from "./NewOrder";
-import OrderHistory from "./OrderHistory";
+import PerformanceDashboard from "./PerformanceDashboard";
 import ManageTables from "./ManageTables";
 import Sidebar from "./Sidebar";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData } from "../../../customer/components/context/DataContext";
+
 
 export default function WaiterLayout() {
   const navigate = useNavigate();
@@ -90,7 +91,7 @@ export default function WaiterLayout() {
 
           {activeTab === "manage" && (
             // ── FIXED: pass onAddItems so OrderHistory can bridge back to NewOrder ──
-            <OrderHistory onAddItems={handleEditTable} />
+            <PerformanceDashboard onAddItems={handleEditTable} />
           )}
 
           {activeTab === "tables" && (

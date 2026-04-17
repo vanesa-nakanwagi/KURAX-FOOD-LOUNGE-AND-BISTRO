@@ -4,7 +4,7 @@ import {
   ClipboardList, 
   Clock, 
   LogOut, 
-  LayoutGrid // Added for Manage Tables
+  LayoutGrid
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../../customer/components/context/ThemeContext";

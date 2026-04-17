@@ -88,10 +88,10 @@ router.get('/tickets/summary', async (req, res) => {
       [date]
     );
 
+    // FIXED: Removed cleared_by_barman column that doesn't exist
     const ticketsRes = await pool.query(
       `SELECT id, order_id, table_name, staff_name, items,
-              total, status, ready_at,
-              cleared_by_barman, cleared_by, cleared_at, created_at
+              total, status, ready_at, cleared_at, created_at
        FROM barman_tickets
        WHERE ticket_date = $1
        ORDER BY created_at ASC`,
@@ -192,12 +192,11 @@ router.patch('/clear-shift', async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE barman_tickets
-       SET cleared_by_barman = TRUE,
-           cleared_at        = NOW(),
-           cleared_by        = $1,
-           updated_at        = NOW()
-       WHERE ticket_date        = $2
-         AND cleared_by_barman  = FALSE
+       SET cleared_at    = NOW(),
+           cleared_by    = $1,
+           updated_at    = NOW()
+       WHERE ticket_date = $2
+         AND cleared_at IS NULL
        RETURNING id`,
       [cleared_by, date]
     );

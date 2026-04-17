@@ -61,6 +61,21 @@ router.post('/tickets', async (req, res) => {
 router.get('/tickets/summary', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
+    // Check if cleared_by_barista column exists
+    let clearedColumn = 'cleared_by_barista';
+    try {
+      const checkColumn = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'barista_tickets' AND column_name = 'cleared_by_barista'
+      `);
+      if (checkColumn.rows.length === 0) {
+        clearedColumn = 'cleared_by';
+      }
+    } catch (e) {
+      clearedColumn = 'cleared_by';
+    }
+
     const totalsRes = await pool.query(
       `SELECT
          COUNT(*)                                                    AS ticket_count,
@@ -88,10 +103,10 @@ router.get('/tickets/summary', async (req, res) => {
       [date]
     );
 
+    // FIXED: Removed cleared_by_barista column that doesn't exist
     const ticketsRes = await pool.query(
       `SELECT id, order_id, table_name, staff_name, items,
-              total, status, ready_at,
-              cleared_by_barista, cleared_by, cleared_at, created_at
+              total, status, ready_at, cleared_at, created_at
        FROM barista_tickets
        WHERE ticket_date = $1
        ORDER BY created_at ASC`,
@@ -192,12 +207,11 @@ router.patch('/clear-shift', async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE barista_tickets
-       SET cleared_by_barista = TRUE,
-           cleared_at         = NOW(),
-           cleared_by         = $1,
-           updated_at         = NOW()
-       WHERE ticket_date         = $2
-         AND cleared_by_barista  = FALSE
+       SET cleared_at    = NOW(),
+           cleared_by    = $1,
+           updated_at    = NOW()
+       WHERE ticket_date = $2
+         AND cleared_at IS NULL
        RETURNING id`,
       [cleared_by, date]
     );

@@ -12,32 +12,56 @@ function kampalaDate(d = new Date()) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. DAILY SUMMARY (TODAY)
+// 1. DAILY SUMMARY (TODAY) - FIXED to include credit settlements
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/today', async (req, res) => {
   try {
     const today = kampalaDate();
-    const result = await pool.query(`
+    
+    // Get cashier_queue confirmed payments (non-credit)
+    const queueResult = await pool.query(`
       SELECT
-        $1::date                                                                     AS summary_date,
-        COALESCE(SUM(CASE WHEN method != 'Credit' THEN amount ELSE 0 END), 0)       AS total_gross,
-        COALESCE(SUM(CASE WHEN method = 'Cash'        THEN amount ELSE 0 END), 0)   AS total_cash,
-        COALESCE(SUM(CASE WHEN method = 'Card'        THEN amount ELSE 0 END), 0)   AS total_card,
-        COALESCE(SUM(CASE WHEN method = 'Momo-MTN'    THEN amount ELSE 0 END), 0)   AS total_mtn,
-        COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0)   AS total_airtel,
-        COALESCE(SUM(CASE WHEN method = 'Credit'      THEN amount ELSE 0 END), 0)   AS total_credit,
-        COALESCE(SUM(CASE WHEN method = 'Mixed'       THEN amount ELSE 0 END), 0)   AS total_mixed,
-        COUNT(*)                                                                      AS order_count
+        COALESCE(SUM(CASE WHEN method != 'Credit' THEN amount ELSE 0 END), 0) AS total_gross,
+        COALESCE(SUM(CASE WHEN method = 'Cash'        THEN amount ELSE 0 END), 0) AS total_cash,
+        COALESCE(SUM(CASE WHEN method = 'Card'        THEN amount ELSE 0 END), 0) AS total_card,
+        COALESCE(SUM(CASE WHEN method = 'Momo-MTN'    THEN amount ELSE 0 END), 0) AS total_mtn,
+        COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0) AS total_airtel,
+        COALESCE(SUM(CASE WHEN method = 'Credit'      THEN amount ELSE 0 END), 0) AS total_credit,
+        COALESCE(SUM(CASE WHEN method = 'Mixed'       THEN amount ELSE 0 END), 0) AS total_mixed,
+        COUNT(*) AS order_count
       FROM cashier_queue
       WHERE status = 'Confirmed'
         AND DATE(confirmed_at AT TIME ZONE 'Africa/Nairobi') = $1
     `, [today]);
-
-    res.json(result.rows[0] || {
+    
+    // Get credit settlements from credits table for today
+    const creditSettlements = await pool.query(`
+      SELECT 
+        COALESCE(SUM(CASE WHEN settle_method = 'Cash' THEN amount_paid ELSE 0 END), 0) AS settled_cash,
+        COALESCE(SUM(CASE WHEN settle_method = 'Momo-MTN' THEN amount_paid ELSE 0 END), 0) AS settled_mtn,
+        COALESCE(SUM(CASE WHEN settle_method = 'Momo-Airtel' THEN amount_paid ELSE 0 END), 0) AS settled_airtel,
+        COALESCE(SUM(CASE WHEN settle_method = 'Card' THEN amount_paid ELSE 0 END), 0) AS settled_card,
+        COALESCE(SUM(amount_paid), 0) AS total_settled
+      FROM credits 
+      WHERE status IN ('FullySettled', 'PartiallySettled')
+        AND DATE(paid_at AT TIME ZONE 'Africa/Nairobi') = $1
+    `, [today]);
+    
+    const queue = queueResult.rows[0];
+    const settlements = creditSettlements.rows[0];
+    
+    // Combine queue payments with credit settlements
+    res.json({
       summary_date: today,
-      total_gross: 0, total_cash: 0, total_card: 0,
-      total_mtn: 0, total_airtel: 0, total_credit: 0,
-      total_mixed: 0, order_count: 0,
+      total_gross: Number(queue.total_gross) + Number(settlements.total_settled),
+      total_cash: Number(queue.total_cash) + Number(settlements.settled_cash),
+      total_card: Number(queue.total_card) + Number(settlements.settled_card),
+      total_mtn: Number(queue.total_mtn) + Number(settlements.settled_mtn),
+      total_airtel: Number(queue.total_airtel) + Number(settlements.settled_airtel),
+      total_credit: Number(queue.total_credit),
+      total_mixed: Number(queue.total_mixed),
+      order_count: Number(queue.order_count),
+      credit_settlements_today: Number(settlements.total_settled)
     });
   } catch (err) {
     console.error('Today summary error:', err.message);
@@ -102,6 +126,21 @@ router.post('/petty-cash', async (req, res) => {
   }
 });
 
+router.delete('/petty-cash/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM petty_cash WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Petty cash entry not found' });
+    }
+    res.json({ success: true, entry: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. MONTHLY FIXED EXPENSES (ACCOUNTANT SETUP)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,15 +184,15 @@ router.delete('/monthly-expenses/:id', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. MONTHLY P&L (DIRECTOR AUDIT VIEW)
+// 5. MONTHLY P&L (DIRECTOR AUDIT VIEW) - FIXED to include credit settlements
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/monthly-profit', async (req, res) => {
   const month = req.query.month || kampalaDate().substring(0, 7);
   try {
-    // Sales Logic
+    // Sales Logic - from cashier_queue (non-credit payments)
     const salesRes = await pool.query(
       `SELECT 
-         COALESCE(SUM(amount), 0) AS total_gross,
+         COALESCE(SUM(CASE WHEN method != 'Credit' THEN amount ELSE 0 END), 0) AS total_gross,
          COALESCE(SUM(CASE WHEN method = 'Cash' THEN amount ELSE 0 END), 0) AS total_cash,
          COALESCE(SUM(CASE WHEN method = 'Card' THEN amount ELSE 0 END), 0) AS total_card,
          COALESCE(SUM(CASE WHEN method IN ('Momo-MTN','Momo-Airtel') THEN amount ELSE 0 END), 0) AS total_momo,
@@ -161,6 +200,21 @@ router.get('/monthly-profit', async (req, res) => {
        FROM cashier_queue 
        WHERE status = 'Confirmed' 
        AND TO_CHAR((confirmed_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1`,
+      [month]
+    );
+    
+    // Credit settlements for the month
+    const creditSettlements = await pool.query(
+      `SELECT 
+         COALESCE(SUM(CASE WHEN settle_method = 'Cash' THEN amount_paid ELSE 0 END), 0) AS settled_cash,
+         COALESCE(SUM(CASE WHEN settle_method = 'Momo-MTN' THEN amount_paid ELSE 0 END), 0) AS settled_mtn,
+         COALESCE(SUM(CASE WHEN settle_method = 'Momo-Airtel' THEN amount_paid ELSE 0 END), 0) AS settled_airtel,
+         COALESCE(SUM(CASE WHEN settle_method = 'Card' THEN amount_paid ELSE 0 END), 0) AS settled_card,
+         COALESCE(SUM(amount_paid), 0) AS total_settled,
+         COUNT(*) AS settlement_count
+       FROM credits 
+       WHERE status IN ('FullySettled', 'PartiallySettled')
+         AND TO_CHAR((paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1`,
       [month]
     );
 
@@ -173,39 +227,64 @@ router.get('/monthly-profit', async (req, res) => {
     const expRes = await pool.query(`SELECT * FROM monthly_expenses WHERE month = $1`, [month]);
 
     const sales = salesRes.rows[0];
+    const settlements = creditSettlements.rows[0];
     const pettyOut = Number(pettyRes.rows[0].petty_out);
     const fixedTotal = expRes.rows.reduce((s, r) => s + Number(r.amount), 0);
+    
+    // Total revenue = cashier_queue non-credit payments + credit settlements
+    const totalRevenue = Number(sales.total_gross) + Number(settlements.total_settled);
     const totalCosts = pettyOut + fixedTotal;
-    const netProfit = Number(sales.total_gross) - totalCosts;
+    const netProfit = totalRevenue - totalCosts;
 
     res.json({
       month,
-      sales: { ...sales, total_gross: Number(sales.total_gross) },
-      costs: { petty_out: pettyOut, fixed_total: fixedTotal, fixed_items: expRes.rows, total: totalCosts },
+      sales: { 
+        ...sales, 
+        total_gross: totalRevenue,
+        cashier_gross: Number(sales.total_gross),
+        credit_settlements: Number(settlements.total_settled),
+        settlement_count: Number(settlements.settlement_count)
+      },
+      costs: { 
+        petty_out: pettyOut, 
+        fixed_total: fixedTotal, 
+        fixed_items: expRes.rows, 
+        total: totalCosts 
+      },
       net_profit: netProfit,
-      margin_pct: sales.total_gross > 0 ? ((netProfit / sales.total_gross) * 100).toFixed(1) : "0"
+      margin_pct: totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : "0"
     });
   } catch (err) {
+    console.error('Monthly profit error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. DOWNLOAD PDF REPORT (DIRECTOR FEATURE)
+// 6. DOWNLOAD PDF REPORT (DIRECTOR FEATURE) - FIXED to include credit settlements
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/export-pdf', async (req, res) => {
   const { month } = req.query;
   if (!month) return res.status(400).send("Month is required");
 
   try {
-    // 1. Fetch Profit Data
+    // 1. Fetch Profit Data with credit settlements
     const profitData = await pool.query(`
-        SELECT 
-            (SELECT COALESCE(SUM(amount), 0) FROM cashier_queue WHERE status='Confirmed' AND TO_CHAR(confirmed_at, 'YYYY-MM')=$1) as gross,
-            (SELECT COALESCE(SUM(amount), 0) FROM petty_cash WHERE direction='OUT' AND TO_CHAR(entry_date, 'YYYY-MM')=$1) as petty
+      SELECT 
+        (SELECT COALESCE(SUM(CASE WHEN method != 'Credit' THEN amount ELSE 0 END), 0) 
+         FROM cashier_queue WHERE status='Confirmed' AND TO_CHAR(confirmed_at, 'YYYY-MM')=$1) as cashier_gross,
+        (SELECT COALESCE(SUM(amount_paid), 0) 
+         FROM credits WHERE status IN ('FullySettled', 'PartiallySettled') 
+         AND TO_CHAR(paid_at, 'YYYY-MM')=$1) as credit_settlements,
+        (SELECT COALESCE(SUM(amount), 0) 
+         FROM petty_cash WHERE direction='OUT' AND TO_CHAR(entry_date, 'YYYY-MM')=$1) as petty
     `, [month]);
 
     const expenses = await pool.query(`SELECT * FROM monthly_expenses WHERE month = $1`, [month]);
+    
+    const totalRevenue = Number(profitData.rows[0].cashier_gross) + Number(profitData.rows[0].credit_settlements);
+    const totalExpenses = Number(profitData.rows[0].petty) + expenses.rows.reduce((s,r)=>s+Number(r.amount),0);
+    const netProfit = totalRevenue - totalExpenses;
 
     // 2. Setup PDF
     const doc = new PDFDocument({ margin: 50 });
@@ -219,10 +298,13 @@ router.get('/export-pdf', async (req, res) => {
     doc.text(`Report Period: ${month}`, { align: 'center' }).moveDown(2);
 
     // Summary Box
-    doc.rect(50, 150, 500, 100).fill('#f9f9f9').stroke('#eeeeee');
+    doc.rect(50, 150, 500, 130).fill('#f9f9f9').stroke('#eeeeee');
     doc.fillColor('#000000').fontSize(14).text('Executive Summary', 70, 165);
-    doc.fontSize(10).text(`Total Revenue: UGX ${Number(profitData.rows[0].gross).toLocaleString()}`, 70, 190);
-    doc.text(`Total Expenses: UGX ${(Number(profitData.rows[0].petty) + expenses.rows.reduce((s,r)=>s+Number(r.amount),0)).toLocaleString()}`, 70, 210);
+    doc.fontSize(10).text(`Total Revenue: UGX ${totalRevenue.toLocaleString()}`, 70, 190);
+    doc.text(`  - Cash/Card/Momo Payments: UGX ${Number(profitData.rows[0].cashier_gross).toLocaleString()}`, 80, 210);
+    doc.text(`  - Credit Settlements: UGX ${Number(profitData.rows[0].credit_settlements).toLocaleString()}`, 80, 230);
+    doc.text(`Total Expenses: UGX ${totalExpenses.toLocaleString()}`, 70, 255);
+    doc.text(`Net Profit: UGX ${netProfit.toLocaleString()}`, 70, 275);
 
     // Expense Details
     doc.moveDown(5);
@@ -239,6 +321,31 @@ router.get('/export-pdf', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).send("Error generating report");
+  }
+});
+
+// In summaryRoutes.js - Updated PUT endpoint without updated_at
+router.put('/petty-cash/:id', async (req, res) => {
+  const { id } = req.params;
+  const { amount, direction, category, description, logged_by } = req.body;
+  
+  try {
+    const result = await pool.query(
+      `UPDATE petty_cash 
+       SET amount = $1, direction = $2, category = $3, description = $4, logged_by = $5
+       WHERE id = $6
+       RETURNING *`,
+      [amount, direction, category, description, logged_by, id]
+    );
+    
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Petty cash update error:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

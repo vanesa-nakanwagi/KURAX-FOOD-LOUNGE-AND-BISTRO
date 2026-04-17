@@ -58,21 +58,24 @@ export default function FooterGlobal() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-16 lg:gap-12 pb-20">
           
           {/* 1. BRAND IDENTITY */}
-          <div className="lg:col-span-1 space-y-8">
-            <motion.div whileHover={{ scale: 1.02 }} className="flex items-center gap-4 group">
-              <div className="relative">
-                <img src={logo} alt="Kurax" className="w-16 h-16 object-cover border border-white/10" />
-                <div className="absolute -inset-1 border border-yellow-600/20 scale-110 group-hover:scale-100 transition-transform duration-700" />
-              </div>
-              <div className="leading-tight">
-                <h2 className="text-xl font-serif font-black tracking-tighter uppercase">Kurax Food Lounge</h2>
-                <p className="text-[9px] tracking-[0.5em] text-yellow-600 font-bold">& BISTRO</p>
-              </div>
-            </motion.div>
-            <p className="text-zinc-400 font-light leading-relaxed text-sm max-w-xs">
-              A sanctuary of refined taste. From our rooftop ambiance to our signature mixology, we redefine the Kyanja dining experience.
-            </p>
-          </div>
+<div className="lg:col-span-1 space-y-8">
+  <motion.div whileHover={{ scale: 1.02 }} className="flex items-center gap-4 group">
+    {/* Removed the relative container and the scaling border div */}
+    <img 
+      src={logo} 
+      alt="Kurax" 
+      className="w-16 h-16 object-cover" 
+    />
+   
+    <div className="leading-tight">
+      <h2 className="text-xl font-['Outfit'] font-black tracking-tighter uppercase">Kurax Food Lounge</h2>
+      <p className="text-[9px] tracking-[0.5em] text-yellow-600 font-bold">& BISTRO</p>
+    </div>
+  </motion.div>
+  <p className="text-zinc-400 font-light leading-relaxed text-sm max-w-xs">
+    A sanctuary of refined taste. From our rooftop ambiance to our signature mixology, we redefine the Kyanja dining experience.
+  </p>
+</div>
 
           {/* 2. NAVIGATION */}
           <div>
@@ -120,7 +123,7 @@ export default function FooterGlobal() {
           {/* 4. VIBRANT PAYMENT METHODS */}
           <div className="space-y-10">
             <div>
-              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-yellow-600 mb-6 italic">Secure Payment</h3>
+              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-yellow-600 mb-6 "> <span className="w-4 h-[1px] bg-yellow-600" /> Secure Payment</h3>
               <div className="flex gap-4">
                 {paymentMethods.map((method) => (
                   <motion.div 

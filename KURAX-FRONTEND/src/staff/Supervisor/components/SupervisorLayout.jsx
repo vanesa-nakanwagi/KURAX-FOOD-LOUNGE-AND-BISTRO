@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { Lock, ShieldCheck, RefreshCcw, Menu as MenuIcon, Zap, Bell } from "lucide-react";
+import { Lock, ShieldCheck, RefreshCcw, LayoutGrid, Menu as MenuIcon, Zap, Bell } from "lucide-react";
 import { ClipboardList, Clock, History, Target } from "lucide-react";
 
 import NewOrder from "./NewOrder";
-import OrderHistory from "./OrderHistory";
+import PerformanceDashboard from "./PerformanceDashboard";
 import LiveOrderStatus from "./LiveOrderStatus";
 import Sidebar from "./Sidebar";
 import StaffTargets from "./StaffTargets";
+import OrderHistory from "./ManageTables";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData } from "../../../customer/components/context/DataContext";
@@ -16,6 +17,7 @@ import API_URL from "../../../config/api";
 const SUPERVISOR_MENU = [
   { id: "order",   label: "TAKE ORDER",         icon: <ClipboardList size={20} /> },
   { id: "manage", label: "MANAGE ORDER",       icon: <History size={20} /> },
+   { id: "tables",  label: "MANAGE TABLE",       icon: <LayoutGrid size={20} /> },
   { id: "status",  label: "VIEW ORDER STATUS",   icon: <Clock size={20} /> },
   { id: "targets", label: "STAFF TARGETS",       icon: <Target size={20} /> },
 ];
@@ -46,6 +48,8 @@ export default function SupervisorLayout() {
       case "targets":
         return <StaffTargets />;
       case "manage":
+        return <PerformanceDashboard />;
+         case "tables":
         return <OrderHistory />;
       default:
         return <NewOrder />;

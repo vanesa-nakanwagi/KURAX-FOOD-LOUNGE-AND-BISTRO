@@ -24,9 +24,11 @@ import Services from "./services.jsx";
 import hero1 from "../../assets/images/hero4.png";
 import hero12 from "../../assets/images/hero1.jpg";
 import hero3 from "../../assets/images/hero135.jpg";
-import rice from "../../assets/images/rice.jpg";
 
-const heroImages = [hero1, hero12, hero3, rice];
+import rice from "../../assets/images/rice.jpg";
+import hero from "../../assets/images/hero.png";
+
+const heroImages = [hero1, hero12, hero3, rice, hero];
 
 // Animation Variants
 const fadeInUp = {
@@ -113,9 +115,9 @@ export default function Home() {
         <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 w-full pt-24 md:pt-32">
           <motion.div style={{ y: yContent }} className="max-w-2xl space-y-6 md:space-y-8">
             <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }}>
-              <h1 className="text-5xl md:text-7xl font-serif font-bold leading-[1.05] text-white">
+              <h1 className="text-4xl md:text-6xl font-serif font-bold leading-[1.05] text-white">
                 Experience <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 italic">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 ">
                   Luxury
                 </span> <br />
                 Redefined
@@ -169,7 +171,7 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* --- 📅 UPCOMING SCHEDULE / EVENTS SECTION --- */}
+      {/* ---  UPCOMING SCHEDULE / EVENTS SECTION --- */}
 <section className="py-24 px-6 bg-[#FCFCFB] relative overflow-hidden">
   <motion.div 
     className="max-w-7xl mx-auto relative z-10"
@@ -259,7 +261,7 @@ function HomeMenuCard({ item, onOrder }) {
     <motion.div 
       variants={fadeInUp}
       whileHover={{ y: -8 }}
-      className="group relative bg-white rounded-[2.5rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 transition-all duration-500"
+      className="group relative bg-white rounded-[1.5rem]  font-outfit overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 transition-all duration-500"
     >
       <div className="relative h-56 overflow-hidden">
         <motion.img
@@ -277,10 +279,10 @@ function HomeMenuCard({ item, onOrder }) {
       
       <div className="p-6 space-y-4">
         <div className="space-y-1">
-          <h4 className="text-lg font-serif  font-[Outfit] text-zinc-900 uppercase tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
+          <h4 className="text-lg  font-[Outfit] text-zinc-900  tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
             {item.name}
           </h4>
-          <p className="text-zinc-500 text-[11px] font-light leading-relaxed line-clamp-2 italic">
+          <p className="text-zinc-900 text-[13px] font-light leading-relaxed line-clamp-2 ">
             {item.description || "Indulge in our masterfully crafted signature dish."}
           </p>
         </div>
@@ -289,7 +291,7 @@ function HomeMenuCard({ item, onOrder }) {
           <motion.button 
   whileTap={{ scale: 0.95 }}
   onClick={() => onOrder(item)} 
-  className="group/btn flex items-center gap-1 px-4 py-3 bg-yellow-500 hover:bg-yellow-600 text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md"
+  className="group/btn flex items-center gap-1 px-4 py-3 bg-yellow-400 hover:bg-yellow-400 text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all duration-300 shadow-md"
 >
   <Plus 
     size={14} 
