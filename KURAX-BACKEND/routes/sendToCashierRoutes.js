@@ -75,6 +75,8 @@ router.post("/send-to-cashier", async (req, res) => {
       ]
     );
 
+    const newQueueId = result.rows[0].id;
+
     if (formattedOrderIds?.length) {
       await pool.query(
         `UPDATE orders SET sent_to_cashier = true WHERE id = ANY($1::int[])`,
@@ -104,8 +106,9 @@ router.post("/send-to-cashier", async (req, res) => {
                  pay_by       = COALESCE($5, pay_by),
                  waiter_name  = COALESCE($6, waiter_name),
                  label        = $7,
+                 cashier_queue_id = $8,
                  updated_at   = NOW()
-             WHERE id = $8`,
+             WHERE id = $9`,
             [
               formattedOrderIds?.[0] || null,
               Number(amount),
@@ -114,6 +117,7 @@ router.post("/send-to-cashier", async (req, res) => {
               credit_info.pay_by?.trim() || null,
               requested_by || null,
               label || `Credit – ${table_name}`,
+              newQueueId,
               existingRes.rows[0].id,
             ]
           );
@@ -121,8 +125,8 @@ router.post("/send-to-cashier", async (req, res) => {
           await pool.query(
             `INSERT INTO credits
                (order_id, table_name, label, amount, amount_paid, balance,
-                client_name, client_phone, pay_by, waiter_name, status, created_at)
-             VALUES ($1, $2, $3, $4, 0, $4, $5, $6, $7, $8, 'PendingCashier', NOW())`,
+                client_name, client_phone, pay_by, waiter_name, status, cashier_queue_id, created_at)
+             VALUES ($1, $2, $3, $4, 0, $4, $5, $6, $7, $8, 'PendingCashier', $9, NOW())`,
             [
               formattedOrderIds?.[0] || null,
               table_name,
@@ -132,15 +136,17 @@ router.post("/send-to-cashier", async (req, res) => {
               credit_info.phone?.trim() || null,
               credit_info.pay_by?.trim() || null,
               requested_by || null,
+              newQueueId,
             ]
           );
         }
+        console.log(`✅ Credit record created/updated with cashier_queue_id: ${newQueueId}`);
       } catch (creditErr) {
         console.error('Credit record creation warning:', creditErr.message);
       }
     }
 
-    res.json({ success: true, queue_id: result.rows[0].id });
+    res.json({ success: true, queue_id: newQueueId });
   } catch (err) {
     console.error("send-to-cashier failed:", err);
     res.status(500).json({ error: "Failed to send to cashier" });
@@ -250,16 +256,48 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
     );
 
     if (q.is_item) {
-      if (q.order_ids?.length) {
+      if (q.order_ids?.length && q.item) {
+        for (const orderId of q.order_ids) {
+          const orderRes = await pool.query(
+            `SELECT items FROM orders WHERE id = $1`,
+            [orderId]
+          );
+          
+          if (orderRes.rows.length > 0) {
+            let items = orderRes.rows[0].items;
+            if (typeof items === 'string') {
+              items = JSON.parse(items);
+            }
+            
+            if (Array.isArray(items)) {
+              const targetItemName = q.item.name?.trim().toLowerCase();
+              let found = false;
+              
+              const updatedItems = items.map(item => {
+                const itemName = item.name?.trim().toLowerCase();
+                if (!found && itemName === targetItemName && !item._rowPaid) {
+                  found = true;
+                  return {
+                    ...item,
+                    _rowPaid: true,
+                    payment_method: q.method,
+                    paid_at: new Date().toISOString()
+                  };
+                }
+                return item;
+              });
+              
+              if (found) {
+                await pool.query(
+                  `UPDATE orders SET items = $1 WHERE id = $2`,
+                  [JSON.stringify(updatedItems), orderId]
+                );
+              }
+            }
+          }
+        }
         await pool.query(
           `UPDATE orders SET sent_to_cashier = false WHERE id = ANY($1::int[])`,
-          [q.order_ids]
-        );
-        await pool.query(
-          `UPDATE orders
-           SET delivery_status = 'collected', delivered_at = NOW()
-           WHERE id = ANY($1::int[])
-             AND order_type = 'delivery'`,
           [q.order_ids]
         );
       }
@@ -289,6 +327,34 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
            WHERE id = ANY($3::int[])`,
           [q.method, transaction_id || null, q.order_ids]
         );
+        
+        for (const orderId of q.order_ids) {
+          const orderRes = await pool.query(
+            `SELECT items FROM orders WHERE id = $1`,
+            [orderId]
+          );
+          
+          if (orderRes.rows.length > 0) {
+            let items = orderRes.rows[0].items;
+            if (typeof items === 'string') {
+              items = JSON.parse(items);
+            }
+            
+            if (Array.isArray(items)) {
+              const updatedItems = items.map(item => ({
+                ...item,
+                _rowPaid: true,
+                payment_method: q.method,
+                paid_at: new Date().toISOString()
+              }));
+              
+              await pool.query(
+                `UPDATE orders SET items = $1 WHERE id = $2`,
+                [JSON.stringify(updatedItems), orderId]
+              );
+            }
+          }
+        }
       }
       await updateDailySummary({ amount: q.amount, method: q.method });
     }
@@ -375,8 +441,7 @@ router.get("/credit-approvals", async (req, res) => {
   }
 });
 
-// PATCH /api/cashier-ops/credit-approvals/:id/approve
-// OPTION A: Count credit when approved
+// PATCH /api/cashier-ops/credit-approvals/:id/approve - FIXED (removed updateDailySummary)
 router.patch("/credit-approvals/:id/approve", async (req, res) => {
   const { id } = req.params;
   const { approved_by } = req.body || {};
@@ -407,7 +472,6 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
       });
     }
 
-    // Update cashier_queue status to 'Approved'
     await pool.query(
       `UPDATE cashier_queue
        SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW()
@@ -431,8 +495,8 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
       await pool.query(
         `INSERT INTO credits
            (order_id, table_name, label, amount, amount_paid, balance,
-            client_name, client_phone, pay_by, approved_by, status, created_at)
-         VALUES ($1, $2, $3, $4, 0, $4, $5, $6, $7, $8, 'Approved', NOW())
+            client_name, client_phone, pay_by, approved_by, status, cashier_queue_id, created_at)
+         VALUES ($1, $2, $3, $4, 0, $4, $5, $6, $7, $8, 'Approved', $9, NOW())
          ON CONFLICT DO NOTHING`,
         [
           q.order_ids?.[0] || null,
@@ -443,6 +507,7 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
           q.credit_phone || null,
           q.credit_pay_by || null,
           approved_by || "Manager",
+          id
         ]
       );
     }
@@ -456,13 +521,14 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
       );
     }
 
-    // ✅ OPTION A: Record the FULL credit amount in daily_summary when approved
-    // This ensures gross revenue reflects the total order value immediately
-    await updateDailySummary({ 
-      amount: q.amount, 
-      method: 'Credit', 
-      orderCount: 1 
-    });
+    // ✅ FIXED: REMOVED the updateDailySummary call
+    // Credits are NOT revenue until they are settled (paid back by the customer)
+    // Do NOT add to daily_summary at approval time
+    // await updateDailySummary({ 
+    //   amount: q.amount, 
+    //   method: 'Credit', 
+    //   orderCount: 1 
+    // });
 
     await logActivity(pool, 'CREDIT',
       `Credit approved — ${tableName} · ${q.credit_name || 'Client'} · UGX ${Number(q.amount).toLocaleString()} by ${approved_by || 'Manager'}`,
@@ -472,7 +538,7 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("credit approve failed:", err);
-    res.status(500).json({ error: "Failed to approve credit" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -483,7 +549,7 @@ router.get("/cashier-history", async (req, res) => {
       `SELECT cq.*
        FROM cashier_queue cq
        WHERE cq.status IN ('Confirmed', 'Rejected')
-         AND cq.method != 'Credit'  // ← EXCLUDE Credit methods to prevent double counting
+         AND cq.method != 'Credit'
          AND cq.created_at::date = CURRENT_DATE
          AND cq.shift_cleared = FALSE
        ORDER BY cq.confirmed_at DESC NULLS LAST
@@ -496,12 +562,10 @@ router.get("/cashier-history", async (req, res) => {
   }
 });
 
-// GET /api/cashier-ops/credits - Returns ALL credits without shift_cleared filter
+// GET /api/cashier-ops/credits - Returns ALL credits WITH settlements
 router.get("/credits", async (req, res) => {
   try {
-    // Return all credits, not filtered by shift_cleared
-    // This allows viewing settled credits even after day finalization
-    const result = await pool.query(
+    const creditsResult = await pool.query(
       `SELECT * FROM credits 
        ORDER BY 
          CASE status
@@ -515,15 +579,59 @@ router.get("/credits", async (req, res) => {
          END,
          created_at DESC`
     );
-    res.json(result.rows);
+    
+    const credits = await Promise.all(
+      creditsResult.rows.map(async (credit) => {
+        const settlementsRes = await pool.query(
+          `SELECT * FROM credit_settlements 
+           WHERE credit_id = $1 
+           ORDER BY created_at DESC`,
+          [credit.id]
+        );
+        return {
+          ...credit,
+          settlements: settlementsRes.rows
+        };
+      })
+    );
+    
+    console.log(`✅ Credits fetched: ${credits.length} records`);
+    console.log(`📊 Credits with settlements: ${credits.filter(c => c.settlements?.length > 0).length}`);
+    
+    res.json(credits);
   } catch (err) {
     console.error("credits fetch failed:", err);
     res.status(500).json({ error: "Failed to fetch credits" });
   }
 });
 
-// PATCH /api/cashier-ops/credits/:id/settle
-// OPTION A: DO NOT count settlement again (already counted when approved)
+// GET /api/staff/credit-settlements - For staff performance
+router.get("/staff/credit-settlements", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT 
+         cs.amount_paid,
+         cs.method as settle_method,
+         cs.created_at as settled_at,
+         c.waiter_name,
+         c.table_name,
+         c.client_name,
+         c.id as credit_id
+       FROM credit_settlements cs
+       JOIN credits c ON cs.credit_id = c.id
+       WHERE cs.created_at::date = CURRENT_DATE
+       ORDER BY cs.created_at DESC`
+    );
+    
+    console.log(`✅ Credit settlements today: ${result.rows.length}`);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Staff credit settlements fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch credit settlements" });
+  }
+});
+
+// PATCH /api/cashier-ops/credits/:id/settle - FIXED (NO updateDailySummary call)
 router.patch("/credits/:id/settle", async (req, res) => {
   const { id } = req.params;
   const { settled_by, settle_method, settle_transaction, settle_notes, amount_paid } = req.body || {};
@@ -539,14 +647,15 @@ router.patch("/credits/:id/settle", async (req, res) => {
     const total_paid = already_paid + paid_amount;
     const is_full = total_paid >= credit_total;
 
-    // Record the settlement in credit_settlements table for tracking
+    // 1. Insert settlement ledger entry
     await pool.query(
       `INSERT INTO credit_settlements 
-         (credit_id, amount_paid, method, transaction_id, notes, settled_by, settled_at)
+         (credit_id, amount_paid, method, transaction_id, notes, settled_by, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [id, paid_amount, settle_method, settle_transaction, settle_notes, settled_by]
     );
 
+    // 2. Update the credit record
     await pool.query(
       `UPDATE credits
        SET paid = $1,
@@ -570,6 +679,7 @@ router.patch("/credits/:id/settle", async (req, res) => {
       ]
     );
 
+    // 3. Update orders status
     if (credit.order_ids?.length) {
       await pool.query(
         `UPDATE orders
@@ -579,14 +689,43 @@ router.patch("/credits/:id/settle", async (req, res) => {
          WHERE id = ANY($3::int[])`,
         [is_full ? 'Paid' : 'Credit', settle_method || "Cash", credit.order_ids]
       );
+      
+      for (const orderId of credit.order_ids) {
+        const orderRes = await pool.query(
+          `SELECT items FROM orders WHERE id = $1`,
+          [orderId]
+        );
+        
+        if (orderRes.rows.length > 0) {
+          let items = orderRes.rows[0].items;
+          if (typeof items === 'string') {
+            items = JSON.parse(items);
+          }
+          
+          if (Array.isArray(items)) {
+            const updatedItems = items.map(item => ({
+              ...item,
+              _rowPaid: true,
+              payment_method: settle_method || "Cash",
+              paid_at: new Date().toISOString()
+            }));
+            
+            await pool.query(
+              `UPDATE orders SET items = $1 WHERE id = $2`,
+              [JSON.stringify(updatedItems), orderId]
+            );
+          }
+        }
+      }
     }
 
-    // Record in cashier_queue for tracking (but DO NOT update daily_summary again)
-    await pool.query(
+    // 4. Create cashier_queue record AND link it back to the credit
+    const newQueueRes = await pool.query(
       `INSERT INTO cashier_queue
          (order_ids, table_name, label, method, amount,
           is_item, requested_by, status, confirmed_by, confirmed_at, created_at)
-       VALUES ($1::jsonb, $2, $3, $4, $5, false, $6, 'Confirmed', $7, NOW(), NOW())`,
+       VALUES ($1::jsonb, $2, $3, $4, $5, false, $6, 'Confirmed', $7, NOW(), NOW())
+       RETURNING id`,
       [
         JSON.stringify(credit.order_ids || []),
         credit.table_name,
@@ -597,19 +736,72 @@ router.patch("/credits/:id/settle", async (req, res) => {
         settled_by || 'Cashier',
       ]
     );
+    
+    const newQueueId = newQueueRes.rows[0].id;
+    
+    // 5. Link the credit to the cashier_queue record
+    await pool.query(
+      `UPDATE credits SET cashier_queue_id = $1 WHERE id = $2`,
+      [newQueueId, id]
+    );
 
-    // ✅ OPTION A: DO NOT update daily_summary for settlements
-    // The full amount was already recorded when credit was approved
-    // This prevents double counting
+    // ✅ CRITICAL: DO NOT call updateDailySummary for credit settlements
+    // Credit settlements are debt collection, not new revenue
+    // They should NOT be added to daily_summary totals
+
+    console.log(`✅ Credit ${id} settled and linked to cashier_queue ${newQueueId}`);
+
+    await logActivity(pool, 'CREDIT_SETTLEMENT',
+      `Credit settled — ${credit.table_name} · ${credit.client_name || 'Client'} · UGX ${paid_amount.toLocaleString()} by ${settled_by || 'Cashier'}`,
+      { credit_id: id, amount: paid_amount, method: settle_method, cashier_queue_id: newQueueId }
+    );
 
     res.json({ 
       success: true, 
       fully_settled: is_full,
       remaining_balance: credit_total - total_paid,
-      total_paid: total_paid
+      total_paid: total_paid,
+      cashier_queue_id: newQueueId
     });
   } catch (err) {
     console.error("settle credit failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Debug endpoint to check order items
+router.get("/debug/order-items/:orderId", async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT id, items, status, payment_method FROM orders WHERE id = $1`,
+      [orderId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.json({ error: "Order not found" });
+    }
+    
+    const order = result.rows[0];
+    let items = order.items;
+    if (typeof items === 'string') {
+      items = JSON.parse(items);
+    }
+    
+    res.json({
+      order_id: order.id,
+      status: order.status,
+      payment_method: order.payment_method,
+      items: items,
+      item_paid_flags: items.map(item => ({
+        name: item.name,
+        _rowPaid: item._rowPaid,
+        payment_method: item.payment_method,
+        paid_at: item.paid_at
+      }))
+    });
+  } catch (err) {
+    console.error("Debug error:", err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -28,7 +28,6 @@ function kampalaDate() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DATABASE SETUP  (run once to create tables if they don't exist)
-//  You can also run this SQL in your migration files directly.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function initCreditTables() {
   await pool.query(`
@@ -36,27 +35,27 @@ export async function initCreditTables() {
     CREATE TABLE IF NOT EXISTS credits (
       id              SERIAL PRIMARY KEY,
       order_id        INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      cashier_queue_id INTEGER,
       table_name      TEXT,
       label           TEXT,
 
       -- Client info (entered by waiter)
       client_name     TEXT NOT NULL,
       client_phone    TEXT,
-      pay_by          DATE,                     -- expected payment date
+      pay_by          DATE,
 
       -- Amounts
-      amount          NUMERIC(12,2) NOT NULL,   -- original credit amount
-      amount_paid     NUMERIC(12,2) DEFAULT 0,  -- cumulative amount settled
-      balance         NUMERIC(12,2),            -- computed: amount - amount_paid
+      amount          NUMERIC(12,2) NOT NULL,
+      amount_paid     NUMERIC(12,2) DEFAULT 0,
+      balance         NUMERIC(12,2),
 
       -- Status lifecycle
-      -- PendingCashier → PendingManager → Approved | Rejected
       status          TEXT NOT NULL DEFAULT 'PendingCashier',
 
       -- People
       waiter_name     TEXT,
-      forwarded_by    TEXT,          -- cashier who forwarded to manager
-      approved_by     TEXT,          -- manager who approved
+      forwarded_by    TEXT,
+      approved_by     TEXT,
       rejected_by     TEXT,
 
       -- Timestamps
@@ -64,6 +63,7 @@ export async function initCreditTables() {
       forwarded_at    TIMESTAMPTZ,
       approved_at     TIMESTAMPTZ,
       rejected_at     TIMESTAMPTZ,
+      paid_at         TIMESTAMPTZ,
       reject_reason   TEXT,
 
       -- Shift control
@@ -75,7 +75,7 @@ export async function initCreditTables() {
       id              SERIAL PRIMARY KEY,
       credit_id       INTEGER NOT NULL REFERENCES credits(id) ON DELETE CASCADE,
       amount_paid     NUMERIC(12,2) NOT NULL,
-      method          TEXT NOT NULL,            -- Cash|Card|Momo-MTN|Momo-Airtel
+      method          TEXT NOT NULL,
       transaction_id  TEXT,
       notes           TEXT,
       settled_by      TEXT,
@@ -83,7 +83,6 @@ export async function initCreditTables() {
     );
   `);
 
-  // Add balance computed column trigger if not exists
   await pool.query(`
     CREATE OR REPLACE FUNCTION update_credit_balance()
     RETURNS TRIGGER AS $$
@@ -99,7 +98,6 @@ export async function initCreditTables() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GET /api/credits
-//  Full list for cashier ledger view (all statuses)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
@@ -136,7 +134,6 @@ router.get('/', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GET /api/credits/pending-cashier
-//  Credits waiting for cashier to forward to manager
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/pending-cashier', async (req, res) => {
   try {
@@ -154,7 +151,6 @@ router.get('/pending-cashier', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GET /api/credits/pending-manager
-//  Credits waiting for manager approval
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/pending-manager', async (req, res) => {
   try {
@@ -172,7 +168,6 @@ router.get('/pending-manager', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GET /api/credits/ledger
-//  Cashier ledger: approved credits + settlement history + running balance
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/ledger', async (req, res) => {
   try {
@@ -223,10 +218,7 @@ router.get('/ledger', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  GET /api/credits/lookup?order_id=X&table_name=Y
-//  Cashier uses this to find a credit by order_id OR table_name when
-//  the live-queue item doesn't carry the credit's own ID.
-//  Returns the most-recent PendingCashier credit matching any criterion.
+//  GET /api/credits/lookup
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/lookup', async (req, res) => {
   const { order_id, table_name } = req.query;
@@ -234,7 +226,6 @@ router.get('/lookup', async (req, res) => {
     return res.status(400).json({ error: 'order_id or table_name required' });
   }
   try {
-    // Try order_id first (exact), then fall back to table_name
     const result = await pool.query(`
       SELECT * FROM credits
       WHERE status = 'PendingCashier'
@@ -259,12 +250,12 @@ router.get('/lookup', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  POST /api/credits
-//  Waiter creates a credit request (called when payment method = Credit)
+//  POST /api/credits - CREATE CREDIT
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   const {
     order_id,
+    cashier_queue_id,
     table_name,
     label,
     amount,
@@ -281,12 +272,13 @@ router.post('/', async (req, res) => {
   try {
     const result = await pool.query(`
       INSERT INTO credits
-        (order_id, table_name, label, amount, amount_paid, balance,
+        (order_id, cashier_queue_id, table_name, label, amount, amount_paid, balance,
          client_name, client_phone, pay_by, waiter_name, status, created_at)
-      VALUES ($1,$2,$3,$4,0,$4,$5,$6,$7,$8,'PendingCashier',NOW())
+      VALUES ($1,$2,$3,$4,$5,0,$5,$6,$7,$8,$9,'PendingCashier',NOW())
       RETURNING *
     `, [
       order_id   || null,
+      cashier_queue_id || null,
       table_name || 'WALK-IN',
       label      || `Credit – ${table_name}`,
       Number(amount),
@@ -296,12 +288,47 @@ router.post('/', async (req, res) => {
       waiter_name|| 'Waiter',
     ]);
 
-    // Mark original order as Credit-pending if order_id provided
     if (order_id) {
       await pool.query(
         `UPDATE orders SET status='Credit', payment_method='Credit' WHERE id=$1`,
         [order_id]
       ).catch(() => {});
+      
+      // Mark items in the order as credit requested
+      const orderRes = await pool.query(
+        `SELECT items FROM orders WHERE id = $1`,
+        [order_id]
+      );
+      
+      if (orderRes.rows.length > 0) {
+        let items = orderRes.rows[0].items;
+        if (typeof items === 'string') {
+          items = JSON.parse(items);
+        }
+        
+        if (Array.isArray(items)) {
+          const updatedItems = items.map(item => ({
+            ...item,
+            creditRequested: true,
+            payment_method: 'Credit'
+          }));
+          
+          await pool.query(
+            `UPDATE orders SET items = $1 WHERE id = $2`,
+            [JSON.stringify(updatedItems), order_id]
+          );
+        }
+      }
+    }
+
+    if (cashier_queue_id) {
+      await pool.query(`
+        UPDATE cashier_queue 
+        SET method = 'Credit', 
+            status = 'Pending',
+            requested_by = $1
+        WHERE id = $2
+      `, [waiter_name || 'Waiter', cashier_queue_id]).catch(() => {});
     }
 
     await logActivity(pool, {
@@ -309,7 +336,7 @@ router.post('/', async (req, res) => {
       actor:   waiter_name || 'Waiter',
       role:    'WAITER',
       message: `Credit request for ${client_name} at ${table_name} – UGX ${Number(amount).toLocaleString()}`,
-      meta:    { credit_id: result.rows[0].id, order_id, amount },
+      meta:    { credit_id: result.rows[0].id, order_id, amount, cashier_queue_id },
     });
 
     res.status(201).json(result.rows[0]);
@@ -321,9 +348,6 @@ router.post('/', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  PATCH /api/credits/forward-by-table
-//  Cashier forwards credit to manager by table_name (no ID matching needed).
-//  This is the most reliable approach since cashier_queue IDs ≠ order IDs.
-//  Body: { table_name, forwarded_by }
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/forward-by-table', async (req, res) => {
   const { table_name, forwarded_by } = req.body || {};
@@ -344,7 +368,7 @@ router.patch('/forward-by-table', async (req, res) => {
 
     if (!result.rows.length) {
       return res.status(404).json({
-        error: `No pending credit found for table "${table_name}". The waiter must send the order with method Credit first.`
+        error: `No pending credit found for table "${table_name}".`
       });
     }
 
@@ -365,7 +389,6 @@ router.patch('/forward-by-table', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  PATCH /api/credits/:id/forward
-//  Cashier forwards a specific credit by ID (legacy / fallback)
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/forward', async (req, res) => {
   const { id } = req.params;
@@ -400,8 +423,7 @@ router.patch('/:id/forward', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  PATCH /api/credits/:id/approve
-//  Manager approves the credit
+//  PATCH /api/credits/:id/approve - FIXED (marks items as credit requested)
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/approve', async (req, res) => {
   const { id } = req.params;
@@ -420,12 +442,42 @@ router.patch('/:id/approve', async (req, res) => {
     if (!result.rows.length)
       return res.status(404).json({ error: 'Credit not found or not pending manager' });
 
+    const credit = result.rows[0];
+
+    // Mark items in the order as credit requested
+    if (credit.order_id) {
+      const orderRes = await pool.query(
+        `SELECT items FROM orders WHERE id = $1`,
+        [credit.order_id]
+      );
+      
+      if (orderRes.rows.length > 0) {
+        let items = orderRes.rows[0].items;
+        if (typeof items === 'string') {
+          items = JSON.parse(items);
+        }
+        
+        if (Array.isArray(items)) {
+          const updatedItems = items.map(item => ({
+            ...item,
+            creditRequested: true,
+            payment_method: 'Credit'
+          }));
+          
+          await pool.query(
+            `UPDATE orders SET items = $1 WHERE id = $2`,
+            [JSON.stringify(updatedItems), credit.order_id]
+          );
+        }
+      }
+    }
+
     await logActivity(pool, {
       type:    'CREDIT_APPROVED',
       actor:   approved_by || 'Manager',
       role:    'MANAGER',
-      message: `Approved credit #${id} for ${result.rows[0].client_name}`,
-      meta:    { credit_id: id, amount: result.rows[0].amount },
+      message: `Approved credit #${id} for ${credit.client_name}`,
+      meta:    { credit_id: id, amount: credit.amount },
     });
 
     res.json(result.rows[0]);
@@ -437,7 +489,6 @@ router.patch('/:id/approve', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  PATCH /api/credits/:id/reject
-//  Manager rejects the credit
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/reject', async (req, res) => {
   const { id } = req.params;
@@ -473,16 +524,10 @@ router.patch('/:id/reject', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  PATCH /api/credits/:id/settle
-//  Cashier records a payment (partial or full) from the client
-//
-//  Body: { amount_paid, method, transaction_id?, notes?, settled_by }
-//
-//  Automatically:
-//   • Records entry in credit_settlements ledger
-//   • Updates credits.amount_paid (cumulative)
-//   • Updates credits.status → PartiallySettled | FullySettled
-//   • Records in cashier_queue so today's totals pick it up
+//  PATCH /api/credits/:id/settle - FULLY FIXED
+//  - Only marks credit-requested items as paid
+//  - Does NOT insert into cashier_queue (prevents double-counting)
+//  - Handles partial settlements correctly
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/settle', async (req, res) => {
   const { id } = req.params;
@@ -516,7 +561,7 @@ router.patch('/:id/settle', async (req, res) => {
 
     const prevPaid    = Number(credit.amount_paid) || 0;
     const totalAmount = Number(credit.amount);
-    const newPaid     = Math.min(prevPaid + payment, totalAmount); // cap at total
+    const newPaid     = Math.min(prevPaid + payment, totalAmount);
     const newBalance  = totalAmount - newPaid;
     const newStatus   = newBalance <= 0 ? 'FullySettled' : 'PartiallySettled';
 
@@ -533,23 +578,71 @@ router.patch('/:id/settle', async (req, res) => {
       UPDATE credits
       SET amount_paid = $1,
           balance     = $2,
-          status      = $3
+          status      = $3,
+          paid_at     = NOW()
       WHERE id = $4
     `, [newPaid, newBalance, newStatus, id]);
 
-    // 3. Record in cashier_queue so today's payment totals include this
-    await client.query(`
-      INSERT INTO cashier_queue
-        (order_ids, table_name, label, method, amount, status, confirmed_by, confirmed_at, created_at)
-      VALUES ($1,$2,$3,$4,$5,'Confirmed',$6,NOW(),NOW())
-    `, [
-      JSON.stringify([credit.order_id || 0]),
-      credit.table_name || 'CREDIT',
-      `Credit Settlement – ${credit.client_name}`,
-      method || 'Cash',
-      payment,
-      settled_by || 'Cashier',
-    ]);
+    // 3. Update orders status and individual items
+    if (credit.order_id) {
+      // Update order status
+      await client.query(`
+        UPDATE orders
+        SET status = $1,
+            payment_method = $2,
+            paid_at = NOW()
+        WHERE id = $3
+      `, [newStatus === 'FullySettled' ? 'Paid' : 'Credit', method || "Cash", credit.order_id]);
+      
+      // Update individual items - ONLY mark credit-requested items as paid
+      const orderRes = await client.query(
+        `SELECT items FROM orders WHERE id = $1`,
+        [credit.order_id]
+      );
+      
+      if (orderRes.rows.length > 0) {
+        let items = orderRes.rows[0].items;
+        if (typeof items === 'string') {
+          items = JSON.parse(items);
+        }
+        
+        if (Array.isArray(items)) {
+          const updatedItems = items.map(item => {
+            // Only update items that were requested as credit
+            if (item.creditRequested === true) {
+              if (newStatus === 'FullySettled') {
+                // Full settlement - mark as fully paid
+                return {
+                  ...item,
+                  _rowPaid: true,
+                  payment_method: method || "Cash",
+                  paid_at: new Date().toISOString(),
+                  is_partially_paid: false
+                };
+              } else {
+                // Partial settlement - mark as partially paid
+                return {
+                  ...item,
+                  _rowPaid: false,
+                  is_partially_paid: true,
+                  partial_payment_method: method || "Cash",
+                  partial_paid_at: new Date().toISOString(),
+                  partial_amount_paid: payment,
+                  remaining_balance: item.price * (item.quantity || 1) - payment
+                };
+              }
+            }
+            // Leave non-credit items as they are
+            return item;
+          });
+          
+          await client.query(
+            `UPDATE orders SET items = $1 WHERE id = $2`,
+            [JSON.stringify(updatedItems), credit.order_id]
+          );
+        }
+      }
+    }
 
     await client.query('COMMIT');
 
