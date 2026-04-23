@@ -3,10 +3,11 @@ import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useNavigate } from 'react-router-dom';
 import { 
-  Plus, RotateCcw, Send, Bell, Lock, X, Coffee, Wine, Smartphone, CreditCard, Phone,
+  Plus, RotateCcw, Send, Bell, Lock, AlertCircle, X, Coffee, Wine, Smartphone, CreditCard, Phone,
   Utensils, ChevronUp, ChevronDown, CheckCircle, 
   AlertTriangle, Clock, Receipt, Banknote,
-  Calendar, User, BookOpen, ClipboardList, Search, Hourglass
+  Calendar, User, BookOpen, ClipboardList, Search, Hourglass,
+  CheckCircle2, XCircle, Award
 } from 'lucide-react';
 import API_URL from "../../../config/api";
 
@@ -17,6 +18,21 @@ function toLocalDateStr(date) {
     .toISOString().split("T")[0];
 }
 function getTodayLocal() { return toLocalDateStr(new Date()); }
+
+function fmtUGX(n) {
+  return `UGX ${Number(n || 0).toLocaleString()}`;
+}
+
+function fmtLargeNumber(n) {
+  const num = Number(n || 0);
+  if (num >= 1_000_000) {
+    return `UGX ${(num / 1_000_000).toFixed(1)}M`;
+  }
+  if (num >= 1_000) {
+    return `UGX ${(num / 1_000).toFixed(0)}K`;
+  }
+  return `UGX ${num.toLocaleString()}`;
+}
 
 // ─── PAYMENT METHODS ─────────────────────────────────────────────────────────
 const MOMO_CODES = {
@@ -242,10 +258,65 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
   );
 }
 
-// ─── CREDITED ITEMS PANEL ──────────────────────────────────────────────────────
+// Helper to get credit status display
+function getCreditStatusDisplay(credit) {
+  const status = credit.status;
+  const isFullySettled = status === "FullySettled" || credit.paid === true;
+  const isPartiallySettled = status === "PartiallySettled";
+  const isRejected = status === "Rejected";
+  const isPendingManager = status === "PendingManagerApproval";
+  const isPendingCashier = status === "PendingCashier";
+  const isApproved = status === "Approved";
+  
+  if (isFullySettled) {
+    return { label: "Settled ✓", color: "text-emerald-500", bg: "bg-emerald-500/10", icon: <CheckCircle2 size={10} /> };
+  }
+  if (isPartiallySettled) {
+    return { label: "Partially Settled", color: "text-yellow-500", bg: "bg-yellow-500/10", icon: <Clock size={10} /> };
+  }
+  if (isRejected) {
+    return { label: "Rejected ✗", color: "text-red-500", bg: "bg-red-500/10", icon: <XCircle size={10} /> };
+  }
+  if (isPendingManager || isPendingCashier) {
+    return { label: "Pending Approval", color: "text-orange-500", bg: "bg-orange-500/10", icon: <Clock size={10} className="animate-pulse" /> };
+  }
+  if (isApproved) {
+    return { label: "Approved", color: "text-purple-500", bg: "bg-purple-500/10", icon: <CheckCircle size={10} /> };
+  }
+  return { label: "Outstanding", color: "text-purple-400", bg: "bg-purple-500/10", icon: <BookOpen size={10} /> };
+}
+
+// ─── CREDITED ITEMS PANEL ─────────
 function CreditedItemsPanel({ creditedItems, theme, onMarkCreditCollected }) {
   const isDark = theme === "dark";
   
+  const myCredits = creditedItems || [];
+  
+  const creditStats = useMemo(() => {
+    const settled = myCredits.filter(c => c.status === "FullySettled" || c.paid === true);
+    const partiallySettled = myCredits.filter(c => c.status === "PartiallySettled");
+    const approved = myCredits.filter(c => c.status === "Approved");
+    const rejected = myCredits.filter(c => c.status === "Rejected");
+    
+    const fullySettledAmount = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
+    const partiallySettledPaidAmount = partiallySettled.reduce((s, c) => s + Number(c.amount_paid || 0), 0);
+    const settledAmount = fullySettledAmount + partiallySettledPaidAmount;
+    
+    const approvedAmount = approved.reduce((s, c) => s + Number(c.amount || 0), 0);
+    const partiallySettledRemaining = partiallySettled.reduce((s, c) => s + Number(c.balance || c.amount || 0), 0);
+    const outstandingAmount = approvedAmount + partiallySettledRemaining;
+    
+    const rejectedAmount = rejected.reduce((s, c) => s + Number(c.amount || 0), 0);
+    
+    return {
+      settled: { count: settled.length + partiallySettled.length, amount: settledAmount },
+      outstanding: { count: approved.length + partiallySettled.length, amount: outstandingAmount },
+      rejected: { count: rejected.length, amount: rejectedAmount },
+      total: myCredits.length,
+      totalAmount: myCredits.reduce((s, c) => s + Number(c.amount || 0), 0),
+    };
+  }, [myCredits]);
+
   if (!creditedItems || creditedItems.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-28 gap-4">
@@ -261,165 +332,271 @@ function CreditedItemsPanel({ creditedItems, theme, onMarkCreditCollected }) {
     );
   }
 
-  const pendingCashier = creditedItems.filter(c => c.status === "PendingCashier");
-  const pendingManager = creditedItems.filter(c => c.status === "PendingManagerApproval");
-  const approved = creditedItems.filter(c => c.status === "Approved");
-  const settled = creditedItems.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled");
-  
-  const totalPendingCashier = pendingCashier.reduce((s, c) => s + Number(c.balance || c.amount || 0), 0);
-  const totalPendingManager = pendingManager.reduce((s, c) => s + Number(c.balance || c.amount || 0), 0);
-  const totalApproved = approved.reduce((s, c) => s + Number(c.balance || c.amount || 0), 0);
-  const totalSettled = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
-
   return (
-    <div className="space-y-5 pb-8">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {pendingCashier.length > 0 && (
-          <div className={`rounded-2xl border p-4 ${isDark ? "bg-yellow-500/5 border-yellow-500/20" : "bg-yellow-50 border-yellow-100"}`}>
-            <p className="text-[8px] font-black uppercase tracking-widest text-yellow-400 mb-1">Wait for Cashier</p>
-            <p className="text-xl font-black text-yellow-400">UGX {totalPendingCashier.toLocaleString()}</p>
-            <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{pendingCashier.length} waiting cashier</p>
+    <div className="space-y-6 pb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Settled Credits */}
+        <div className={`rounded-2xl p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-xl bg-emerald-500/10"><CheckCircle2 size={16} className="text-emerald-500" /></div>
+            <h3 className={`text-sm font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>Settled Credits</h3>
+            <span className="ml-auto text-[10px] font-black text-emerald-500 whitespace-nowrap">{creditStats.settled.count} records</span>
           </div>
-        )}
-        {pendingManager.length > 0 && (
-          <div className={`rounded-2xl border p-4 ${isDark ? "bg-orange-500/5 border-orange-500/20" : "bg-orange-50 border-orange-100"}`}>
-            <p className="text-[8px] font-black uppercase tracking-widest text-orange-400 mb-1">Wait for Manager</p>
-            <p className="text-xl font-black text-orange-400">UGX {totalPendingManager.toLocaleString()}</p>
-            <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{pendingManager.length} waiting approval</p>
+          <div className="mb-3 pb-2 border-b border-zinc-100">
+            <p className="text-[10px] text-zinc-500">Total Settled</p>
+            <p className="text-lg font-black text-emerald-600 break-words">{fmtLargeNumber(creditStats.settled.amount)}</p>
           </div>
-        )}
-        <div className={`rounded-2xl border p-4 ${isDark ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50 border-purple-100"}`}>
-          <p className="text-[8px] font-black uppercase tracking-widest text-purple-400 mb-1">Credit Approved</p>
-          <p className="text-xl font-black text-purple-400">UGX {totalApproved.toLocaleString()}</p>
-          <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{approved.length} credit{approved.length !== 1 ? "s" : ""} approved</p>
+          <div className="space-y-3 max-h-80 overflow-y-auto">
+            {myCredits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled" || c.paid === true).length > 0
+              ? myCredits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled" || c.paid === true).map((credit, idx) => {
+                  const sd = getCreditStatusDisplay(credit);
+                  const displayAmount = credit.status === "PartiallySettled" ? credit.amount_paid : (credit.amount_paid || credit.amount);
+                  return (
+                    <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
+                          <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"} · {credit.label || "Credit"}</p>
+                          {credit.settle_method && <p className="text-[7px] text-emerald-500 mt-1 break-words">Paid via {credit.settle_method}</p>}
+                          {credit.status === "PartiallySettled" && credit.balance > 0 && (
+                            <p className="text-[7px] text-yellow-500 mt-1 break-words">Remaining: {fmtUGX(credit.balance)}</p>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[11px] font-black text-emerald-500 whitespace-nowrap">{fmtUGX(displayAmount)}</p>
+                          <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              : <div className="text-center py-8"><p className="text-[10px] text-zinc-400">No settled credits</p></div>
+            }
+          </div>
         </div>
-        <div className={`rounded-2xl border p-4 ${isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"}`}>
-          <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400 mb-1">Credit Collected</p>
-          <p className="text-xl font-black text-emerald-400">UGX {totalSettled.toLocaleString()}</p>
-          <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{settled.length} credit{settled.length !== 1 ? "s" : ""} collected</p>
+
+        {/* Outstanding Credits */}
+        <div className={`rounded-2xl p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-xl bg-orange-500/10"><AlertCircle size={16} className="text-orange-500" /></div>
+            <h3 className={`text-sm font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>Outstanding Credits</h3>
+            <span className="ml-auto text-[10px] font-black text-orange-500 whitespace-nowrap">{creditStats.outstanding.count} records</span>
+          </div>
+          <div className="mb-3 pb-2 border-b border-zinc-100">
+            <p className="text-[10px] text-zinc-500">Total Outstanding</p>
+            <p className="text-lg font-black text-orange-600 break-words">{fmtLargeNumber(creditStats.outstanding.amount)}</p>
+          </div>
+          <div className="space-y-3 max-h-80 overflow-y-auto">
+            {myCredits.filter(c => c.status === "Approved" || c.status === "PartiallySettled").length > 0
+              ? myCredits.filter(c => c.status === "Approved" || c.status === "PartiallySettled").map((credit, idx) => {
+                  const sd = getCreditStatusDisplay(credit);
+                  const displayAmount = credit.status === "PartiallySettled" ? (credit.balance || credit.amount) : credit.amount;
+                  return (
+                    <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
+                          <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"} · {credit.pay_by ? `Pay by: ${credit.pay_by}` : "No due date"}</p>
+                          {Number(credit.amount_paid) > 0 && <p className="text-[7px] text-yellow-500 mt-1 break-words">Paid: {fmtUGX(credit.amount_paid)}</p>}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[11px] font-black text-orange-500 whitespace-nowrap">{fmtUGX(displayAmount)}</p>
+                          <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              : <div className="text-center py-8"><p className="text-[10px] text-zinc-400">No outstanding credits</p></div>
+            }
+          </div>
+        </div>
+
+        {/* Rejected Credits */}
+        <div className={`rounded-2xl p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-xl bg-red-500/10"><XCircle size={16} className="text-red-500" /></div>
+            <h3 className={`text-sm font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>Rejected Credits</h3>
+            <span className="ml-auto text-[10px] font-black text-red-500 whitespace-nowrap">{creditStats.rejected.count} records</span>
+          </div>
+          <div className="mb-3 pb-2 border-b border-zinc-100">
+            <p className="text-[10px] text-zinc-500">Total Rejected</p>
+            <p className="text-lg font-black text-red-600 break-words">{fmtLargeNumber(creditStats.rejected.amount)}</p>
+          </div>
+          <div className="space-y-3 max-h-80 overflow-y-auto">
+            {myCredits.filter(c => c.status === "Rejected").length > 0
+              ? myCredits.filter(c => c.status === "Rejected").map((credit, idx) => {
+                  const sd = getCreditStatusDisplay(credit);
+                  return (
+                    <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
+                          <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"}</p>
+                          {credit.reject_reason && <p className="text-[7px] text-red-500 mt-1 break-words">Reason: {credit.reject_reason}</p>}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[11px] font-black text-red-500 whitespace-nowrap">{fmtUGX(credit.amount)}</p>
+                          <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              : <div className="text-center py-8"><p className="text-[10px] text-zinc-400">No rejected credits</p></div>
+            }
+          </div>
         </div>
       </div>
-      
-      {pendingCashier.length > 0 && (
-        <div className="space-y-2">
-          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Wait for Cashier · {pendingCashier.length}</p>
-          {pendingCashier.map((credit, i) => (
-            <CreditItemRow key={i} credit={credit} isDark={isDark} status="pendingCashier" />
-          ))}
-        </div>
-      )}
-      
-      {pendingManager.length > 0 && (
-        <div className="space-y-2">
-          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Wait for Manager · {pendingManager.length}</p>
-          {pendingManager.map((credit, i) => (
-            <CreditItemRow key={i} credit={credit} isDark={isDark} status="pendingManager" />
-          ))}
-        </div>
-      )}
-      
-      {approved.length > 0 && (
-        <div className="space-y-2">
-          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Credit Approved · {approved.length}</p>
-          {approved.map((credit, i) => (
-            <CreditItemRow 
-              key={i} 
-              credit={credit} 
-              isDark={isDark} 
-              status="approved"
-              onMarkCollected={onMarkCreditCollected}
-            />
-          ))}
-        </div>
-      )}
-      
-      {settled.length > 0 && (
-        <div className="space-y-2">
-          <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Credit Collected · {settled.length}</p>
-          {settled.map((credit, i) => (
-            <CreditItemRow key={i} credit={credit} isDark={isDark} status="collected" />
-          ))}
+
+      {/* Pending approvals section */}
+      {myCredits.filter(c => c.status === "PendingCashier" || c.status === "PendingManagerApproval").length > 0 && (
+        <div className={`rounded-2xl p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-xl bg-yellow-500/10"><Clock size={16} className="text-yellow-500" /></div>
+            <h3 className={`text-sm font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>Pending Approvals</h3>
+            <span className="ml-auto text-[10px] font-black text-yellow-500 whitespace-nowrap">
+              {myCredits.filter(c => c.status === "PendingCashier" || c.status === "PendingManagerApproval").length} records
+            </span>
+          </div>
+          <div className="space-y-3 max-h-80 overflow-y-auto">
+            {myCredits.filter(c => c.status === "PendingCashier" || c.status === "PendingManagerApproval").map((credit, idx) => {
+              const sd = getCreditStatusDisplay(credit);
+              return (
+                <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
+                      <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"} · {credit.label || "Credit"}</p>
+                      {credit.pay_by && <p className="text-[7px] text-amber-500 mt-1 break-words">Pay by: {credit.pay_by}</p>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`text-[11px] font-black whitespace-nowrap ${sd.color}`}>{fmtUGX(credit.amount)}</p>
+                      <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function CreditItemRow({ credit, isDark, status, onMarkCollected }) {
-  const date = credit?.created_at;
-  const dateStr = date
-    ? new Date(date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    : "—";
+// ─── RECENTLY PAID ITEMS PANEL - Shows ALL paid items (not tables) ────────────
+function RecentlyPaidItemsPanel({ orders, theme }) {
+  const isDark = theme === "dark";
   
-  const statusStyles = {
-    pendingCashier: { 
-      bg: isDark ? "bg-yellow-500/5 border-yellow-500/20" : "bg-yellow-50/60 border-yellow-200", 
-      badge: "bg-yellow-500/10 border-yellow-500/20 text-yellow-400", 
-      icon: <Hourglass size={8}/>, 
-      label: "Wait for Cashier"
-    },
-    pendingManager: { 
-      bg: isDark ? "bg-orange-500/5 border-orange-500/20" : "bg-orange-50/60 border-orange-200", 
-      badge: "bg-orange-500/10 border-orange-500/20 text-orange-400", 
-      icon: <Hourglass size={8}/>, 
-      label: "Wait for Manager"
-    },
-    approved: { 
-      bg: isDark ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50/60 border-purple-200", 
-      badge: "bg-purple-500/10 border-purple-500/20 text-purple-400", 
-      icon: <CheckCircle size={8}/>, 
-      label: "Credit Approved"
-    },
-    collected: { 
-      bg: isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50/60 border-emerald-200", 
-      badge: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400", 
-      icon: <CheckCircle size={8}/>, 
-      label: "Credit Collected"
-    }
-  };
-  
-  const style = statusStyles[status] || statusStyles.pendingCashier;
-  const displayAmount = status === "collected" ? credit.amount_paid : (credit.balance || credit.amount);
-  
-  return (
-    <div className={`rounded-2xl border p-4 flex items-start justify-between gap-3 transition-all ${style.bg} ${status === "collected" ? "opacity-70" : ""}`}>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap mb-1.5">
-          <span className={`font-black text-sm uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.label || "Credit Item"}</span>
-          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${style.badge} text-[8px] font-black uppercase`}>
-            {style.icon} {style.label}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`text-[10px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>Table: {credit.table_name}</span>
-        </div>
-        {credit.client_name && (
-          <div className="flex items-center gap-1 mb-1">
-            <User size={9} className="text-zinc-500 shrink-0"/>
-            <span className={`text-[10px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{credit.client_name}</span>
-            {credit.client_phone && <span className={`text-[9px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>· {credit.client_phone}</span>}
+  // Collect all paid items from all orders (not filtered by date or staff)
+  const paidItems = useMemo(() => {
+    const items = [];
+    orders.forEach(order => {
+      let orderItems = order.items || [];
+      if (typeof orderItems === 'string') {
+        try {
+          orderItems = JSON.parse(orderItems);
+        } catch {
+          orderItems = [];
+        }
+      }
+      
+      orderItems.forEach(item => {
+        // Check if item is paid (has _rowPaid flag or paid_at timestamp)
+        if (item._rowPaid === true || item.paid_at) {
+          items.push({
+            id: `${order.id}_${item.name}`,
+            order_id: order.id,
+            table_name: order.table_name,
+            name: item.name,
+            quantity: item.quantity || 1,
+            price: item.price || 0,
+            total: (item.price || 0) * (item.quantity || 1),
+            payment_method: item.payment_method || "Cash",
+            paid_at: item.paid_at || new Date().toISOString(),
+            timestamp: order.timestamp || order.created_at,
+          });
+        }
+      });
+    });
+    
+    // Sort by paid_at (newest first)
+    items.sort((a, b) => new Date(b.paid_at) - new Date(a.paid_at));
+    return items; // Return ALL paid items, not just last 20
+  }, [orders]);
+
+  if (paidItems.length === 0) {
+    return (
+      <div className={`rounded-2xl p-8 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"} text-center`}>
+        <div className="flex flex-col items-center justify-center gap-3">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isDark ? "bg-emerald-500/10" : "bg-emerald-50"}`}>
+            <CheckCircle2 size={24} className="text-emerald-400" />
           </div>
-        )}
-        {credit.pay_by && status !== "collected" && (
-          <div className="flex items-center gap-1 mb-1">
-            <Calendar size={9} className="text-amber-400 shrink-0"/>
-            <span className="text-[9px] font-black text-amber-400 uppercase tracking-wider">Pay by: {credit.pay_by}</span>
-          </div>
-        )}
-        <p className={`text-[8px] font-bold mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>{dateStr}</p>
+          <p className={`text-[11px] font-black uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+            No paid items yet
+          </p>
+          <p className="text-[9px] text-zinc-400">Items paid by cashier will appear here</p>
+        </div>
       </div>
-      <div className="text-right shrink-0">
-        <p className={`text-lg font-black ${status === "collected" ? "text-emerald-400" : status === "approved" ? "text-purple-400" : status === "pendingManager" ? "text-orange-400" : "text-yellow-400"}`}>
-          UGX {Number(displayAmount || 0).toLocaleString()}
-        </p>
-        {status === "approved" && onMarkCollected && (
-          <button
-            onClick={() => onMarkCollected(credit)}
-            className="mt-2 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all"
-          >
-            Mark Collected
-          </button>
-        )}
+    );
+  }
+
+  return (
+    <div className={`rounded-2xl p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 rounded-xl bg-emerald-500/10">
+          <CheckCircle2 size={16} className="text-emerald-500" />
+        </div>
+        <h3 className={`text-sm font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>
+          Paid Items History
+        </h3>
+        <span className="ml-auto text-[10px] font-black text-emerald-500 whitespace-nowrap">
+          Total: {paidItems.length} items
+        </span>
+      </div>
+      
+      <div className="space-y-3 max-h-96 overflow-y-auto">
+        {paidItems.map((item, idx) => {
+          const date = new Date(item.paid_at);
+          const dateStr = date.toLocaleDateString("en-GB", { 
+            day: "2-digit", 
+            month: "short", 
+            hour: "2-digit", 
+            minute: "2-digit" 
+          });
+          
+          return (
+            <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>
+                      {item.name}
+                    </p>
+                    <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 text-[7px] font-black uppercase">
+                      Paid
+                    </span>
+                  </div>
+                  <p className={`text-[9px] font-bold uppercase mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                    Table: {item.table_name || "WALK-IN"} · Order #{String(item.order_id).slice(-6)}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    <p className="text-[8px] text-zinc-500">Qty: {item.quantity}</p>
+                    <p className="text-[8px] text-emerald-500">Paid via: {item.payment_method}</p>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[11px] font-black text-emerald-500 whitespace-nowrap">
+                    {fmtUGX(item.total)}
+                  </p>
+                  <p className="text-[8px] text-zinc-500 mt-1">{dateStr}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -437,14 +614,13 @@ function OrderCard({
   onMarkTablePaid,
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [isSendingPayment, setIsSendingPayment] = useState(false);
   const navigate = useNavigate();
 
   if (!order) return null;
 
   const isReady         = order.status === "Ready";
   const isServed        = order.status === "Served";
-  const isPaid          = order.status === "Paid";
-  const tableAllPaid    = order.allPaid;
   const hasPendingVoid   = (order.items || []).some(item => item.voidRequested === true && item.voidProcessed !== true);
   const hasPendingPayment = (order.items || []).some(item => item.paymentRequested === true && !item._rowPaid);
 
@@ -457,7 +633,6 @@ function OrderCard({
     });
   };
 
-  // Only show items that are NOT voided as payable
   const payableItems = (order.items || []).filter(item => {
     return !item._rowPaid && item.status !== "VOIDED" && !item.voidProcessed && !item.paymentRequested && !item.creditRequested;
   });
@@ -470,20 +645,88 @@ function OrderCard({
     item => item._rowPaid === true || item.paymentRequested === true || item.creditRequested === true || item.status === "VOIDED" || item.voidProcessed === true
   );
 
-  const statusConfig = {
-    Pending:         { label: "Pending",          color: "text-zinc-400",    bg: "bg-zinc-500/10 border-zinc-500/20",       dot: "bg-zinc-400" },
-    Preparing:       { label: "Preparing",        color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/20",   dot: "bg-orange-400 animate-pulse" },
-    Ready:           { label: "🔔 Ready!",        color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", dot: "bg-emerald-400" },
-    Served:          { label: "Served",           color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/20",       dot: "bg-blue-400" },
-    Paid:            { label: "Paid ✓",           color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", dot: "bg-emerald-400" },
+  // Calculate payment status based on INDIVIDUAL ITEM FLAGS
+  const nonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
+  const allItemsPaid = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
+  const hasAnyPaidItems = nonVoidedItems.some(item => item._rowPaid === true);
+  const hasAnyCreditItems = nonVoidedItems.some(item => item.creditRequested === true);
+  const hasAnyPendingItems = nonVoidedItems.some(item => !item._rowPaid && !item.paymentRequested && !item.creditRequested);
+  const hasAnyPaymentRequested = nonVoidedItems.some(item => item.paymentRequested === true);
+
+  // Check if payment has been sent for this table
+  const hasTablePaymentRequested = order.orderIds?.some(orderId => 
+    localStorage.getItem(`payment_sent_${orderId}`) === 'true'
+  ) || false;
+
+  // Handle Pay Full Table button click
+  const handlePayTableClick = async () => {
+    setIsSendingPayment(true);
+    try {
+      await onPayTable(order);
+      order.orderIds?.forEach(orderId => {
+        localStorage.setItem(`payment_sent_${orderId}`, 'true');
+      });
+      setIsSendingPayment(false);
+    } catch (err) {
+      console.error("Pay table failed:", err);
+      setIsSendingPayment(false);
+    }
   };
 
-  const currentStatus = allItemsVoided
-    ? { label: "All Items Voided", color: "text-red-400", bg: "bg-red-500/10 border-red-500/20", dot: "bg-red-400" }
-    : (statusConfig[order.status] || statusConfig.Pending);
+  // Determine pill display based on ITEM FLAGS
+  let displayStatus = order.status;
+  let displayColor = "text-zinc-400";
+  let displayBg = "bg-zinc-500/10 border-zinc-500/20";
+  let displayDot = "bg-zinc-400";
 
-  // If table is paid, show simple view
-  if (isPaid || tableAllPaid) {
+  if (allItemsVoided) {
+    displayStatus = "All Voided";
+    displayColor = "text-red-400";
+    displayBg = "bg-red-500/10 border-red-500/20";
+    displayDot = "bg-red-400";
+  } else if (allItemsPaid) {
+    displayStatus = "Paid ✓";
+    displayColor = "text-emerald-400";
+    displayBg = "bg-emerald-500/10 border-emerald-500/20";
+    displayDot = "bg-emerald-400";
+  } else if (hasAnyPaidItems && hasAnyCreditItems) {
+    displayStatus = "Mixed Payment";
+    displayColor = "text-purple-400";
+    displayBg = "bg-purple-500/10 border-purple-500/20";
+    displayDot = "bg-purple-400";
+  } else if (hasAnyCreditItems) {
+    displayStatus = "Credit";
+    displayColor = "text-purple-400";
+    displayBg = "bg-purple-500/10 border-purple-500/20";
+    displayDot = "bg-purple-400";
+  } else if (hasAnyPaymentRequested || hasTablePaymentRequested) {
+    displayStatus = "Awaiting Cashier";
+    displayColor = "text-yellow-500";
+    displayBg = "bg-yellow-500/10 border-yellow-500/20";
+    displayDot = "bg-yellow-400 animate-pulse";
+  } else if (hasAnyPaidItems) {
+    displayStatus = "Partially Paid";
+    displayColor = "text-blue-400";
+    displayBg = "bg-blue-500/10 border-blue-500/20";
+    displayDot = "bg-blue-400";
+  } else if (hasAnyPendingItems) {
+    if (order.status === "Ready") {
+      displayStatus = "🔔 Ready!";
+      displayColor = "text-emerald-400";
+      displayBg = "bg-emerald-500/10 border-emerald-500/30";
+      displayDot = "bg-emerald-400";
+    } else if (order.status === "Served") {
+      displayStatus = "Served";
+      displayColor = "text-blue-400";
+      displayBg = "bg-blue-500/10 border-blue-500/20";
+      displayDot = "bg-blue-400";
+    } else {
+      displayStatus = order.status;
+    }
+  }
+
+  // If table is fully paid, show simple view
+  if (allItemsPaid) {
     return (
       <div className={`rounded-[1.5rem] border overflow-hidden transition-all duration-300 mb-4
         ${theme === "dark" ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
@@ -494,12 +737,12 @@ function OrderCard({
                 {order.tableName}
               </span>
               <p className="text-[10px] font-bold text-zinc-500">
-                {order.items?.filter(i => i.status !== "VOIDED" && !i.voidProcessed).length || 0} items · UGX {(order.total || 0).toLocaleString()}
+                {nonVoidedItems.length} items · UGX {(order.total || 0).toLocaleString()}
               </p>
             </div>
-            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[8px] font-black uppercase ${statusConfig.Paid.bg} ${statusConfig.Paid.color}`}>
-              <span className={`w-1 h-1 rounded-full ${statusConfig.Paid.dot}`} />
-              {statusConfig.Paid.label}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[8px] font-black uppercase bg-emerald-500/10 border-emerald-500/20 text-emerald-400`}>
+              <span className="w-1 h-1 rounded-full bg-emerald-400" />
+              Paid ✓
             </div>
           </div>
         </div>
@@ -513,7 +756,6 @@ function OrderCard({
       ${hasPendingPayment ? "border-yellow-500/30 shadow-lg shadow-yellow-500/5" : ""}
       ${theme === "dark" ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
 
-      {/* MAIN CARD HEADER */}
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -521,16 +763,15 @@ function OrderCard({
               {order.tableName}
             </span>
             <p className="text-[10px] font-bold text-zinc-500">
-              {order.items?.filter(i => i.status !== "VOIDED" && !i.voidProcessed).length || 0} items · UGX {(order.total || 0).toLocaleString()}
+              {nonVoidedItems.length} items · UGX {(order.total || 0).toLocaleString()}
             </p>
           </div>
-          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[8px] font-black uppercase ${currentStatus.bg} ${currentStatus.color}`}>
-            <span className={`w-1 h-1 rounded-full ${currentStatus.dot}`} />
-            {currentStatus.label}
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[8px] font-black uppercase ${displayBg} ${displayColor}`}>
+            <span className={`w-1 h-1 rounded-full ${displayDot}`} />
+            {displayStatus}
           </div>
         </div>
 
-        {/* EXPAND BUTTON */}
         <button onClick={() => setExpanded(!expanded)}
           className={`mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all
             ${theme === "dark" ? "bg-white/5 text-zinc-400" : "bg-zinc-50 text-zinc-500"}`}>
@@ -540,10 +781,9 @@ function OrderCard({
         </button>
       </div>
 
-      {/* ITEM LIST (EXPANDABLE) - Only show non-voided items */}
       {expanded && (
         <div className="px-4 pb-3 space-y-2 border-t border-black/5 pt-3">
-          {(order.items || []).filter(item => item.status !== "VOIDED" && !item.voidProcessed).map((item, i) => (
+          {nonVoidedItems.map((item, i) => (
             <div key={i} className={`p-3 rounded-xl ${theme === "dark" ? "bg-white/5" : "bg-zinc-50"}`}>
               <div className="flex justify-between items-center">
                 <div className="flex-1">
@@ -558,15 +798,17 @@ function OrderCard({
                     {item.creditRequested && !item._rowPaid && (
                       <span className="ml-2 text-[8px] text-purple-400 font-black uppercase">(credit pending)</span>
                     )}
+                    {item._rowPaid && (
+                      <span className="ml-2 text-[8px] text-emerald-400 font-black uppercase">✓ paid</span>
+                    )}
                   </p>
                   <p className="text-[9px] font-bold text-zinc-400">
                     ×{item.quantity || 1} · UGX {Number(item.price || 0).toLocaleString()}
                   </p>
                 </div>
 
-                {/* ITEM LEVEL ACTIONS */}
                 <div className="flex gap-1.5">
-                  {isServed && !item._rowPaid && item.status !== 'VOIDED' && !item.voidProcessed && !item.paymentRequested && !item.creditRequested && (
+                  {isServed && !item._rowPaid && item.status !== 'VOIDED' && !item.voidProcessed && !item.paymentRequested && !item.creditRequested && !hasTablePaymentRequested && (
                     <button
                       onClick={() => onPayItem && onPayItem(item, order)}
                       className="p-1.5 bg-yellow-500/10 text-yellow-500 rounded-lg hover:bg-yellow-500/20 transition-all">
@@ -579,7 +821,7 @@ function OrderCard({
                       <span className="text-[8px] font-black">Awaiting Cashier</span>
                     </div>
                   )}
-                  {!item._rowPaid && item.status !== 'VOIDED' && !item.voidProcessed && !item.voidRequested && !item.paymentRequested && !item.creditRequested && (
+                  {!item._rowPaid && item.status !== 'VOIDED' && !item.voidProcessed && !item.voidRequested && !item.paymentRequested && !item.creditRequested && !hasTablePaymentRequested && (
                     <button
                       onClick={() => onVoidItem && onVoidItem(item, order)}
                       className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all">
@@ -597,7 +839,7 @@ function OrderCard({
             </div>
           ))}
           
-          {/* Show voided items as crossed out if any exist */}
+          {/* Show voided items */}
           {(order.items || []).filter(item => item.status === "VOIDED" || item.voidProcessed).length > 0 && (
             <div className="mt-3 pt-2 border-t border-white/10">
               <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-2">Voided Items</p>
@@ -624,7 +866,6 @@ function OrderCard({
         </div>
       )}
 
-      {/* FOOTER ACTIONS */}
       <div className={`px-4 pb-4 pt-2 border-t ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
         <div className="flex flex-col gap-2">
           <div className="flex gap-2">
@@ -640,7 +881,7 @@ function OrderCard({
               <Plus size={14} strokeWidth={3} /> Add Items
             </button>
 
-            {isServed && !hasPendingPayment && (
+            {isServed && !hasPendingPayment && !hasAnyPaymentRequested && !hasTablePaymentRequested && (
               <button onClick={() => onUnserve && onUnserve(order)}
                 className="py-2.5 px-3.5 border border-black/10 text-zinc-400 font-black text-[10px] rounded-xl">
                 <RotateCcw size={12}/>
@@ -648,14 +889,31 @@ function OrderCard({
             )}
           </div>
 
-          {isServed && payableItems.length > 0 && !hasPendingPayment && (
-            <button onClick={() => onPayTable && onPayTable(order)}
-              className="w-full py-2.5 bg-yellow-500 text-black font-black text-[10px] uppercase tracking-widest rounded-xl flex items-center justify-center gap-1.5 shadow-lg shadow-yellow-500/20">
-              <Send size={13}/> Pay Full Table
+          {isServed && payableItems.length > 0 && !hasPendingPayment && !hasAnyPaymentRequested && !hasTablePaymentRequested && (
+            <button 
+              onClick={handlePayTableClick}
+              disabled={isSendingPayment}
+              className={`w-full py-2.5 font-black text-[10px] uppercase tracking-widest rounded-xl flex items-center justify-center gap-1.5 shadow-lg transition-all
+                ${isSendingPayment 
+                  ? "bg-zinc-600 text-zinc-300 cursor-not-allowed" 
+                  : "bg-yellow-500 text-black hover:bg-yellow-400 active:scale-[0.98] shadow-yellow-500/20"}`}>
+              {isSendingPayment ? (
+                <><Hourglass size={13} className="animate-spin" /> Sending to Cashier...</>
+              ) : (
+                <><Send size={13}/> Pay Full Table</>
+              )}
             </button>
           )}
           
-          {isServed && allItemsPaidOrRequested && order.items?.filter(i => i.status !== "VOIDED" && !i.voidProcessed).length > 0 && payableItems.length === 0 && !hasPendingPayment && (
+          {/* Show "Sent to Cashier" button after payment is sent */}
+          {isServed && (hasAnyPaymentRequested || hasTablePaymentRequested) && !allItemsPaid && (
+            <div className="w-full py-2.5 bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 font-black text-[10px] uppercase tracking-widest rounded-xl flex items-center justify-center gap-1.5">
+              <Hourglass size={13} className="animate-pulse" />
+              Sent to Cashier - Awaiting Confirmation
+            </div>
+          )}
+          
+          {isServed && allItemsPaidOrRequested && nonVoidedItems.length > 0 && payableItems.length === 0 && !hasPendingPayment && !hasAnyPaymentRequested && !allItemsPaid && (
             <button onClick={() => onMarkTablePaid && onMarkTablePaid(order)}
               className="w-full py-2.5 bg-emerald-500 text-black font-black text-[10px] uppercase tracking-widest rounded-xl flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
               <CheckCircle size={13}/> Mark as Paid
@@ -667,7 +925,7 @@ function OrderCard({
   );
 }
 
-// ─── VOIDED ITEMS PANEL - Shows ONLY voided items, not tables ─────────────────
+// ─── VOIDED ITEMS PANEL ──────────────────────────────────────────────────────
 function VoidedItemsPanel({ voidedItems, theme }) {
   const isDark = theme === "dark";
   
@@ -814,7 +1072,6 @@ export default function OrderHistory({ onAddItems }) {
 
     Object.values(groups).forEach(g => {
       g.items = g.items.map((item, idx) => ({ ...item, _itemIndex: idx }));
-      // Recalculate total excluding voided items
       g.total = g.items.reduce((sum, item) => {
         if (item.status !== "VOIDED" && !item.voidProcessed) {
           return sum + (Number(item.price) * Number(item.quantity || 1));
@@ -834,7 +1091,7 @@ export default function OrderHistory({ onAddItems }) {
       };
     }), [groupedTableOrders]);
 
-  // ─── COLLECT VOIDED ITEMS - ONLY voided items, not tables ─────────────────
+  // ─── COLLECT VOIDED ITEMS ─────────────────────────────────────────────────
   const voidedItemsList = useMemo(() => {
     const items = [];
     enrichedGroups.forEach(group => {
@@ -853,7 +1110,7 @@ export default function OrderHistory({ onAddItems }) {
   // ─── FETCH CREDITS ────────────────────────────────────────────────────────
   const fetchCredits = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/orders/credits`);
+      const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
       if (res.ok) {
         const data = await res.json();
         setCreditsData(data);
@@ -878,6 +1135,7 @@ export default function OrderHistory({ onAddItems }) {
         })
       ));
       refreshData?.();
+      setTimeout(() => refreshData?.(), 500);
     } catch (err) { console.error("Mark served failed:", err); }
   }, [refreshData]);
 
@@ -953,54 +1211,94 @@ export default function OrderHistory({ onAddItems }) {
               [`${orderId}_table`]: true
             }));
           });
+          alert(`✅ Payment request for ${payload.tableName} (UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
         } else if (payload.type === "item" && payload.orderId) {
           setPendingPayments(prev => ({
             ...prev,
             [`${payload.orderId}_${payload.item?.name}`]: true
           }));
+          alert(`✅ Payment request for ${payload.item?.name} (UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
         }
         
         refreshData?.();
         fetchCredits();
+      } else {
+        const error = await res.json();
+        alert(`❌ Failed to send payment: ${error.error || "Unknown error"}`);
       }
-    } catch (err) { console.error("Send failed:", err); }
+    } catch (err) { 
+      console.error("Send failed:", err);
+      alert(`❌ Network error: ${err.message}`);
+    }
   }, [currentStaffName, currentStaffId, refreshData, fetchCredits]);
 
-  const handleVoidConfirm = useCallback(async (item, reason) => {
-    const orderId = item?._orderId;
-    if (!orderId) {
-      console.error("No Order ID found for void request — item:", item);
-      return;
+const handleVoidConfirm = useCallback(async (item, reason) => {
+  const orderId = item?._orderId;
+  if (!orderId) {
+    console.error("No Order ID found for void request — item:", item);
+    alert("Error: Could not find order ID for this item");
+    return;
+  }
+  
+  console.log("Sending void request:", {
+    order_id: orderId,
+    item_name: item.name,
+    reason: reason,
+    requested_by: currentStaffName
+  });
+  
+  try {
+    const res = await fetch(`${API_URL}/api/orders/void-item`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        order_id: orderId,
+        item_name: item.name,
+        reason: reason,
+        requested_by: currentStaffName,
+      }),
+    });
+    
+    console.log("Response status:", res.status);
+    
+    if (res.ok) {
+      const data = await res.json();
+      console.log("Void request successful:", data);
+      alert(`✅ Void request for "${item.name}" sent to accountant for approval!`);
+      refreshData?.();
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      console.error("Void failed with status:", res.status, errData);
+      alert(`❌ Failed to send void request: ${errData.error || "Unknown error"}`);
     }
-    try {
-      const res = await fetch(`${API_URL}/api/orders/void-item`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          order_id:     orderId,
-          item_name:    item.name,
-          reason,
-          requested_by: currentStaffName,
-        }),
-      });
-      if (res.ok) {
-        refreshData?.();
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        console.error("Void failed:", errData?.message);
-      }
-    } catch (err) {
-      console.error("Void request network error:", err);
-    }
-  }, [currentStaffName, refreshData]);
+  } catch (err) {
+    console.error("Void request network error:", err);
+    alert(`❌ Network error: ${err.message}`);
+  }
+}, [currentStaffName, refreshData]);
 
-  // ─── FILTERING ─────────────────────────────────────────────────────────────
+  // ─── FILTERING - FIXED: Strictly exclude credit orders from Live tab ─────────────
   const filteredOrders = useMemo(() =>
     enrichedGroups.filter(g => {
       const matchSearch = g.tableName.toLowerCase().includes(searchQuery.toLowerCase());
       const hasNonVoidedItems = (g.items || []).some(i => i.status !== "VOIDED" && !i.voidProcessed);
-      const isPaidGroup = g.status === "Paid" || g._rows.every(r => r.paid);
-      const isLiveGroup = ["Pending", "Preparing", "Ready", "Delayed", "Served"].includes(g.status) && !isPaidGroup;
+      
+      const allNonVoidedItemsPaid = (g.items || [])
+        .filter(i => i.status !== "VOIDED" && !i.voidProcessed)
+        .every(item => item._rowPaid === true);
+      
+      const hasAnyPaidItems = (g.items || []).some(item => item._rowPaid === true);
+      const hasAnyCreditItems = (g.items || []).some(item => item.creditRequested === true);
+      
+      // CRITICAL FIX: Check if ANY order in this group has status "Credit"
+      const hasCreditOrderStatus = g.orderIds?.some(orderId => {
+        const order = orders.find(o => o.id === orderId);
+        return order?.status === "Credit" || order?.payment_method === "Credit";
+      }) || false;
+      
+      // Live group should have NO paid items, NO credit items, NO credit orders, and has non-voided items
+      const isLiveGroup = !hasAnyPaidItems && !hasAnyCreditItems && !hasCreditOrderStatus && hasNonVoidedItems;
+      const isServedGroup = g.status === "Served" && !allNonVoidedItemsPaid && hasNonVoidedItems;
       
       let matchTab = false;
       switch (activeTab) {
@@ -1008,30 +1306,66 @@ export default function OrderHistory({ onAddItems }) {
           matchTab = isLiveGroup && hasNonVoidedItems;
           break;
         case "Served":
-          matchTab = g.status === "Served" && !isPaidGroup && hasNonVoidedItems;
+          matchTab = isServedGroup;
           break;
         case "Paid":
-          matchTab = isPaidGroup;
+          // NO tables under Paid tab - they are shown in RecentlyPaidItemsPanel instead
+          matchTab = false;
           break;
         default:
           matchTab = false;
       }
       return matchSearch && matchTab;
-    }), [enrichedGroups, searchQuery, activeTab]);
+    }), [enrichedGroups, searchQuery, activeTab, orders]);
 
+  // Count ALL paid items for the badge
+  const totalPaidItemsCount = useMemo(() => {
+    let count = 0;
+    orders.forEach(order => {
+      let orderItems = order.items || [];
+      if (typeof orderItems === 'string') {
+        try {
+          orderItems = JSON.parse(orderItems);
+        } catch {
+          orderItems = [];
+        }
+      }
+      orderItems.forEach(item => {
+        if (item._rowPaid === true || item.paid_at) {
+          count++;
+        }
+      });
+    });
+    return count;
+  }, [orders]);
+
+  // FIXED: Counts - exclude credit orders from Live count
   const counts = useMemo(() => {
-    const acc = { Live: 0, Served: 0, Paid: 0, Credits: creditsData.length, Voided: voidedItemsList.length };
+    const acc = { Live: 0, Served: 0, Paid: totalPaidItemsCount, Credits: creditsData.length, Voided: voidedItemsList.length };
     enrichedGroups.forEach(g => {
       const hasNonVoidedItems = (g.items || []).some(i => i.status !== "VOIDED" && !i.voidProcessed);
-      const isPaid    = g.status === "Paid" || g._rows.every(r => r.paid);
-      const isLive    = ["Pending", "Preparing", "Ready", "Delayed", "Served"].includes(g.status) && !isPaid;
       
-      if (isLive && hasNonVoidedItems) acc.Live++;
-      if (g.status === "Served" && !isPaid && hasNonVoidedItems) acc.Served++;
-      if (isPaid) acc.Paid++;
+      const allNonVoidedItemsPaid = (g.items || [])
+        .filter(i => i.status !== "VOIDED" && !i.voidProcessed)
+        .every(item => item._rowPaid === true);
+      
+      const hasAnyPaidItems = (g.items || []).some(item => item._rowPaid === true);
+      const hasAnyCreditItems = (g.items || []).some(item => item.creditRequested === true);
+      
+      // CRITICAL FIX: Check order status for credit
+      const hasCreditOrderStatus = g.orderIds?.some(orderId => {
+        const order = orders.find(o => o.id === orderId);
+        return order?.status === "Credit" || order?.payment_method === "Credit";
+      }) || false;
+      
+      const isLiveGroup = !hasAnyPaidItems && !hasAnyCreditItems && !hasCreditOrderStatus && hasNonVoidedItems;
+      const isServedGroup = g.status === "Served" && !allNonVoidedItemsPaid && hasNonVoidedItems;
+      
+      if (isLiveGroup && hasNonVoidedItems) acc.Live++;
+      if (isServedGroup) acc.Served++;
     });
     return acc;
-  }, [enrichedGroups, voidedItemsList, creditsData]);
+  }, [enrichedGroups, voidedItemsList, creditsData, totalPaidItemsCount, orders]);
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
@@ -1106,7 +1440,13 @@ export default function OrderHistory({ onAddItems }) {
             theme={theme} 
             onMarkCreditCollected={handleMarkCreditCollected}
           />
+        ) : activeTab === "Paid" ? (
+          <>
+            {/* Recently Paid Items Section - Shows ALL paid items (not tables) */}
+            <RecentlyPaidItemsPanel orders={orders} theme={theme} />
+          </>
         ) : (
+          // Live and Served tabs - Show order grids
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredOrders.map(order => (
               <OrderCard

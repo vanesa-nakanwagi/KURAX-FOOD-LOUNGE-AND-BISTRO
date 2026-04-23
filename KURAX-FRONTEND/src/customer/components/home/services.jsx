@@ -125,7 +125,7 @@ export default function Services() {
                     {service.title}
                   </h3>
 
-                  <p className="text-sm text-zinc-700 dark:text-zinc-400 leading-relaxed font-light">
+                  <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-md font-light leading-relaxed">
                     {service.description}
                   </p>
 

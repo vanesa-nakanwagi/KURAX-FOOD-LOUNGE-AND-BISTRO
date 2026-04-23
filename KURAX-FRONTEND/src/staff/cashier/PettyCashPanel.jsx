@@ -1,5 +1,12 @@
 /**
- * PettyCashPanel.jsx - WITH EDIT FUNCTIONALITY
+ * PettyCashPanel.jsx - WITH EDIT FUNCTIONALITY - FIXED
+ * Correct Accounting Logic:
+ * - Replenishment (IN): Money moved from main cash drawer to petty cash wallet
+ *   → Decreases Cash on Counter
+ *   → Increases Petty Cash Balance
+ * - Expense (OUT): Money spent from petty cash wallet
+ *   → Does NOT affect Cash on Counter
+ *   → Decreases Petty Cash Balance
  */
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
@@ -50,11 +57,11 @@ export default function PettyCashPanel({
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [entries, setEntries] = useState([]);
-  const [totalIn, setTotalIn] = useState(0);
-  const [totalOut, setTotalOut] = useState(0);
+  const [totalIn, setTotalIn] = useState(0);  // Total replenishment (money added to petty cash)
+  const [totalOut, setTotalOut] = useState(0); // Total expenses (money spent from petty cash)
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [editing, setEditing] = useState(null); // Store entry being edited
+  const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [showForm, setShowForm] = useState(false);
@@ -95,8 +102,8 @@ export default function PettyCashPanel({
       const inSum = Number(data.total_in) || 0;
       
       setEntries(logs);
-      setTotalIn(inSum);
       setTotalOut(outSum);
+      setTotalIn(inSum);
 
       if (onTotalChange) onTotalChange(outSum);
       
@@ -146,18 +153,14 @@ export default function PettyCashPanel({
       if (!res.ok) throw new Error("Update failed");
 
       // Adjust totals based on changes
-      // Remove old entry's effect
       if (oldDirection === "OUT") {
         setTotalOut(prev => Math.max(0, prev - oldAmount));
-        if (onTotalChange) onTotalChange(totalOut - oldAmount);
       } else {
         setTotalIn(prev => Math.max(0, prev - oldAmount));
       }
       
-      // Add new entry's effect
       if (newDirection === "OUT") {
         setTotalOut(prev => prev + newAmount);
-        if (onTotalChange) onTotalChange((totalOut - oldAmount) + newAmount);
       } else {
         setTotalIn(prev => prev + newAmount);
       }
@@ -166,7 +169,7 @@ export default function PettyCashPanel({
       setAmount("");
       setDescription("");
       setShowForm(false);
-      fetchData(); // Refresh list
+      fetchData();
       showToast("Entry updated successfully", "success");
     } catch (e) {
       console.error(e);
@@ -197,12 +200,9 @@ export default function PettyCashPanel({
       const saved = await res.json();
       
       if (direction === "OUT") {
-        const nextOut = Number(totalOut) + Number(saved.amount || 0);
-        setTotalOut(nextOut);
-        if (onTotalChange) onTotalChange(nextOut);
+        setTotalOut(prev => prev + Number(saved.amount || 0));
       } else {
-        const nextIn = Number(totalIn) + Number(saved.amount || 0);
-        setTotalIn(nextIn);
+        setTotalIn(prev => prev + Number(saved.amount || 0));
       }
 
       setAmount("");
@@ -229,12 +229,9 @@ export default function PettyCashPanel({
       }
 
       if (entry.direction === "OUT") {
-        const nextOut = Math.max(0, Number(totalOut) - Number(entry.amount || 0));
-        setTotalOut(nextOut);
-        if (onTotalChange) onTotalChange(nextOut);
+        setTotalOut(prev => Math.max(0, prev - Number(entry.amount || 0)));
       } else {
-        const nextIn = Math.max(0, Number(totalIn) - Number(entry.amount || 0));
-        setTotalIn(nextIn);
+        setTotalIn(prev => Math.max(0, prev - Number(entry.amount || 0)));
       }
       
       showToast("Entry deleted successfully.", "success");
@@ -256,18 +253,46 @@ export default function PettyCashPanel({
     setShowForm(false);
   };
 
-  // ── Calculations ──────────────────────────────────────────────────────────
-  const cashOnCounter = Math.max(0, (Number(grossCash) || 0) - totalOut);
-  const netPettyPosition = totalIn - totalOut;
+  // ── Calculations - CORRECTED ACCOUNTING LOGIC ──────────────────────────────
+  // Gross Cash: Total cash collected from customers (from daily summary)
+  // Replenishment (IN): Money moved from main drawer to petty cash wallet
+  //   → DECREASES cash on counter
+  //   → INCREASES petty cash balance
+  // Expense (OUT): Money spent from petty cash wallet
+  //   → DOES NOT affect cash on counter (money already moved)
+  //   → DECREASES petty cash balance
   
+  const cashOnCounter = Math.max(0, (Number(grossCash) || 0) - totalIn);
+  const pettyCashBalance = totalIn - totalOut;
+  
+  console.log("Petty Cash Calculation (Corrected):", {
+    grossCash: Number(grossCash),
+    replenishmentTotal: totalIn,
+    expensesTotal: totalOut,
+    cashOnCounter: cashOnCounter,
+    pettyCashBalance: pettyCashBalance
+  });
+
   const displayEntries = useMemo(() => {
     let bal = 0;
-    const sorted = [...entries].reverse().map(e => {
+    // Sort by date (oldest first) to calculate running balance correctly
+    const sortedByDate = [...entries].sort((a, b) => 
+      new Date(a.created_at) - new Date(b.created_at)
+    );
+    
+    const withBalance = sortedByDate.map(e => {
       const amt = Number(e.amount);
-      bal += e.direction === "IN" ? amt : -amt;
+      if (e.direction === "IN") {
+        bal += amt;
+      } else {
+        bal -= amt;
+      }
       return { ...e, _balance: bal };
     });
-    const reversed = sorted.reverse();
+    
+    // Reverse for display (newest first)
+    const reversed = withBalance.reverse();
+    
     return filterCat === "All" ? reversed : reversed.filter(e => e.category === filterCat);
   }, [entries, filterCat]);
 
@@ -304,38 +329,54 @@ export default function PettyCashPanel({
       </div>
 
       <div className="px-4 pt-6 space-y-5">
-        {/* Totals Section */}
+        {/* Totals Section - CORRECTED DISPLAY */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {isCashier && (
             <div className="col-span-2 sm:col-span-3 p-5 rounded-2xl bg-gradient-to-r from-yellow-500 to-yellow-600 text-black border border-yellow-400 shadow-lg">
               <p className="text-[9px] font-black uppercase tracking-widest opacity-70">Cash on Counter</p>
               <p className="text-3xl font-black">UGX {cashOnCounter.toLocaleString()}</p>
-              <p className="text-[9px] font-bold opacity-50 mt-1">
-                Gross: UGX {Number(grossCash).toLocaleString()} | 
-                Expenses: UGX {totalOut.toLocaleString()} | 
-                Replenished: UGX {totalIn.toLocaleString()}
+              <div className="grid grid-cols-2 gap-2 mt-2 text-[9px] font-bold">
+                <div>
+                  <p className="opacity-50">Gross Cash</p>
+                  <p>+ UGX {Number(grossCash).toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="opacity-50">Replenishment</p>
+                  <p className="text-red-800">- UGX {totalIn.toLocaleString()}</p>
+                </div>
+              </div>
+              <p className="text-[7px] font-bold opacity-60 mt-2">
+                Cash on Counter = Gross Cash - Replenishment
               </p>
             </div>
           )}
-          <div className={`p-4 rounded-2xl border ${isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50"}`}>
-            <ArrowDownCircle size={18} className="text-red-400 mb-1" />
-            <p className="text-[8px] font-black uppercase opacity-60">Total Expenses (OUT)</p>
-            <p className="text-lg font-black text-red-400">UGX {totalOut.toLocaleString()}</p>
-            <p className="text-[7px] text-zinc-500 mt-1">Deducts from cash on counter</p>
-          </div>
+          
+          {/* Total Replenishment (IN) - Money moved to petty cash */}
           <div className={`p-4 rounded-2xl border ${isDark ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50"}`}>
             <ArrowUpCircle size={18} className="text-emerald-400 mb-1" />
             <p className="text-[8px] font-black uppercase opacity-60">Total Replenishment (IN)</p>
             <p className="text-lg font-black text-emerald-400">UGX {totalIn.toLocaleString()}</p>
-            <p className="text-[7px] text-zinc-500 mt-1">Does NOT affect cash on counter</p>
+            <p className="text-[7px] text-zinc-500 mt-1">Money moved TO petty cash wallet</p>
           </div>
-          <div className={`p-4 rounded-2xl border ${isDark ? "bg-blue-500/10 border-blue-500/20" : "bg-blue-50"}`}>
-            <Wallet size={18} className="text-blue-400 mb-1" />
-            <p className="text-[8px] font-black uppercase opacity-60">Petty Cash Position</p>
-            <p className={`text-lg font-black ${netPettyPosition >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              {netPettyPosition >= 0 ? "+" : ""}UGX {netPettyPosition.toLocaleString()}
+          
+          {/* Total Expenses (OUT) - Money spent from petty cash */}
+          <div className={`p-4 rounded-2xl border ${isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50"}`}>
+            <ArrowDownCircle size={18} className="text-red-400 mb-1" />
+            <p className="text-[8px] font-black uppercase opacity-60">Total Expenses (OUT)</p>
+            <p className="text-lg font-black text-red-400">UGX {totalOut.toLocaleString()}</p>
+            <p className="text-[7px] text-zinc-500 mt-1">Money spent FROM petty cash</p>
+          </div>
+          
+          {/* Petty Cash Balance */}
+          <div className={`p-4 rounded-2xl border ${pettyCashBalance >= 0 ? (isDark ? "bg-blue-500/10 border-blue-500/20" : "bg-blue-50") : (isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50")}`}>
+            <Wallet size={18} className={pettyCashBalance >= 0 ? "text-blue-400" : "text-red-400"} />
+            <p className="text-[8px] font-black uppercase opacity-60">Petty Cash Balance</p>
+            <p className={`text-lg font-black ${pettyCashBalance >= 0 ? "text-blue-400" : "text-red-400"}`}>
+              UGX {pettyCashBalance.toLocaleString()}
             </p>
-            <p className="text-[7px] text-zinc-500 mt-1">Net = IN - OUT</p>
+            <p className="text-[7px] text-zinc-500 mt-1">
+              {pettyCashBalance >= 0 ? "IN - OUT" : "Negative balance - needs replenishment"}
+            </p>
           </div>
         </div>
 
@@ -350,16 +391,32 @@ export default function PettyCashPanel({
                 <span className="text-[8px] text-yellow-500 font-black uppercase">Editing ID: #{editing.id}</span>
               )}
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => setDirection("OUT")} className={`flex-1 py-3 rounded-xl border-2 font-black text-[10px] uppercase transition-all
-                ${direction === "OUT" ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/20" : "border-white/5 text-zinc-500 hover:border-red-500/50"}`}>
-                Expense (OUT)
-              </button>
-              <button onClick={() => setDirection("IN")} className={`flex-1 py-3 rounded-xl border-2 font-black text-[10px] uppercase transition-all
-                ${direction === "IN" ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "border-white/5 text-zinc-500 hover:border-emerald-500/50"}`}>
-                Replenish (IN)
-              </button>
+            
+            {/* Direction Buttons with clear explanations */}
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setDirection("OUT")} 
+                  className={`flex-1 py-3 rounded-xl border-2 font-black text-[10px] uppercase transition-all
+                    ${direction === "OUT" ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/20" : "border-white/5 text-zinc-500 hover:border-red-500/50"}`}>
+                  Expense (OUT)
+                </button>
+                <button 
+                  onClick={() => setDirection("IN")} 
+                  className={`flex-1 py-3 rounded-xl border-2 font-black text-[10px] uppercase transition-all
+                    ${direction === "IN" ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "border-white/5 text-zinc-500 hover:border-emerald-500/50"}`}>
+                  Replenishment (IN)
+                </button>
+              </div>
+              <div className="text-[9px] text-zinc-500 px-2">
+                {direction === "OUT" ? (
+                  <p>🔽 Expense: Money spent FROM petty cash wallet</p>
+                ) : (
+                  <p>🔼 Replenishment: Money moved FROM main drawer TO petty cash wallet</p>
+                )}
+              </div>
             </div>
+            
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xs font-black">UGX</span>
               <input 
@@ -384,12 +441,19 @@ export default function PettyCashPanel({
               className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white font-bold outline-none focus:border-yellow-500 transition-all h-24 resize-none" 
             />
             <div className="text-[10px] text-zinc-500 p-3 rounded-xl bg-white/5">
-              <p className="font-black uppercase tracking-widest">Note:</p>
-              <p className="text-[9px] mt-1">
-                {direction === "OUT" 
-                  ? "• Expenses (OUT) will be deducted from Cash on Counter\n• Use for daily operational expenses"
-                  : "• Replenishment (IN) adds to petty cash records\n• Does NOT affect Cash on Counter\n• Use for cashier handovers, replenishment, loan returns"}
-              </p>
+              <p className="font-black uppercase tracking-widest">Accounting Impact:</p>
+              <div className="grid grid-cols-2 gap-2 mt-2 text-[8px]">
+                <div>
+                  <p className="font-bold">Expense (OUT):</p>
+                  <p>• Cash on Counter: No change</p>
+                  <p>• Petty Cash: -{Number(amount || 0).toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="font-bold">Replenishment (IN):</p>
+                  <p>• Cash on Counter: -{Number(amount || 0).toLocaleString()}</p>
+                  <p>• Petty Cash: +{Number(amount || 0).toLocaleString()}</p>
+                </div>
+              </div>
             </div>
             <div className="flex gap-3">
               <button 

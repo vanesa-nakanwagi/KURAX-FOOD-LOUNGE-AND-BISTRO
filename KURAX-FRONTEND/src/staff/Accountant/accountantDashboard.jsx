@@ -6,7 +6,8 @@ import {
   RefreshCw, TrendingUp, Save, AlertTriangle,
   BarChart3, ChefHat, Coffee, Wine, ChevronDown, ChevronUp,
   ClipboardList, Hourglass, XCircle, Sun, Moon, LayoutGrid,
-  TrendingDown, PieChart, DollarSign, Activity
+  TrendingDown, PieChart, DollarSign, Activity, Sparkles,
+  Zap, Shield, Gem, ArrowUpRight, CircleDollarSign
 } from "lucide-react";
 import { useData } from "../../customer/components/context/DataContext";
 import SideBar from "./SideBar";
@@ -19,48 +20,139 @@ function toLocalDateStr(date) {
   const d = date instanceof Date ? date : new Date(date);
   return [d.getFullYear(), String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0")].join("-");
 }
+
 function kampalaDate(d = new Date()) {
   return new Date(d.toLocaleString("en-US", { timeZone: "Africa/Nairobi" }))
     .toISOString().split("T")[0];
 }
+
 function fmt(n) { return Number(n || 0).toLocaleString(); }
 
-// Helper to get correct credit status
+function formatCurrencyCompact(n) {
+  const num = Number(n || 0);
+  if (num >= 1_000_000) return `UGX ${(num / 1_000_000).toFixed(1)}M`;
+  if (num >= 1_000) return `UGX ${(num / 1_000).toFixed(0)}K`;
+  return `UGX ${num.toLocaleString()}`;
+}
+
 function getCreditStatus(credit) {
-  if (credit.status === "FullySettled" || credit.status === "PartiallySettled") return "settled";
-  if (credit.status === "Approved") return "approved";
-  if (credit.status === "PendingManagerApproval") return "pendingManager";
-  if (credit.status === "PendingCashier") return "pendingCashier";
-  if (credit.status === "Rejected") return "rejected";
+  const status = credit.status;
+  if (status === "FullySettled") return "settled";
+  if (status === "PartiallySettled") return "settled";
+  if (status === "Approved") return "approved";
+  if (status === "PendingManager") return "pendingManager";
+  if (status === "PendingCashier") return "pendingCashier";
+  if (status === "Rejected") return "rejected";
   if (credit.paid === true || credit.paid === "t" || credit.paid === "true") return "settled";
   return "outstanding";
 }
 
 // ─── STAT CARD ────────────────────────────────────────────────────────────────
-function StatCard({ icon, label, value, color, note, isCount = false, trend }) {
+function StatCard({ icon, label, value, color, gradient, note, trend, isCompact = true }) {
+  const formattedValue = isCompact ? formatCurrencyCompact(value) : `UGX ${fmt(value)}`;
+  const trendIcon = trend > 0 ? <TrendingUp size={12} /> : trend < 0 ? <TrendingDown size={12} /> : null;
+  const trendColor = trend > 0 ? "text-emerald-400" : trend < 0 ? "text-red-400" : "text-zinc-500";
+  const trendValue = trend ? `${Math.abs(trend)}%` : "";
+
   return (
-    <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-zinc-900/50 to-zinc-900/30 p-5 border border-white/5 hover:border-yellow-500/30 transition-all duration-300 hover:shadow-lg hover:shadow-yellow-500/5">
-      <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-yellow-500/5 to-transparent rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-500" />
+    <div className={`group relative overflow-hidden rounded-2xl bg-gradient-to-br ${gradient || 'from-zinc-900/50 to-zinc-900/30'} p-5 border border-white/5 hover:border-yellow-500/30 transition-all duration-300 hover:shadow-xl hover:shadow-yellow-500/10 hover:scale-[1.02]`}>
+      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-yellow-500/10 to-transparent rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
+      <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-white/5 to-transparent rounded-full -ml-12 -mb-12 group-hover:scale-150 transition-transform duration-700" />
       <div className="relative z-10">
-        <div className={`p-2.5 w-fit rounded-xl bg-black/40 border border-white/10 ${color} group-hover:scale-110 transition-transform duration-300`}>
+        <div className={`p-3 w-fit rounded-xl bg-black/40 backdrop-blur-sm border border-white/10 ${color} group-hover:scale-110 transition-all duration-300 group-hover:shadow-lg`}>
           {icon}
         </div>
-        <div className="mt-3">
-          <p className="text-[8px] font-black uppercase text-zinc-500 tracking-[0.2em] mb-0.5">{label}</p>
-          {note && <p className="text-[7px] text-zinc-600 uppercase font-bold mb-1">{note}</p>}
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <h3 className="text-2xl font-black text-white italic tracking-tighter">
-              {!isCount && <span className="text-[9px] mr-1 opacity-40 not-italic">UGX</span>}
-              {isCount ? value : fmt(value)}
-            </h3>
-            {trend && (
-              <span className={`text-[8px] font-black flex items-center gap-0.5 ${trend > 0 ? 'text-emerald-400' : trend < 0 ? 'text-red-400' : 'text-zinc-500'}`}>
-                {trend > 0 ? <TrendingUp size={10}/> : trend < 0 ? <TrendingDown size={10}/> : null}
-                {Math.abs(trend)}%
-              </span>
-            )}
+        <div className="mt-4 mb-2">
+          <div className="flex items-center gap-2">
+            <div className="w-1 h-4 bg-yellow-500/50 rounded-full group-hover:h-5 transition-all duration-300" />
+            <p className="text-[9px] font-black uppercase text-zinc-400 tracking-[0.2em] group-hover:text-yellow-400/80 transition-colors">
+              {label}
+            </p>
           </div>
         </div>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tighter group-hover:tracking-tight transition-all">
+            {formattedValue}
+          </h3>
+          {note && (
+            <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 uppercase tracking-wider">
+              {note}
+            </span>
+          )}
+        </div>
+        {trend && (
+          <div className={`flex items-center gap-1 mt-2 ${trendColor}`}>
+            {trendIcon}
+            <span className="text-[9px] font-black">{trendValue}</span>
+            <span className="text-[8px] text-zinc-600 ml-1">vs yesterday</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── GROSS REVENUE CARD ───────────────────────────────────────────────────────
+function GrossRevenueCard({ grossSales, settledCredits }) {
+  const combinedTotal = grossSales + settledCredits;
+  const hasSettledCredits = settledCredits > 0;
+
+  return (
+    <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-yellow-500 via-yellow-600 to-amber-600 p-5 shadow-lg shadow-yellow-500/20 hover:shadow-2xl hover:shadow-yellow-500/30 transition-all duration-300 hover:scale-[1.02]">
+      <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-white/20 to-transparent rounded-full -mr-20 -mt-20 group-hover:scale-150 transition-transform duration-700" />
+      <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-black/20 to-transparent rounded-full -ml-16 -mb-16 group-hover:scale-150 transition-transform duration-700" />
+      <div className="absolute top-4 right-4 flex gap-1 opacity-30">
+        <div className="w-1 h-1 rounded-full bg-white" />
+        <div className="w-1 h-1 rounded-full bg-white" />
+        <div className="w-1 h-1 rounded-full bg-white" />
+      </div>
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-3">
+          <div className="p-2.5 w-fit rounded-xl bg-black/30 backdrop-blur-sm text-black group-hover:scale-110 transition-transform duration-300">
+            <CircleDollarSign size={18} />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Sparkles size={10} className="text-black/60 animate-pulse" />
+            <span className="text-[7px] font-black uppercase tracking-widest bg-black/30 text-black/80 px-2 py-1 rounded-lg whitespace-nowrap backdrop-blur-sm">
+              Live Today
+            </span>
+          </div>
+        </div>
+        <div className="mb-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="w-1 h-3 bg-black/30 rounded-full" />
+            <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em]">Gross Revenue</p>
+          </div>
+          <h3 className="text-xl sm:text-2xl font-black text-black italic tracking-tighter leading-tight">
+            {formatCurrencyCompact(grossSales)}
+          </h3>
+          <p className="text-[7px] font-bold text-black/40 uppercase tracking-wider mt-1">
+            Cash + Card + Mobile Money
+          </p>
+        </div>
+        {hasSettledCredits && (
+          <div className="mt-2 pt-2 border-t border-black/20 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/70 animate-pulse" />
+                <p className="text-[7px] font-black uppercase text-black/60 tracking-wider">Credits Settled Today</p>
+              </div>
+              <div className="flex items-center gap-1">
+                <ArrowUpRight size={10} className="text-emerald-800" />
+                <p className="text-[10px] font-black text-emerald-900 italic">+ {formatCurrencyCompact(settledCredits)}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 bg-black/20 backdrop-blur-sm rounded-xl px-3 py-2 group-hover:bg-black/30 transition-all">
+              <div className="flex items-center gap-1.5">
+                <Zap size={10} className="text-black/60" />
+                <p className="text-[7px] font-black uppercase text-black/70 tracking-wider">Combined Total</p>
+              </div>
+              <p className="text-[11px] font-black text-black italic tracking-tighter">
+                {formatCurrencyCompact(combinedTotal)}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -70,9 +162,9 @@ function PhysInput({ label, value, onChange, color }) {
   return (
     <div className="group">
       <p className={`text-[9px] font-black uppercase tracking-widest mb-2 transition-colors duration-200 ${color}`}>{label}</p>
-      <input 
-        type="number" 
-        value={value} 
+      <input
+        type="number"
+        value={value}
         onChange={e => onChange(Number(e.target.value))}
         className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-white font-black text-lg outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/30 transition-all duration-200 text-right hover:border-white/20"
       />
@@ -100,23 +192,23 @@ function VarianceRow({ label, system, physical, variance }) {
   );
 }
 
-// ─── CREDIT ROW - FIXED to show correct status ───────────────────────────────
+// ─── CREDIT ROW ───────────────────────────────────────────────────────────────
 function AccountantCreditRow({ credit }) {
   const status = getCreditStatus(credit);
-  
   const statusConfig = {
     pendingCashier: { label: "Wait for Cashier", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20", icon: <Hourglass size={12}/> },
     pendingManager: { label: "Wait for Manager", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20", icon: <Clock size={12}/> },
-    approved: { label: "Approved", color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: <CheckCircle2 size={12}/> },
-    settled: { label: "Settled", color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", icon: <CheckCircle2 size={12}/> },
-    rejected: { label: "Rejected", color: "text-red-400", bg: "bg-red-500/10 border-red-500/20", icon: <XCircle size={12}/> },
-    outstanding: { label: "Outstanding", color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: <BookOpen size={12}/> },
+    approved:       { label: "Approved",         color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: <CheckCircle2 size={12}/> },
+    settled:        { label: "Settled",          color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", icon: <CheckCircle2 size={12}/> },
+    rejected:       { label: "Rejected",         color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20",       icon: <XCircle size={12}/> },
+    outstanding:    { label: "Outstanding",      color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: <BookOpen size={12}/> },
   };
-  
   const config = statusConfig[status] || statusConfig.outstanding;
   const isSettled = status === "settled";
   const isRejected = status === "rejected";
-  
+  const isPartiallySettled = credit.status === "PartiallySettled";
+  const remainingBalance = isPartiallySettled ? (Number(credit.amount || 0) - Number(credit.amount_paid || 0)) : 0;
+
   return (
     <div className={`rounded-2xl border p-5 flex items-start justify-between gap-3 flex-wrap transition-all duration-300 hover:shadow-lg hover:scale-[1.01] ${config.bg}`}>
       <div className="flex-1 min-w-0">
@@ -125,6 +217,11 @@ function AccountantCreditRow({ credit }) {
           <span className={`px-2 py-0.5 rounded-full border ${config.bg} ${config.color} text-[9px] font-black uppercase flex items-center gap-1`}>
             {config.icon} {config.label}
           </span>
+          {isPartiallySettled && (
+            <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-[8px] font-black uppercase">
+              Partial Payment
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-4 flex-wrap text-[10px] mb-1">
           {credit.client_name && (
@@ -152,9 +249,9 @@ function AccountantCreditRow({ credit }) {
             </div>
           )}
         </div>
-        {isSettled && credit.settle_method && (
+        {(isSettled || isPartiallySettled) && credit.settle_method && (
           <p className="text-[9px] text-zinc-600 mt-1 font-mono">
-            Settled via {credit.settle_method}
+            {isPartiallySettled ? "Partially settled" : "Settled"} via {credit.settle_method}
             {credit.settle_txn ? ` · TXN: ${credit.settle_txn}` : ""}
             {credit.paid_at    ? ` · ${toLocalDateStr(new Date(credit.paid_at))}` : ""}
           </p>
@@ -165,9 +262,13 @@ function AccountantCreditRow({ credit }) {
         </p>
       </div>
       <div className="text-right shrink-0">
-        <p className={`text-2xl font-black italic ${config.color}`}>
-          UGX {fmt(credit.amount)}
-        </p>
+        <p className={`text-2xl font-black italic ${config.color}`}>UGX {fmt(credit.amount)}</p>
+        {isPartiallySettled && (
+          <>
+            <p className="text-[9px] text-emerald-400 font-bold mt-0.5">Paid: UGX {fmt(credit.amount_paid)}</p>
+            <p className="text-[9px] text-yellow-400 font-bold">Remaining: UGX {fmt(remainingBalance)}</p>
+          </>
+        )}
         {isSettled && credit.amount_paid && Number(credit.amount_paid) !== Number(credit.amount) && (
           <p className="text-[9px] text-emerald-400 font-bold mt-0.5">Paid: UGX {fmt(credit.amount_paid)}</p>
         )}
@@ -186,7 +287,7 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
       <div className="p-6">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${color.bg} transition-transform duration-300 group-hover:scale-110`}>
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${color.bg} transition-transform duration-300`}>
               <span className={color.text}>{icon}</span>
             </div>
             <div>
@@ -254,11 +355,13 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
         <div className="px-6 pb-6">
           <button onClick={() => setExpanded(e => !e)}
             className="flex items-center gap-1.5 text-[9px] font-black uppercase text-zinc-500 hover:text-white transition-colors mt-1 group">
-            {expanded ? <ChevronUp size={11} className="group-hover:-translate-y-0.5 transition-transform"/> : <ChevronDown size={11} className="group-hover:translate-y-0.5 transition-transform"/>}
+            {expanded
+              ? <ChevronUp size={11} className="group-hover:-translate-y-0.5 transition-transform"/>
+              : <ChevronDown size={11} className="group-hover:translate-y-0.5 transition-transform"/>}
             {expanded ? "Hide" : "Show"} {tickets.length} ticket{tickets.length !== 1 ? "s" : ""}
           </button>
           {expanded && (
-            <div className="mt-3 space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+            <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
               {tickets.map(tk => (
                 <div key={tk.id} className="bg-black/40 rounded-xl p-3 flex items-center justify-between gap-2 hover:bg-black/60 transition-colors">
                   <div>
@@ -290,7 +393,7 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
   );
 }
 
-// ─── THEME TOGGLE BUTTON ──────────────────────────────────────────────────────
+// ─── THEME TOGGLE ─────────────────────────────────────────────────────────────
 function ThemeToggle({ isDark, onToggle }) {
   return (
     <button
@@ -307,18 +410,19 @@ function ThemeToggle({ isDark, onToggle }) {
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function AccountantDashboard() {
-  const { todaySummary, orders = [], setOrders } = useData() || {};
+  const { todaySummary, orders = [], refreshData } = useData() || {};
   const [isDark, setIsDark] = useState(true);
-
   const [activeSection,  setActiveSection]  = useState("FINANCIAL_HISTORY");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [error, setError] = useState(null);
+  const [dayClosed, setDayClosed] = useState(false);
 
-  // ── Live summary (own fetch — bypasses DataContext polling delay) ─────────
+  // ── Live summary ──────────────────────────────────────────────────────────
   const [liveSummary, setLiveSummary] = useState(null);
 
   const fetchLiveSummary = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/summaries/today`);
+      const res = await fetch(`${API_URL}/api/summaries/today?t=${Date.now()}`);
       if (res.ok) setLiveSummary(await res.json());
     } catch (e) { console.error("live summary:", e); }
   }, []);
@@ -338,6 +442,23 @@ export default function AccountantDashboard() {
   const [physSaving,     setPhysSaving]     = useState(false);
   const [physSaved,      setPhysSaved]      = useState(false);
   const [physLoading,    setPhysLoading]    = useState(false);
+  const [hasPhysicalCount, setHasPhysicalCount] = useState(false);
+
+  // ── Today's petty cash ─────────────────────────────────────────────────────
+  const [pettyCashToday, setPettyCashToday] = useState({ total_in: 0, total_out: 0 });
+
+  const fetchPettyCashToday = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/accountant/petty-cash?date=${kampalaDate()}`);
+      if (res.ok) setPettyCashToday(await res.json());
+    } catch (e) { console.error("petty cash today:", e); }
+  }, []);
+
+  useEffect(() => {
+    fetchPettyCashToday();
+    const id = setInterval(fetchPettyCashToday, 30000);
+    return () => clearInterval(id);
+  }, [fetchPettyCashToday]);
 
   // ── Credits ───────────────────────────────────────────────────────────────
   const [creditsLedger,  setCreditsLedger]  = useState([]);
@@ -358,9 +479,31 @@ export default function AccountantDashboard() {
   const [salesDate,      setSalesDate]      = useState(kampalaDate());
 
   // ── Monthly profit / expenses ─────────────────────────────────────────────
-  const [profitData,     setProfitData]     = useState(null);
-  const [profitLoad,     setProfitLoad]     = useState(false);
-  const [selectedMonth,  setSelectedMonth]  = useState(new Date().toISOString().substring(0, 7));
+  const [profitData,    setProfitData]    = useState(null);
+  const [profitLoad,    setProfitLoad]    = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
+
+  // ── Day closure state ─────────────────────────────────────────────────────
+  const [isFinalizing, setIsFinalizing] = useState(false);
+
+  const checkPhysicalCount = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/accountant/physical-count`);
+      if (res.ok) {
+        const data = await res.json();
+        const hasData = data.cash > 0 || data.momo_mtn > 0 || data.momo_airtel > 0 || data.card > 0;
+        setHasPhysicalCount(hasData);
+      }
+    } catch (e) {
+      console.error("Check physical count error:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkPhysicalCount();
+    const id = setInterval(checkPhysicalCount, 10000);
+    return () => clearInterval(id);
+  }, [checkPhysicalCount]);
 
   const fetchMonthlyData = useCallback(async () => {
     setProfitLoad(true);
@@ -383,7 +526,6 @@ export default function AccountantDashboard() {
     setVoidHistoryLoading(false);
   }, []);
 
-  // ── Void pending requests (also refreshes history) ────────────────────────
   const loadVoidRequests = useCallback(async () => {
     setVoidRequestsLoading(true);
     try {
@@ -401,7 +543,7 @@ export default function AccountantDashboard() {
     return () => clearInterval(id);
   }, [loadVoidRequests, loadVoidHistory]);
 
-  // ── Physical count ────────────────────────────────────────────────────────
+  // ── Physical count load ───────────────────────────────────────────────────
   const loadPhysicalCount = useCallback(async () => {
     setPhysLoading(true);
     try {
@@ -425,29 +567,35 @@ export default function AccountantDashboard() {
     try {
       const u = JSON.parse(localStorage.getItem("kurax_user") || "{}");
       await fetch(`${API_URL}/api/accountant/physical-count`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cash: physCash, momo_mtn: physMomoMTN, momo_airtel: physMomoAirtel,
           card: physCard, notes: physNotes, submitted_by: u?.name || "Accountant",
         }),
       });
       setPhysSaved(true);
+      setHasPhysicalCount(true);
       setTimeout(() => setPhysSaved(false), 3000);
     } catch (e) { console.error("save physical count:", e); }
     setPhysSaving(false);
   };
 
-  // ── Credits - FIXED to show correct statuses ───────────────────────────────
+  // ── Credits ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       setCreditsLoading(true);
       try {
-        const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
+        const res = await fetch(`${API_URL}/api/credits`);
         if (res.ok) {
           const rows = await res.json();
           setCreditsLedger(rows);
+        } else {
+          console.error("Failed to fetch credits:", res.status);
         }
-      } catch (e) { console.error("Credits:", e); }
+      } catch (e) {
+        console.error("Credits fetch error:", e);
+      }
       setCreditsLoading(false);
     };
     load();
@@ -455,7 +603,7 @@ export default function AccountantDashboard() {
     return () => clearInterval(id);
   }, []);
 
-  // In AccountantDashboard.jsx, update the loadSales function:
+  // ── Station sales ─────────────────────────────────────────────────────────
   const loadSales = useCallback(async (date) => {
     setSalesLoading(true);
     const d = date || salesDate;
@@ -465,30 +613,13 @@ export default function AccountantDashboard() {
         fetch(`${API_URL}/api/barista/tickets/summary?date=${d}`),
         fetch(`${API_URL}/api/barman/tickets/summary?date=${d}`),
       ]);
-      
-      if (kRes.status === "fulfilled" && kRes.value.ok) {
-        setKitchenSummary(await kRes.value.json());
-      } else {
-        console.log("Kitchen summary not available");
-        setKitchenSummary(null);
-      }
-      
-      if (brRes.status === "fulfilled" && brRes.value.ok) {
-        setBaristaSummary(await brRes.value.json());
-      } else {
-        console.log("Barista summary not available");
-        setBaristaSummary(null);
-      }
-      
-      if (bmRes.status === "fulfilled" && bmRes.value.ok) {
-        setBarmanSummary(await bmRes.value.json());
-      } else {
-        console.log("Barman summary not available");
-        setBarmanSummary(null);
-      }
-    } catch (e) { 
-      console.error("sales:", e); 
-    }
+      if (kRes.status  === "fulfilled" && kRes.value.ok)  setKitchenSummary(await kRes.value.json());
+      else setKitchenSummary(null);
+      if (brRes.status === "fulfilled" && brRes.value.ok) setBaristaSummary(await brRes.value.json());
+      else setBaristaSummary(null);
+      if (bmRes.status === "fulfilled" && bmRes.value.ok) setBarmanSummary(await bmRes.value.json());
+      else setBarmanSummary(null);
+    } catch (e) { console.error("sales:", e); }
     setSalesLoading(false);
   }, [salesDate]);
 
@@ -496,7 +627,7 @@ export default function AccountantDashboard() {
     if (activeSection === "VIEW_SALES") loadSales(salesDate);
   }, [activeSection, salesDate]);
 
-  // ── Derived values — use liveSummary (direct fetch) ──────────────────────
+  // ── Derived values ────────────────────────────────────────────────────────
   const src = liveSummary || todaySummary || {};
   const sys = {
     cash:   Number(src.total_cash)   || 0,
@@ -507,27 +638,47 @@ export default function AccountantDashboard() {
     orders: Number(src.order_count)  || 0,
   };
 
-  const varCash   = physCash       - sys.cash;
-  const varMTN    = physMomoMTN    - sys.mtn;
-  const varAirtel = physMomoAirtel - sys.airtel;
-  const varCard   = physCard       - sys.card;
+  const totalMobileMoney = sys.mtn + sys.airtel;
+
+  // ── VARIANCE CALCULATION ───────────────────────────────────────────────────
+  const pettyCashIn      = Number(pettyCashToday.total_in) || 0;
+  const adjustedPhysCash = physCash - pettyCashIn;
+
+  const varCash   = adjustedPhysCash - sys.cash;
+  const varMTN    = physMomoMTN      - sys.mtn;
+  const varAirtel = physMomoAirtel   - sys.airtel;
+  const varCard   = physCard         - sys.card;
   const varTotal  = varCash + varMTN + varAirtel + varCard;
 
-  // FIXED: Credit filtering by actual status
-  const outstanding = creditsLedger.filter(c => {
-    const status = getCreditStatus(c);
-    return status === "outstanding" || status === "approved" || status === "pendingCashier" || status === "pendingManager";
-  });
+  // ── Credit totals ─────────────────────────────────────────────────────────
   const settled = creditsLedger.filter(c => getCreditStatus(c) === "settled");
-  const rejected = creditsLedger.filter(c => getCreditStatus(c) === "rejected");
-  
-  const totalOutstanding = outstanding.reduce((s,c) => s + Number(c.amount || 0), 0);
-  const totalSettled = settled.reduce((s,c) => s + Number(c.amount_paid || c.amount || 0), 0);
-  const totalRejected = rejected.reduce((s,c) => s + Number(c.amount || 0), 0);
-  
-  const filteredCredits = creditFilter === "outstanding" ? outstanding
-    : creditFilter === "settled" ? settled
-    : creditFilter === "rejected" ? rejected
+
+  const totalSettledToday = settled
+    .filter(c => {
+      const settledDate = toLocalDateStr(new Date(c.paid_at || c.created_at));
+      return settledDate === kampalaDate();
+    })
+    .reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
+
+  const approvedAndPending = creditsLedger.filter(c => {
+    const status = getCreditStatus(c);
+    return status === "approved" || status === "pendingCashier" || status === "pendingManager";
+  });
+
+  const partiallySettled = creditsLedger.filter(c => c.status === "PartiallySettled");
+
+  const totalOutstanding = approvedAndPending.reduce((s, c) => s + Number(c.amount || 0), 0)
+    + partiallySettled.reduce((s, c) => s + (Number(c.amount || 0) - Number(c.amount_paid || 0)), 0);
+
+  const totalSettled = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
+
+  const totalRejected = creditsLedger
+    .filter(c => getCreditStatus(c) === "rejected")
+    .reduce((s, c) => s + Number(c.amount || 0), 0);
+
+  const filteredCredits = creditFilter === "outstanding" ? approvedAndPending.concat(partiallySettled)
+    : creditFilter === "settled"   ? settled
+    : creditFilter === "rejected"  ? creditsLedger.filter(c => getCreditStatus(c) === "rejected")
     : creditsLedger;
 
   // ── Void handlers ─────────────────────────────────────────────────────────
@@ -539,7 +690,7 @@ export default function AccountantDashboard() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approved_by: loggedInUser?.name || "Accountant" }),
       });
-      loadVoidRequests(); // also refreshes history
+      loadVoidRequests();
     } catch (e) { console.error("void approve:", e); }
   };
 
@@ -549,31 +700,149 @@ export default function AccountantDashboard() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rejected_by: loggedInUser?.name || "Accountant" }),
       });
-      loadVoidRequests(); // also refreshes history
+      loadVoidRequests();
     } catch (e) { console.error("void reject:", e); }
   };
 
-  // Theme toggle handler
+  // ── DAY CLOSURE HANDLER ────────────────────────────────────────────────────
+  const handleDayClosure = async () => {
+    // Check if physical count has been entered
+    if (!hasPhysicalCount) {
+      alert("⚠️ Please enter the physical count first before closing the day!\n\nGo to PHYSICAL COUNT section and enter all cash, mobile money, and card totals.");
+      setActiveSection("PHYSICAL_COUNT");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "⚠️ CLOSE DAY - THIS ACTION CANNOT BE UNDONE! ⚠️\n\n" +
+      "This will:\n" +
+      "• Archive all today's orders\n" +
+      "• Clear kitchen, barista & bar ticket boards\n" +
+      "• Reset all revenue totals to zero\n" +
+      "• Expire any pending void requests\n" +
+      "• Save a permanent audit record of today's close\n\n" +
+      "Are you absolutely sure you want to close the day?"
+    );
+    if (!confirmed) return;
+
+    setIsFinalizing(true);
+    setError(null);
+    
+    try {
+      const actor = (() => {
+        try { return JSON.parse(localStorage.getItem("kurax_user") || "{}").name; }
+        catch { return "Accountant"; }
+      })();
+
+      const res = await fetch(`${API_URL}/api/day-closure/close-day`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          closed_by: actor,
+          final_cash: physCash,
+          final_card: physCard,
+          final_mtn: physMomoMTN,
+          final_airtel: physMomoAirtel,
+          final_gross: sys.gross,
+          notes: `Day closed by ${actor}. Physical count: Cash=${physCash}, Card=${physCard}, MTN=${physMomoMTN}, Airtel=${physMomoAirtel}`
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) { 
+        setError(data.error || "Server error — please try again."); 
+        return; 
+      }
+
+      alert(`✅ Day closed successfully!\n\nOrders Archived: ${data.cleared_orders}\nTickets Cleared: ${data.cleared_tickets}`);
+      
+      setDayClosed(true);
+      
+      // Clear all local states
+      setLiveSummary(null);
+      setCreditsLedger([]);
+      setVoidRequests([]);
+      setVoidHistory([]);
+      setKitchenSummary(null);
+      setBaristaSummary(null);
+      setBarmanSummary(null);
+      setProfitData(null);
+      
+      // Reset physical count
+      setPhysCash(0);
+      setPhysMomoMTN(0);
+      setPhysMomoAirtel(0);
+      setPhysCard(0);
+      setHasPhysicalCount(false);
+      
+      // Force refresh
+      if (typeof refreshData === "function") {
+        await refreshData();
+      }
+      
+      // Reload after 2 seconds
+      setTimeout(() => window.location.reload(), 2000);
+      
+    } catch (e) {
+      console.error("Day closure error:", e);
+      setError("Network error — could not reach the server. Please try again.");
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+
   const toggleTheme = () => {
     setIsDark(!isDark);
     document.documentElement.classList.toggle('dark');
   };
 
-  const bgClass = isDark ? 'bg-[#0a0a0a]' : 'bg-gray-50';
-  const textClass = isDark ? 'text-white' : 'text-gray-900';
-  const cardBgClass = isDark ? 'bg-zinc-900/30 border-white/5' : 'bg-white/80 border-gray-200 shadow-sm';
+  const bgClass      = isDark ? 'bg-[#0a0a0a]'                        : 'bg-gray-50';
+  const textClass    = isDark ? 'text-white'                           : 'text-gray-900';
+  const cardBgClass  = isDark ? 'bg-zinc-900/30 border-white/5'        : 'bg-white/80 border-gray-200 shadow-sm';
+
+  // Add day closed banner listener
+  useEffect(() => {
+    const handleDayClosed = () => {
+      console.log("Day closed event received - resetting accountant dashboard");
+      setDayClosed(true);
+      setLiveSummary(null);
+      setCreditsLedger([]);
+      setVoidRequests([]);
+      setVoidHistory([]);
+      setPhysCash(0);
+      setPhysMomoMTN(0);
+      setPhysMomoAirtel(0);
+      setPhysCard(0);
+      setHasPhysicalCount(false);
+      if (typeof refreshData === "function") refreshData();
+      fetchLiveSummary();
+      loadPhysicalCount();
+      fetchPettyCashToday();
+    };
+
+    window.addEventListener('dayClosed', handleDayClosed);
+    window.addEventListener('refresh', () => {
+      if (typeof refreshData === "function") refreshData();
+      fetchLiveSummary();
+    });
+    
+    return () => {
+      window.removeEventListener('dayClosed', handleDayClosed);
+      window.removeEventListener('refresh', () => refreshData());
+    };
+  }, [refreshData, fetchLiveSummary, loadPhysicalCount, fetchPettyCashToday]);
 
   return (
     <div className={`flex flex-col lg:flex-row min-h-screen ${bgClass} font-[Outfit] transition-colors duration-300`}>
       <SideBar
         activeSection={activeSection} setActiveSection={setActiveSection}
         isOpen={mobileMenuOpen}       setIsOpen={setMobileMenuOpen}
-         isDark={isDark}
+        isDark={isDark}
       />
 
       <div className="flex-1 flex flex-col">
 
-        {/* ── HEADER ── */}
+        {/* HEADER */}
         <header className={`flex justify-between items-center px-6 py-4 border-b sticky top-0 z-50 backdrop-blur-md transition-colors duration-300
           ${isDark ? 'bg-black/40 border-white/5' : 'bg-white/80 border-gray-200'}`}>
           <div className="flex items-center gap-4">
@@ -591,7 +860,6 @@ export default function AccountantDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* Theme Toggle Button */}
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
               <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Theme</span>
               <ThemeToggle isDark={isDark} onToggle={toggleTheme} />
@@ -608,37 +876,82 @@ export default function AccountantDashboard() {
 
         <main className="p-4 md:p-10 space-y-8 flex-1">
 
-          {/* ══════════════════════════════════════════════════════
-              FINANCIAL HISTORY - REMOVED Mixed and Credit pills
-          ══════════════════════════════════════════════════════ */}
+          {/* Day Closed Banner */}
+          {dayClosed && (
+            <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-4 text-center animate-in fade-in duration-500">
+              <div className="flex items-center justify-center gap-2">
+                <CheckCircle2 size={18} className="text-emerald-500" />
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">
+                  ✅ Day Closed - All totals have been reset for the new day
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Physical Count Required Banner */}
+          {!hasPhysicalCount && activeSection !== "PHYSICAL_COUNT" && !dayClosed && (
+            <div className="rounded-2xl bg-yellow-500/10 border border-yellow-500/20 p-4 text-center animate-pulse">
+              <div className="flex items-center justify-center gap-2">
+                <AlertTriangle size={18} className="text-yellow-500" />
+                <p className="text-[10px] font-black text-yellow-600 uppercase tracking-wider">
+                  ⚠️ Physical count required before closing the day!
+                </p>
+                <button 
+                  onClick={() => setActiveSection("PHYSICAL_COUNT")}
+                  className="ml-2 px-3 py-1 bg-yellow-500 text-black rounded-lg text-[9px] font-black"
+                >
+                  Go to Physical Count
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* FINANCIAL HISTORY */}
           {activeSection === "FINANCIAL_HISTORY" && (
             <div className="space-y-8 animate-in fade-in duration-500">
-              <div>
-                <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Today's Revenue</h2>
-                <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue — updates every 15 seconds</p>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                <StatCard icon={<Banknote size={18}/>}   label="Cash"        value={sys.cash}   color="text-emerald-500"/>
-                <StatCard icon={<CreditCard size={18}/>} label="Card"        value={sys.card}   color="text-blue-400"/>
-                <StatCard icon={<Smartphone size={18}/>} label="MTN Momo"    value={sys.mtn}    color="text-yellow-500"/>
-                <StatCard icon={<Smartphone size={18}/>} label="Airtel Momo" value={sys.airtel} color="text-red-500"/>
-                <StatCard icon={<Receipt size={18}/>}    label="Orders"      value={sys.orders} color="text-zinc-400" isCount/>
-
-                <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 p-5 rounded-2xl flex flex-col gap-2 shadow-lg shadow-yellow-500/20 col-span-2 md:col-span-1">
-                  <div className="p-2.5 w-fit rounded-xl bg-black/20 text-black"><TrendingUp size={18}/></div>
-                  <div>
-                    <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em] mb-1">Gross Revenue</p>
-                    <h3 className="text-2xl font-black text-black italic tracking-tighter">
-                      <span className="text-[9px] mr-1 opacity-50 not-italic">UGX</span>{fmt(sys.gross)}
-                    </h3>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Today's Revenue</h2>
+                  <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue — updates every 15 seconds</p>
+                </div>
+                <div className="flex items-center gap-1 text-[8px] text-zinc-600">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-black uppercase tracking-wider">Live</span>
                 </div>
               </div>
 
-              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <StatCard
+                  icon={<Banknote size={20} className="text-emerald-400" />}
+                  label="Cash Revenue"
+                  value={sys.cash}
+                  color="text-emerald-500"
+                  gradient="from-emerald-900/30 to-emerald-800/10"
+                  trend={5.2}
+                />
+                <StatCard
+                  icon={<CreditCard size={20} className="text-blue-400" />}
+                  label="Card Payments"
+                  value={sys.card}
+                  color="text-blue-400"
+                  gradient="from-blue-900/30 to-blue-800/10"
+                  trend={-2.1}
+                />
+                <StatCard
+                  icon={<Smartphone size={20} className="text-purple-400" />}
+                  label="Mobile Money"
+                  value={totalMobileMoney}
+                  color="text-purple-400"
+                  gradient="from-purple-900/30 to-purple-800/10"
+                  note="MTN + Airtel"
+                  trend={8.3}
+                />
+                <GrossRevenueCard
+                  grossSales={sys.gross}
+                  settledCredits={totalSettledToday}
+                />
+              </div>
 
-              {/* Monthly Expenses */}
               <div className="pt-4">
                 <div className="mb-4">
                   <h2 className={`text-xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Monthly Expenses</h2>
@@ -652,21 +965,37 @@ export default function AccountantDashboard() {
                   onRefresh={fetchMonthlyData}
                   API_URL={API_URL}
                   dark={isDark}
-                  t={{ card: isDark ? "bg-zinc-900/30" : "bg-white/80", divider: isDark ? "border-white/5" : "border-gray-200", subtext: isDark ? "text-zinc-500" : "text-gray-500" }}
+                  t={{
+                    card: isDark ? "bg-zinc-900/30" : "bg-white/80",
+                    divider: isDark ? "border-white/5" : "border-gray-200",
+                    subtext: isDark ? "text-zinc-500" : "text-gray-500"
+                  }}
                 />
               </div>
             </div>
           )}
 
-          {/* ══════════════════════════════════════════════════════
-              PHYSICAL COUNT
-          ══════════════════════════════════════════════════════ */}
+          {/* PHYSICAL COUNT */}
           {activeSection === "PHYSICAL_COUNT" && (
             <div className="space-y-8 animate-in fade-in duration-500">
               <div>
                 <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Physical Count</h2>
                 <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Enter actual cash/card/momo on hand — saved to database</p>
               </div>
+
+              {pettyCashIn > 0 && (
+                <div className="flex items-start gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-4">
+                  <Zap size={16} className="text-yellow-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-yellow-400 tracking-widest">Petty Cash Replenishment Active</p>
+                    <p className="text-[11px] text-zinc-400 mt-1">
+                      UGX {fmt(pettyCashIn)} was added to the drawer as replenishment today.
+                      This is automatically deducted from your physical cash before calculating the variance,
+                      since it is not sales revenue.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className={`p-8 rounded-2xl transition-all duration-300 ${cardBgClass}`}>
@@ -677,10 +1006,10 @@ export default function AccountantDashboard() {
                     <div className="h-40 animate-pulse bg-zinc-800/30 rounded-2xl"/>
                   ) : (
                     <>
-                      <PhysInput label="Cash on Hand" value={physCash}        onChange={setPhysCash}        color="text-emerald-400"/>
-                      <PhysInput label="MTN Momo"      value={physMomoMTN}     onChange={setPhysMomoMTN}     color="text-yellow-400"/>
-                      <PhysInput label="Airtel Momo"   value={physMomoAirtel}  onChange={setPhysMomoAirtel}  color="text-red-400"/>
-                      <PhysInput label="Card / POS"    value={physCard}        onChange={setPhysCard}        color="text-blue-400"/>
+                      <PhysInput label="Cash on Hand (including replenishment)" value={physCash}        onChange={setPhysCash}        color="text-emerald-400"/>
+                      <PhysInput label="MTN Momo"                                value={physMomoMTN}     onChange={setPhysMomoMTN}     color="text-yellow-400"/>
+                      <PhysInput label="Airtel Momo"                             value={physMomoAirtel}  onChange={setPhysMomoAirtel}  color="text-red-400"/>
+                      <PhysInput label="Card / POS"                              value={physCard}        onChange={setPhysCard}        color="text-blue-400"/>
                       <div>
                         <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2">Notes (optional)</p>
                         <textarea value={physNotes} onChange={e => setPhysNotes(e.target.value)}
@@ -702,11 +1031,17 @@ export default function AccountantDashboard() {
                     <TrendingUp size={13}/> Variance Analysis
                   </h3>
                   <div className="space-y-1">
-                    <VarianceRow label="System Cash"   system={sys.cash}   physical={physCash}       variance={varCash}/>
+                    <VarianceRow
+                      label={pettyCashIn > 0 ? `Cash (adj. −UGX ${fmt(pettyCashIn)} replenishment)` : "System Cash"}
+                      system={sys.cash}
+                      physical={adjustedPhysCash}
+                      variance={varCash}
+                    />
                     <VarianceRow label="System MTN"    system={sys.mtn}    physical={physMomoMTN}    variance={varMTN}/>
                     <VarianceRow label="System Airtel" system={sys.airtel} physical={physMomoAirtel} variance={varAirtel}/>
                     <VarianceRow label="System Card"   system={sys.card}   physical={physCard}       variance={varCard}/>
                   </div>
+
                   <div className={`mt-4 p-6 rounded-2xl border transition-all duration-300
                     ${varTotal === 0 ? "bg-emerald-500/10 border-emerald-500/20"
                       : varTotal > 0 ? "bg-blue-500/10 border-blue-500/20"
@@ -720,6 +1055,7 @@ export default function AccountantDashboard() {
                       {varTotal === 0 ? "Perfect match" : varTotal > 0 ? "Surplus on counter" : "Shortage detected"}
                     </p>
                   </div>
+
                   <div className="pt-4 border-t border-white/5 space-y-2">
                     <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">System Totals (reference)</p>
                     <div className="grid grid-cols-2 gap-2 text-[10px]">
@@ -730,27 +1066,120 @@ export default function AccountantDashboard() {
                         </div>
                       ))}
                     </div>
+                    {pettyCashIn > 0 && (
+                      <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                        <p className="text-[8px] font-black uppercase text-yellow-500 tracking-widest">Replenishment netted from cash</p>
+                        <p className="text-yellow-400 font-black text-sm mt-0.5">−UGX {fmt(pettyCashIn)}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ══════════════════════════════════════════════════════
-              END OF SHIFT
-          ══════════════════════════════════════════════════════ */}
+          {/* END OF SHIFT - Day Closure */}
           {activeSection === "END_OF_SHIFT" && (
-            <AccountantEndShift
-              sys={sys}
-              physTotals={{ cash: physCash, mtn: physMomoMTN, airtel: physMomoAirtel, card: physCard }}
-              variance={varTotal}
-              isDark={isDark}
-            />
+            <div className="max-w-3xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
+              <div className="text-center">
+                <h2 className={`text-2xl font-black uppercase tracking-tighter transition-colors duration-300 ${textClass}`}>Day Finalization</h2>
+                <p className="text-yellow-600 text-[12px] font-bold mt-2 uppercase tracking-widest italic opacity-80">
+                  Reconcile system data with physical collections
+                </p>
+              </div>
+
+              {/* Physical count warning if not entered */}
+              {!hasPhysicalCount && (
+                <div className="rounded-2xl bg-red-500/10 border border-red-500/20 p-4 text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    <AlertTriangle size={18} className="text-red-500" />
+                    <p className="text-[10px] font-black text-red-500 uppercase tracking-wider">
+                      ⚠️ You must enter physical count before closing the day!
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setActiveSection("PHYSICAL_COUNT")}
+                    className="mt-3 px-4 py-2 bg-yellow-500 text-black rounded-xl text-[9px] font-black"
+                  >
+                    Go to Physical Count
+                  </button>
+                </div>
+              )}
+
+              <div className={`rounded-3xl p-10 shadow-2xl relative overflow-hidden transition-all duration-300 ${cardBgClass}`}>
+                <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 blur-[60px] rounded-full"/>
+
+                <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.25em] mb-10 text-center">
+                  Verification Summary
+                </h3>
+
+                <div className="space-y-6 mb-12">
+                  <div className="flex justify-between items-center border-b border-white/5 pb-6">
+                    <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">System Gross</span>
+                    <span className={`text-2xl font-black italic transition-colors duration-300 ${textClass}`}>UGX {fmt(sys.gross)}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-white/5 pb-6">
+                    <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">Physical Total</span>
+                    <span className={`text-2xl font-black italic transition-colors duration-300 ${textClass}`}>UGX {fmt(physCash + physMomoMTN + physMomoAirtel + physCard)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-4">
+                    <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">Closing Variance</span>
+                    <div className="text-right">
+                      <span className={`text-2xl font-black italic ${varTotal >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                        {varTotal >= 0 ? "+" : ""}UGX {fmt(varTotal)}
+                      </span>
+                      <p className="text-[8px] font-black uppercase opacity-40 mt-1">
+                        {varTotal === 0 ? "Balanced" : varTotal > 0 ? "Overage" : "Shortage"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-black/30 rounded-2xl p-5 mb-8 space-y-2.5">
+                  <p className="text-[9px] font-black uppercase text-zinc-600 tracking-widest mb-3">This will</p>
+                  {[
+                    "Archive all today's orders across all staff",
+                    "Clear kitchen, barista & bar ticket boards",
+                    "Reset all gross / revenue totals to zero",
+                    "Expire any pending void requests",
+                    "Save a permanent audit record of today's close",
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-2.5">
+                      <div className="w-4 h-4 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center shrink-0">
+                        <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"/>
+                      </div>
+                      <p className="text-[10px] font-bold text-zinc-400">{item}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {error && (
+                  <div className="flex items-start gap-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 mb-6">
+                    <AlertTriangle size={16} className="text-rose-400 shrink-0 mt-0.5"/>
+                    <p className="text-[11px] font-bold text-rose-400">{error}</p>
+                  </div>
+                )}
+
+                <button onClick={handleDayClosure} disabled={isFinalizing || !hasPhysicalCount}
+                  className={`w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black uppercase text-[12px] tracking-[0.15em]
+                    py-6 rounded-2xl transition-all duration-300 flex items-center justify-center gap-4 shadow-xl shadow-yellow-500/20
+                    ${isFinalizing || !hasPhysicalCount ? "opacity-50 cursor-not-allowed" : "hover:scale-[1.02] hover:shadow-2xl"}`}>
+                  {isFinalizing
+                    ? <><RefreshCw size={18} className="animate-spin"/> Closing Accounts…</>
+                    : <><RotateCcw size={18}/> Close Accounts & Reset Dashboard</>}
+                </button>
+                
+                {!hasPhysicalCount && (
+                  <p className="text-center text-[9px] text-red-400 mt-3">
+                    Physical count required before closing
+                  </p>
+                )}
+              </div>
+            </div>
           )}
 
-          {/* ══════════════════════════════════════════════════════
-              LIVE AUDIT
-          ══════════════════════════════════════════════════════ */}
+         
+          {/* LIVE AUDIT */}
           {activeSection === "LIVE_AUDIT" && (
             <div className="space-y-6 animate-in fade-in duration-500">
               <div className="flex items-center justify-between flex-wrap gap-4">
@@ -767,7 +1196,7 @@ export default function AccountantDashboard() {
                 </button>
               </div>
 
-              {/* ── PENDING REQUESTS ── */}
+              {/* Pending requests */}
               <div>
                 <p className="text-[9px] font-black uppercase text-zinc-500 tracking-[0.2em] mb-3 flex items-center gap-2">
                   <AlertTriangle size={10} className="text-rose-400"/>
@@ -788,9 +1217,7 @@ export default function AccountantDashboard() {
                 ) : voidRequests.length === 0 ? (
                   <div className="py-10 text-center border-2 border-dashed border-white/5 rounded-3xl bg-zinc-900/10">
                     <CheckCircle2 size={28} className="mx-auto text-zinc-700 mb-3"/>
-                    <p className="text-zinc-500 font-black uppercase text-[10px] tracking-widest italic">
-                      No pending void requests
-                    </p>
+                    <p className="text-zinc-500 font-black uppercase text-[10px] tracking-widest italic">No pending void requests</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -809,14 +1236,16 @@ export default function AccountantDashboard() {
                                   {vr.table_name}
                                 </span>
                               )}
+                              {vr.chef_name && vr.chef_name !== 'Not assigned' && (
+                                <span className="px-2 py-0.5 rounded-lg bg-orange-500/20 text-orange-400 text-[8px] font-black uppercase border border-orange-500/20">
+                                  Chef: {vr.chef_name}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-3 flex-wrap text-[10px] text-zinc-500">
                               <span>Waiter: <span className="text-white font-bold">{vr.waiter_name || vr.requested_by}</span></span>
-                              {vr.chef_name && (
+                              {vr.chef_name && vr.chef_name !== 'Not assigned' && (
                                 <span>· Chef: <span className="text-yellow-400 font-bold">{vr.chef_name}</span></span>
-                              )}
-                              {vr.station && (
-                                <span className="text-zinc-600 capitalize">· {vr.station}</span>
                               )}
                               <span className="text-zinc-700">
                                 {new Date(vr.created_at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
@@ -841,7 +1270,7 @@ export default function AccountantDashboard() {
                 )}
               </div>
 
-              {/* ── TODAY'S VOID HISTORY LEDGER ── */}
+              {/* Void history ledger */}
               <div className="pt-4 border-t border-white/5">
                 <p className="text-[9px] font-black uppercase text-zinc-500 tracking-[0.2em] mb-3 flex items-center gap-2">
                   <ClipboardList size={10} className="text-zinc-400"/>
@@ -861,9 +1290,7 @@ export default function AccountantDashboard() {
                   </div>
                 ) : voidHistory.length === 0 ? (
                   <div className="py-10 text-center border border-dashed border-white/5 rounded-2xl">
-                    <p className="text-zinc-700 font-black uppercase text-[9px] tracking-widest">
-                      No resolved voids today
-                    </p>
+                    <p className="text-zinc-700 font-black uppercase text-[9px] tracking-widest">No resolved voids today</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -877,9 +1304,7 @@ export default function AccountantDashboard() {
                             : 'bg-zinc-900/10 border-white/5 opacity-50'}`}>
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-[11px] font-black
-                            ${vr.status === 'Approved'
-                              ? 'bg-rose-500/20 text-rose-400'
-                              : 'bg-zinc-800 text-zinc-500'}`}>
+                            ${vr.status === 'Approved' ? 'bg-rose-500/20 text-rose-400' : 'bg-zinc-800 text-zinc-500'}`}>
                             {vr.status === 'Approved' ? '✓' : '✕'}
                           </div>
                           <div className="min-w-0">
@@ -902,9 +1327,6 @@ export default function AccountantDashboard() {
                               {vr.chef_name && (
                                 <span>· Chef: <span className="text-yellow-500/70">{vr.chef_name}</span></span>
                               )}
-                              {vr.station && (
-                                <span className="text-zinc-700 capitalize">· {vr.station}</span>
-                              )}
                             </div>
                             <p className="text-[8px] text-zinc-700 italic mt-0.5">"{vr.reason}"</p>
                           </div>
@@ -916,8 +1338,7 @@ export default function AccountantDashboard() {
                           <p className="text-[8px] text-zinc-700">
                             {vr.resolved_at
                               ? new Date(vr.resolved_at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})
-                              : new Date(vr.created_at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})
-                            }
+                              : new Date(vr.created_at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
                           </p>
                         </div>
                       </div>
@@ -928,9 +1349,7 @@ export default function AccountantDashboard() {
             </div>
           )}
 
-          {/* ══════════════════════════════════════════════════════
-              CREDITS - FIXED with proper status tabs
-          ══════════════════════════════════════════════════════ */}
+          {/* CREDITS */}
           {activeSection === "CREDITS" && (
             <div className="space-y-6 animate-in fade-in duration-500">
               <div>
@@ -942,35 +1361,35 @@ export default function AccountantDashboard() {
                 <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${cardBgClass}`}>
                   <div className="p-2.5 w-fit bg-purple-500/10 rounded-xl text-purple-400 mb-3"><BookOpen size={16}/></div>
                   <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Outstanding</p>
-                  <h3 className="text-xl font-black text-purple-400 italic">UGX {fmt(totalOutstanding)}</h3>
-                  <p className="text-[9px] text-zinc-600 mt-0.5">{outstanding.length} pending</p>
+                  <h3 className="text-xl font-black text-purple-400 italic">{formatCurrencyCompact(totalOutstanding)}</h3>
+                  <p className="text-[9px] text-zinc-600 mt-0.5">{approvedAndPending.length + partiallySettled.length} pending</p>
                 </div>
                 <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${cardBgClass}`}>
                   <div className="p-2.5 w-fit bg-emerald-500/10 rounded-xl text-emerald-400 mb-3"><CheckCircle2 size={16}/></div>
                   <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Settled</p>
-                  <h3 className="text-xl font-black text-emerald-400 italic">UGX {fmt(totalSettled)}</h3>
+                  <h3 className="text-xl font-black text-emerald-400 italic">{formatCurrencyCompact(totalSettled)}</h3>
                   <p className="text-[9px] text-zinc-600 mt-0.5">{settled.length} cleared</p>
                 </div>
                 <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${cardBgClass}`}>
                   <div className="p-2.5 w-fit bg-red-500/10 rounded-xl text-red-400 mb-3"><XCircle size={16}/></div>
                   <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Rejected</p>
-                  <h3 className="text-xl font-black text-red-400 italic">UGX {fmt(totalRejected)}</h3>
-                  <p className="text-[9px] text-zinc-600 mt-0.5">{rejected.length} rejected</p>
+                  <h3 className="text-xl font-black text-red-400 italic">{formatCurrencyCompact(totalRejected)}</h3>
+                  <p className="text-[9px] text-zinc-600 mt-0.5">{creditsLedger.filter(c => getCreditStatus(c) === "rejected").length} rejected</p>
                 </div>
                 <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 p-5 rounded-2xl">
                   <div className="p-2.5 w-fit bg-black/20 rounded-xl text-black mb-3"><Receipt size={16}/></div>
                   <p className="text-[8px] font-black uppercase text-black/60 tracking-widest mb-1">All Time Credits</p>
-                  <h3 className="text-xl font-black text-black italic">UGX {fmt(totalOutstanding + totalSettled + totalRejected)}</h3>
+                  <h3 className="text-xl font-black text-black italic">{formatCurrencyCompact(totalOutstanding + totalSettled + totalRejected)}</h3>
                   <p className="text-[9px] text-black/50 mt-0.5">{creditsLedger.length} total entries</p>
                 </div>
               </div>
 
               <div className="flex gap-1 p-1 bg-zinc-900/50 rounded-2xl w-fit">
                 {[
-                  { key: "all", label: "All" },
+                  { key: "all",         label: "All" },
                   { key: "outstanding", label: "Outstanding" },
-                  { key: "settled", label: "Settled" },
-                  { key: "rejected", label: "Rejected" }
+                  { key: "settled",     label: "Settled" },
+                  { key: "rejected",    label: "Rejected" },
                 ].map(({ key, label }) => (
                   <button key={key} onClick={() => setCreditFilter(key)}
                     className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300
@@ -997,9 +1416,7 @@ export default function AccountantDashboard() {
             </div>
           )}
 
-          {/* ══════════════════════════════════════════════════════
-              VIEW SALES
-          ══════════════════════════════════════════════════════ */}
+          {/* VIEW SALES */}
           {activeSection === "VIEW_SALES" && (
             <div className="space-y-6 animate-in fade-in duration-500">
               <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -1067,16 +1484,12 @@ export default function AccountantDashboard() {
             </div>
           )}
 
-          {/* ══════════════════════════════════════════════════════
-              MONTHLY COSTS
-          ══════════════════════════════════════════════════════ */}
+          {/* MONTHLY COSTS */}
           {activeSection === "MONTHLY_COSTS" && (
             <div className="space-y-6 animate-in fade-in duration-500">
               <div>
                 <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Monthly Expenses</h2>
-                <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">
-                  Manage recurring operational costs for Kurax Bistro
-                </p>
+                <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Manage recurring operational costs for Kurax Bistro</p>
               </div>
               <div className="max-w-4xl">
                 <MonthlyCosts
@@ -1086,9 +1499,11 @@ export default function AccountantDashboard() {
                   profitLoad={profitLoad}
                   onRefresh={fetchMonthlyData}
                   dark={isDark}
-                  t={{ card: isDark ? "bg-zinc-900/30 border-white/5" : "bg-white/80 border-gray-200 shadow-sm", 
-                        divider: isDark ? "border-white/5" : "border-gray-200", 
-                        subtext: isDark ? "text-zinc-500" : "text-gray-500" }}
+                  t={{
+                    card: isDark ? "bg-zinc-900/30 border-white/5" : "bg-white/80 border-gray-200 shadow-sm",
+                    divider: isDark ? "border-white/5" : "border-gray-200",
+                    subtext: isDark ? "text-zinc-500" : "text-gray-500"
+                  }}
                   API_URL={API_URL}
                 />
               </div>
@@ -1097,172 +1512,6 @@ export default function AccountantDashboard() {
 
         </main>
         <Footer isDark={isDark} />
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ACCOUNTANT END SHIFT
-// ─────────────────────────────────────────────────────────────────────────────
-function AccountantEndShift({ sys, physTotals, variance, isDark }) {
-  const { refreshData } = useData() || {};
-
-  const [isFinalizing, setIsFinalizing] = useState(false);
-  const [done,         setDone]         = useState(false);
-  const [result,       setResult]       = useState(null);
-  const [error,        setError]        = useState(null);
-
-  const physTotal = (physTotals?.cash    || 0)
-                  + (physTotals?.mtn     || 0)
-                  + (physTotals?.airtel  || 0)
-                  + (physTotals?.card    || 0);
-
-  const handleFinalSync = async () => {
-    const confirmed = window.confirm(
-      "Close today's accounts?\n\n" +
-      "• All orders will be archived\n" +
-      "• Kitchen / barista / bar boards will clear\n" +
-      "• Revenue totals will reset to zero\n" +
-      "• Pending void requests will be expired\n\n" +
-      "This cannot be undone."
-    );
-    if (!confirmed) return;
-
-    setIsFinalizing(true);
-    setError(null);
-    try {
-      const actor = (() => {
-        try { return JSON.parse(localStorage.getItem("kurax_user") || "{}").name; }
-        catch { return "Accountant"; }
-      })();
-
-      const res = await fetch(`${API_URL}/api/accountant/finalize-day`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ final_gross: sys?.gross || 0, recorded_by: actor }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || "Server error — please try again."); return; }
-
-      setResult(data);
-      setDone(true);
-
-      if (typeof refreshData === "function") {
-        await refreshData();
-      } else {
-        setTimeout(() => window.location.reload(), 2500);
-      }
-    } catch (e) {
-      console.error("Finalize day error:", e);
-      setError("Network error — could not reach the server. Please try again.");
-    } finally {
-      setIsFinalizing(false);
-    }
-  };
-
-  if (done && result) return (
-    <div className="flex flex-col items-center justify-center py-24 gap-6 animate-in zoom-in-95 duration-700">
-      <div className="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-500 border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
-        <CheckCircle2 size={48}/>
-      </div>
-      <div className="text-center">
-        <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter">Accounts Closed</h2>
-        <p className="text-zinc-600 text-[10px] mt-2 uppercase tracking-[0.3em] font-bold">
-          {result.date} · closed successfully
-        </p>
-      </div>
-      <div className="grid grid-cols-3 gap-4 w-full max-w-md">
-        {[
-          { label: "Orders Archived", value: result.cleared_orders,    color: "text-yellow-400" },
-          { label: "Tickets Cleared", value: result.cleared_tickets,   color: "text-orange-400" },
-          { label: "Final Gross",     value: `UGX ${fmt(sys?.gross)}`, color: "text-emerald-400" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 text-center">
-            <p className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mb-1">{label}</p>
-            <p className={`text-lg font-black italic ${color}`}>{value}</p>
-          </div>
-        ))}
-      </div>
-      <p className="text-zinc-700 text-[9px] uppercase font-bold tracking-widest">All dashboards will refresh automatically</p>
-    </div>
-  );
-
-  const cardBgClass = isDark ? 'bg-zinc-900/40 border-white/5' : 'bg-white/80 border-gray-200 shadow-sm';
-  const textClass = isDark ? 'text-white' : 'text-gray-900';
-
-  return (
-    <div className="max-w-3xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
-      <div className="text-center">
-        <h2 className={`text-2xl font-black uppercase tracking-tighter transition-colors duration-300 ${textClass}`}>Day Finalization</h2>
-        <p className="text-yellow-600 text-[12px] font-bold mt-2 uppercase tracking-widest italic opacity-80">
-          Reconcile system data with physical collections
-        </p>
-      </div>
-
-      <div className={`rounded-3xl p-10 shadow-2xl relative overflow-hidden transition-all duration-300 ${cardBgClass}`}>
-        <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 blur-[60px] rounded-full"/>
-
-        <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.25em] mb-10 text-center">
-          Verification Summary
-        </h3>
-
-        <div className="space-y-6 mb-12">
-          <div className="flex justify-between items-center border-b border-white/5 pb-6">
-            <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">System Gross</span>
-            <span className={`text-2xl font-black italic transition-colors duration-300 ${textClass}`}>UGX {fmt(sys?.gross)}</span>
-          </div>
-          <div className="flex justify-between items-center border-b border-white/5 pb-6">
-            <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">Physical Total</span>
-            <span className={`text-2xl font-black italic transition-colors duration-300 ${textClass}`}>UGX {fmt(physTotal)}</span>
-          </div>
-          <div className="flex justify-between items-center pt-4">
-            <span className="text-zinc-500 text-[11px] font-black uppercase tracking-wider">Closing Variance</span>
-            <div className="text-right">
-              <span className={`text-2xl font-black italic ${variance >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                {variance >= 0 ? "+" : ""}UGX {fmt(variance)}
-              </span>
-              <p className="text-[8px] font-black uppercase opacity-40 mt-1">
-                {variance === 0 ? "Balanced" : variance > 0 ? "Overage" : "Shortage"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-black/30 rounded-2xl p-5 mb-8 space-y-2.5">
-          <p className="text-[9px] font-black uppercase text-zinc-600 tracking-widest mb-3">This will</p>
-          {[
-            "Archive all today's orders across all staff",
-            "Clear kitchen, barista & bar ticket boards",
-            "Reset all gross / revenue totals to zero",
-            "Expire any pending void requests",
-            "Save a permanent audit record of today's close",
-          ].map((item, i) => (
-            <div key={i} className="flex items-center gap-2.5">
-              <div className="w-4 h-4 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center shrink-0">
-                <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"/>
-              </div>
-              <p className="text-[10px] font-bold text-zinc-400">{item}</p>
-            </div>
-          ))}
-        </div>
-
-        {error && (
-          <div className="flex items-start gap-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 mb-6">
-            <AlertTriangle size={16} className="text-rose-400 shrink-0 mt-0.5"/>
-            <p className="text-[11px] font-bold text-rose-400">{error}</p>
-          </div>
-        )}
-
-        <button onClick={handleFinalSync} disabled={isFinalizing}
-          className={`w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-black font-black uppercase text-[12px] tracking-[0.15em]
-            py-6 rounded-2xl transition-all duration-300 flex items-center justify-center gap-4 shadow-xl shadow-yellow-500/20
-            ${isFinalizing ? "opacity-70 cursor-not-allowed" : "hover:scale-[1.02] hover:shadow-2xl"}`}>
-          {isFinalizing
-            ? <><RefreshCw size={18} className="animate-spin"/> Closing Accounts…</>
-            : <><RotateCcw size={18}/> Close Accounts & Reset Dashboard</>}
-        </button>
       </div>
     </div>
   );

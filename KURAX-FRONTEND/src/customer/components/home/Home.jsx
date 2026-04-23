@@ -115,7 +115,7 @@ export default function Home() {
         <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 w-full pt-24 md:pt-32">
           <motion.div style={{ y: yContent }} className="max-w-2xl space-y-6 md:space-y-8">
             <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }}>
-              <h1 className="text-4xl md:text-6xl font-serif font-bold leading-[1.05] text-white">
+              <h1 className="text-4xl md:text-7xl font-serif font-bold leading-[1.05] text-white">
                 Experience <br />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 ">
                   Luxury
@@ -124,7 +124,7 @@ export default function Home() {
               </h1>
             </motion.div>
             
-            <p className="text-zinc-300 text-lg md:text-xl font-light max-w-lg leading-relaxed">
+            <p className="text-zinc-300 text-md md:text-xl font-light max-w-lg leading-relaxed">
               Indulge in a world where fine dining meets the art of relaxation. 
               Kurax is your ultimate sanctuary for gourmet cuisine.
             </p>
@@ -261,7 +261,7 @@ function HomeMenuCard({ item, onOrder }) {
     <motion.div 
       variants={fadeInUp}
       whileHover={{ y: -8 }}
-      className="group relative bg-white rounded-[1.5rem]  font-outfit overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 transition-all duration-500"
+      className="group relative bg-white rounded-[1rem]  font-outfit overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 transition-all duration-500"
     >
       <div className="relative h-56 overflow-hidden">
         <motion.img
@@ -279,10 +279,10 @@ function HomeMenuCard({ item, onOrder }) {
       
       <div className="p-6 space-y-4">
         <div className="space-y-1">
-          <h4 className="text-lg  font-[Outfit] text-zinc-900  tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
+          <h4 className="text-lg  font-[Outfit] text-yellow-600  tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
             {item.name}
           </h4>
-          <p className="text-zinc-900 text-[13px] font-light leading-relaxed line-clamp-2 ">
+          <p className="text-zinc-900 text-[14px] font-light leading-relaxed line-clamp-2 ">
             {item.description || "Indulge in our masterfully crafted signature dish."}
           </p>
         </div>

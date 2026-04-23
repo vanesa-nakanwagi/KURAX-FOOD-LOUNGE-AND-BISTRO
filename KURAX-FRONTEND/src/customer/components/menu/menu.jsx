@@ -18,7 +18,7 @@ function MenuCard({ item, onOrder, isNew }) {
     : `${API_URL}${item.image_url}`;
 
   return (
-    <div className="group relative font-outfit flex flex-col bg-white dark:bg-[#0A0A0A] rounded-[1.5rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
+    <div className="group relative font-outfit flex flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
       
       {/* NEW BADGE: Consistent with Signature Cards */}
       {isNew && (
@@ -48,10 +48,10 @@ function MenuCard({ item, onOrder, isNew }) {
       {/* CONTENT SECTION */}
       <div className="p-6 flex-1 flex flex-col justify-between">
         <div className="space-y-2 text-left">
-         <h4 className="text-lg font-[OUtfit] text-zinc-900 dark:text-white tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
+         <h4 className="text-lg font-[OUtfit] text-yellow-600 dark:text-white tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
   {item.name}
 </h4>
-          <p className="text-zinc-900 dark:text-zinc-400 text-[13px] font-light leading-relaxed line-clamp-2 ">
+          <p className="text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed line-clamp-2 ">
             {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
           </p>
         </div>

@@ -52,7 +52,7 @@ export default function Navbar() {
             <Link
               key={link.name}
               to={link.path}
-              className={`text-sm font-medium transition-colors duration-300
+              className={`text-md font-medium transition-colors duration-300
                 ${scrolled
                   ? "text-zinc-700 hover:text-yellow-500"
                   : "text-white/80 hover:text-yellow-400"}`}

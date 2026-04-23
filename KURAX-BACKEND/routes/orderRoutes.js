@@ -13,7 +13,9 @@ function kampalaDate() {
   ).toISOString().split('T')[0];
 }
 
-// FIXED: GET /api/orders - Properly parse items JSON
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/orders - Fetch all orders with parsed items
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
@@ -24,7 +26,6 @@ router.get('/', async (req, res) => {
        LIMIT 200`
     );
     
-    // Parse the items JSON for each order
     const parsedOrders = result.rows.map(order => {
       let items = order.items;
       if (typeof items === 'string') {
@@ -35,10 +36,7 @@ router.get('/', async (req, res) => {
           items = [];
         }
       }
-      return {
-        ...order,
-        items: items
-      };
+      return { ...order, items };
     });
     
     res.json(parsedOrders);
@@ -48,7 +46,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-// FIXED: GET /api/orders/cashier-queue - Parse items JSON
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/orders/cashier-queue - Fetch orders pending cashier confirmation
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/cashier-queue', async (req, res) => {
   try {
     const result = await pool.query(
@@ -68,7 +68,6 @@ router.get('/cashier-queue', async (req, res) => {
        ORDER BY o.created_at DESC`
     );
     
-    // Parse items JSON for each order
     const parsedOrders = result.rows.map(order => {
       let items = order.items;
       if (typeof items === 'string') {
@@ -78,10 +77,7 @@ router.get('/cashier-queue', async (req, res) => {
           items = [];
         }
       }
-      return {
-        ...order,
-        items: items
-      };
+      return { ...order, items };
     });
     
     res.json(parsedOrders);
@@ -91,7 +87,9 @@ router.get('/cashier-queue', async (req, res) => {
   }
 });
 
-// FIXED: GET /api/orders/tables/all - Parse items JSON
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/orders/tables/all - Fetch all tables with active orders
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/tables/all', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -138,7 +136,9 @@ router.get('/tables/all', async (req, res) => {
   }
 });
 
-// FIXED: GET /api/orders/cashier-history - Parse items if needed
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/orders/cashier-history - Fetch cashier confirmation history
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/cashier-history', async (req, res) => {
   try {
     const result = await pool.query(
@@ -155,7 +155,6 @@ router.get('/cashier-history', async (req, res) => {
        LIMIT 500`
     );
     
-    // Parse item JSON if it exists
     const parsedHistory = result.rows.map(history => {
       let item = history.item;
       if (item && typeof item === 'string') {
@@ -165,10 +164,7 @@ router.get('/cashier-history', async (req, res) => {
           item = null;
         }
       }
-      return {
-        ...history,
-        item: item
-      };
+      return { ...history, item };
     });
     
     res.json(parsedHistory);
@@ -178,8 +174,9 @@ router.get('/cashier-history', async (req, res) => {
   }
 });
 
-// Keep your other endpoints as they are...
-// GET /api/orders/credits
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/orders/credits - Fetch all credits
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/credits', async (req, res) => {
   try {
     const result = await pool.query(
@@ -192,7 +189,71 @@ router.get('/credits', async (req, res) => {
   }
 });
 
-// POST /api/orders
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/orders/void-requests - Fetch pending void requests for accountant
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/void-requests', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT vr.*, 
+              o.table_name, 
+              o.staff_name as waiter_name,
+              o.items
+       FROM void_requests vr
+       LEFT JOIN orders o ON vr.order_id = o.id
+       WHERE vr.status = 'Pending'
+       ORDER BY vr.created_at DESC`
+    );
+    
+    const parsedRequests = result.rows.map(req => {
+      let items = req.items;
+      if (items && typeof items === 'string') {
+        try {
+          items = JSON.parse(items);
+        } catch (e) {
+          items = [];
+        }
+      }
+      
+      return { 
+        ...req, 
+        items,
+        chef_name: req.chef_name || 'Not assigned'
+      };
+    });
+    
+    res.json(parsedRequests);
+  } catch (err) {
+    console.error('Fetch void requests error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/orders/void-requests/history - Fetch resolved voids for today
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/void-requests/history', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT vr.*, 
+              o.table_name, 
+              o.staff_name as waiter_name
+       FROM void_requests vr
+       LEFT JOIN orders o ON vr.order_id = o.id
+       WHERE DATE(vr.created_at AT TIME ZONE 'Africa/Nairobi') = CURRENT_DATE
+         AND vr.status IN ('Approved', 'Rejected', 'Expired')
+       ORDER BY vr.resolved_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Fetch void history error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/orders - Create new order
+// ─────────────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   const { staffId, staffRole, tableName, items, total, paymentMethod } = req.body;
 
@@ -215,7 +276,6 @@ router.post('/', async (req, res) => {
 
     const newOrder = orderResult.rows[0];
     
-    // Parse items for the response
     let parsedItems = newOrder.items;
     if (typeof parsedItems === 'string') {
       parsedItems = JSON.parse(parsedItems);
@@ -251,10 +311,183 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Keep the rest of your endpoints (void-item, status, pay, etc.) as they are
-// ... (copy the rest of your existing endpoints below)
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/orders/void-item - Waiter requests to void an item (FIXED)
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/void-item', async (req, res) => {
+  const { order_id, item_name, reason, requested_by } = req.body;
 
-// PATCH /api/orders/:id/status
+  console.log("Received void request:", { order_id, item_name, reason, requested_by });
+
+  if (!order_id || !item_name || !reason) {
+    console.log("Missing required fields");
+    return res.status(400).json({ error: 'order_id, item_name, and reason are required' });
+  }
+
+  try {
+    // Get order details
+    const orderRes = await pool.query(
+      `SELECT o.table_name, o.staff_id, o.items, o.total, COALESCE(s.name, $2) AS waiter_name
+       FROM orders o
+       LEFT JOIN staff s ON o.staff_id = s.id
+       WHERE o.id = $1`,
+      [order_id, requested_by || 'Unknown']
+    );
+
+    if (orderRes.rows.length === 0) {
+      console.log("Order not found:", order_id);
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const order = orderRes.rows[0];
+    const tableName = order.table_name;
+    const waiterName = order.waiter_name;
+    
+    let items = [];
+    try {
+      items = Array.isArray(order.items) ? order.items : JSON.parse(order.items || '[]');
+    } catch (e) {
+      console.error("Error parsing items:", e);
+      items = [];
+    }
+    
+    const targetItem = items.find(item => item.name === item_name && !item.voidRequested && !item.voidProcessed);
+    
+    if (!targetItem) {
+      console.log("Item not found or already voided:", item_name);
+      return res.status(404).json({ error: 'Item not found or already voided' });
+    }
+    
+    // FIND THE ASSIGNED CHEF FROM KITCHEN_TICKETS
+    let chefName = null;
+    
+    try {
+      // Query kitchen_tickets to find who was assigned to this order
+      const kitchenResult = await pool.query(
+        `SELECT staff_name, staff_role, items
+         FROM kitchen_tickets 
+         WHERE order_id = $1 
+           AND cleared_by_kitchen = false
+         ORDER BY created_at DESC 
+         LIMIT 1`,
+        [order_id]
+      );
+      
+      console.log("Kitchen tickets found:", kitchenResult.rows.length);
+      
+      if (kitchenResult.rows.length > 0) {
+        const kitchenTicket = kitchenResult.rows[0];
+        
+        // Parse kitchen ticket items
+        let kitchenItems = kitchenTicket.items;
+        if (typeof kitchenItems === 'string') {
+          try {
+            kitchenItems = JSON.parse(kitchenItems);
+          } catch (e) {
+            kitchenItems = [];
+          }
+        }
+        
+        // Search for the item in the kitchen ticket's items array
+        if (Array.isArray(kitchenItems)) {
+          const foundItem = kitchenItems.find(kItem => 
+            kItem.name === item_name || kItem.item_name === item_name
+          );
+          
+          if (foundItem) {
+            // Extract chef from assignedTo field
+            chefName = foundItem.assignedTo || foundItem.assigned_to || foundItem.chef_name || null;
+            console.log(`Found chef from kitchen_tickets item: ${chefName}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error checking kitchen_tickets:", err.message);
+    }
+    
+    // If no chef found, try to get from the order item's assignedChef field
+    if (!chefName && targetItem.assignedChef) {
+      chefName = targetItem.assignedChef;
+      console.log(`Found chef from order item: ${chefName}`);
+    }
+    
+    // If still no chef, try to get from assignedTo in the target item itself
+    if (!chefName && targetItem.assignedTo) {
+      chefName = targetItem.assignedTo;
+      console.log(`Found chef from target item assignedTo: ${chefName}`);
+    }
+    
+    const originalPrice = Number(targetItem.price || 0);
+    const originalQuantity = Number(targetItem.quantity || 1);
+    const itemTotal = originalPrice * originalQuantity;
+
+    console.log("Inserting void request with:", {
+      order_id, item_name, reason, requested_by, tableName, waiterName,
+      originalPrice, originalQuantity, itemTotal, chefName
+    });
+
+    // Insert void request with chef information (using your column names)
+    const voidRes = await pool.query(
+      `INSERT INTO void_requests
+         (order_id, item_name, reason, requested_by,
+          table_name, waiter_name, status, created_at,
+          original_price, original_quantity, chef_name)
+       VALUES ($1, $2, $3, $4, $5, $6, 'Pending', NOW(), 
+               $7, $8, $9)
+       RETURNING *`,
+      [order_id, item_name, reason, requested_by, tableName, waiterName, 
+       originalPrice, originalQuantity, chefName]
+    );
+
+    console.log("Void request inserted, ID:", voidRes.rows[0].id);
+
+    // Update the order items to mark void requested
+    let found = false;
+    const updatedItems = items.map(item => {
+      if (!found && item.name === item_name && !item.voidRequested && !item.voidProcessed) {
+        found = true; 
+        return { 
+          ...item, 
+          voidRequested: true, 
+          voidReason: reason, 
+          voidRequestedBy: requested_by,
+          voidRequestedAt: new Date().toISOString(),
+          original_price: originalPrice,
+          price: originalPrice,
+          chefName: chefName
+        };
+      }
+      return item;
+    });
+
+    await pool.query(
+      `UPDATE orders SET items = $1 WHERE id = $2`,
+      [JSON.stringify(updatedItems), order_id]
+    );
+
+    await logActivity(pool, {
+      type: 'VOID_REQUESTED',
+      actor: requested_by,
+      role: 'WAITER',
+      message: `Void requested: ${item_name} (UGX ${itemTotal.toLocaleString()}) from Order #${order_id}${chefName ? ` - Chef: ${chefName}` : ' - No chef assigned'}`,
+      meta: { reason, order_id, table: tableName, amount: itemTotal, chef_name: chefName }
+    });
+
+    res.status(201).json({ 
+      success: true, 
+      void_request: voidRes.rows[0],
+      message: `Void request for ${item_name} sent to accountant`
+    });
+  } catch (err) {
+    console.error('Void Request Error:', err.message);
+    console.error('Full error:', err);
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/orders/:id/status - Update order status
+// ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status, staff_name, role, void_reason } = req.body;
@@ -270,11 +503,12 @@ router.patch('/:id/status', async (req, res) => {
       [status, void_reason || null, id]
     );
 
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
 
     const updatedOrder = result.rows[0];
     
-    // Parse items
     let items = updatedOrder.items;
     if (typeof items === 'string') {
       items = JSON.parse(items);
@@ -300,7 +534,9 @@ router.patch('/:id/status', async (req, res) => {
   }
 });
 
-// PATCH /api/orders/:id/pay
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/orders/:id/pay - Mark order as paid
+// ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/pay', async (req, res) => {
   const { id } = req.params;
   const { status = 'Paid', payment_method } = req.body;
@@ -312,11 +548,12 @@ router.patch('/:id/pay', async (req, res) => {
       [status, payment_method, id]
     );
 
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
 
     const order = result.rows[0];
     
-    // Parse items
     let items = order.items;
     if (typeof items === 'string') {
       items = JSON.parse(items);
@@ -374,88 +611,174 @@ router.patch('/:id/pay', async (req, res) => {
   }
 });
 
-// POST /api/orders/void-item
-router.post('/void-item', async (req, res) => {
-  const { order_id, item_name, reason, requested_by } = req.body;
-
-  if (!order_id || !item_name || !reason) {
-    return res.status(400).json({ error: 'order_id, item_name, and reason are required' });
-  }
-
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/orders/void-requests/:id/approve - Accountant approves void
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/void-requests/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const { approved_by } = req.body;
+  
   try {
-    const orderRes = await pool.query(
-      `SELECT o.table_name, o.staff_id, o.items, o.total, COALESCE(s.name, $2) AS waiter_name
-       FROM orders o
-       LEFT JOIN staff s ON o.staff_id = s.id
-       WHERE o.id = $1`,
-      [order_id, requested_by || 'Unknown']
+    // Get the void request first
+    const voidReq = await pool.query(
+      `SELECT * FROM void_requests WHERE id = $1 AND status = 'Pending'`,
+      [id]
     );
-
-    if (orderRes.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-
-    const order = orderRes.rows[0];
-    const tableName = order.table_name;
-    const waiterName = order.waiter_name;
     
-    let items = Array.isArray(order.items) ? order.items : JSON.parse(order.items || '[]');
-    const targetItem = items.find(item => item.name === item_name && !item.voidRequested && !item.voidProcessed);
-    
-    if (!targetItem) {
-      return res.status(404).json({ error: 'Item not found or already voided' });
+    if (!voidReq.rows.length) {
+      return res.status(404).json({ error: 'Void request not found or already processed' });
     }
     
-    const originalPrice = Number(targetItem.price || 0);
-    const originalQuantity = Number(targetItem.quantity || 1);
-    const itemTotal = originalPrice * originalQuantity;
-
-    const voidRes = await pool.query(
-      `INSERT INTO void_requests
-         (order_id, item_name, reason, requested_by,
-          table_name, waiter_name, status, created_at,
-          original_price, original_quantity, item_total)
-       VALUES ($1, $2, $3, $4, $5, $6, 'Pending', NOW(), $7, $8, $9)
-       RETURNING *`,
-      [order_id, item_name, reason, requested_by, tableName, waiterName, 
-       originalPrice, originalQuantity, itemTotal]
+    const vr = voidReq.rows[0];
+    
+    // Update the order: mark the item as voided
+    const orderRes = await pool.query(
+      `SELECT items FROM orders WHERE id = $1`,
+      [vr.order_id]
     );
-
-    let found = false;
-    const updatedItems = items.map(item => {
-      if (!found && item.name === item_name && !item.voidRequested && !item.voidProcessed) {
-        found = true; 
-        return { 
-          ...item, 
-          voidRequested: true, 
-          voidReason: reason, 
-          voidRequestedBy: requested_by,
-          original_price: originalPrice,
-          price: originalPrice
-        };
+    
+    if (orderRes.rows.length) {
+      let items = orderRes.rows[0].items;
+      if (typeof items === 'string') {
+        items = JSON.parse(items);
       }
-      return item;
-    });
-
-    await pool.query(
-      `UPDATE orders SET items = $1 WHERE id = $2`,
-      [JSON.stringify(updatedItems), order_id]
+      
+      // Find and mark the item as voided
+      let found = false;
+      const updatedItems = items.map(item => {
+        if (!found && item.name === vr.item_name && !item.voidProcessed) {
+          found = true;
+          return {
+            ...item,
+            status: 'VOIDED',
+            voidProcessed: true,
+            voidApprovedBy: approved_by || 'Accountant',
+            voidApprovedAt: new Date().toISOString(),
+            voidReason: vr.reason
+          };
+        }
+        return item;
+      });
+      
+      // Update order total by subtracting voided item amount
+      const newTotal = updatedItems
+        .filter(item => item.status !== 'VOIDED' && !item.voidProcessed)
+        .reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity || 1)), 0);
+      
+      await pool.query(
+        `UPDATE orders SET items = $1, total = $2 WHERE id = $3`,
+        [JSON.stringify(updatedItems), newTotal, vr.order_id]
+      );
+    }
+    
+    // Update the void request status
+    const result = await pool.query(
+      `UPDATE void_requests 
+       SET status = 'Approved', 
+           approved_by = $1,
+           resolved_by = $1, 
+           resolved_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [approved_by || 'Accountant', id]
     );
-
+    
     await logActivity(pool, {
-      type: 'VOID_REQUESTED',
-      actor: requested_by,
-      role: 'WAITER',
-      message: `Void requested: ${item_name} (UGX ${itemTotal.toLocaleString()}) from Order #${order_id}`,
-      meta: { reason, order_id, table: tableName, amount: itemTotal }
+      type: 'VOID_APPROVED',
+      actor: approved_by || 'Accountant',
+      role: 'ACCOUNTANT',
+      message: `Approved void request for ${vr.item_name} (Order #${vr.order_id}) - Chef: ${vr.chef_name || 'Unknown'}`,
+      meta: { void_id: id, order_id: vr.order_id, item: vr.item_name, chef: vr.chef_name }
     });
-
-    res.status(201).json(voidRes.rows[0]);
+    
+    res.json(result.rows[0]);
   } catch (err) {
-    console.error('Void Request Error:', err.message);
+    console.error('Approve void error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Add debug endpoint
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/orders/void-requests/:id/reject - Accountant rejects void
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/void-requests/:id/reject', async (req, res) => {
+  const { id } = req.params;
+  const { rejected_by } = req.body;
+  
+  try {
+    // Get the void request first
+    const voidReq = await pool.query(
+      `SELECT * FROM void_requests WHERE id = $1 AND status = 'Pending'`,
+      [id]
+    );
+    
+    if (!voidReq.rows.length) {
+      return res.status(404).json({ error: 'Void request not found or already processed' });
+    }
+    
+    const vr = voidReq.rows[0];
+    
+    // Update the order to remove void request flag
+    const orderRes = await pool.query(
+      `SELECT items FROM orders WHERE id = $1`,
+      [vr.order_id]
+    );
+    
+    if (orderRes.rows.length) {
+      let items = orderRes.rows[0].items;
+      if (typeof items === 'string') {
+        items = JSON.parse(items);
+      }
+      
+      const updatedItems = items.map(item => {
+        if (item.name === vr.item_name && item.voidRequested && !item.voidProcessed) {
+          return {
+            ...item,
+            voidRequested: false,
+            voidRejected: true,
+            voidRejectedBy: rejected_by || 'Accountant',
+            voidRejectedAt: new Date().toISOString()
+          };
+        }
+        return item;
+      });
+      
+      await pool.query(
+        `UPDATE orders SET items = $1 WHERE id = $2`,
+        [JSON.stringify(updatedItems), vr.order_id]
+      );
+    }
+    
+    // Update the void request status
+    const result = await pool.query(
+      `UPDATE void_requests 
+       SET status = 'Rejected', 
+           rejected_by = $1,
+           resolved_by = $1, 
+           resolved_at = NOW()
+       WHERE id = $2 AND status = 'Pending'
+       RETURNING *`,
+      [rejected_by || 'Accountant', id]
+    );
+    
+    await logActivity(pool, {
+      type: 'VOID_REJECTED',
+      actor: rejected_by || 'Accountant',
+      role: 'ACCOUNTANT',
+      message: `Rejected void request for ${vr.item_name} (Order #${vr.order_id})`,
+      meta: { void_id: id, order_id: vr.order_id, item: vr.item_name }
+    });
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Reject void error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Debug endpoint - Check staff orders
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/debug/staff-orders/:staffId', async (req, res) => {
   const { staffId } = req.params;
   const today = new Date().toISOString().split('T')[0];
@@ -508,11 +831,55 @@ router.get('/debug/staff-orders/:staffId', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Debug endpoint - Check void requests (FIXED to use chef_name)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/debug/void-requests', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        id,
+        item_name,
+        chef_name,
+        status,
+        created_at
+      FROM void_requests 
+      ORDER BY created_at DESC 
+      LIMIT 10
+    `);
+    res.json({
+      count: result.rows.length,
+      requests: result.rows,
+      sample: result.rows[0] || null
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test endpoint
+// ─────────────────────────────────────────────────────────────────────────────
 router.get('/test', (req, res) => {
   res.json({ 
     message: 'Order routes are working!', 
     timestamp: new Date().toISOString(),
-    endpoints: ['GET /', 'GET /cashier-history', 'GET /credits', 'POST /', 'PATCH /:id/status']
+    endpoints: [
+      'GET /',
+      'GET /cashier-queue',
+      'GET /tables/all',
+      'GET /cashier-history',
+      'GET /credits',
+      'GET /void-requests',
+      'GET /void-requests/history',
+      'POST /',
+      'POST /void-item',
+      'PATCH /:id/status',
+      'PATCH /:id/pay',
+      'PATCH /void-requests/:id/approve',
+      'PATCH /void-requests/:id/reject',
+      'GET /debug/void-requests'
+    ]
   });
 });
 

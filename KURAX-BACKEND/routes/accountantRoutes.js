@@ -1,10 +1,4 @@
-/**
- * accountantRoutes.js
- * ─────────────────────────────────────────────────────────────────────────────
- * Mount in server.js:
- *   import accountantRoutes from './routes/accountantRoutes.js';
- *   app.use('/api/accountant', accountantRoutes);
- */
+
 
 import express from 'express';
 import pool    from '../db.js';
@@ -80,30 +74,7 @@ router.post('/physical-count', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3.  POST /api/accountant/finalize-day
-//
 //     THE MAIN "CLOSE DAY" ENDPOINT
-//     ─────────────────────────────
-//     Called by the accountant's "Close Accounts & Reset Dashboard" button.
-//
-//     What it does (all in one DB transaction):
-//       a. Snapshot today's daily_summary into day_closings for audit trail
-//       b. Mark all today's orders as day_cleared = true
-//          → waiters/supervisors/managers stop seeing them in Live / Served / Voided
-//       c. Clear kitchen_tickets for today (cleared_by_kitchen = true)
-//          → kitchen, barista, barman boards go blank
-//       d. Zero-out / archive today's daily_summary row
-//          → gross / cash / mtn / airtel / card totals reset to 0
-//       e. Mark all pending void_requests as expired
-//          → Live Audit queue empties
-//       f. Log the close-day event
-//
-//     What it does NOT delete:
-//       - The order rows themselves (preserved for reporting)
-//       - staff_shifts (archived per-waiter records)
-//       - chef_assignments (historical)
-//       - Credits ledger (carries forward)
-//
-//     Response: { success: true, cleared_orders, cleared_tickets, date }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/finalize-day', async (req, res) => {
   const { final_gross, recorded_by } = req.body;
@@ -115,8 +86,6 @@ router.post('/finalize-day', async (req, res) => {
     await client.query('BEGIN');
 
     // ── a. Snapshot daily_summary → day_closings ─────────────────────────────
-    // Ensures we have a permanent audit record even after the summary is zeroed.
-    // day_closings table DDL is at the bottom of this file.
     await client.query(
       `INSERT INTO day_closings
          (closing_date, recorded_by, gross, cash, mtn, airtel, card, credit, order_count, closed_at)
@@ -146,10 +115,6 @@ router.post('/finalize-day', async (req, res) => {
     );
 
     // ── b. Mark all today's orders as day_cleared ─────────────────────────────
-    // Waiter / supervisor / manager dashboards filter out day_cleared orders,
-    // so their Live, Served, Voided, and All Floor views all go blank.
-    // We also set shift_cleared = true for consistency with the existing
-    // per-waiter end-shift logic (some queries filter on that too).
     const ordersResult = await client.query(
       `UPDATE orders
        SET day_cleared    = true,
@@ -163,9 +128,6 @@ router.post('/finalize-day', async (req, res) => {
     const clearedOrders = ordersResult.rowCount;
 
     // ── c. Clear kitchen / barista / barman tickets ───────────────────────────
-    // Sets cleared_by_kitchen = true on ALL stations (kitchen, barista, barman).
-    // Each station's board already filters on cleared_by_kitchen = false,
-    // so every board goes blank immediately on next poll.
     const ticketsResult = await client.query(
       `UPDATE kitchen_tickets
        SET cleared_by_kitchen = true,
@@ -180,8 +142,6 @@ router.post('/finalize-day', async (req, res) => {
     const clearedTickets = ticketsResult.rowCount;
 
     // ── d. Zero out today's daily_summary ─────────────────────────────────────
-    // This resets the gross / cash / breakdown tiles on every dashboard
-    // that reads from todaySummary (DataContext → /api/daily-summary/today).
     await client.query(
       `UPDATE daily_summary
        SET total_gross   = 0,
@@ -210,9 +170,6 @@ router.post('/finalize-day', async (req, res) => {
     );
 
     // ── e. Expire pending void requests ──────────────────────────────────────
-    // Clears the accountant's Live Audit queue.
-    // Pending void requests from today that were never actioned are marked
-    // "Expired" so they don't carry over into tomorrow.
     await client.query(
       `UPDATE void_requests
        SET status      = 'Expired',
@@ -267,76 +224,205 @@ router.get('/day-closings', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 5.  GET /api/accountant/petty-cash
+//     Returns petty cash summary with IN and OUT totals for a specific date
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/petty-cash', async (req, res) => {
+  try {
+    const { date } = req.query;
+    const targetDate = date || kampalaDate();
+
+    const query = `
+      SELECT 
+        COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE 0 END), 0) AS total_out,
+        COALESCE(SUM(CASE WHEN direction = 'IN' THEN amount ELSE 0 END), 0) AS total_in,
+        COUNT(CASE WHEN direction = 'OUT' THEN 1 END) AS out_count,
+        COUNT(CASE WHEN direction = 'IN' THEN 1 END) AS in_count
+      FROM petty_cash 
+      WHERE DATE(created_at AT TIME ZONE 'Africa/Nairobi') = $1
+    `;
+    
+    const result = await pool.query(query, [targetDate]);
+    const row = result.rows[0];
+    
+    res.json({
+      total_out: parseFloat(row.total_out) || 0,
+      total_in: parseFloat(row.total_in) || 0,
+      out_count: parseInt(row.out_count) || 0,
+      in_count: parseInt(row.in_count) || 0,
+      net: (parseFloat(row.total_in) || 0) - (parseFloat(row.total_out) || 0),
+      date: targetDate
+    });
+  } catch (err) {
+    console.error('Petty cash fetch error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6.  GET /api/accountant/petty-cash/range
+//     Returns petty cash summary with entries for a date range
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/petty-cash/range', async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    if (!from || !to) {
+      return res.status(400).json({ error: 'from and to dates are required' });
+    }
+
+    const query = `
+      SELECT 
+        COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE 0 END), 0) AS total_out,
+        COALESCE(SUM(CASE WHEN direction = 'IN' THEN amount ELSE 0 END), 0) AS total_in,
+        COUNT(CASE WHEN direction = 'OUT' THEN 1 END) AS out_count,
+        COUNT(CASE WHEN direction = 'IN' THEN 1 END) AS in_count,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', id,
+              'amount', amount,
+              'direction', direction,
+              'category', category,
+              'description', description,
+              'logged_by', logged_by,
+              'created_at', created_at
+            ) ORDER BY created_at DESC
+          ) FILTER (WHERE id IS NOT NULL),
+          '[]'::json
+        ) AS entries
+      FROM petty_cash 
+      WHERE DATE(created_at AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2
+    `;
+    
+    const result = await pool.query(query, [from, to]);
+    const row = result.rows[0];
+    
+    res.json({
+      total_out: parseFloat(row.total_out) || 0,
+      total_in: parseFloat(row.total_in) || 0,
+      out_count: parseInt(row.out_count) || 0,
+      in_count: parseInt(row.in_count) || 0,
+      net: (parseFloat(row.total_in) || 0) - (parseFloat(row.total_out) || 0),
+      entries: row.entries || []
+    });
+  } catch (err) {
+    console.error('Petty cash range error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7.  POST /api/accountant/petty-cash
+//     Create new petty cash entry
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/petty-cash', async (req, res) => {
+  const { amount, direction, category, description, logged_by } = req.body;
+  
+  if (!amount || !direction || !description) {
+    return res.status(400).json({ error: 'amount, direction, and description are required' });
+  }
+  
+  try {
+    const result = await pool.query(
+      `INSERT INTO petty_cash 
+         (amount, direction, category, description, logged_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       RETURNING *`,
+      [amount, direction, category || 'General', description, logged_by || 'Cashier']
+    );
+    
+    await logActivity(pool, {
+      type: 'PETTY_CASH_ENTRY',
+      actor: logged_by || 'Cashier',
+      role: 'CASHIER',
+      message: `${direction === 'OUT' ? 'Expense' : 'Replenishment'} of UGX ${Number(amount).toLocaleString()} - ${description}`,
+      meta: { amount, direction, category, description }
+    });
+    
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Petty cash create error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8.  PUT /api/accountant/petty-cash/:id
+//     Update petty cash entry
+// ─────────────────────────────────────────────────────────────────────────────
+router.put('/petty-cash/:id', async (req, res) => {
+  const { id } = req.params;
+  const { amount, direction, category, description, logged_by } = req.body;
+  
+  try {
+    const result = await pool.query(
+      `UPDATE petty_cash 
+       SET amount = $1, direction = $2, category = $3, description = $4, 
+           logged_by = $5, updated_at = NOW()
+       WHERE id = $6
+       RETURNING *`,
+      [amount, direction, category, description, logged_by, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+    
+    await logActivity(pool, {
+      type: 'PETTY_CASH_UPDATED',
+      actor: logged_by || 'Cashier',
+      role: 'CASHIER',
+      message: `Updated petty cash entry: ${direction === 'OUT' ? 'Expense' : 'Replenishment'} of UGX ${Number(amount).toLocaleString()} - ${description}`,
+      meta: { id, amount, direction, category, description }
+    });
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Petty cash update error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9.  DELETE /api/accountant/petty-cash/:id
+//     Delete petty cash entry
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/petty-cash/:id', async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // First get the entry to log what was deleted
+    const entryResult = await pool.query(
+      `SELECT * FROM petty_cash WHERE id = $1`,
+      [id]
+    );
+    
+    if (entryResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+    
+    const entry = entryResult.rows[0];
+    
+    const result = await pool.query(
+      `DELETE FROM petty_cash WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    
+    await logActivity(pool, {
+      type: 'PETTY_CASH_DELETED',
+      actor: 'Accountant',
+      role: 'ACCOUNTANT',
+      message: `Deleted petty cash entry: ${entry.direction === 'OUT' ? 'Expense' : 'Replenishment'} of UGX ${Number(entry.amount).toLocaleString()} - ${entry.description}`,
+      meta: { id, amount: entry.amount, direction: entry.direction, category: entry.category }
+    });
+    
+    res.json({ message: 'Entry deleted successfully', deleted: result.rows[0] });
+  } catch (err) {
+    console.error('Petty cash delete error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
 
-/*
-═══════════════════════════════════════════════════════════════════════════════
-  REQUIRED DATABASE MIGRATIONS
-  Run these once in your PostgreSQL database.
-═══════════════════════════════════════════════════════════════════════════════
-
--- 1. Add day_cleared column to orders
---    (shift_cleared already exists from waiter end-shift; day_cleared is the
---     accountant-level flag that clears ALL staff's orders at once)
-ALTER TABLE orders
-  ADD COLUMN IF NOT EXISTS day_cleared  BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS updated_at   TIMESTAMPTZ DEFAULT NOW();
-
--- 2. Add day_closed columns to daily_summary
-ALTER TABLE daily_summary
-  ADD COLUMN IF NOT EXISTS day_closed BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS closed_by  TEXT,
-  ADD COLUMN IF NOT EXISTS closed_at  TIMESTAMPTZ;
-
--- 3. Create day_closings audit table
-CREATE TABLE IF NOT EXISTS day_closings (
-  id           SERIAL PRIMARY KEY,
-  closing_date DATE        NOT NULL UNIQUE,
-  recorded_by  TEXT        NOT NULL,
-  gross        NUMERIC     DEFAULT 0,
-  cash         NUMERIC     DEFAULT 0,
-  mtn          NUMERIC     DEFAULT 0,
-  airtel       NUMERIC     DEFAULT 0,
-  card         NUMERIC     DEFAULT 0,
-  credit       NUMERIC     DEFAULT 0,
-  order_count  INTEGER     DEFAULT 0,
-  closed_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 4. Create physical_counts table (if not already there)
-CREATE TABLE IF NOT EXISTS physical_counts (
-  id           SERIAL PRIMARY KEY,
-  count_date   DATE        NOT NULL UNIQUE,
-  cash         NUMERIC     DEFAULT 0,
-  momo_mtn     NUMERIC     DEFAULT 0,
-  momo_airtel  NUMERIC     DEFAULT 0,
-  card         NUMERIC     DEFAULT 0,
-  notes        TEXT,
-  submitted_by TEXT,
-  created_at   TIMESTAMPTZ DEFAULT NOW(),
-  updated_at   TIMESTAMPTZ
-);
-
--- 5. Index for fast day_cleared filtering on orders
-CREATE INDEX IF NOT EXISTS idx_orders_day_cleared ON orders (day_cleared);
-CREATE INDEX IF NOT EXISTS idx_orders_timestamp_tz
-  ON orders (DATE(timestamp AT TIME ZONE 'Africa/Nairobi'));
-
-═══════════════════════════════════════════════════════════════════════════════
-  FRONTEND FILTER CHANGE REQUIRED
-  In every component that filters today's orders, add day_cleared check:
-
-  BEFORE:
-    const cleared = o.shift_cleared === true || o.shift_cleared === "t" ...
-
-  AFTER:
-    const cleared = o.shift_cleared === true || o.shift_cleared === "t"
-                 || o.day_cleared   === true || o.day_cleared   === "t";
-
-  Components to update:
-    - OrderHistory.jsx          (waiter)
-    - ManagerOrderHistory.jsx   (supervisor)
-    - LiveTableGrid.jsx         (all floor)
-    - LiveOrderStatus.jsx       (operations monitor)
-═══════════════════════════════════════════════════════════════════════════════
-*/

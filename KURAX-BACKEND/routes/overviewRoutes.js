@@ -4,11 +4,12 @@ import { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
 
 const router = express.Router();
 
-// ─── Kampala/Nairobi local date string ───────────────────────────────────────
 function kampalaDate() {
-  return new Date(
-    new Date().toLocaleString('en-US', { timeZone: 'Africa/Nairobi' })
-  ).toISOString().split('T')[0];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 // ─── 1. SIMPLE ORDER SUMMARY (used by older endpoints) ───────────────────────
@@ -31,27 +32,19 @@ router.get('/summary', async (req, res) => {
   }
 });
 
-// ─── 2. TODAY'S STAT-CARD SUMMARY ────────────────────────────────────────────
-//
-// Returns all the fields the Overview stat cards need in ONE query:
-//   total_cash, total_card, total_mtn, total_airtel, total_gross
-//   credit_settlements_today  (grand total of settlements made today)
-//   credit_settlements_breakdown  { cash, card, mtn, airtel }
-//
-// The frontend SUBTRACTS each breakdown field from the corresponding raw total
-// to show true new-sales revenue (not inflated by credit settlement payments).
-//
-// This route is polled every 10 seconds AND triggered by SSE events so the
-// stat cards increment in real time throughout the day.
-// The daily_summary table accumulates rows from midnight to midnight Kampala
-// time — giving automatic 24-hour persistence with no extra work.
-//
+// ─── 2. TODAY'S STAT-CARD SUMMARY - FIXED (no double timezone conversion) ───
 router.get('/today', async (req, res) => {
   const today = kampalaDate();
   try {
-    // ── Daily payment totals ──────────────────────────────────────────────────
-    // Pull from daily_summary (written by the cashier confirmation flow).
-    // Falls back to zeros if the row does not yet exist today.
+    // Ensure today's row exists
+    await pool.query(
+      `INSERT INTO daily_summary (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, total_credit, total_mixed, order_count, day_closed, created_at, updated_at)
+       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
+       ON CONFLICT (summary_date) DO NOTHING`,
+      [today]
+    );
+
+    // FIXED: No double timezone conversion - timestamp is already in EAT
     const summaryRes = await pool.query(
       `SELECT
          COALESCE(total_gross,  0) AS total_gross,
@@ -61,21 +54,20 @@ router.get('/today', async (req, res) => {
          COALESCE(total_airtel, 0) AS total_airtel,
          COALESCE(order_count,  0) AS order_count
        FROM daily_summary
-       WHERE date = $1`,
+       WHERE summary_date = $1`,
       [today]
     );
 
-    // ── Credit settlements collected today — grand total ──────────────────────
+    // ── Credit settlements collected today ──────────────────────────────────
+    // FIXED: No double timezone conversion
     const settleGrandRes = await pool.query(
       `SELECT COALESCE(SUM(cs.amount_paid), 0) AS total
        FROM credit_settlements cs
-       WHERE (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date = $1`,
+       WHERE cs.created_at::date = $1`,
       [today]
     );
 
-    // ── Credit settlements today — broken down by payment method ─────────────
-    // We join credit_settlements back to cashier_queue to find which method
-    // was used when the credit was settled (cash, card, mtn, airtel).
+    // ── Credit settlements breakdown by payment method ──────────────────────
     const settleBreakdownRes = await pool.query(
       `SELECT
          COALESCE(SUM(CASE WHEN LOWER(cq.method) = 'cash'        THEN cs.amount_paid ELSE 0 END), 0) AS cash,
@@ -83,37 +75,32 @@ router.get('/today', async (req, res) => {
          COALESCE(SUM(CASE WHEN LOWER(cq.method) = 'momo-mtn'    THEN cs.amount_paid ELSE 0 END), 0) AS mtn,
          COALESCE(SUM(CASE WHEN LOWER(cq.method) = 'momo-airtel' THEN cs.amount_paid ELSE 0 END), 0) AS airtel
        FROM credit_settlements cs
-       -- cashier_queue row that was created when this settlement was confirmed
-       JOIN cashier_queue cq
+       LEFT JOIN cashier_queue cq
          ON cq.reference_id = cs.id::text
         AND cq.status = 'Confirmed'
         AND cq.method != 'Credit'
-       WHERE (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date = $1`,
+       WHERE cs.created_at::date = $1`,
       [today]
     );
 
-    const daily      = summaryRes.rows[0]       || {};
-    const grandTotal = settleGrandRes.rows[0]   || {};
+    const daily      = summaryRes.rows[0] || {};
+    const grandTotal = settleGrandRes.rows[0] || {};
     const breakdown  = settleBreakdownRes.rows[0] || {};
 
+    console.log(`Summary for ${today}:`, {
+      total_cash: daily.total_cash,
+      total_card: daily.total_card,
+      total_gross: daily.total_gross
+    });
+
     res.json({
-      // Raw payment totals for the day (include credit settlement amounts)
       total_gross:  Number(daily.total_gross  || 0),
       total_cash:   Number(daily.total_cash   || 0),
       total_card:   Number(daily.total_card   || 0),
       total_mtn:    Number(daily.total_mtn    || 0),
       total_airtel: Number(daily.total_airtel || 0),
       order_count:  Number(daily.order_count  || 0),
-
-      // Grand total of credit settlements received today
-      // Frontend subtracts this from total_gross to get true gross revenue.
       credit_settlements_today: Number(grandTotal.total || 0),
-
-      // Per-method breakdown so each stat card can subtract correctly:
-      //   displayCash   = total_cash   - credit_settlements_breakdown.cash
-      //   displayCard   = total_card   - credit_settlements_breakdown.card
-      //   displayMTN    = total_mtn    - credit_settlements_breakdown.mtn
-      //   displayAirtel = total_airtel - credit_settlements_breakdown.airtel
       credit_settlements_breakdown: {
         cash:   Number(breakdown.cash   || 0),
         card:   Number(breakdown.card   || 0),
@@ -127,17 +114,29 @@ router.get('/today', async (req, res) => {
   }
 });
 
+// ─── 2a. CREATE TODAY'S SUMMARY IF NOT EXISTS ────────────────────────────────
+// Call this when a payment is confirmed to ensure today's row exists
+router.post('/ensure-today', async (req, res) => {
+  const today = kampalaDate();
+  try {
+    const result = await pool.query(
+      `INSERT INTO daily_summary (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, total_credit, total_mixed, order_count, day_closed, created_at, updated_at)
+       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
+       ON CONFLICT (summary_date) DO NOTHING
+       RETURNING *`,
+      [today]
+    );
+    res.json({ success: true, created: result.rows.length > 0 });
+  } catch (err) {
+    console.error('Ensure today summary error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── 3. MONTHLY CREDIT SUMMARY ────────────────────────────────────────────────
-//
-// Returns aggregate credit figures for the given month (defaults to current).
-// The Credit Summary card on the Overview page uses this for its "persists for
-// a month" display.  The frontend /api/cashier-ops/credits endpoint returns the
-// full ledger which the Overview component also uses for the same card —
-// this endpoint is an alternative if you prefer a pre-aggregated response.
-//
 router.get('/credit-summary-monthly', async (req, res) => {
   const { month } = req.query;
-  const targetMonth = month || new Date().toISOString().slice(0, 7); // "YYYY-MM"
+  const targetMonth = month || new Date().toISOString().slice(0, 7);
 
   try {
     const creditsRes = await pool.query(
@@ -207,12 +206,6 @@ router.get('/logs', async (req, res) => {
 });
 
 // ─── 5. SSE — REAL-TIME ACTIVITY STREAM ──────────────────────────────────────
-//
-// The Overview component connects here on mount.  When payment events are
-// broadcast (ORDER_CONFIRMED, PAYMENT_CONFIRMED, CREDIT_SETTLED, etc.) the
-// frontend immediately calls fetchSummary() instead of waiting for the 10-second
-// poll — giving true real-time increments on the stat cards.
-//
 router.get('/stream', (req, res) => {
   res.setHeader('Content-Type',      'text/event-stream');
   res.setHeader('Cache-Control',     'no-cache');
@@ -220,12 +213,10 @@ router.get('/stream', (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
-  // Immediately confirm connection to the client
   res.write(`data: ${JSON.stringify({ type: 'CONNECTED', message: 'Live feed connected' })}\n\n`);
 
   registerSSEClient(res);
 
-  // Keep-alive heartbeat (proxies close idle connections after ~30 s)
   const heartbeat = setInterval(() => {
     try { res.write(': heartbeat\n\n'); }
     catch { clearInterval(heartbeat); }
@@ -238,11 +229,6 @@ router.get('/stream', (req, res) => {
 });
 
 // ─── 6. WEEKLY REVENUE — for RevenueChart ────────────────────────────────────
-//
-// Last 7 Kampala days.  Returns gross (confirmed sales excluding credit method),
-// credit_settled (settled credits that day — counted as revenue when paid),
-// petty (OUT expenses), and profit = gross + credit_settled - petty.
-//
 router.get('/weekly-revenue', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -396,15 +382,9 @@ router.delete('/petty-cash/:id', async (req, res) => {
 });
 
 // ─── 11. DIRECTOR DAILY SUMMARY (combined endpoint) ──────────────────────────
-//
-// One-shot endpoint that returns both the daily payment breakdown AND the
-// monthly credit aggregates.  Useful if the director dashboard needs a single
-// fetch on load rather than two parallel requests.
-//
 router.get('/director/daily-summary', async (req, res) => {
   const today = kampalaDate();
   try {
-    // Daily totals
     const dailyRes = await pool.query(
       `SELECT
          COALESCE(total_gross,  0) AS total_gross,
@@ -414,11 +394,10 @@ router.get('/director/daily-summary', async (req, res) => {
          COALESCE(total_airtel, 0) AS total_airtel,
          COALESCE(order_count,  0) AS order_count
        FROM daily_summary
-       WHERE date = $1`,
+       WHERE summary_date = $1`,
       [today]
     );
 
-    // Credit settlements today
     const settleRes = await pool.query(
       `SELECT COALESCE(SUM(cs.amount_paid), 0) AS total_settled
        FROM credit_settlements cs
@@ -426,7 +405,6 @@ router.get('/director/daily-summary', async (req, res) => {
       [today]
     );
 
-    // Monthly credits with settlement totals
     const monthlyRes = await pool.query(
       `SELECT
          c.*,

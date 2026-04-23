@@ -31,7 +31,7 @@ function kampalaDate() {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function initCreditTables() {
   await pool.query(`
-    -- Main credits table
+    -- Main credits table (without shift_cleared)
     CREATE TABLE IF NOT EXISTS credits (
       id              SERIAL PRIMARY KEY,
       order_id        INTEGER REFERENCES orders(id) ON DELETE SET NULL,
@@ -64,10 +64,7 @@ export async function initCreditTables() {
       approved_at     TIMESTAMPTZ,
       rejected_at     TIMESTAMPTZ,
       paid_at         TIMESTAMPTZ,
-      reject_reason   TEXT,
-
-      -- Shift control
-      shift_cleared   BOOLEAN DEFAULT FALSE
+      reject_reason   TEXT
     );
 
     -- Ledger of every settlement payment against a credit
@@ -97,7 +94,7 @@ export async function initCreditTables() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  GET /api/credits
+//  GET /api/credits - Get all credits (no shift_cleared filter)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
@@ -121,7 +118,6 @@ router.get('/', async (req, res) => {
         ) AS settlements
       FROM credits c
       LEFT JOIN credit_settlements cs ON cs.credit_id = c.id
-      WHERE c.shift_cleared = FALSE
       GROUP BY c.id
       ORDER BY c.created_at DESC
     `);
@@ -140,7 +136,6 @@ router.get('/pending-cashier', async (req, res) => {
     const result = await pool.query(`
       SELECT * FROM credits
       WHERE status = 'PendingCashier'
-        AND shift_cleared = FALSE
       ORDER BY created_at DESC
     `);
     res.json(result.rows);
@@ -157,7 +152,6 @@ router.get('/pending-manager', async (req, res) => {
     const result = await pool.query(`
       SELECT * FROM credits
       WHERE status = 'PendingManager'
-        AND shift_cleared = FALSE
       ORDER BY forwarded_at DESC
     `);
     res.json(result.rows);
@@ -200,7 +194,6 @@ router.get('/ledger', async (req, res) => {
       FROM credits c
       LEFT JOIN credit_settlements cs ON cs.credit_id = c.id
       WHERE c.status IN ('Approved', 'PartiallySettled', 'FullySettled')
-        AND c.shift_cleared = FALSE
       GROUP BY c.id
       ORDER BY
         CASE
@@ -229,7 +222,6 @@ router.get('/lookup', async (req, res) => {
     const result = await pool.query(`
       SELECT * FROM credits
       WHERE status = 'PendingCashier'
-        AND shift_cleared = FALSE
         AND (
           ($1::int IS NOT NULL AND order_id = $1::int)
           OR
@@ -362,7 +354,6 @@ router.patch('/forward-by-table', async (req, res) => {
           forwarded_at = NOW()
       WHERE UPPER(table_name) = UPPER($2)
         AND status = 'PendingCashier'
-        AND shift_cleared = FALSE
       RETURNING *
     `, [forwarded_by || 'Cashier', table_name]);
 
@@ -423,7 +414,7 @@ router.patch('/:id/forward', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  PATCH /api/credits/:id/approve - FIXED (marks items as credit requested)
+//  PATCH /api/credits/:id/approve
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/approve', async (req, res) => {
   const { id } = req.params;

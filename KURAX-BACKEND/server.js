@@ -22,6 +22,7 @@ import barmanRoutes from "./routes/barmanRoutes.js";
 import waiterRoutes from './routes/waiterRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
 import deliveryRoutes from './routes/deliveryRoutes.js';
+import dayClosureRoutes from './routes/dayClosureRoutes.js';
 
 // --- NEW CREDIT ROUTE IMPORT ---
 import creditRoutes, { initCreditTables } from './routes/creditRoutes.js';
@@ -87,7 +88,7 @@ app.use('/api/barman', barmanRoutes);
 app.use('/api/waiter', waiterRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/delivery', deliveryRoutes);
-
+app.use('/api/day-closure', dayClosureRoutes);
 // --- REGISTER CREDIT ROUTES ---
 app.use('/api/credits', creditRoutes);
 

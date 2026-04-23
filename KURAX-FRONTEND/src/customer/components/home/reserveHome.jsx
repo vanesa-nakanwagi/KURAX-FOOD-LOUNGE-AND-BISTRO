@@ -110,7 +110,7 @@ const Reserve = () => {
                   Private Dining
                 </span>
               </h2>
-              <p className="text-md text-slate-700 dark:text-zinc-400 font-light leading-relaxed max-w-lg">
+              <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-lg font-light leading-relaxed">
                 Kurax provides the ideal setting for business professionals seeking a 
                 refined atmosphere for high-stakes meetings and elite celebrations.
               </p>
@@ -132,7 +132,7 @@ const Reserve = () => {
                     <h3 className="text-xl font-bold text-yellow-700 dark:text-white group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
                       {feature.title}
                     </h3>
-                    <p className="text-sm text-slate-700 dark:text-zinc-400 font-light leading-relaxed">
+                    <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-md font-light leading-relaxed">
                       {feature.description}
                     </p>
                   </div>
@@ -144,7 +144,7 @@ const Reserve = () => {
             <motion.div variants={fadeInUp} className="pt-6">
               <button 
                 onClick={goToReserve} 
-                className="relative overflow-hidden group inline-flex items-center gap-4 px-12 py-5 bg-yellow-400 text-black font-black uppercase tracking-[0.2em] text-xs rounded-2xl shadow-lg hover:bg-yellow-500 transition-all duration-500"
+                className="relative overflow-hidden group inline-flex items-center gap-4 px-12 py-5 bg-yellow-400 text-black font-black uppercase tracking-[0.2em] text-xs rounded-none shadow-lg hover:bg-yellow-500 transition-all duration-500"
               >
                 <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
                 RESERVE A TABLE

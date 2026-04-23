@@ -1,11 +1,9 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import API_URL from "../../../config/api";
 
 const DataContext = createContext();
 
-// ── Kampala date helper (reused by getStaffStats + fetchPettyCash) ────────────
-// new Date().toISOString() gives UTC — in Kampala (UTC+3) that's yesterday
-// for any timestamp before 3 am. Always convert via Africa/Nairobi first.
+// ── Kampala date helper ──────────────────────────────────────────────────────
 function kampalaDateStr(d = new Date()) {
   return new Date(
     d.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' })
@@ -13,66 +11,68 @@ function kampalaDateStr(d = new Date()) {
 }
 
 // ── Normalise payment method strings ─────────────────────────────────────────
-// DB can contain: "Cash" "MTN" "Airtel" "Momo-MTN" "Momo-Airtel" "Momo"
-//                 "Card" "Visa" "Credit" "Mixed"
-// Returns one of: 'cash' | 'mtn' | 'airtel' | 'card' | 'credit' | 'mixed' | 'unknown'
 function normMethod(raw = '') {
   const m = raw.toLowerCase().trim();
-  if (m === 'cash')                              return 'cash';
-  if (m === 'mtn'  || m === 'momo-mtn')         return 'mtn';
-  if (m === 'airtel' || m === 'momo-airtel')    return 'airtel';
-  if (m === 'momo')                              return 'mtn'; // treat bare momo as MTN
+  if (m === 'cash') return 'cash';
+  if (m === 'mtn' || m === 'momo-mtn') return 'mtn';
+  if (m === 'airtel' || m === 'momo-airtel') return 'airtel';
+  if (m === 'momo') return 'mtn';
   if (m === 'card' || m === 'visa' || m === 'pos' || m === 'debit') return 'card';
-  if (m === 'credit')                            return 'credit';
-  if (m === 'mixed')                             return 'mixed';
+  if (m === 'credit') return 'credit';
+  if (m === 'mixed') return 'mixed';
   return 'unknown';
 }
 
 export const DataProvider = ({ children }) => {
-  const [staffList,      setStaffList]      = useState([]);
-  const [orders,         setOrders]         = useState([]);
-  const [menus,          setMenus]          = useState([]);
-  const [events,         setEvents]         = useState([]);
-  const [isLoading,      setIsLoading]      = useState(true);
+  const [staffList, setStaffList] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [menus, setMenus] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // ── Summaries (single source of truth for all roles) ─────────────────────
-  const [todaySummary,   setTodaySummary]   = useState({
+  const [todaySummary, setTodaySummary] = useState({
     summary_date: null,
-    total_gross:  0,
-    total_cash:   0,
-    total_card:   0,
-    total_mtn:    0,
+    total_gross: 0,
+    total_cash: 0,
+    total_card: 0,
+    total_mtn: 0,
     total_airtel: 0,
     total_credit: 0,
-    total_mixed:  0,
-    order_count:  0,
+    total_mixed: 0,
+    order_count: 0,
   });
   const [monthlySummary, setMonthlySummary] = useState({ totals: {}, daily: [] });
-
-  // ── Petty cash (cashier only) ─────────────────────────────────────────────
   const [pettyCash, setPettyCash] = useState({ total_in: 0, total_out: 0, net: 0, entries: [] });
-
-  // ── Management targets ────────────────────────────────────────────────────
-  const [dailyGoal,      setDailyGoal]      = useState(20);
+  const [dailyGoal, setDailyGoal] = useState(20);
   const [monthlyTargets, setMonthlyTargets] = useState({});
-
-  const [isGranted,   setIsGranted]   = useState(false);
+  const [isGranted, setIsGranted] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('kurax_user');
     return saved ? JSON.parse(saved) : null;
   });
 
-  // ── fetchTodaySummary ─────────────────────────────────────────────────────
+  // ── Day closure state ─────────────────────────────────────────────────────
+  const [dayClosed, setDayClosed] = useState(false);
+  const [lastClosedDate, setLastClosedDate] = useState(null);
+  const [dayClosureInfo, setDayClosureInfo] = useState(null);
+  const refreshIntervalRef = useRef(null);
+  const sseRef = useRef(null);
+
+  // ─── DEFINE ALL FETCH FUNCTIONS FIRST ─────────────────────────────────────
   const fetchTodaySummary = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/summaries/today`);
-      if (res.ok) setTodaySummary(await res.json());
+      const res = await fetch(`${API_URL}/api/summaries/today?t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTodaySummary(data);
+        return data;
+      }
     } catch (err) {
       console.error("Failed to fetch today's summary:", err);
     }
+    return null;
   }, []);
 
-  // ── fetchMonthlySummary ───────────────────────────────────────────────────
   const fetchMonthlySummary = useCallback(async (month) => {
     const m = month || new Date().toISOString().substring(0, 7);
     try {
@@ -83,11 +83,8 @@ export const DataProvider = ({ children }) => {
     }
   }, []);
 
-  // ── fetchPettyCash ────────────────────────────────────────────────────────
-  // BUG FIX: was using new Date().toISOString() (UTC) → gave yesterday's date
-  // in Kampala before 3 am, so cashier saw an empty petty-cash list at shift start.
   const fetchPettyCash = useCallback(async (date) => {
-    const d = date || kampalaDateStr();  // ← Kampala-aware, not UTC
+    const d = date || kampalaDateStr();
     try {
       const res = await fetch(`${API_URL}/api/summaries/petty-cash?date=${d}`);
       if (res.ok) setPettyCash(await res.json());
@@ -96,7 +93,6 @@ export const DataProvider = ({ children }) => {
     }
   }, []);
 
-  // ── fetchTargets ──────────────────────────────────────────────────────────
   const fetchTargets = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/manager/target-progress`);
@@ -113,7 +109,7 @@ export const DataProvider = ({ children }) => {
     }
   }, []);
 
-  // ── refreshData ───────────────────────────────────────────────────────────
+  // ─── REFRESH DATA FUNCTION (DEFINED BEFORE IT'S USED) ─────────────────────
   const refreshData = useCallback(async (isInitialLoad = false) => {
     if (isInitialLoad) setIsLoading(true);
 
@@ -168,95 +164,213 @@ export const DataProvider = ({ children }) => {
     }
   }, [currentUser, fetchTargets, fetchTodaySummary, fetchPettyCash]);
 
-  useEffect(() => {
-    refreshData(true);
-    const interval = setInterval(() => {
-      refreshData(false);
-      fetchTodaySummary();
-    }, 10000);
-    return () => clearInterval(interval);
+  // ─── FORCE REFRESH ────────────────────────────────────────────────────────
+  const forceRefresh = useCallback(async () => {
+    console.log("Force refresh requested");
+    await refreshData(true);
+    await fetchTodaySummary();
   }, [refreshData, fetchTodaySummary]);
 
-  // ── getStaffStats ─────────────────────────────────────────────────────────
-  // Used by Director staff-grid cards to show per-staff revenue breakdown.
-  //
-  // BUG FIX 1: date comparison now uses Kampala timezone — was using UTC
-  //   which caused orders placed before 3 am to be dated yesterday.
-  //
-  // BUG FIX 2: payment method normalised via normMethod() — was using raw
-  //   .toUpperCase() and then falling through to CASH for anything unrecognised
-  //   (e.g. bare "MOMO", empty string on unpaid orders that slipped through).
-  //
-  // BUG FIX 3: only paid orders contribute to revenue buckets. The paid guard
-  //   already existed but the MIXED/CREDIT early-return was inside the loop
-  //   after the paid check — reorganised to be explicit.
+  // ─── RESET ALL DATA AFTER DAY CLOSURE ─────────────────────────────────────
+  const resetAllData = useCallback(async () => {
+    console.log("Resetting all data after day closure...");
+    
+    setTodaySummary({
+      summary_date: null,
+      total_gross: 0,
+      total_cash: 0,
+      total_card: 0,
+      total_mtn: 0,
+      total_airtel: 0,
+      total_credit: 0,
+      total_mixed: 0,
+      order_count: 0,
+    });
+    
+    setPettyCash({ total_in: 0, total_out: 0, net: 0, entries: [] });
+    setMonthlySummary({ totals: {}, daily: [] });
+    setOrders([]);
+    setStaffList([]);
+    
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('payment_sent') || key.includes('day_closed') || key.includes('pending_payment'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    
+    await refreshData(true);
+    
+    window.dispatchEvent(new CustomEvent('dataReset', { 
+      detail: { message: 'All data has been reset after day closure', timestamp: new Date().toISOString() }
+    }));
+  }, [refreshData]);
+
+  // ─── CHECK DAY CLOSURE ────────────────────────────────────────────────────
+  const checkDayClosure = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/day-closure/day-status`);
+      if (res.ok) {
+        const data = await res.json();
+        const today = kampalaDateStr();
+        
+        if (data.is_closed && lastClosedDate !== data.date) {
+          console.log(`Day ${data.date} was closed by ${data.closed_by}`);
+          setDayClosed(true);
+          setLastClosedDate(data.date);
+          setDayClosureInfo(data);
+          await resetAllData();
+          
+          const notification = document.createElement('div');
+          notification.innerHTML = `
+            <div style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; background: #10B981; color: white; padding: 16px 24px; border-radius: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); animation: slideIn 0.3s ease-out; font-family: system-ui;">
+              ✅ Day has been closed! All totals have been reset for the new day.
+            </div>
+            <style>
+              @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+              }
+            </style>
+          `;
+          document.body.appendChild(notification);
+          setTimeout(() => notification.remove(), 5000);
+        } else if (!data.is_closed && dayClosed) {
+          setDayClosed(false);
+          setDayClosureInfo(null);
+        }
+      }
+    } catch (e) {
+      console.error("Check day closure error:", e);
+    }
+  }, [lastClosedDate, resetAllData, dayClosed]);
+
+  // ─── SETUP SSE CONNECTION ─────────────────────────────────────────────────
+  const setupSSE = useCallback(() => {
+    if (sseRef.current) {
+      sseRef.current.close();
+    }
+    
+    try {
+      const eventSource = new EventSource(`${API_URL}/api/overview/stream`);
+      sseRef.current = eventSource;
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'DAY_CLOSED') {
+            console.log("Day closure event received via SSE");
+            resetAllData();
+          }
+          
+          if (['ORDER_CONFIRMED', 'PAYMENT_CONFIRMED', 'SUMMARY_UPDATE', 'CASHIER_CONFIRMED', 'CREDIT_SETTLED'].includes(data.type)) {
+            fetchTodaySummary();
+          }
+          
+          if (['CREDIT_CREATED', 'CREDIT_APPROVED', 'CREDIT_SETTLED', 'CREDIT_REJECTED'].includes(data.type)) {
+            refreshData(false);
+          }
+        } catch (e) {
+          console.error("Error parsing SSE message:", e);
+        }
+      };
+      
+      eventSource.onerror = () => {
+        console.error("SSE connection error, will reconnect in 30 seconds");
+        if (sseRef.current) {
+          sseRef.current.close();
+          sseRef.current = null;
+        }
+        setTimeout(() => setupSSE(), 30000);
+      };
+      
+    } catch (e) {
+      console.error("Failed to establish SSE connection:", e);
+    }
+  }, [fetchTodaySummary, refreshData, resetAllData]);
+
+  // ─── GET STAFF STATS ──────────────────────────────────────────────────────
   const getStaffStats = useCallback((staffId, targetDate) => {
     const date = targetDate || kampalaDateStr();
-
     const staffOrders = orders.filter(o => {
-      // BUG FIX 1: Kampala-aware date comparison
       const oDate = kampalaDateStr(new Date(o.timestamp || o.created_at));
       return Number(o.staff_id) === Number(staffId) && oDate === date;
     });
-
     return staffOrders.reduce((acc, o) => {
       acc.totalOrders += 1;
-
-      const paid = o.status === 'Paid'   || o.status === 'Mixed'
-                || o.status === 'Credit' || o.is_paid || o.isPaid;
+      const paid = o.status === 'Paid' || o.status === 'Mixed' || o.status === 'Credit' || o.is_paid || o.isPaid;
       if (!paid) return acc;
-
-      const amt  = Number(o.total || 0);
+      const amt = Number(o.total || 0);
       const norm = normMethod(o.payment_method);
-
-      // Mixed and Credit don't add to individual payment buckets
-      // (mixed is split across methods; credit is not yet collected)
       if (norm === 'mixed' || norm === 'credit') {
-        acc.totalRevenue += norm === 'mixed' ? amt : 0; // mixed is real money, credit isn't
+        acc.totalRevenue += norm === 'mixed' ? amt : 0;
         return acc;
       }
-
       acc.totalRevenue += amt;
-
-      // BUG FIX 2 & 3: explicit bucket assignment, nothing leaks into CASH
-      if      (norm === 'mtn')    acc.MTN    += amt;
+      if (norm === 'mtn') acc.MTN += amt;
       else if (norm === 'airtel') acc.AIRTEL += amt;
-      else if (norm === 'card')   acc.CARD   += amt;
-      else if (norm === 'cash')   acc.CASH   += amt;
-      // 'unknown' — don't add to any bucket, already added to totalRevenue above
-
+      else if (norm === 'card') acc.CARD += amt;
+      else if (norm === 'cash') acc.CASH += amt;
       return acc;
     }, { totalOrders: 0, totalRevenue: 0, CASH: 0, MTN: 0, AIRTEL: 0, CARD: 0 });
   }, [orders]);
 
+  // ─── USE EFFECTS (AFTER ALL FUNCTIONS ARE DEFINED) ────────────────────────
+  useEffect(() => {
+    refreshData(true);
+    setupSSE();
+    
+    refreshIntervalRef.current = setInterval(() => {
+      refreshData(false);
+      fetchTodaySummary();
+    }, 10000);
+    
+    const closureInterval = setInterval(checkDayClosure, 30000);
+    
+    return () => {
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+      clearInterval(closureInterval);
+      if (sseRef.current) sseRef.current.close();
+    };
+  }, [refreshData, fetchTodaySummary, checkDayClosure, setupSSE]);
+
+  // ─── VALUE PROVIDER ───────────────────────────────────────────────────────
   const value = {
-    // Core data
-    staffList,  setStaffList,
-    orders,     setOrders,
-    menus,      setMenus,
-    events,     setEvents,
+    staffList, setStaffList,
+    orders, setOrders,
+    menus, setMenus,
+    events, setEvents,
     currentUser, setCurrentUser,
     isGranted,
     isLoading,
-
-    // Summaries — use these for ALL revenue/total displays across every role
-    todaySummary,      // { total_gross, total_cash, total_card, total_mtn, total_airtel, total_credit, total_mixed, order_count }
-    monthlySummary,    // { totals: {...}, daily: [...] }
-    pettyCash,         // { total_in, total_out, net, entries } — cashier only
-    fetchTodaySummary, // call immediately after any payment to force refresh
+    todaySummary,
+    monthlySummary,
+    pettyCash,
+    fetchTodaySummary,
     fetchMonthlySummary,
     fetchPettyCash,
-
-    // Per-staff breakdown (computed from orders — daily_summaries is restaurant-wide)
     getStaffStats,
-
-    // Targets & refresh
     refreshData,
-    dailyGoal,  setDailyGoal,
+    forceRefresh,
+    dailyGoal, setDailyGoal,
     monthlyTargets,
+    dayClosed,
+    lastClosedDate,
+    dayClosureInfo,
+    resetAllData,
+    checkDayClosure,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
 
-export const useData = () => useContext(DataContext);
+export const useData = () => {
+  const context = useContext(DataContext);
+  if (!context) {
+    throw new Error('useData must be used within a DataProvider');
+  }
+  return context;
+};

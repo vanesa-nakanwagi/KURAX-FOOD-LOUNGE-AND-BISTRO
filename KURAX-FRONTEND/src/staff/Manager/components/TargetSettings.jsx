@@ -7,7 +7,7 @@ import {
   Calendar, Download, FileText, Lock, CheckCircle2, Loader2,
   Users, Clock, Banknote, CreditCard, Smartphone, Receipt,
   Printer, ChevronDown, ChevronUp, Search, Wallet,
-  Activity, DollarSign, ArrowUpCircle
+  Activity, DollarSign, ArrowUpCircle, AlertCircle, RefreshCw
 } from "lucide-react";
 
 // --- HELPERS ---
@@ -18,6 +18,7 @@ function fmtUGX(n) {
 function formatTime(dateStr) {
   if (!dateStr) return "—";
   const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "—";
   return d.toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit"
@@ -30,17 +31,41 @@ function formatOrderId(id) {
   return idStr.length > 6 ? idStr.slice(-6) : idStr;
 }
 
+// CRITICAL FIX: Get Kampala date (EAT UTC+3) without timezone conversion issues
+function getKampalaDate(date = new Date()) {
+  const d = new Date(date);
+  // Extract local date parts - this uses the browser's local timezone
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Alternative: using toLocaleDateString (also works)
+function getKampalaDateAlt(date = new Date()) {
+  return new Date(date.toLocaleString("en-US", { timeZone: "Africa/Nairobi" }))
+    .toISOString().split('T')[0];
+}
+
 export default function TargetSettings() {
   const { 
     monthlyTargets = {}, 
-    orders = [],
+    orders = [], 
+    todaySummary,
+    refreshData 
   } = useData() || {};
   const { theme } = useTheme();
 
   const isDark = theme === 'dark';
   
-  // --- Report State ---
-  const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
+  // --- Report State - FIXED: Initialize with today's Kampala date ---
+  const [reportDate, setReportDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
   const [expandedOrders, setExpandedOrders] = useState(false);
   const [reportType, setReportType] = useState("daily");
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,93 +75,173 @@ export default function TargetSettings() {
   const [loadingStaffData, setLoadingStaffData] = useState(false);
 
   // --- Director's Revenue Target Display ---
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  });
   const [targetProgress, setTargetProgress] = useState({ target: 0, current: 0, percentage: 0, todayRevenue: 0 });
   const [loadingTarget, setLoadingTarget] = useState(true);
   
-  // --- Petty Cash Data - Now fetches based on selected report date ---
+  // --- Petty Cash Data ---
   const [pettyCashData, setPettyCashData] = useState({ total_out: 0, total_in: 0, net: 0 });
+  const [loadingPettyCash, setLoadingPettyCash] = useState(false);
   
-  // --- Credits Data for the selected period - UPDATED with full fields ---
+  // --- Credits Data ---
   const [creditsData, setCreditsData] = useState({ 
     total_credits: 0, 
     approved_amount: 0, 
     settled_amount: 0, 
     pending_amount: 0,
     rejected_amount: 0,
-    outstanding_amount: 0 
+    outstanding_amount: 0,
+    partially_settled_outstanding: 0,
+    approved_count: 0,
+    settled_count: 0,
+    pending_count: 0,
+    rejected_count: 0,
+    partially_settled_count: 0
   });
+  const [loadingCredits, setLoadingCredits] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Helper: get week start/end from a date string using Kampala timezone
+  const getWeekRange = (dateStr) => {
+    // Parse the date string as local date (YYYY-MM-DD)
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const selectedDate = new Date(year, month - 1, day);
+    const dayOfWeek = selectedDate.getDay();
+    const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const weekStart = new Date(selectedDate);
+    weekStart.setDate(selectedDate.getDate() - diff);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    
+    const startYear = weekStart.getFullYear();
+    const startMonth = String(weekStart.getMonth() + 1).padStart(2, '0');
+    const startDay = String(weekStart.getDate()).padStart(2, '0');
+    const endYear = weekEnd.getFullYear();
+    const endMonth = String(weekEnd.getMonth() + 1).padStart(2, '0');
+    const endDay = String(weekEnd.getDate()).padStart(2, '0');
+    
+    return {
+      start: `${startYear}-${startMonth}-${startDay}`,
+      end: `${endYear}-${endMonth}-${endDay}`
+    };
+  };
 
   // Fetch target progress from backend
   const fetchTargetProgress = useCallback(async () => {
+    setLoadingTarget(true);
+    setError(null);
     try {
-      const response = await fetch(`${API_URL}/api/manager/target-progress`);
+      const response = await fetch(`${API_URL}/api/manager/target-progress?month=${selectedMonth}`);
       if (response.ok) {
         const data = await response.json();
-        setTargetProgress(data);
+        setTargetProgress({
+          target: data.target || 0,
+          current: data.current || 0,
+          percentage: data.percentage || 0,
+          todayRevenue: data.todayRevenue || 0
+        });
+      } else {
+        const errorText = await response.text();
+        console.error("Target progress failed:", response.status, errorText);
+        setError(`Failed to load target progress: ${response.status}`);
       }
     } catch (err) {
       console.error("Failed to fetch target progress:", err);
+      setError(`Network error: ${err.message}`);
     } finally {
       setLoadingTarget(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
-  // Fetch petty cash data for a specific date
+  // Fetch petty cash
   const fetchPettyCashForDate = useCallback(async (date) => {
-    try {
-      const response = await fetch(`${API_URL}/api/summaries/petty-cash?date=${date}`);
-      if (response.ok) {
-        const data = await response.json();
-        const totalOut = Number(data.total_out) || 0;
-        const totalIn = Number(data.total_in) || 0;
-        setPettyCashData({
-          total_out: totalOut,
-          total_in: totalIn,
-          net: totalIn - totalOut
-        });
-      }
-    } catch (err) {
-      console.error("Failed to fetch petty cash:", err);
-    }
-  }, []);
-
-  // Fetch credits for the selected period - UPDATED with full response handling
-  const fetchCreditsForPeriod = useCallback(async () => {
+    setLoadingPettyCash(true);
     try {
       let url = "";
       if (reportType === "daily") {
-        url = `${API_URL}/api/manager/credits-summary?period=daily&startDate=${reportDate}`;
+        url = `${API_URL}/api/manager/petty-cash-summary?period=daily&date=${date}`;
       } else if (reportType === "weekly") {
-        // Calculate week start and end
-        const selectedDate = new Date(reportDate);
-        const dayOfWeek = selectedDate.getDay();
-        const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-        const weekStart = new Date(selectedDate);
-        weekStart.setDate(selectedDate.getDate() - diff);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6);
-        url = `${API_URL}/api/manager/credits-summary?period=weekly&startDate=${weekStart.toISOString().split('T')[0]}&endDate=${weekEnd.toISOString().split('T')[0]}`;
+        const { start, end } = getWeekRange(date);
+        url = `${API_URL}/api/manager/petty-cash-summary?period=weekly&startDate=${start}&endDate=${end}`;
+      } else {
+        url = `${API_URL}/api/manager/petty-cash-summary?period=monthly&month=${date.substring(0, 7)}`;
+      }
+      
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setPettyCashData({
+          total_out: Number(data.total_out) || 0,
+          total_in: Number(data.total_in) || 0,
+          net: (Number(data.total_in) || 0) - (Number(data.total_out) || 0)
+        });
+      } else {
+        console.error("Petty cash fetch failed:", response.status);
+      }
+    } catch (err) {
+      console.error("Failed to fetch petty cash:", err);
+    } finally {
+      setLoadingPettyCash(false);
+    }
+  }, [reportType]);
+
+  // Fetch credits for the selected period
+  const fetchCreditsForPeriod = useCallback(async () => {
+    setLoadingCredits(true);
+    try {
+      let url = "";
+      if (reportType === "daily") {
+        url = `${API_URL}/api/manager/credits-summary?period=daily&date=${reportDate}`;
+      } else if (reportType === "weekly") {
+        const { start, end } = getWeekRange(reportDate);
+        url = `${API_URL}/api/manager/credits-summary?period=weekly&startDate=${start}&endDate=${end}`;
       } else if (reportType === "monthly") {
         url = `${API_URL}/api/manager/credits-summary?period=monthly&month=${reportDate.substring(0, 7)}`;
       }
       
-      console.log("Fetching credits from:", url);
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
-        console.log("Credits data received:", data);
+        
+        const approvedAmount = Number(data.approved_amount) || 0;
+        const pendingAmount = Number(data.pending_amount) || 0;
+        const partiallySettledOutstanding = Number(data.partially_settled_outstanding) || 0;
+        const totalOutstanding = approvedAmount + pendingAmount + partiallySettledOutstanding;
+        
         setCreditsData({
           total_credits: data.total_credits || 0,
-          approved_amount: data.approved_amount || 0,
-          settled_amount: data.settled_amount || 0,
-          pending_amount: data.pending_amount || 0,
-          rejected_amount: data.rejected_amount || 0,
-          outstanding_amount: data.outstanding_amount || (data.approved_amount + data.pending_amount)
+          approved_amount: approvedAmount,
+          settled_amount: Number(data.settled_amount) || 0,
+          pending_amount: pendingAmount,
+          rejected_amount: Number(data.rejected_amount) || 0,
+          outstanding_amount: totalOutstanding,
+          partially_settled_outstanding: partiallySettledOutstanding,
+          approved_count: data.approved_count || 0,
+          settled_count: data.settled_count || 0,
+          pending_count: data.pending_count || 0,
+          rejected_count: data.rejected_count || 0,
+          partially_settled_count: data.partially_settled_count || 0
         });
+        
+        console.log("Credits data loaded:", {
+          approved: approvedAmount,
+          pending: pendingAmount,
+          partiallyOutstanding: partiallySettledOutstanding,
+          totalOutstanding: totalOutstanding
+        });
+      } else {
+        const errorText = await response.text();
+        console.error("Credits fetch failed:", response.status, errorText);
       }
     } catch (err) {
       console.error("Failed to fetch credits:", err);
+    } finally {
+      setLoadingCredits(false);
     }
   }, [reportType, reportDate]);
 
@@ -148,6 +253,8 @@ export default function TargetSettings() {
       if (response.ok) {
         const data = await response.json();
         setStaffPerformanceData(data);
+      } else {
+        console.error("Staff performance fetch failed:", response.status);
       }
     } catch (err) {
       console.error("Failed to fetch staff performance:", err);
@@ -156,158 +263,216 @@ export default function TargetSettings() {
     }
   }, [selectedMonth]);
 
-  // Initial loads
+  // Re-fetch target and staff when selectedMonth changes
   useEffect(() => {
     fetchTargetProgress();
     fetchStaffPerformance();
   }, [fetchTargetProgress, fetchStaffPerformance]);
 
-  // Fetch petty cash and credits when report date or type changes
+  // Re-fetch petty cash and credits when report date or type changes
   useEffect(() => {
-    if (reportType === "daily") {
-      fetchPettyCashForDate(reportDate);
-    } else if (reportType === "weekly") {
-      // For weekly, fetch petty cash for each day and sum? Or just show weekly total
-      // For simplicity, fetch for the end date
-      fetchPettyCashForDate(reportDate);
-    } else if (reportType === "monthly") {
-      // For monthly, fetch petty cash for the month
-      fetchPettyCashForDate(reportDate);
-    }
+    fetchPettyCashForDate(reportDate);
     fetchCreditsForPeriod();
   }, [reportDate, reportType, fetchPettyCashForDate, fetchCreditsForPeriod]);
 
-  // --- Comprehensive Report Data ---
+  // Refresh context data on mount
+  useEffect(() => {
+    if (refreshData) refreshData();
+  }, [refreshData]);
+
+  // --- Comprehensive Report Data using orders from context - FIXED DATE HANDLING ---
   const reportData = useMemo(() => {
     let filteredOrders = [];
     
-    if (reportType === "daily") {
-      filteredOrders = orders.filter(order => {
-        const orderDate = new Date(order.timestamp || order.date).toISOString().split('T')[0];
-        return orderDate === reportDate && (order.is_archived === true || order.status === "Paid" || order.status === "CLOSED");
-      });
-    } else if (reportType === "weekly") {
-      const selectedDate = new Date(reportDate);
-      const dayOfWeek = selectedDate.getDay();
-      const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      const weekStart = new Date(selectedDate);
-      weekStart.setDate(selectedDate.getDate() - diff);
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6);
-      weekEnd.setHours(23, 59, 59);
-      
-      filteredOrders = orders.filter(order => {
-        const orderDate = new Date(order.timestamp || order.date);
-        return orderDate >= weekStart && orderDate <= weekEnd && 
-               (order.is_archived === true || order.status === "Paid" || order.status === "CLOSED");
-      });
-    } else if (reportType === "monthly") {
-      filteredOrders = orders.filter(order => {
-        const orderDate = (order.timestamp || order.date || "").toString();
-        return orderDate.startsWith(reportDate.substring(0, 7)) && 
-               (order.is_archived === true || order.status === "Paid" || order.status === "CLOSED");
-      });
-    }
-
-    if (searchQuery) {
-      filteredOrders = filteredOrders.filter(order => 
-        (order.table_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (order.staff_name || order.waiter_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        String(order.id || "").includes(searchQuery)
+    // Normalize status for comparison (handle mixed casing)
+    const isPaidOrder = (order) => {
+      const status = (order.status || "").toLowerCase();
+      return (
+        order.is_archived === true ||
+        status === "paid" ||
+        status === "closed" ||
+        status === "confirmed" ||
+        status === "credit"
       );
-    }
+    };
 
-    // Calculate station breakdown
-    let kitchenItems = 0;
-    let baristaItems = 0;
-    let barmanItems = 0;
-
-    filteredOrders.forEach(order => {
-      let items = order.items || [];
-      if (typeof items === "string") {
-        try { items = JSON.parse(items); } catch { items = []; }
-      }
-      if (Array.isArray(items)) {
-        items.forEach(item => {
-          const station = (item.station || "").toLowerCase();
-          const category = (item.category || "").toLowerCase();
-          const qty = item.quantity || 1;
-          if (station === "barista" || category.includes("barista") || category.includes("coffee")) {
-            baristaItems += qty;
-          } else if (station === "barman" || category.includes("bar") || category.includes("cocktail") || category.includes("drink")) {
-            barmanItems += qty;
-          } else {
-            kitchenItems += qty;
-          }
+    try {
+      if (reportType === "daily") {
+        // CRITICAL FIX: Compare dates using Kampala timezone
+        filteredOrders = orders.filter(order => {
+          const orderDate = order.timestamp || order.date || order.created_at;
+          if (!orderDate) return false;
+          
+          // Convert order date to Kampala date string using local date extraction
+          const d = new Date(orderDate);
+          const orderYear = d.getFullYear();
+          const orderMonth = String(d.getMonth() + 1).padStart(2, '0');
+          const orderDay = String(d.getDate()).padStart(2, '0');
+          const orderKampalaDate = `${orderYear}-${orderMonth}-${orderDay}`;
+          
+          return orderKampalaDate === reportDate && isPaidOrder(order);
+        });
+      } else if (reportType === "weekly") {
+        const { start, end } = getWeekRange(reportDate);
+        filteredOrders = orders.filter(order => {
+          const orderDate = order.timestamp || order.date || order.created_at;
+          if (!orderDate) return false;
+          
+          const d = new Date(orderDate);
+          const orderYear = d.getFullYear();
+          const orderMonth = String(d.getMonth() + 1).padStart(2, '0');
+          const orderDay = String(d.getDate()).padStart(2, '0');
+          const orderKampalaDate = `${orderYear}-${orderMonth}-${orderDay}`;
+          
+          return orderKampalaDate >= start && orderKampalaDate <= end && isPaidOrder(order);
+        });
+      } else if (reportType === "monthly") {
+        const targetMonth = reportDate.substring(0, 7);
+        filteredOrders = orders.filter(order => {
+          const orderDate = order.timestamp || order.date || order.created_at;
+          if (!orderDate) return false;
+          
+          const d = new Date(orderDate);
+          const orderYear = d.getFullYear();
+          const orderMonth = String(d.getMonth() + 1).padStart(2, '0');
+          const orderKampalaDate = `${orderYear}-${orderMonth}`;
+          
+          return orderKampalaDate === targetMonth && isPaidOrder(order);
         });
       }
-    });
 
-    // Calculate payment method breakdown
-    const getSumByMethod = (methodPatterns) => filteredOrders
-      .filter(o => methodPatterns.some(p => (o.payment_method || "").toUpperCase().includes(p)))
-      .reduce((sum, o) => sum + Number(o.total || 0), 0);
+      // Debug logging to verify date filtering
+      console.log("=== DATE FILTER DEBUG ===");
+      console.log("Report type:", reportType);
+      console.log("Selected date:", reportDate);
+      console.log("Total orders in DB:", orders.length);
+      console.log("Filtered orders count:", filteredOrders.length);
+      console.log("Sample order dates (local):", orders.slice(0, 5).map(o => {
+        const d = new Date(o.timestamp || o.date || o.created_at);
+        return {
+          id: o.id,
+          original: o.timestamp || o.date || o.created_at,
+          local_date: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
+          status: o.status,
+          total: o.total
+        };
+      }));
 
-    const totalCredit = getSumByMethod(['CREDIT']);
-    
-    // Staff performance
-    const staffPerformance = filteredOrders.reduce((acc, order) => {
-      const staffName = order.staff_name || order.waiter_name || "Unknown";
-      if (!acc[staffName]) {
-        acc[staffName] = { items: 0, revenue: 0, orderIds: [] };
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        filteredOrders = filteredOrders.filter(order => 
+          (order.table_name || "").toLowerCase().includes(q) ||
+          (order.staff_name || order.waiter_name || "").toLowerCase().includes(q) ||
+          String(order.id || "").includes(q)
+        );
       }
-      let items = order.items || [];
-      if (typeof items === "string") {
-        try { items = JSON.parse(items); } catch { items = []; }
-      }
-      const itemCount = Array.isArray(items) ? items.reduce((sum, item) => sum + (item.quantity || 1), 0) : 1;
-      acc[staffName].items += itemCount;
-      acc[staffName].revenue += Number(order.total || 0);
-      acc[staffName].orderIds.push(order.id);
-      return acc;
-    }, {});
 
-    const totalItemsSold = filteredOrders.reduce((sum, order) => {
-      let items = order.items || [];
-      if (typeof items === "string") {
-        try { items = JSON.parse(items); } catch { items = []; }
-      }
-      return sum + (Array.isArray(items) ? items.reduce((s, item) => s + (item.quantity || 1), 0) : 1);
-    }, 0);
+      // Station breakdown
+      let kitchenItems = 0;
+      let baristaItems = 0;
+      let barmanItems = 0;
 
-    return {
-      orders: filteredOrders,
-      totalTransactions: filteredOrders.length,
-      totalItemsSold: totalItemsSold,
-      totalRevenue: filteredOrders.reduce((sum, o) => sum + Number(o.total || 0), 0),
-      totalCash: getSumByMethod(['CASH']),
-      totalMtn: getSumByMethod(['MTN']),
-      totalAirtel: getSumByMethod(['AIRTEL']),
-      totalCard: getSumByMethod(['CARD', 'POS', 'VISA']),
-      totalCredit: totalCredit,
-      kitchenItems,
-      baristaItems,
-      barmanItems,
-      staffPerformance,
-      avgOrderValue: filteredOrders.length > 0 ? filteredOrders.reduce((sum, o) => sum + Number(o.total || 0), 0) / filteredOrders.length : 0,
-      avgItemValue: totalItemsSold > 0 ? filteredOrders.reduce((sum, o) => sum + Number(o.total || 0), 0) / totalItemsSold : 0,
-    };
+      filteredOrders.forEach(order => {
+        let items = order.items || [];
+        if (typeof items === "string") {
+          try { items = JSON.parse(items); } catch { items = []; }
+        }
+        if (Array.isArray(items)) {
+          items.forEach(item => {
+            const station = (item.station || "").toLowerCase();
+            const category = (item.category || "").toLowerCase();
+            const qty = Number(item.quantity) || 1;
+            if (station === "barista" || category.includes("barista") || category.includes("coffee") || category.includes("tea")) {
+              baristaItems += qty;
+            } else if (station === "barman" || category.includes("bar") || category.includes("cocktail") || category.includes("drink") || category.includes("beer")) {
+              barmanItems += qty;
+            } else {
+              kitchenItems += qty;
+            }
+          });
+        }
+      });
+
+      // Payment method breakdown
+      const getSumByMethod = (methodPatterns) => filteredOrders
+        .filter(o => methodPatterns.some(p => (o.payment_method || "").toUpperCase().includes(p)))
+        .reduce((sum, o) => sum + Number(o.total || 0), 0);
+
+      // Staff performance
+      const staffPerformance = filteredOrders.reduce((acc, order) => {
+        const staffName = order.staff_name || order.waiter_name || "Unknown";
+        if (!acc[staffName]) {
+          acc[staffName] = { items: 0, revenue: 0, orderIds: [] };
+        }
+        let items = order.items || [];
+        if (typeof items === "string") {
+          try { items = JSON.parse(items); } catch { items = []; }
+        }
+        const itemCount = Array.isArray(items) ? items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0) : 1;
+        acc[staffName].items += itemCount;
+        acc[staffName].revenue += Number(order.total || 0);
+        acc[staffName].orderIds.push(order.id);
+        return acc;
+      }, {});
+
+      const totalItemsSold = filteredOrders.reduce((sum, order) => {
+        let items = order.items || [];
+        if (typeof items === "string") {
+          try { items = JSON.parse(items); } catch { items = []; }
+        }
+        return sum + (Array.isArray(items) ? items.reduce((s, item) => s + (Number(item.quantity) || 1), 0) : 1);
+      }, 0);
+
+      const totalRevenue = filteredOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+
+      return {
+        orders: filteredOrders,
+        totalTransactions: filteredOrders.length,
+        totalItemsSold,
+        totalRevenue,
+        totalCash: getSumByMethod(['CASH']),
+        totalMtn: getSumByMethod(['MTN']),
+        totalAirtel: getSumByMethod(['AIRTEL']),
+        totalCard: getSumByMethod(['CARD', 'POS', 'VISA']),
+        totalCredit: getSumByMethod(['CREDIT']),
+        kitchenItems,
+        baristaItems,
+        barmanItems,
+        staffPerformance,
+        avgOrderValue: filteredOrders.length > 0 ? totalRevenue / filteredOrders.length : 0,
+        avgItemValue: totalItemsSold > 0 ? totalRevenue / totalItemsSold : 0,
+      };
+    } catch (err) {
+      console.error("Error calculating report data:", err);
+      return {
+        orders: [], totalTransactions: 0, totalItemsSold: 0, totalRevenue: 0,
+        totalCash: 0, totalMtn: 0, totalAirtel: 0, totalCard: 0, totalCredit: 0,
+        kitchenItems: 0, baristaItems: 0, barmanItems: 0, staffPerformance: {},
+        avgOrderValue: 0, avgItemValue: 0,
+      };
+    }
   }, [orders, reportDate, reportType, searchQuery]);
 
   const getDateRangeText = () => {
-    if (reportType === "daily") {
-      return new Date(reportDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-    } else if (reportType === "weekly") {
-      const selectedDate = new Date(reportDate);
-      const dayOfWeek = selectedDate.getDay();
-      const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      const weekStart = new Date(selectedDate);
-      weekStart.setDate(selectedDate.getDate() - diff);
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6);
-      return `${weekStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} - ${weekEnd.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
-    } else {
-      return new Date(reportDate).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    try {
+      if (reportType === "daily") {
+        const [year, month, day] = reportDate.split('-');
+        const date = new Date(Number(year), Number(month) - 1, Number(day));
+        return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      } else if (reportType === "weekly") {
+        const { start, end } = getWeekRange(reportDate);
+        const [startYear, startMonth, startDay] = start.split('-');
+        const [endYear, endMonth, endDay] = end.split('-');
+        const startDate = new Date(Number(startYear), Number(startMonth) - 1, Number(startDay));
+        const endDate = new Date(Number(endYear), Number(endMonth) - 1, Number(endDay));
+        return `${startDate.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} - ${endDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+      } else {
+        const [year, month] = reportDate.split('-');
+        const date = new Date(Number(year), Number(month) - 1, 1);
+        return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+      }
+    } catch {
+      return reportDate;
     }
   };
 
@@ -318,7 +483,6 @@ export default function TargetSettings() {
     }
 
     setIsGeneratingPDF(true);
-    
     try {
       let url = "";
       let filename = "";
@@ -335,13 +499,9 @@ export default function TargetSettings() {
         filename = `Kurax_Monthly_Report_${monthValue}.pdf`;
       }
       
-      console.log("Fetching PDF from:", url);
-      
       const res = await fetch(url);
-      
       if (!res.ok) {
         const errorText = await res.text();
-        console.error("PDF generation failed:", errorText);
         throw new Error(`Server responded with ${res.status}: ${errorText}`);
       }
       
@@ -354,7 +514,6 @@ export default function TargetSettings() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(downloadUrl);
-      
     } catch (e) {
       console.error("PDF Generation Error:", e);
       alert(`Failed to generate PDF: ${e.message}`);
@@ -363,9 +522,8 @@ export default function TargetSettings() {
     }
   };
 
-  // Generate Staff Performance Report
   const generateStaffPerformancePDF = async () => {
-    if (!staffPerformanceData || staffPerformanceData.staff.length === 0) {
+    if (!staffPerformanceData || !staffPerformanceData.staff || staffPerformanceData.staff.length === 0) {
       alert("No staff performance data available for the selected month.");
       return;
     }
@@ -373,8 +531,6 @@ export default function TargetSettings() {
     setIsGeneratingStaffPDF(true);
     try {
       const url = `${API_URL}/api/manager/export-staff-pdf?month=${selectedMonth}`;
-      console.log("Fetching staff PDF from:", url);
-      
       const res = await fetch(url);
       
       if (res.ok) {
@@ -387,10 +543,8 @@ export default function TargetSettings() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(downloadUrl);
-        alert("Staff performance report downloaded successfully!");
       } else {
-        const error = await res.json();
-        console.error("PDF generation failed:", error);
+        const error = await res.json().catch(() => ({ error: "Unknown error" }));
         alert(error.error || "Failed to generate staff report");
       }
     } catch (e) {
@@ -399,6 +553,14 @@ export default function TargetSettings() {
     } finally {
       setIsGeneratingStaffPDF(false);
     }
+  };
+
+  const handleRetry = () => {
+    setError(null);
+    fetchTargetProgress();
+    fetchCreditsForPeriod();
+    fetchPettyCashForDate(reportDate);
+    fetchStaffPerformance();
   };
 
   const cardClass = isDark ? "bg-zinc-900/40 border-white/5 shadow-2xl" : "bg-white border-black/5 shadow-xl";
@@ -415,6 +577,20 @@ export default function TargetSettings() {
     <div className={`p-4 md:p-8 min-h-screen font-[Outfit] transition-colors duration-300 ${isDark ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'}`}>
       <div className="max-w-7xl mx-auto space-y-8">
         
+        {/* Error Banner */}
+        {error && (
+          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center gap-3">
+            <AlertCircle size={20} className="text-red-400" />
+            <p className="text-sm font-bold text-red-400">{error}</p>
+            <button
+              onClick={handleRetry}
+              className="ml-auto px-3 py-1 rounded-lg bg-red-500/20 text-red-400 text-xs font-black flex items-center gap-1"
+            >
+              <RefreshCw size={10} /> Retry
+            </button>
+          </div>
+        )}
+
         {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
@@ -427,31 +603,43 @@ export default function TargetSettings() {
             </p>
           </div>
           
-          <button
-            onClick={generateStaffPerformancePDF}
-            disabled={isGeneratingStaffPDF || loadingStaffData}
-            className="px-5 py-3 bg-purple-500 text-white rounded-2xl font-black uppercase text-[10px] flex items-center gap-2 hover:bg-purple-400 transition-all duration-300"
-          >
-            {isGeneratingStaffPDF ? (
-              <><Loader2 size={14} className="animate-spin" /> Generating...</>
-            ) : (
-              <><Users size={14} /> Staff Report</>
-            )}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleRetry}
+              className={`px-4 py-3 rounded-2xl font-black uppercase text-[10px] flex items-center gap-2 transition-all duration-300 border
+                ${isDark ? "border-white/10 hover:bg-white/5" : "border-black/10 hover:bg-black/5"}`}
+            >
+              <RefreshCw size={14} /> Refresh
+            </button>
+            <button
+              onClick={generateStaffPerformancePDF}
+              disabled={isGeneratingStaffPDF || loadingStaffData}
+              className="px-5 py-3 bg-purple-500 text-white rounded-2xl font-black uppercase text-[10px] flex items-center gap-2 hover:bg-purple-400 transition-all duration-300 disabled:opacity-50"
+            >
+              {isGeneratingStaffPDF ? (
+                <><Loader2 size={14} className="animate-spin" /> Generating...</>
+              ) : (
+                <><Users size={14} /> Staff Report</>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* TWO COLUMN LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
-          {/* MONTHLY REVENUE TARGET CARD */}
+          {/* MONTHLY REVENUE TARGET CARD — Ring Indicator */}
           <div className={`p-6 rounded-2xl border relative overflow-hidden transition-all duration-300 hover:shadow-xl ${cardClass}`}>
             <Lock className="absolute -right-4 -top-4 text-white/5 w-24 h-24 rotate-12" />
-            
+
+            {/* Header */}
             <div className="flex justify-between items-start mb-6 relative z-10">
               <div>
                 <p className={`text-[10px] font-black uppercase tracking-widest ${mutedClass}`}>Monthly Target</p>
-                <h3 className="text-4xl font-black tracking-tighter italic">
-                  {loadingTarget ? "..." : fmtUGX(targetProgress.target)}
+                <h3 className="text-2xl font-black tracking-tighter italic">
+                  {loadingTarget ? (
+                    <span className="flex items-center gap-2"><Loader2 size={18} className="animate-spin text-yellow-500" /> Loading...</span>
+                  ) : fmtUGX(targetProgress.target)}
                 </h3>
               </div>
               <div className="flex items-center gap-2">
@@ -466,39 +654,86 @@ export default function TargetSettings() {
               </div>
             </div>
 
-            <div className="relative mb-6 z-10">
-              <p className={`text-[10px] font-black uppercase tracking-widest ${mutedClass}`}>Current Progress</p>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-3xl font-black italic text-emerald-500">{fmtUGX(targetProgress.current)}</span>
-                <span className={`text-sm ${mutedClass}`}>/ {fmtUGX(targetProgress.target)}</span>
+            {/* Ring + Stats Row */}
+            <div className="flex items-center gap-6 mb-6 relative z-10">
+
+              {/* SVG Ring */}
+              <div className="relative flex-shrink-0" style={{ width: 140, height: 140 }}>
+                <svg
+                  width="140" height="140"
+                  viewBox="0 0 140 140"
+                  style={{ transform: "rotate(-90deg)" }}
+                >
+                  <defs>
+                    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#EAB308" />
+                      <stop offset="60%" stopColor="#CA8A04" />
+                      <stop offset="100%" stopColor={isDark ? "#3f3f46" : "#27272a"} />
+                    </linearGradient>
+                  </defs>
+                  {/* Track */}
+                  <circle
+                    cx="70" cy="70" r="54"
+                    fill="none"
+                    stroke={isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}
+                    strokeWidth="11"
+                  />
+                  {/* Progress arc */}
+                  <circle
+                    cx="70" cy="70" r="54"
+                    fill="none"
+                    stroke="url(#ringGrad)"
+                    strokeWidth="11"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 54}`}
+                    strokeDashoffset={`${2 * Math.PI * 54 * (1 - Math.min(targetProgress.percentage, 100) / 100)}`}
+                    style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.34,1.56,0.64,1)" }}
+                  />
+                </svg>
+                {/* Center label */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+                  <span className={`text-2xl font-black italic ${getProgressColor(targetProgress.percentage)}`}>
+                    {targetProgress.percentage}%
+                  </span>
+                  <span className={`text-[8px] font-black uppercase tracking-widest ${mutedClass}`}>done</span>
+                </div>
+              </div>
+
+              {/* Stat stack */}
+              <div className="flex-1 flex flex-col gap-2">
+                <div className={`p-3 rounded-xl border-l-2 border-emerald-500 ${isDark ? "bg-white/5" : "bg-black/[0.03]"}`}>
+                  <p className={`text-[8px] font-black uppercase tracking-widest ${mutedClass}`}>Current Revenue</p>
+                  <p className="text-sm font-black italic text-emerald-500">{fmtUGX(targetProgress.current)}</p>
+                </div>
+                <div className={`p-3 rounded-xl border-l-2 border-yellow-500 ${isDark ? "bg-white/5" : "bg-black/[0.03]"}`}>
+                  <p className={`text-[8px] font-black uppercase tracking-widest ${mutedClass}`}>Target</p>
+                  <p className="text-sm font-black italic text-yellow-500">{fmtUGX(targetProgress.target)}</p>
+                </div>
+                <div className={`p-3 rounded-xl border-l-2 ${isDark ? "border-white/20 bg-white/5" : "border-black/20 bg-black/[0.03]"}`}>
+                  <p className={`text-[8px] font-black uppercase tracking-widest ${mutedClass}`}>Remaining</p>
+                  <p className={`text-sm font-black italic ${mutedClass}`}>
+                    {fmtUGX(Math.max(targetProgress.target - targetProgress.current, 0))}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="mt-auto space-y-3 relative z-10">
-              <div className="flex justify-between items-end">
-                <span className={`text-[10px] font-black uppercase ${mutedClass}`}>Completion</span>
-                <span className={`text-xl font-black italic ${getProgressColor(targetProgress.percentage)}`}>
-                  {targetProgress.percentage}%
-                </span>
+            {/* Bottom strip */}
+            <div className={`flex gap-2 pt-4 border-t relative z-10 ${isDark ? "border-white/10" : "border-black/10"}`}>
+              <div className={`flex-1 text-center p-2 rounded-xl ${isDark ? "bg-white/5" : "bg-black/[0.04]"}`}>
+                <p className={`text-[7px] font-black uppercase tracking-widest ${mutedClass}`}>Today</p>
+                <p className="text-[10px] font-black text-yellow-500">{fmtUGX(targetProgress.todayRevenue)}</p>
               </div>
-              <div className="w-full h-3 rounded-full overflow-hidden bg-black/40">
-                <div 
-                  className="h-full bg-gradient-to-r from-yellow-500 to-yellow-600 transition-all duration-1000 ease-out rounded-full"
-                  style={{ width: `${Math.min(targetProgress.percentage, 100)}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-zinc-600">
-                <span>Earned: {fmtUGX(targetProgress.current)}</span>
-                {targetProgress.percentage >= 100 && (
-                  <span className="text-emerald-500 flex items-center gap-1">
-                    <CheckCircle2 size={10}/> GOAL MET
-                  </span>
-                )}
-              </div>
+              {targetProgress.percentage >= 100 && (
+                <div className="flex-1 flex items-center justify-center gap-1 bg-emerald-500/10 rounded-xl p-2">
+                  <CheckCircle2 size={10} className="text-emerald-500" />
+                  <span className="text-[8px] font-black uppercase tracking-widest text-emerald-500">Goal Met</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* TODAY'S INSIGHTS CARD - Now shows data for selected date */}
+          {/* TODAY'S INSIGHTS CARD */}
           <div className={`p-6 rounded-2xl border transition-all duration-300 hover:shadow-xl ${cardClass}`}>
             <div className="flex items-center gap-2 mb-4">
               <div className="p-2 rounded-xl bg-yellow-500/10">
@@ -507,10 +742,10 @@ export default function TargetSettings() {
               <p className="text-[10px] font-black uppercase tracking-widest text-yellow-500">
                 {reportType === "daily" ? "Selected Day's Insights" : reportType === "weekly" ? "Week Insights" : "Month Insights"}
               </p>
+              {(loadingPettyCash) && <Loader2 size={12} className="animate-spin text-zinc-500 ml-auto" />}
             </div>
             
             <div className="grid grid-cols-2 gap-4">
-              {/* Gross Revenue - shows revenue for selected period */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20">
                 <div className="flex items-center gap-2 mb-2">
                   <DollarSign size={14} className="text-emerald-400" />
@@ -520,7 +755,6 @@ export default function TargetSettings() {
                 <p className="text-[7px] text-zinc-500 mt-1">For selected {reportType}</p>
               </div>
               
-              {/* Petty OUT - shows for selected date */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-red-500/10 to-transparent border border-red-500/20">
                 <div className="flex items-center gap-2 mb-2">
                   <Wallet size={14} className="text-red-400" />
@@ -530,7 +764,6 @@ export default function TargetSettings() {
                 <p className="text-[7px] text-zinc-500 mt-1">For selected {reportType}</p>
               </div>
               
-              {/* Petty IN - shows for selected date */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20">
                 <div className="flex items-center gap-2 mb-2">
                   <ArrowUpCircle size={14} className="text-emerald-400" />
@@ -540,7 +773,6 @@ export default function TargetSettings() {
                 <p className="text-[7px] text-zinc-500 mt-1">Replenishment</p>
               </div>
               
-              {/* Net Position */}
               <div className={`p-4 rounded-xl bg-gradient-to-br ${pettyCashData.net >= 0 ? 'from-emerald-500/10' : 'from-red-500/10'} to-transparent border ${pettyCashData.net >= 0 ? 'border-emerald-500/20' : 'border-red-500/20'}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <Activity size={14} className={pettyCashData.net >= 0 ? 'text-emerald-400' : 'text-red-400'} />
@@ -570,7 +802,7 @@ export default function TargetSettings() {
               </div>
             </div>
             
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <div className={`flex rounded-xl border p-1 ${isDark ? "border-white/10" : "border-gray-200"}`}>
                 {[
                   { key: "daily", label: "Daily", icon: <Calendar size={12} /> },
@@ -581,9 +813,17 @@ export default function TargetSettings() {
                     key={key}
                     onClick={() => {
                       setReportType(key);
-                      // Reset date based on type if needed
-                      if (key === "monthly" && reportDate.length > 7) {
-                        setReportDate(reportDate.substring(0, 7));
+                      if (key === "monthly") {
+                        const today = new Date();
+                        const year = today.getFullYear();
+                        const month = String(today.getMonth() + 1).padStart(2, '0');
+                        setReportDate(`${year}-${month}`);
+                      } else {
+                        const today = new Date();
+                        const year = today.getFullYear();
+                        const month = String(today.getMonth() + 1).padStart(2, '0');
+                        const day = String(today.getDate()).padStart(2, '0');
+                        setReportDate(`${year}-${month}-${day}`);
                       }
                     }}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-200
@@ -614,7 +854,7 @@ export default function TargetSettings() {
             </p>
           </div>
 
-          {/* Stats Grid - UPDATED with 6 credit cards including Credit metrics */}
+          {/* Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
             <StatCardSmall 
               label="Total Orders" 
@@ -639,21 +879,21 @@ export default function TargetSettings() {
             />
             <StatCardSmall 
               label="Credits (Approved)" 
-              value={fmtUGX(creditsData.approved_amount)} 
+              value={loadingCredits ? "..." : fmtUGX(creditsData.approved_amount)} 
               icon={<CreditCard size={14} />} 
               color="text-purple-400"
               isDark={isDark}
             />
             <StatCardSmall 
               label="Credits (Settled)" 
-              value={fmtUGX(creditsData.settled_amount)} 
+              value={loadingCredits ? "..." : fmtUGX(creditsData.settled_amount)} 
               icon={<CheckCircle2 size={14} />} 
               color="text-emerald-400"
               isDark={isDark}
             />
             <StatCardSmall 
               label="Credits (Pending)" 
-              value={fmtUGX(creditsData.pending_amount)} 
+              value={loadingCredits ? "..." : fmtUGX(creditsData.pending_amount)} 
               icon={<Clock size={14} />} 
               color="text-yellow-400"
               isDark={isDark}
@@ -663,18 +903,20 @@ export default function TargetSettings() {
           {/* Payment Method Breakdown */}
           <div className="mb-6">
             <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${mutedClass}`}>Payment Methods</p>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <PaymentMethodCard label="Cash" value={fmtUGX(reportData.totalCash)} color="emerald" isDark={isDark} />
               <PaymentMethodCard label="MTN Momo" value={fmtUGX(reportData.totalMtn)} color="yellow" isDark={isDark} />
               <PaymentMethodCard label="Airtel" value={fmtUGX(reportData.totalAirtel)} color="red" isDark={isDark} />
               <PaymentMethodCard label="Card/POS" value={fmtUGX(reportData.totalCard)} color="blue" isDark={isDark} />
-             
             </div>
           </div>
 
-          {/* Credits Breakdown Section - NEW */}
+          {/* Credits Breakdown Section */}
           <div className="mb-6">
-            <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${mutedClass}`}>Credits Breakdown</p>
+            <div className="flex items-center gap-2 mb-3">
+              <p className={`text-[10px] font-black uppercase tracking-widest ${mutedClass}`}>Credits Breakdown</p>
+              {loadingCredits && <Loader2 size={10} className="animate-spin text-zinc-500" />}
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <CreditSummaryCard 
                 label="Approved" 
@@ -700,11 +942,18 @@ export default function TargetSettings() {
               <CreditSummaryCard 
                 label="Outstanding" 
                 value={fmtUGX(creditsData.outstanding_amount)} 
-                count={(creditsData.approved_count || 0) + (creditsData.pending_count || 0)}
+                count={(creditsData.approved_count || 0) + (creditsData.pending_count || 0) + (creditsData.partially_settled_count || 0)}
                 color="orange" 
                 isDark={isDark} 
               />
             </div>
+            {creditsData.partially_settled_outstanding > 0 && (
+              <div className={`mt-2 p-2 rounded-lg text-center ${isDark ? "bg-yellow-500/10" : "bg-yellow-50"}`}>
+                <p className="text-[8px] font-black uppercase tracking-widest text-yellow-500">
+                  Includes {fmtUGX(creditsData.partially_settled_outstanding)} from partially settled credits
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Search and Order List */}
@@ -740,39 +989,50 @@ export default function TargetSettings() {
 
           {expandedOrders && (
             <div className="mb-6 overflow-x-auto max-h-96 overflow-y-auto">
-              <table className="w-full text-left text-xs">
-                <thead className={`sticky top-0 ${isDark ? "bg-black" : "bg-white"}`}>
-                  <tr className={`border-b ${isDark ? "border-white/10" : "border-black/10"}`}>
-                    <th className="p-2 text-[8px] font-black uppercase tracking-widest">ID</th>
-                    <th className="p-2 text-[8px] font-black uppercase tracking-widest">Table</th>
-                    <th className="p-2 text-[8px] font-black uppercase tracking-widest">Waiter</th>
-                    <th className="p-2 text-[8px] font-black uppercase tracking-widest text-right">Items</th>
-                    <th className="p-2 text-[8px] font-black uppercase tracking-widest text-right">Amount</th>
-                    <th className="p-2 text-[8px] font-black uppercase tracking-widest">Method</th>
-                    <th className="p-2 text-[8px] font-black uppercase tracking-widest">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportData.orders.slice(0, 100).map((order, idx) => {
-                    let items = order.items || [];
-                    if (typeof items === "string") {
-                      try { items = JSON.parse(items); } catch { items = []; }
-                    }
-                    const itemCount = Array.isArray(items) ? items.reduce((sum, item) => sum + (item.quantity || 1), 0) : 1;
-                    return (
-                      <tr key={idx} className={`border-b ${isDark ? "border-white/5" : "border-black/5"}`}>
-                        <td className="p-2 font-mono text-[9px]">#{formatOrderId(order.id)}</td>
-                        <td className="p-2 font-bold text-[9px]">{order.table_name || "—"}</td>
-                        <td className="p-2 text-[9px]">{order.staff_name || order.waiter_name || "—"}</td>
-                        <td className="p-2 text-[9px] font-bold text-right text-blue-400">{itemCount}</td>
-                        <td className="p-2 text-[9px] font-bold text-right text-emerald-400">{fmtUGX(order.total)}</td>
-                        <td className="p-2 text-[9px]">{order.payment_method || "—"}</td>
-                        <td className="p-2 text-[9px]">{formatTime(order.timestamp || order.date)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              {reportData.orders.length === 0 ? (
+                <div className="py-12 text-center">
+                  <p className={`text-[10px] font-black uppercase tracking-widest ${mutedClass}`}>
+                    No orders found for the selected {reportType} period
+                  </p>
+                  <p className={`text-[9px] mt-2 ${mutedClass}`}>
+                    Check that orders are marked as Paid, Closed, Confirmed, or archived
+                  </p>
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs">
+                  <thead className={`sticky top-0 ${isDark ? "bg-black" : "bg-white"}`}>
+                    <tr className={`border-b ${isDark ? "border-white/10" : "border-black/10"}`}>
+                      <th className="p-2 text-[8px] font-black uppercase tracking-widest">ID</th>
+                      <th className="p-2 text-[8px] font-black uppercase tracking-widest">Table</th>
+                      <th className="p-2 text-[8px] font-black uppercase tracking-widest">Waiter</th>
+                      <th className="p-2 text-[8px] font-black uppercase tracking-widest text-right">Items</th>
+                      <th className="p-2 text-[8px] font-black uppercase tracking-widest text-right">Amount</th>
+                      <th className="p-2 text-[8px] font-black uppercase tracking-widest">Method</th>
+                      <th className="p-2 text-[8px] font-black uppercase tracking-widest">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reportData.orders.slice(0, 100).map((order, idx) => {
+                      let items = order.items || [];
+                      if (typeof items === "string") {
+                        try { items = JSON.parse(items); } catch { items = []; }
+                      }
+                      const itemCount = Array.isArray(items) ? items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0) : 1;
+                      return (
+                        <tr key={order.id || idx} className={`border-b ${isDark ? "border-white/5" : "border-black/5"}`}>
+                          <td className="p-2 font-mono text-[9px]">#{formatOrderId(order.id)}</td>
+                          <td className="p-2 font-bold text-[9px]">{order.table_name || "—"}</td>
+                          <td className="p-2 text-[9px]">{order.staff_name || order.waiter_name || "—"}</td>
+                          <td className="p-2 text-[9px] font-bold text-right text-blue-400">{itemCount}</td>
+                          <td className="p-2 text-[9px] font-bold text-right text-emerald-400">{fmtUGX(order.total)}</td>
+                          <td className="p-2 text-[9px]">{order.payment_method || "—"}</td>
+                          <td className="p-2 text-[9px]">{formatTime(order.timestamp || order.date || order.created_at)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           )}
 
@@ -791,7 +1051,7 @@ export default function TargetSettings() {
             </button>
           </div>
           
-          {reportData.orders.length === 0 && (
+          {reportData.orders.length === 0 && !loadingCredits && (
             <p className={`text-center text-[9px] font-black uppercase tracking-widest mt-4 ${mutedClass}`}>
               No transactions found for the selected {reportType} period
             </p>
@@ -833,7 +1093,6 @@ function PaymentMethodCard({ label, value, color, isDark }) {
   );
 }
 
-// ─── NEW CREDIT SUMMARY CARD COMPONENT ────────────────────────────────────────
 function CreditSummaryCard({ label, value, count, color, isDark }) {
   const colorMap = {
     purple: "bg-purple-500/10 border-purple-500/20 text-purple-400",

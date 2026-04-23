@@ -32,7 +32,7 @@ export default function EventCard({ event = {}, onBook }) {
 
   return (
     <>
-      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[1.5rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-white/5 shadow-sm hover:shadow-2xl h-full">
+      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[1rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-white/5 shadow-sm hover:shadow-2xl h-full">
         
         {/* IMAGE SECTION */}
         <div className="relative h-64 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
@@ -57,7 +57,7 @@ export default function EventCard({ event = {}, onBook }) {
         {/* CONTENT SECTION */}
         <div className="p-8 flex flex-col flex-1 gap-4">
           <div className="space-y-2">
-            <h3 className="font-[Outfit] text-2xl font-small text-zinc-900 dark:text-white">
+            <h3 className="font-[Outfit] text-2xl font-small text-yellow-600 dark:text-white">
               {title}
             </h3>
             <p className="text-[13px] text-zinc-900 font-[Outfit] dark:text-zinc-400 leading-relaxed font-light line-clamp-3">

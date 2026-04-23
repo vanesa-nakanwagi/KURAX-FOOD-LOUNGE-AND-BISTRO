@@ -107,16 +107,6 @@ export default function SideBar({
             );
           })}
 
-          {/* End Shift */}
-          <div className="pt-4 mt-4 border-t border-white/5">
-            <button 
-              onClick={onEndShift}
-              className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl bg-rose-500/5 text-rose-500 border border-rose-500/10 font-bold uppercase text-[11px] tracking-widest hover:bg-rose-500 hover:text-white transition-all group"
-            >
-              <RotateCcw size={18} className="group-hover:rotate-180 transition-transform duration-500" /> 
-              End Shift
-            </button>
-          </div>
         </nav>
 
         {/* Logout */}

@@ -22,7 +22,7 @@ const InfoCard = ({ icon: Icon, title, content, delay }) => {
           <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-yellow-700 dark:text-yellow-500 mb-2">
             {title}
           </h3>
-          <div className="text-slate-700 dark:text-zinc-300 font-light leading-relaxed">
+          <div className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-md font-light leading-relaxed">
             {content}
           </div>
         </div>

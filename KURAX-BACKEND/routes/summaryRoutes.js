@@ -5,33 +5,35 @@ import PDFDocument  from 'pdfkit';
 
 const router = express.Router();
 
-// ── Kampala date helper ───────────────────────────────────────────────────────
+// ── Kampala date helper - FIXED ───────────────────────────────────────────────
 function kampalaDate(d = new Date()) {
-  return new Date(d.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }))
-    .toISOString().split('T')[0];
+  // Create date in Kampala timezone
+  const kampalaDate = new Date(d.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }));
+  const year = kampalaDate.getFullYear();
+  const month = String(kampalaDate.getMonth() + 1).padStart(2, '0');
+  const day = String(kampalaDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. DAILY SUMMARY (TODAY) - FIXED: Credit settlements removed from payment totals
+// 1. DAILY SUMMARY (TODAY) - FIXED: Get data directly from orders
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/today', async (req, res) => {
   try {
     const today = kampalaDate();
     
-    // Get cashier_queue confirmed payments (exclude Credit method)
-    const queueResult = await pool.query(`
+    // Get confirmed payments directly from orders (more reliable)
+    const ordersResult = await pool.query(`
       SELECT
-        COALESCE(SUM(CASE WHEN method != 'Credit' THEN amount ELSE 0 END), 0) AS total_gross,
-        COALESCE(SUM(CASE WHEN method = 'Cash'        THEN amount ELSE 0 END), 0) AS total_cash,
-        COALESCE(SUM(CASE WHEN method = 'Card'        THEN amount ELSE 0 END), 0) AS total_card,
-        COALESCE(SUM(CASE WHEN method = 'Momo-MTN'    THEN amount ELSE 0 END), 0) AS total_mtn,
-        COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0) AS total_airtel,
-        COALESCE(SUM(CASE WHEN method = 'Credit'      THEN amount ELSE 0 END), 0) AS total_credit,
-        COALESCE(SUM(CASE WHEN method = 'Mixed'       THEN amount ELSE 0 END), 0) AS total_mixed,
+        COALESCE(SUM(CASE WHEN payment_method != 'Credit' THEN total ELSE 0 END), 0) AS total_gross,
+        COALESCE(SUM(CASE WHEN payment_method = 'Cash' THEN total ELSE 0 END), 0) AS total_cash,
+        COALESCE(SUM(CASE WHEN payment_method = 'Card' THEN total ELSE 0 END), 0) AS total_card,
+        COALESCE(SUM(CASE WHEN payment_method = 'Momo-MTN' THEN total ELSE 0 END), 0) AS total_mtn,
+        COALESCE(SUM(CASE WHEN payment_method = 'Momo-Airtel' THEN total ELSE 0 END), 0) AS total_airtel,
+        COALESCE(SUM(CASE WHEN payment_method = 'Credit' THEN total ELSE 0 END), 0) AS total_credit,
         COUNT(*) AS order_count
-      FROM cashier_queue
-      WHERE status = 'Confirmed'
-        AND DATE(confirmed_at AT TIME ZONE 'Africa/Nairobi') = $1
+      FROM orders
+      WHERE status IN ('Paid', 'Confirmed', 'Closed', 'Served')
+        AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
     `, [today]);
     
     // Get credit settlements from credits table for today (informational only)
@@ -48,19 +50,27 @@ router.get('/today', async (req, res) => {
         AND DATE(paid_at AT TIME ZONE 'Africa/Nairobi') = $1
     `, [today]);
     
-    const queue = queueResult.rows[0];
+    const orders = ordersResult.rows[0];
     const settlements = creditSettlements.rows[0];
+    
+    console.log("Today's summary from orders:", {
+      date: today,
+      total_gross: orders.total_gross,
+      total_cash: orders.total_cash,
+      total_card: orders.total_card,
+      order_count: orders.order_count
+    });
     
     res.json({
       summary_date: today,
-      total_gross: Number(queue.total_gross),
-      total_cash: Number(queue.total_cash),
-      total_card: Number(queue.total_card),
-      total_mtn: Number(queue.total_mtn),
-      total_airtel: Number(queue.total_airtel),
-      total_credit: Number(queue.total_credit),
-      total_mixed: Number(queue.total_mixed),
-      order_count: Number(queue.order_count),
+      total_gross: Number(orders.total_gross),
+      total_cash: Number(orders.total_cash),
+      total_card: Number(orders.total_card),
+      total_mtn: Number(orders.total_mtn),
+      total_airtel: Number(orders.total_airtel),
+      total_credit: Number(orders.total_credit),
+      total_mixed: 0,
+      order_count: Number(orders.order_count),
       credit_settlements_today: Number(settlements.total_settled),
       credit_settlements_count: Number(settlements.settlement_count),
       credit_settlements_breakdown: {
@@ -75,7 +85,6 @@ router.get('/today', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. RANGE & MONTHLY (SALES DATA)
 // ─────────────────────────────────────────────────────────────────────────────
