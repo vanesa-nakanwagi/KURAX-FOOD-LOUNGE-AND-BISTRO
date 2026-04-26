@@ -76,16 +76,14 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
   if (isMobile) {
     return (
       <>
-        {/* 3 Vertical Dots Button */}
+        {/* 3 Vertical Dots Button - Naked, on the right */}
         <button
           onClick={() => setIsMenuOpen(true)}
-          className={`fixed top-4 left-4 z-50 p-2.5 rounded-xl transition-all ${
-            theme === "dark"
-              ? "bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white"
-              : "bg-white/90 backdrop-blur-md border border-black/10 text-black"
+          className={`fixed top-4 right-4 z-50 p-1 transition-all ${
+            theme === "dark" ? "text-white" : "text-black"
           }`}
         >
-          <MoreVertical size={22} />
+          <MoreVertical size={24} />
         </button>
 
         {/* Mobile Drawer - Shows Logo, Text, Menu Items, and Logout */}
@@ -102,12 +100,12 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
           />
 
           <div
-            className={`absolute left-0 top-0 h-full w-72 transition-transform duration-300 ${
-              isMenuOpen ? "translate-x-0" : "-translate-x-full"
+            className={`absolute right-0 top-0 h-full w-72 transition-transform duration-300 ${
+              isMenuOpen ? "translate-x-0" : "translate-x-full"
             } ${
               theme === "dark"
-                ? "bg-zinc-950 border-r border-white/5"
-                : "bg-white border-r border-black/5"
+                ? "bg-zinc-950 border-l border-white/5"
+                : "bg-white border-l border-black/5"
             }`}
           >
             {/* Logo and Header Section */}
@@ -132,7 +130,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
               {/* Close Button */}
               <button
                 onClick={() => setIsMenuOpen(false)}
-                className="absolute top-5 right-5 p-1 rounded-full hover:bg-black/10"
+                className="absolute top-5 left-5 p-1 rounded-full hover:bg-black/10"
               >
                 <X size={20} />
               </button>
