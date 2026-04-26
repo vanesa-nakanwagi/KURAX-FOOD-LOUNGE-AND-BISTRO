@@ -108,8 +108,8 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
                 : "bg-white border-l border-black/5"
             }`}
           >
-            {/* Logo and Header Section */}
-            <div className={`p-6 border-b ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
+            {/* Logo and Header Section - Pushed lower */}
+            <div className={`pt-20 pb-6 px-6 border-b ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
               <div className="flex items-center gap-3">
                 <img
                   src={logo}
@@ -127,14 +127,15 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
                   </p>
                 </div>
               </div>
-              {/* Close Button */}
-              <button
-                onClick={() => setIsMenuOpen(false)}
-                className="absolute top-5 left-5 p-1 rounded-full hover:bg-black/10"
-              >
-                <X size={20} />
-              </button>
             </div>
+
+            {/* Close Button - Moved to top right corner */}
+            <button
+              onClick={() => setIsMenuOpen(false)}
+              className="absolute top-5 right-5 p-1 rounded-full hover:bg-black/10"
+            >
+              <X size={20} />
+            </button>
 
             {/* Menu Items */}
             <nav className="flex-1 p-4 space-y-3 mt-6">

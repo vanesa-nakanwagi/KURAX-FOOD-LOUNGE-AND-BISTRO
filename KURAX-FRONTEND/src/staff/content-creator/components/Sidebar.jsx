@@ -1,36 +1,40 @@
 import React, { useState } from "react";
 import logo from "../../../customer/assets/images/logo.jpeg";
-import { Link, useLocation, useNavigate } from "react-router-dom"; // Added useNavigate
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   UtensilsCrossed,
   Calendar,
   LogOut,
-  Menu,
+  MoreVertical,
   X,
 } from "lucide-react";
 
 export default function Sidebar() {
   const location = useLocation();
-  const navigate = useNavigate(); // Initialize navigate
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
 
-  const navItems = [
-    { icon: LayoutDashboard, label: "Dashboard", path: "/content-creator" },
+  // Bottom navigation items for mobile - Menus and Events
+  const BOTTOM_NAV_ITEMS = [
     { icon: UtensilsCrossed, label: "Menus", path: "/content-creator/menus" },
     { icon: Calendar, label: "Events", path: "/content-creator/events" },
   ];
 
-  // --- LOGOUT FUNCTION ---
+  // Drawer menu items - Dashboard only
+  const DRAWER_MENU_ITEMS = [
+    { icon: LayoutDashboard, label: "Dashboard", path: "/content-creator" },
+  ];
+
   const handleLogout = () => {
-    localStorage.removeItem('user'); // Clears the session
-    navigate('/staff/login'); // Redirects to login page
-    setIsOpen(false); // Closes mobile drawer if open
+    localStorage.removeItem('user');
+    navigate('/staff/login');
+    setIsOpen(false);
   };
 
-  const NavLinks = () => (
+  const NavLinks = ({ items }) => (
     <nav className="flex-1 flex flex-col space-y-2">
-      {navItems.map((item) => {
+      {items.map((item) => {
         const isActive = location.pathname === item.path;
         return (
           <Link
@@ -61,11 +65,12 @@ export default function Sidebar() {
             Kurax Staff Panel
           </span>
         </div>
+        {/* 3 Vertical Dots Button - Naked */}
         <button 
           onClick={() => setIsOpen(true)}
-          className="p-2 text-white bg-zinc-800 rounded-lg active:scale-95 transition-transform"
+          className="p-1 text-white transition-transform"
         >
-          <Menu className="w-6 h-6" />
+          <MoreVertical className="w-6 h-6" />
         </button>
       </div>
 
@@ -77,8 +82,9 @@ export default function Sidebar() {
             onClick={() => setIsOpen(false)}
           />
           
-          <div className="absolute top-0 left-0 w-72 h-full bg-zinc-900 border-r border-slate-800 p-6 flex flex-col animate-in slide-in-from-left duration-300">
-            <div className="flex justify-between items-start mb-8 pb-6 border-b border-slate-800">
+          <div className="absolute right-0 top-0 w-72 h-full bg-zinc-900 border-l border-slate-800 p-6 flex flex-col animate-in slide-in-from-right duration-300">
+            {/* Logo and Header Section - Pushed lower */}
+            <div className="pt-20 pb-6 border-b border-slate-800">
               <div className="flex items-center gap-3">
                 <img src={logo} alt="Logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/20" />
                 <div className="flex flex-col justify-center leading-tight">
@@ -90,16 +96,23 @@ export default function Sidebar() {
                   </h1>
                 </div>
               </div>
-              <button onClick={() => setIsOpen(false)} className="text-slate-400 p-1 hover:text-white">
-                <X className="w-6 h-6" />
-              </button>
             </div>
-            
-            <NavLinks />
 
-            <div className="pt-6 border-t border-slate-800">
+            {/* Close Button - Top right */}
+            <button 
+              onClick={() => setIsOpen(false)} 
+              className="absolute top-5 right-5 text-slate-400 p-1 hover:text-white"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            
+            {/* Drawer Menu Items - Only Dashboard */}
+            <NavLinks items={DRAWER_MENU_ITEMS} />
+
+            {/* Logout Button */}
+            <div className="pt-6 border-t border-slate-800 mt-auto">
               <button 
-                onClick={handleLogout} // Hooked up the function here
+                onClick={handleLogout}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
               >
                 <LogOut className="w-5 h-5" />
@@ -110,7 +123,32 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* --- DESKTOP SIDEBAR --- */}
+      {/* --- BOTTOM NAVIGATION BAR (Mobile Only) - Menus and Events --- */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 flex justify-around items-center px-2 py-3 border-t border-slate-800 bg-zinc-900/95 backdrop-blur-lg">
+        {BOTTOM_NAV_ITEMS.map((item) => {
+          const isActive = location.pathname === item.path;
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-xl transition-all flex-1 max-w-[120px] ${
+                isActive
+                  ? "bg-yellow-500 text-black"
+                  : "text-zinc-500 hover:text-white"
+              }`}
+            >
+              <item.icon className={`w-5 h-5 ${isActive ? "text-black" : "text-yellow-500"}`} />
+              <span className={`text-[9px] font-black uppercase tracking-wider ${
+                isActive ? "text-black" : ""
+              }`}>
+                {item.label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* --- DESKTOP SIDEBAR (All items visible) --- */}
       <div className="hidden lg:flex w-64 bg-zinc-900 text-white h-screen p-6 flex-col border-r border-slate-800 sticky top-0">
         <div className="mb-5 pb-6 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -122,11 +160,12 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <NavLinks />
+        {/* Desktop shows all items */}
+        <NavLinks items={[...DRAWER_MENU_ITEMS, ...BOTTOM_NAV_ITEMS]} />
 
         <div className="pt-6 border-t border-slate-800">
           <button 
-            onClick={handleLogout} // Hooked up the function here
+            onClick={handleLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all"
           >
             <LogOut className="w-5 h-5" />
@@ -134,6 +173,9 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
+
+      {/* Bottom padding for mobile to prevent content from being hidden */}
+      <div className="lg:hidden pb-24" />
     </>
   );
 }
