@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Menu, RefreshCw, AlertTriangle, RotateCcw, Sparkles } from "lucide-react";
 import { useData } from "../../customer/components/context/DataContext";
 import SideBar from "./SideBar";
@@ -30,6 +30,20 @@ export default function AccountantLayout() {
   const [dayClosed, setDayClosed] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+
+  // ── Get logged in user ─────────────────────────────────────────────────────
+  const loggedInUser = useMemo(() => {
+    try {
+      const saved = localStorage.getItem("kurax_user");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const userName = loggedInUser?.name || "Accountant";
+  const firstName = userName.split(" ")[0];
+  const userRole = loggedInUser?.role || "Accountant";
 
   // ── Reopen Day State ────────────────────────────────────────────────────────
   const [showReopenModal, setShowReopenModal] = useState(false);
@@ -480,13 +494,13 @@ export default function AccountantLayout() {
     : creditFilter === "rejected" ? creditsLedger.filter(c => getCreditStatus(c) === "rejected")
     : creditsLedger;
 
-  const loggedInUser = JSON.parse(localStorage.getItem("kurax_user") || "{}");
+  const loggedInUserObj = JSON.parse(localStorage.getItem("kurax_user") || "{}");
 
   const approveVoid = async (id) => {
     try {
       await fetch(`${API_URL}/api/orders/void-requests/${id}/approve`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approved_by: loggedInUser?.name || "Accountant" }),
+        body: JSON.stringify({ approved_by: loggedInUserObj?.name || "Accountant" }),
       });
       loadVoidRequests();
     } catch (e) { console.error("void approve:", e); }
@@ -496,7 +510,7 @@ export default function AccountantLayout() {
     try {
       await fetch(`${API_URL}/api/orders/void-requests/${id}/reject`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rejected_by: loggedInUser?.name || "Accountant" }),
+        body: JSON.stringify({ rejected_by: loggedInUserObj?.name || "Accountant" }),
       });
       loadVoidRequests();
     } catch (e) { console.error("void reject:", e); }
@@ -675,9 +689,34 @@ export default function AccountantLayout() {
 
       {/* Main content area - This scrolls */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto h-screen">
-        {/* REMOVED THE ENTIRE HEADER SECTION - No more duplicate buttons */}
-        
         <main className="p-4 md:p-10 space-y-8 flex-1 overflow-y-auto">
+          
+          {/* Welcome Header Section */}
+          <div className="mb-8 flex justify-between items-end">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-1 h-6 bg-yellow-500 rounded-full" />
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-600">
+                  Accountant Overview
+                </h4>
+              </div>
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
+                Welcome back,{" "}
+                <span className="text-yellow-600 capitalize">
+                  {firstName}
+                </span>
+              </h2>
+              
+            </div>
+            
+            {/* Quick actions if needed */}
+            <div className="hidden sm:flex items-center gap-2">
+              <div className="text-right">
+                <p className="text-[8px] font-black uppercase text-gray-400 tracking-wider">{kampalaDate()}</p>
+              </div>
+            </div>
+          </div>
+
           {dayClosed && (
             <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-center animate-in fade-in duration-500">
               <div className="flex items-center justify-center gap-2">
@@ -688,7 +727,7 @@ export default function AccountantLayout() {
             </div>
           )}
 
-         
+        
 
           {activeSection === "FINANCIAL_HISTORY" && (
             <FinancialHistory
@@ -702,12 +741,10 @@ export default function AccountantLayout() {
               fetchMonthlyData={fetchMonthlyData}
               API_URL={API_URL}
               isDark={false}
-                hasPhysicalCount={hasPhysicalCount}
-    setActiveSection={setActiveSection}
+              hasPhysicalCount={hasPhysicalCount}
+              setActiveSection={setActiveSection}
             />
           )}
-
-          
 
           {activeSection === "PHYSICAL_COUNT" && (
             <PhysicalCount

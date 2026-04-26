@@ -94,90 +94,98 @@ function PayModal({ target, onClose, onSend }) {
   if (!target) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm px-2 pb-0 sm:pb-4">
-      <div className="w-full max-w-md bg-zinc-950 rounded-t-2xl sm:rounded-2xl border border-white/10 overflow-hidden max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-zinc-950 z-10 flex items-center justify-between px-4 sm:px-6 pt-4 sm:pt-6 pb-4 border-b border-white/5">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm px-2 pb-0 sm:pb-4">
+      <div className="w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl border border-yellow-200 shadow-xl overflow-hidden max-h-[90vh] overflow-y-auto">
+        {/* Yellow top bar */}
+        <div className="h-1 bg-gradient-to-r from-yellow-500 to-yellow-600" />
+        
+        <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-4 sm:px-6 pt-4 sm:pt-6 pb-4 border-b border-yellow-100">
           <div className="min-w-0 flex-1">
-            <p className="text-[9px] font-black text-yellow-500 uppercase tracking-widest">
+            <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">
               {isItem ? "Item Payment" : "Table Payment"} · {target?.tableName}
             </p>
-            <h2 className="text-base sm:text-lg font-black text-white uppercase tracking-tight leading-tight truncate">{label}</h2>
-            <p className="text-zinc-400 text-xs mt-0.5">UGX {amount.toLocaleString()}</p>
+            <h2 className="text-base sm:text-lg font-medium text-yellow-900 uppercase tracking-tight leading-tight truncate">{label}</h2>
+            <p className="text-zinc-600 text-xs mt-0.5 font-bold">UGX {amount.toLocaleString()}</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 shrink-0">
-            <X size={16} className="text-zinc-400" />
+          <button onClick={onClose} className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-yellow-100 flex items-center justify-center hover:bg-yellow-200 shrink-0 transition-all">
+            <X size={16} className="text-yellow-700" />
           </button>
         </div>
+        
         <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
           <div>
-            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3">Select Payment Method</p>
+            <p className="text-[10px] font-semibold text-yellow-900 uppercase tracking-widest mb-3">Select Payment Method</p>
             <div className="grid grid-cols-2 gap-2">
               {PAY_METHODS.map(({ key, label: ml, icon, color, bg }) => (
                 <button key={key} onClick={() => setMethod(key)}
                   className={`flex flex-col items-center gap-2 py-3 sm:py-4 rounded-xl sm:rounded-2xl border-2 transition-all font-black text-[9px] sm:text-[10px] uppercase tracking-widest
-                    ${method === key ? `${bg} ${color} scale-[1.02] shadow-lg` : "border-white/5 bg-white/3 text-zinc-500 hover:border-white/20"}`}>
-                  <span className={method === key ? color : "text-zinc-600"}>{icon}</span>
+                    ${method === key ? `bg-yellow-50 border-yellow-400 ${color} scale-[1.02] shadow-md` : "border-gray-200 bg-white text-gray-500 hover:border-yellow-300 hover:bg-yellow-50/30"}`}>
+                  <span className={method === key ? color : "text-yellow-600"}>{icon}</span>
                   <span className="text-[9px] sm:text-[10px]">{ml}</span>
                 </button>
               ))}
             </div>
           </div>
+          
           {isMomo && MOMO_CODES[method] && (
-            <div className="bg-white/3 rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5 space-y-2">
-              <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2">Payment Instructions</p>
+            <div className="bg-yellow-50/30 rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-yellow-200 space-y-2">
+              <p className="text-[9px] font-black text-yellow-700 uppercase tracking-widest mb-2">Payment Instructions</p>
               <div className="flex flex-col sm:flex-row sm:justify-between gap-2 sm:gap-0">
-                <span className="text-[9px] sm:text-[10px] text-zinc-500 uppercase font-bold">Merchant Code</span>
-                <span className="font-black text-white text-xs sm:text-sm tracking-widest">{MOMO_CODES[method].merchant}</span>
+                <span className="text-[9px] sm:text-[10px] text-gray-500 uppercase font-bold">Merchant Code</span>
+                <span className="font-black text-gray-900 text-xs sm:text-sm tracking-widest">{MOMO_CODES[method].merchant}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:justify-between gap-2 sm:gap-0">
-                <span className="text-[9px] sm:text-[10px] text-zinc-500 uppercase font-bold">Till Number</span>
-                <span className="font-black text-yellow-400 text-xs sm:text-sm">{MOMO_CODES[method].till}</span>
+                <span className="text-[9px] sm:text-[10px] text-gray-500 uppercase font-bold">Till Number</span>
+                <span className="font-black text-yellow-600 text-xs sm:text-sm">{MOMO_CODES[method].till}</span>
               </div>
             </div>
           )}
+          
           {isCredit && (
             <div className="space-y-3">
-              <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Client Details (Required)</p>
+              <p className="text-[10px] font-black text-yellow-700 uppercase tracking-widest">Client Details (Required)</p>
               <div className="relative">
-                <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-yellow-600" />
                 <input 
                   value={creditName} 
                   onChange={e => setCreditName(e.target.value)}
                   placeholder="Client full name *"
-                  className="w-full bg-zinc-900 border border-white/10 rounded-xl sm:rounded-2xl pl-9 pr-4 py-3 text-sm text-white placeholder-zinc-500 outline-none focus:border-purple-500/40" 
+                  className="w-full bg-yellow-50/30 border border-yellow-200 rounded-xl sm:rounded-2xl pl-9 pr-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30" 
                 />
               </div>
               <div className="relative">
-                <Phone size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <Phone size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-yellow-600" />
                 <input 
                   value={creditPhone} 
                   onChange={e => setCreditPhone(e.target.value)}
                   placeholder="Phone number *" 
                   type="tel"
-                  className="w-full bg-zinc-900 border border-white/10 rounded-xl sm:rounded-2xl pl-9 pr-4 py-3 text-sm text-white placeholder-zinc-500 outline-none focus:border-purple-500/40" 
+                  className="w-full bg-yellow-50/30 border border-yellow-200 rounded-xl sm:rounded-2xl pl-9 pr-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30" 
                 />
               </div>
               <textarea 
                 value={creditNote} 
                 onChange={e => setCreditNote(e.target.value)}
                 placeholder="Expected pay-by date — e.g. 'pays every Friday' or '2025-08-10'"
-                className="w-full bg-zinc-900 border border-white/10 rounded-xl sm:rounded-2xl p-3 sm:p-4 text-sm text-white placeholder-zinc-500 outline-none focus:border-purple-500/40 resize-none h-16" 
+                className="w-full bg-yellow-50/30 border border-yellow-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30 resize-none h-16" 
               />
-              <div className="flex items-center gap-2 px-3 py-2 bg-purple-500/10 border border-purple-500/20 rounded-xl">
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse shrink-0" />
-                <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest">Credit requires cashier → manager approval</p>
+              <div className="flex items-center gap-2 px-3 py-2 bg-yellow-100/50 border border-yellow-300 rounded-xl">
+                <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shrink-0" />
+                <p className="text-[9px] font-black text-yellow-700 uppercase tracking-widest">Credit requires cashier → manager approval</p>
               </div>
             </div>
           )}
-          <div className="bg-white/3 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex justify-between items-center border border-white/5">
-            <span className="text-[10px] sm:text-[11px] font-black text-zinc-400 uppercase tracking-widest">
+          
+          <div className="bg-yellow-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex justify-between items-center border border-yellow-200">
+            <span className="text-[10px] sm:text-[11px] font-semibold text-yellow-700 uppercase tracking-widest">
               {isItem ? "Item Total" : "Table Total"}
             </span>
-            <span className="font-black text-white text-lg sm:text-xl">UGX {amount.toLocaleString()}</span>
+            <span className="font-black text-yellow-900 text-lg sm:text-xl">UGX {amount.toLocaleString()}</span>
           </div>
+          
           <button disabled={!canSend || sending} onClick={handleSend}
-            className={`w-full py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2
-              ${canSend && !sending ? "bg-yellow-500 text-black hover:bg-yellow-400 active:scale-[0.98]" : "bg-white/5 text-zinc-600 cursor-not-allowed"}`}>
+            className={`w-full py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-md
+              ${canSend && !sending ? "bg-yellow-500 text-black hover:bg-yellow-600 active:scale-[0.98] shadow-yellow-500/30" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}>
             {sending ? "Sending…" : canSend ? <><Send size={15}/> Send to Cashier</> : "Select a Method"}
           </button>
         </div>
@@ -185,7 +193,6 @@ function PayModal({ target, onClose, onSend }) {
     </div>
   );
 }
-
 // ─── VOID MODAL ──────────────────────────────────────────────────────────────
 function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
   const [reason, setReason]   = useState("");
@@ -207,43 +214,54 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm px-2">
-      <div className="w-full max-w-sm bg-zinc-950 rounded-t-2xl sm:rounded-2xl border border-red-500/20 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-white/95 backdrop-blur-sm px-2">
+      <div className="w-full max-w-sm bg-white rounded-t-2xl sm:rounded-2xl border border-red-200 shadow-xl overflow-hidden">
         <div className="p-4 sm:p-6">
           <div className="flex items-center gap-3 mb-5">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-red-500/10 flex items-center justify-center">
-              <AlertTriangle size={16} className="text-red-500" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-red-100 flex items-center justify-center">
+              <AlertTriangle size={16} className="text-red-600" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="font-black text-white text-xs sm:text-sm">Request Void</p>
-              <p className="text-[9px] sm:text-[10px] text-zinc-500 truncate">{tableName} · {item?.name}</p>
+              <p className="font-black text-gray-900 text-xs sm:text-sm">Request Void</p>
+              <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">{tableName} · {item?.name}</p>
             </div>
-            <button onClick={onClose} className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 flex items-center justify-center">
-              <X size={14} className="text-zinc-400" />
+            <button onClick={onClose} className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-all">
+              <X size={14} className="text-gray-500" />
             </button>
           </div>
-          <div className="bg-white/3 rounded-xl sm:rounded-2xl p-3 sm:p-4 mb-4 border border-white/5">
-            <div className="flex justify-between">
-              <span className="text-white font-black text-xs sm:text-sm truncate">{item?.name}</span>
-              <span className="text-yellow-400 font-black text-xs sm:text-sm shrink-0 ml-2">x{item?.quantity || 1}</span>
+          
+          <div className="bg-gray-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 mb-4 border border-gray-200">
+            <div className="flex justify-between items-center gap-2">
+              <span className="text-gray-900 font-black text-xs sm:text-sm truncate">{item?.name}</span>
+              <span className="text-yellow-600 font-black text-xs sm:text-sm shrink-0">x{item?.quantity || 1}</span>
             </div>
-            <p className="text-zinc-500 text-[9px] sm:text-[10px] mt-1">UGX {Number(item?.price || 0).toLocaleString()}</p>
+            <p className="text-gray-500 text-[9px] sm:text-[10px] mt-1">UGX {Number(item?.price || 0).toLocaleString()}</p>
           </div>
+          
           <textarea 
             value={reason} 
             onChange={e => setReason(e.target.value)}
             placeholder="Reason for void request…"
-            className="w-full bg-zinc-900 border border-white/10 rounded-xl sm:rounded-2xl p-3 sm:p-4 text-sm text-white placeholder-zinc-500 outline-none focus:border-red-500/40 resize-none h-16 sm:h-20 mb-4" 
+            className="w-full bg-white border border-gray-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400/30 resize-none h-16 sm:h-20 mb-4" 
           />
-          <div className="flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/20 rounded-xl mb-4">
-            <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse shrink-0" />
-            <p className="text-[8px] sm:text-[9px] font-black text-orange-400 uppercase tracking-widest">Request will be sent to accountant for approval</p>
+          
+          <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-xl mb-4">
+            <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shrink-0" />
+            <p className="text-[8px] sm:text-[9px] font-black text-yellow-700 uppercase tracking-widest">Request will be sent to accountant for approval</p>
           </div>
+          
           <div className="grid grid-cols-2 gap-3">
-            <button onClick={onClose}
-              className="py-2.5 sm:py-3 rounded-xl border border-white/10 text-zinc-400 font-black text-[10px] sm:text-xs uppercase tracking-widest hover:bg-white/5">Cancel</button>
-            <button onClick={handleVoid} disabled={!reason.trim() || loading}
-              className="py-2.5 sm:py-3 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 font-black text-[10px] sm:text-xs uppercase tracking-widest hover:bg-red-500/30 disabled:opacity-40 disabled:cursor-not-allowed">
+            <button 
+              onClick={onClose}
+              className="py-2.5 sm:py-3 rounded-xl border border-gray-200 text-gray-500 font-black text-[10px] sm:text-xs uppercase tracking-widest hover:bg-gray-50 transition-all"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleVoid} 
+              disabled={!reason.trim() || loading}
+              className="py-2.5 sm:py-3 rounded-xl bg-red-600 text-white font-black text-[10px] sm:text-xs uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+            >
               {loading ? "Sending…" : "Request Void"}
             </button>
           </div>
@@ -335,11 +353,11 @@ function CreditedItemsPanel({ creditedItems, theme }) {
         <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
           <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
             <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-emerald-500/10"><CheckCircle2 size={14} className="text-emerald-500" /></div>
-            <h3 className={`text-xs sm:text-sm font-medium text-yellow-600 uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>Settled Credits</h3>
+            <h3 className={`text-xs sm:text-sm font-semibold text-yellow-600 uppercase tracking-tighter ${isDark ? "text-white" : "text-yellow-900"}`}>Settled Credits</h3>
             <span className="ml-auto text-[8px] sm:text-[10px] font-black text-emerald-500 whitespace-nowrap">{creditStats.settled.count} records</span>
           </div>
           <div className="mb-3 pb-2 border-b border-zinc-100">
-            <p className="text-[9px] sm:text-[10px] text-zinc-500">Total Settled</p>
+            <p className="text-[9px] sm:text-[10px] text-yellow-900">Total Settled</p>
             <p className="text-base sm:text-lg font-black text-emerald-600 break-words">{fmtLargeNumber(creditStats.settled.amount)}</p>
           </div>
           <div className="space-y-2 sm:space-y-3 max-h-80 overflow-y-auto">
@@ -350,8 +368,8 @@ function CreditedItemsPanel({ creditedItems, theme }) {
                 <div key={idx} className={`p-2 sm:p-3 rounded-lg sm:rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className={`text-[10px] sm:text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
-                      <p className={`text-[7px] sm:text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"} · {credit.label || "Credit"}</p>
+                      <p className={`text-[10px] sm:text-[11px] font-black break-words ${isDark ? "text-white" : "text-yellow-900"}`}>{credit.table_name || "Table"}</p>
+                      <p className={`text-[7px] sm:text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-600" : "text-zinc-600"}`}>{credit.client_name || "Client"} · {credit.label || "Credit"}</p>
                       {credit.settle_method && <p className="text-[6px] sm:text-[7px] text-emerald-500 mt-1 break-words">Paid via {credit.settle_method}</p>}
                       {credit.status === "PartiallySettled" && credit.balance > 0 && (
                         <p className="text-[6px] sm:text-[7px] text-yellow-500 mt-1 break-words">Remaining: {fmtUGX(credit.balance)}</p>
@@ -372,11 +390,11 @@ function CreditedItemsPanel({ creditedItems, theme }) {
         <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
           <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
             <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-orange-500/10"><AlertCircle size={14} className="text-orange-500" /></div>
-            <h3 className={`text-xs sm:text-sm font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>Outstanding Credits</h3>
+            <h3 className={`text-xs sm:text-sm font-semibold uppercase tracking-tighter ${isDark ? "text-white" : "text-yellow-900"}`}>Outstanding Credits</h3>
             <span className="ml-auto text-[8px] sm:text-[10px] font-black text-orange-500 whitespace-nowrap">{creditStats.outstanding.count} records</span>
           </div>
           <div className="mb-3 pb-2 border-b border-zinc-100">
-            <p className="text-[9px] sm:text-[10px] text-zinc-500">Total Outstanding</p>
+            <p className="text-[9px] sm:text-[10px] text-yellow-900">Total Outstanding</p>
             <p className="text-base sm:text-lg font-black text-orange-600 break-words">{fmtLargeNumber(creditStats.outstanding.amount)}</p>
           </div>
           <div className="space-y-2 sm:space-y-3 max-h-80 overflow-y-auto">
@@ -387,7 +405,7 @@ function CreditedItemsPanel({ creditedItems, theme }) {
                 <div key={idx} className={`p-2 sm:p-3 rounded-lg sm:rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className={`text-[10px] sm:text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
+                      <p className={`text-[10px] sm:text-[11px] font-black break-words ${isDark ? "text-white" : "text-yellow-900"}`}>{credit.table_name || "Table"}</p>
                       <p className={`text-[7px] sm:text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"} · {credit.pay_by ? `Pay by: ${credit.pay_by}` : "No due date"}</p>
                       {Number(credit.amount_paid) > 0 && <p className="text-[6px] sm:text-[7px] text-yellow-500 mt-1 break-words">Paid: {fmtUGX(credit.amount_paid)}</p>}
                     </div>
@@ -406,11 +424,11 @@ function CreditedItemsPanel({ creditedItems, theme }) {
         <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
           <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
             <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-red-500/10"><XCircle size={14} className="text-red-500" /></div>
-            <h3 className={`text-xs sm:text-sm font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>Rejected Credits</h3>
+            <h3 className={`text-xs sm:text-sm font-semibold uppercase tracking-tighter ${isDark ? "text-white" : "text-yellow-900"}`}>Rejected Credits</h3>
             <span className="ml-auto text-[8px] sm:text-[10px] font-black text-red-500 whitespace-nowrap">{creditStats.rejected.count} records</span>
           </div>
           <div className="mb-3 pb-2 border-b border-zinc-100">
-            <p className="text-[9px] sm:text-[10px] text-zinc-500">Total Rejected</p>
+            <p className="text-[9px] sm:text-[10px] text-yellow-900">Total Rejected</p>
             <p className="text-base sm:text-lg font-black text-red-600 break-words">{fmtLargeNumber(creditStats.rejected.amount)}</p>
           </div>
           <div className="space-y-2 sm:space-y-3 max-h-80 overflow-y-auto">
@@ -532,10 +550,10 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
         <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-emerald-500/10">
           <CheckCircle2 size={14} className="text-emerald-500" />
         </div>
-        <h3 className={`text-xs sm:text-sm font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>
+        <h3 className={`text-xs sm:text-sm font-semibold uppercase tracking-tighter ${isDark ? "text-white" : "text-yellow-900"}`}>
           Paid Items History
         </h3>
-        <span className="ml-auto text-[8px] sm:text-[10px] font-black text-emerald-500 whitespace-nowrap">
+        <span className="ml-auto text-[8px] sm:text-[10px] font-medium text-emerald-500 whitespace-nowrap">
           Total: {paidItems.length} items
         </span>
       </div>
@@ -555,14 +573,14 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className={`text-[10px] sm:text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>
+                    <p className={`text-[10px] sm:text-[11px] font-medium break-words ${isDark ? "text-white" : "text-yellow-900"}`}>
                       {item.name}
                     </p>
                     <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 text-[6px] sm:text-[7px] font-black uppercase">
                       Paid
                     </span>
                   </div>
-                  <p className={`text-[8px] sm:text-[9px] font-bold uppercase mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                  <p className={`text-[8px] sm:text-[9px] font-bold uppercase mt-1 ${isDark ? "text-zinc-900" : "text-zinc-600"}`}>
                     Table: {item.table_name || "WALK-IN"} · Order #{String(item.order_id).slice(-6)}
                   </p>
                   <div className="flex items-center gap-2 sm:gap-3 mt-1 flex-wrap">
@@ -700,7 +718,7 @@ function OrderCard({
         <div className="px-3 sm:px-4 pt-3 sm:pt-4 pb-2 sm:pb-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <span className={`font-black text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-zinc-900"}`}>
+              <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>
                 {order.tableName}
               </span>
               <p className="text-[9px] sm:text-[10px] font-bold text-zinc-500">
@@ -726,10 +744,10 @@ function OrderCard({
       <div className="px-3 sm:px-4 pt-3 sm:pt-4 pb-2 sm:pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <span className={`font-black text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-zinc-900"}`}>
+            <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>
               {order.tableName}
             </span>
-            <p className="text-[9px] sm:text-[10px] font-bold text-zinc-500">
+            <p className="text-[9px] sm:text-[10px] font-bold text-zinc-900">
               {nonVoidedItems.length} items · UGX {(order.total || 0).toLocaleString()}
             </p>
           </div>
@@ -741,7 +759,7 @@ function OrderCard({
 
         <button onClick={() => setExpanded(!expanded)}
           className={`mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-widest transition-all
-            ${isDark ? "bg-white/5 text-zinc-400" : "bg-zinc-50 text-zinc-500"}`}>
+            ${isDark ? "bg-white/5 text-zinc-400" : "bg-zinc-50 text-yellow-900"}`}>
           <Utensils size={10} />
           {expanded ? "Hide Items" : "View Items"}
           {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
@@ -752,7 +770,7 @@ function OrderCard({
         <div className="px-3 sm:px-4 pb-3 space-y-2 border-t border-black/5 pt-3">
           <div className="mb-2 flex items-center gap-2">
             <CircleDollarSign size={10} className="text-yellow-500" />
-            <p className="text-[7px] sm:text-[8px] font-black text-yellow-400 uppercase tracking-widest">
+            <p className="text-[7px] sm:text-[8px] font-black text-yellow-600 uppercase tracking-widest">
               Click the receipt icon on any item to pay it individually
             </p>
           </div>
@@ -760,7 +778,7 @@ function OrderCard({
             <div key={i} className={`p-2 sm:p-3 rounded-lg sm:rounded-xl ${isDark ? "bg-white/5" : "bg-zinc-50"}`}>
               <div className="flex justify-between items-center gap-2">
                 <div className="flex-1 min-w-0">
-                  <p className={`font-black text-[10px] sm:text-[12px] break-words`}>
+                  <p className={`font-semibold text-yellow-900 text-[10px] sm:text-[12px] break-words`}>
                     {item.name}
                     {item.voidRequested && !item.voidProcessed && (
                       <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-orange-400 font-black uppercase">(waiting accountant)</span>
@@ -775,7 +793,7 @@ function OrderCard({
                       <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-emerald-400 font-black uppercase">✓ paid</span>
                     )}
                   </p>
-                  <p className="text-[8px] sm:text-[9px] font-bold text-zinc-400">
+                  <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
                     ×{item.quantity || 1} · UGX {Number(item.price || 0).toLocaleString()}
                   </p>
                 </div>
@@ -1178,24 +1196,24 @@ export default function OrderHistory({ onAddItems }) {
               [`${orderId}_table`]: true
             }));
           });
-          alert(`✅ Payment request for ${payload.tableName} (${payload.method} of UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
+          alert(` Payment request for ${payload.tableName} (${payload.method} of UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
         } else if (payload.type === "item" && payload.orderId) {
           setPendingPayments(prev => ({
             ...prev,
             [`${payload.orderId}_${payload.item?.name}`]: true
           }));
-          alert(`✅ Payment request for ${payload.item?.name} (UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
+          alert(` Payment request for ${payload.item?.name} (UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
         }
         
         refreshData?.();
         fetchCredits();
       } else {
         const error = await res.json();
-        alert(`❌ Failed to send payment: ${error.error || "Unknown error"}`);
+        alert(` Failed to send payment: ${error.error || "Unknown error"}`);
       }
     } catch (err) { 
       console.error("Send failed:", err);
-      alert(`❌ Network error: ${err.message}`);
+      alert(` Network error: ${err.message}`);
     }
   }, [currentStaffName, currentStaffId, refreshData, fetchCredits]);
 
@@ -1224,11 +1242,11 @@ export default function OrderHistory({ onAddItems }) {
         refreshData?.();
       } else {
         const errData = await res.json().catch(() => ({}));
-        alert(`❌ Failed to send void request: ${errData.error || "Unknown error"}`);
+        alert(` Failed to send void request: ${errData.error || "Unknown error"}`);
       }
     } catch (err) {
       console.error("Void request network error:", err);
-      alert(`❌ Network error: ${err.message}`);
+      alert(`Network error: ${err.message}`);
     }
   }, [currentStaffName, refreshData]);
 
@@ -1328,7 +1346,7 @@ export default function OrderHistory({ onAddItems }) {
             {currentStaffName[0]}
           </div>
           <div className="min-w-0">
-            <h1 className="text-xs sm:text-sm font-semi-bold text-yellow-900 uppercase tracking-tight truncate">{currentStaffName.split(" ")[0]}'s Tables</h1>
+            <h1 className="text-xs sm:text-sm font-semibold text-yellow-900 uppercase tracking-tight truncate">{currentStaffName.split(" ")[0]}'s Tables</h1>
             <p className="text-[8px] sm:text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{today}</p>
           </div>
         </div>

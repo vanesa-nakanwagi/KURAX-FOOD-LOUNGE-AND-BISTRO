@@ -17,13 +17,13 @@ export default function LiveAudit({
   
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+     <div className="flex items-center justify-between w-full gap-4">
         <div>
-          <h2 className={`text-2xl font-black uppercase leading-none ${textClass}`}>
+          <h2 className={`text-2xl font-medium text-yellow-900 uppercase leading-none ${textClass}`}>
             Live Audit
           </h2>
-          <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">
-            Void requests from waiters — approve or reject
+          <p className="text-zinc-600 text-[13px] font-medium mt-1 italic">
+            Void requests from waiters, approve or reject
           </p>
         </div>
         <button onClick={() => { loadVoidRequests(); loadVoidHistory(); }}
@@ -34,7 +34,7 @@ export default function LiveAudit({
       </div>
 
       <div>
-        <p className="text-[9px] font-black uppercase text-gray-500 tracking-[0.2em] mb-3 flex items-center gap-2">
+        <p className="text-[9px] font-black uppercase text-yellow-900 tracking-[0.2em] mb-3 flex items-center gap-2">
           <AlertTriangle size={10} className="text-rose-500"/>
           Pending Requests
           {voidRequests.length > 0 && (
@@ -107,7 +107,7 @@ export default function LiveAudit({
       </div>
 
       <div className="pt-4 border-t border-gray-200">
-        <p className="text-[9px] font-black uppercase text-gray-500 tracking-[0.2em] mb-3 flex items-center gap-2">
+        <p className="text-[9px] font-black uppercase text-yellow-900 tracking-[0.2em] mb-3 flex items-center gap-2">
           <ClipboardList size={10} className="text-gray-500"/>
           Today's Resolved Voids
           {voidHistory.length > 0 && (

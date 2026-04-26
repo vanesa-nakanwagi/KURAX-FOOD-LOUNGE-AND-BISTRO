@@ -22,7 +22,7 @@ export default function AccountantCreditRow({ credit }) {
     <div className={`rounded-2xl border p-5 flex items-start justify-between gap-3 flex-wrap transition-all duration-300 hover:shadow-lg hover:scale-[1.01] ${config.bg}`}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-2">
-          <span className="font-black text-white uppercase italic tracking-tighter text-lg">{credit.table_name || "Table"}</span>
+          <span className=" text-yellow-900 uppercase  tracking-tighter text-lg">{credit.table_name || "Table"}</span>
           <span className={`px-2 py-0.5 rounded-full border ${config.bg} ${config.color} text-[9px] font-black uppercase flex items-center gap-1`}>
             {config.icon} {config.label}
           </span>
@@ -36,19 +36,19 @@ export default function AccountantCreditRow({ credit }) {
           {credit.client_name && (
             <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg">
               <User size={10} className="text-zinc-500"/>
-              <span className="text-zinc-300 font-bold">{credit.client_name}</span>
+              <span className="text-yellow-900 font-bold">{credit.client_name}</span>
             </div>
           )}
           {credit.client_phone && (
             <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg">
               <Phone size={10} className="text-zinc-500"/>
-              <span className="text-zinc-400">{credit.client_phone}</span>
+              <span className="text-yellow-900">{credit.client_phone}</span>
             </div>
           )}
           {!isSettled && !isRejected && credit.pay_by && (
             <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-lg">
               <Calendar size={10} className="text-amber-400"/>
-              <span className="text-amber-400 font-black">Pay by: {credit.pay_by}</span>
+              <span className="text-yellow-00 font-black">Pay by: {credit.pay_by}</span>
             </div>
           )}
           {isRejected && credit.reject_reason && (
@@ -71,7 +71,7 @@ export default function AccountantCreditRow({ credit }) {
         </p>
       </div>
       <div className="text-right shrink-0">
-        <p className={`text-2xl font-black italic ${config.color}`}>UGX {fmt(credit.amount)}</p>
+        <p className={`text-2xl font-black  ${config.color}`}>UGX {fmt(credit.amount)}</p>
         {isPartiallySettled && (
           <>
             <p className="text-[9px] text-emerald-400 font-bold mt-0.5">Paid: UGX {fmt(credit.amount_paid)}</p>

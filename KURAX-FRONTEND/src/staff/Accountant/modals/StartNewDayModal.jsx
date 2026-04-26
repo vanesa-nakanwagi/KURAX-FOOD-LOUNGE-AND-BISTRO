@@ -19,8 +19,8 @@ export default function StartNewDayModal({ isOpen, onClose, onStart, starting })
       <div className="w-full max-w-md bg-white border border-gray-200 rounded-3xl p-8 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-100">
-              <Sparkles size={20} className="text-emerald-600" />
+            <div className="p-2.5 rounded-xl bg-yellow-600">
+              <Sparkles size={20} className="text-black" />
             </div>
             <div>
               <h3 className="text-lg font-black text-gray-900 uppercase tracking-tighter">Start New Day</h3>
@@ -43,10 +43,10 @@ export default function StartNewDayModal({ isOpen, onClose, onStart, starting })
             min={minDate}
             className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-gray-900 font-bold outline-none focus:border-emerald-500/50 transition-all"
           />
-          <p className={`text-[8px] mt-2 ${selectedDate === today ? "text-yellow-600" : "text-gray-400"}`}>
+          <p className={`text-[10px] mt-2 ${selectedDate === today ? "text-yellow-600" : "text-red-400"}`}>
             {selectedDate === today 
               ? "⚠️ Starting today will reset current day's data" 
-              : "✅ This will create a fresh day with zero totals"}
+              : " This will create a fresh day with zero totals"}
           </p>
         </div>
         
@@ -78,21 +78,21 @@ export default function StartNewDayModal({ isOpen, onClose, onStart, starting })
           >
             Cancel
           </button>
-          <button
-            onClick={() => onStart(selectedDate, notes)}
-            disabled={starting}
-            className={`flex-[2] py-4 rounded-2xl font-black text-[10px] uppercase transition-all flex items-center justify-center gap-2
-              ${starting
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                : "bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]"
-              }`}
-          >
-            {starting ? (
-              <><Loader2 size={14} className="animate-spin" /> Starting...</>
-            ) : (
-              <><Sparkles size={14} /> Start New Day</>
-            )}
-          </button>
+         <button
+  onClick={() => onStart(selectedDate, notes)}
+  disabled={starting}
+  className={`flex-[2] py-4 rounded-2xl font-black text-black text-[10px] uppercase transition-all flex items-center justify-center gap-2
+    ${starting
+      ? "bg-gray-200 text-black cursor-not-allowed"
+      : "bg-yellow-500 text-black hover:bg-yellow-600 active:scale-[0.98] shadow-md shadow-yellow-500/20"
+    }`}
+>
+  {starting ? (
+    <><Loader2 size={14} className="animate-spin" /> Starting...</>
+  ) : (
+    <><Sparkles size={14} /> Start New Day</>
+  )}
+</button>
         </div>
       </div>
     </div>

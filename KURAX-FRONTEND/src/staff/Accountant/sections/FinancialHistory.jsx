@@ -22,11 +22,9 @@ export default function FinancialHistory({
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-            Today's Revenue
-          </h2>
-          <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue and updates every 15 seconds</p>
-          <p className={`text-[9px] mt-1 ${isDark ? 'text-zinc-500' : 'text-gray-500'}`}>✅ Credit requests are NOT included in gross until approved and settled</p>
+          
+          <p className="text-yellow-900 text-[17px] font-medium mt-1">Live from cashier queue and updates every 15 seconds</p>
+          <p className={`text-[12px] italic mt-1 ${isDark ? 'text-zinc-500' : 'text-zinc-600'}`}> Credit requests are NOT included in gross until approved and settled</p>
         </div>
         <div className="flex items-center gap-1 text-[8px] text-zinc-600">
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -105,10 +103,10 @@ export default function FinancialHistory({
 
       <div className="pt-4">
         <div className="mb-4">
-          <h2 className={`text-xl font-black uppercase leading-none transition-colors duration-300 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          <h2 className={`text-xl font-medium text-yellow-900 uppercase leading-none transition-colors duration-300 ${isDark ? 'text-white' : 'text-gray-900'}`}>
             Monthly Expenses
           </h2>
-          <p className={`text-[11px] font-medium mt-1 italic uppercase tracking-wider ${isDark ? 'text-zinc-500' : 'text-gray-500'}`}>
+          <p className={`text-[11px] font-medium mt-1 italic tracking-wider ${isDark ? 'text-zinc-500' : 'text-gray-500'}`}>
             Fixed Costs & Operational Overheads
           </p>
         </div>

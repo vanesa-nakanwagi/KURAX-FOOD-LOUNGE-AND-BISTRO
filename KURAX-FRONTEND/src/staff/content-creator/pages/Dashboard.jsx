@@ -154,11 +154,7 @@ export default function Dashboard() {
                   {firstName}
                 </span>
               </h2>
-              {userName !== "Administrator" && (
-                <p className="text-sm text-slate-400 mt-1">
-                  Logged in as: <span className="text-slate-300">{userName}</span>
-                </p>
-              )}
+              
             </div>
 
           </div>

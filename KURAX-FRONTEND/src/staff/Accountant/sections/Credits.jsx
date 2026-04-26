@@ -21,35 +21,35 @@ export default function Credits({
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
-        <h2 className={`text-2xl font-black uppercase leading-none ${textClass}`}>
+        <h2 className={`text-2xl font-medium text-yellow-900 uppercase leading-none ${textClass}`}>
           Credits Ledger
         </h2>
-        <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">All on-account orders — pending, approved, settled, and rejected (Persists for current month)</p>
+        <p className="text-zinc-700 text-[13px] font-medium mt-1 italic">All on-account orders - pending, approved, settled, and rejected (Persists for current month)</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] bg-white border border-gray-200 shadow-sm`}>
           <div className="p-2.5 w-fit bg-purple-100 rounded-xl text-purple-600 mb-3"><BookOpen size={16}/></div>
-          <p className="text-[8px] font-black uppercase text-gray-500 tracking-widest mb-1">Outstanding</p>
-          <h3 className="text-xl font-black text-purple-600 italic">{formatCurrencyCompact(totalOutstanding)}</h3>
+          <p className="text-[8px] font-bold uppercase text-yellow-900 tracking-widest mb-1">Outstanding</p>
+          <h3 className="text-xl font-black text-purple-600 ">{formatCurrencyCompact(totalOutstanding)}</h3>
           <p className={`text-[9px] ${subTextClass} mt-0.5`}>{creditsLedger.filter(c => c.status === "Approved" || c.status === "PartiallySettled").length} pending</p>
         </div>
         <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] bg-white border border-gray-200 shadow-sm`}>
           <div className="p-2.5 w-fit bg-emerald-100 rounded-xl text-emerald-600 mb-3"><CheckCircle2 size={16}/></div>
-          <p className="text-[8px] font-black uppercase text-gray-500 tracking-widest mb-1">Settled</p>
-          <h3 className="text-xl font-black text-emerald-600 italic">{formatCurrencyCompact(totalSettled)}</h3>
+          <p className="text-[8px] font-bold uppercase text-yellow-900 tracking-widest mb-1">Settled</p>
+          <h3 className="text-xl font-black text-emerald-600 ">{formatCurrencyCompact(totalSettled)}</h3>
           <p className={`text-[9px] ${subTextClass} mt-0.5`}>{creditsLedger.filter(c => c.status === "FullySettled" || c.paid === true).length} cleared</p>
         </div>
         <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] bg-white border border-gray-200 shadow-sm`}>
           <div className="p-2.5 w-fit bg-red-100 rounded-xl text-red-600 mb-3"><XCircle size={16}/></div>
-          <p className="text-[8px] font-black uppercase text-gray-500 tracking-widest mb-1">Rejected</p>
-          <h3 className="text-xl font-black text-red-600 italic">{formatCurrencyCompact(totalRejected)}</h3>
+          <p className="text-[8px] font-bold uppercase text-yellow-900 tracking-widest mb-1">Rejected</p>
+          <h3 className="text-xl font-black text-red-600">{formatCurrencyCompact(totalRejected)}</h3>
           <p className={`text-[9px] ${subTextClass} mt-0.5`}>{creditsLedger.filter(c => c.status === "Rejected").length} rejected</p>
         </div>
         <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 p-5 rounded-2xl shadow-md">
           <div className="p-2.5 w-fit bg-black/20 rounded-xl text-black mb-3"><Receipt size={16}/></div>
           <p className="text-[8px] font-black uppercase text-black/60 tracking-widest mb-1">All Time Credits</p>
-          <h3 className="text-xl font-black text-black italic">{formatCurrencyCompact(totalOutstanding + totalSettled + totalRejected)}</h3>
+          <h3 className="text-xl font-black text-black ">{formatCurrencyCompact(totalOutstanding + totalSettled + totalRejected)}</h3>
           <p className="text-[9px] text-black/50 mt-0.5">{creditsLedger.length} total entries (current month)</p>
         </div>
       </div>
@@ -63,7 +63,7 @@ export default function Credits({
         ].map(({ key, label }) => (
           <button key={key} onClick={() => setCreditFilter(key)}
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300
-              ${creditFilter === key ? "bg-yellow-500 text-black shadow-md" : "text-gray-500 hover:text-gray-700"}`}>
+              ${creditFilter === key ? "bg-yellow-500 text-black shadow-md" : "text-yellow-900 hover:text-yellow-900"}`}>
             {label}
           </button>
         ))}
@@ -75,7 +75,7 @@ export default function Credits({
         </div>
       ) : filteredCredits.length === 0 ? (
         <div className="py-20 text-center border-2 border-dashed border-gray-200 rounded-3xl bg-gray-50">
-          <BookOpen size={32} className="mx-auto text-gray-400 mb-3"/>
+          <BookOpen size={32} className="mx-auto text-zinc-600 mb-3"/>
           <p className="text-gray-500 text-[10px] font-black uppercase tracking-widest">No credits found for this month</p>
         </div>
       ) : (

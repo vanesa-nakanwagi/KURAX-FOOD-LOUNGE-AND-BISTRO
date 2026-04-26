@@ -24,10 +24,10 @@ export default function EndOfShift({
   return (
     <div className="max-w-3xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
       <div className="text-center">
-        <h2 className={`text-2xl font-black uppercase tracking-tighter ${textClass}`}>
+        <h2 className={`text-2xl font-medium text-yellow-900 uppercase tracking-tighter ${textClass}`}>
           Day Finalization
         </h2>
-        <p className="text-yellow-600 text-[12px] font-bold mt-2 uppercase tracking-widest italic opacity-80">
+        <p className="text-zinc-600 text-[13px] font-medium mt-2  tracking-widest italic opacity-80">
           Reconcile system data with physical collections
         </p>
       </div>
@@ -37,7 +37,7 @@ export default function EndOfShift({
           <div className="flex items-center justify-center gap-2">
             <CheckCircle2 size={18} className="text-emerald-600" />
             <p className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">
-              ✅ Day has been closed - All totals have been reset to zero
+              Day has been closed - All totals have been reset to zero
             </p>
           </div>
         </div>
@@ -70,14 +70,14 @@ export default function EndOfShift({
         <div className="space-y-6 mb-12">
           <div className="flex justify-between items-center border-b border-gray-100 pb-6">
             <span className="text-gray-500 text-[11px] font-black uppercase tracking-wider">System Gross</span>
-            <span className={`text-2xl font-black italic ${textClass}`}>
+            <span className={`text-2xl font-black  ${textClass}`}>
               {dayClosed ? "UGX 0" : `UGX ${fmt(sys.gross)}`}
             </span>
           </div>
           
           <div className="flex justify-between items-center border-b border-gray-100 pb-6">
             <span className="text-gray-500 text-[11px] font-black uppercase tracking-wider">Physical Total</span>
-            <span className={`text-2xl font-black italic ${textClass}`}>
+            <span className={`text-2xl font-black  ${textClass}`}>
               {dayClosed ? "UGX 0" : `UGX ${fmt(physicalTotal)}`}
             </span>
           </div>
@@ -85,7 +85,7 @@ export default function EndOfShift({
           <div className="flex justify-between items-center pt-4">
             <span className="text-gray-500 text-[11px] font-black uppercase tracking-wider">Closing Variance</span>
             <div className="text-right">
-              <span className={`text-2xl font-black italic ${dayClosed ? "text-emerald-600" : varTotal >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+              <span className={`text-2xl font-black ${dayClosed ? "text-emerald-600" : varTotal >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                 {dayClosed ? "UGX 0" : `${varTotal >= 0 ? "+" : ""}UGX ${fmt(varTotal)}`}
               </span>
               <p className="text-[8px] font-black uppercase text-gray-400 mt-1">
@@ -96,7 +96,7 @@ export default function EndOfShift({
         </div>
 
         <div className="bg-gray-50 rounded-2xl p-5 mb-8 space-y-2.5 border border-gray-100">
-          <p className="text-[9px] font-black uppercase text-gray-600 tracking-widest mb-3">This will</p>
+          <p className="text-[11px] font-black uppercase text-gray-600 tracking-widest mb-3">This will</p>
           {[
             "Archive all today's orders across all staff",
             "Clear kitchen, barista & bar ticket boards",
@@ -110,7 +110,7 @@ export default function EndOfShift({
               <div className="w-4 h-4 rounded-full bg-yellow-100 border border-yellow-200 flex items-center justify-center shrink-0">
                 <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"/>
               </div>
-              <p className="text-[10px] font-bold text-gray-600">{item}</p>
+              <p className="text-[11px] font-bold text-gray-600">{item}</p>
             </div>
           ))}
         </div>

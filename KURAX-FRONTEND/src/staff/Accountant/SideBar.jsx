@@ -9,7 +9,7 @@ import { useTheme } from "../../customer/components/context/ThemeContext";
 
 // Desktop menu items (all items)
 const DESKTOP_MENU_ITEMS = [
-  { key: "FINANCIAL_HISTORY", label: "My Collections",    icon: <Receipt size={20}/>     },
+  { key: "FINANCIAL_HISTORY", label: "Dashboard",    icon: <Receipt size={20}/>     },
   { key: "PHYSICAL_COUNT",    label: "Physical Finances", icon: <Calculator size={20}/>  },
   { key: "LIVE_AUDIT",        label: "Live Audit",        icon: <CheckCircle2 size={20}/> },
   { key: "MONTHLY_COSTS",     label: "Monthly Costs",     icon: <Wallet size={20}/>      },
@@ -64,19 +64,22 @@ export default function SideBar({
         {/* 3 Vertical Dots / X Button - Changes icon when menu is open */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`fixed top-4 right-4 z-50 p-1 transition-all font-['Outfit'] ${
-            isDark ? "text-white" : "text-black"
+          className={`fixed top-4 right-4 z-50 p-2 rounded-xl transition-all font-['Outfit'] ${
+            isDark 
+              ? "bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white" 
+              : "bg-white/90 backdrop-blur-md border border-gray-200 text-black shadow-sm"
           }`}
         >
-          {isOpen ? <X size={24} /> : <MoreVertical size={24} />}
+          {isOpen ? <X size={22} /> : <MoreVertical size={22} />}
         </button>
 
-        {/* Mobile Drawer - Shows Logo, Text, Menu Items, and Logout */}
+        {/* Mobile Drawer - Slides from right */}
         <div
-          className={`fixed inset-0 z-40 transition-all duration-300 mobile-drawer ${
+          className={`fixed inset-0 z-40 transition-all duration-300 ${
             isOpen ? "visible" : "invisible"
           }`}
         >
+          {/* Backdrop */}
           <div
             className={`absolute inset-0 transition-opacity duration-300 ${
               isOpen ? "opacity-100 bg-black/50" : "opacity-0"
@@ -84,17 +87,18 @@ export default function SideBar({
             onClick={() => setIsOpen(false)}
           />
 
+          {/* Drawer Content */}
           <div
-            className={`absolute right-0 top-0 h-full w-72 transition-transform duration-300 ${
+            className={`absolute right-0 top-0 h-full w-80 transition-transform duration-300 ${
               isOpen ? "translate-x-0" : "translate-x-full"
             } ${
               isDark
                 ? "bg-zinc-950 border-l border-white/5"
-                : "bg-white border-l border-black/5"
+                : "bg-white border-l border-gray-200 shadow-xl"
             }`}
           >
-            {/* Logo and Header Section - Pushed lower */}
-            <div className={`pt-20 pb-6 px-6 border-b font-['Outfit'] ${isDark ? "border-white/5" : "border-black/5"}`}>
+            {/* Logo and Header Section */}
+            <div className={`pt-12 pb-6 px-6 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
               <div className="flex items-center gap-3">
                 <img
                   src={logo}
@@ -114,10 +118,9 @@ export default function SideBar({
               </div>
             </div>
 
-            {/* Menu Items */}
-            <nav className="flex-1 p-4 space-y-3 mt-6 font-['Outfit']">
+            {/* Scrollable Menu Items */}
+            <nav className="flex-1 overflow-y-auto p-4 space-y-2 max-h-[calc(100vh-160px)]">
               {DRAWER_MENU_ITEMS.map((item) => {
-                // Determine badge for specific items
                 let badge = null;
                 if (item.key === "LIVE_AUDIT" && voidCount > 0) badge = voidCount;
                 if (item.key === "CREDITS" && creditCount > 0) badge = creditCount;
@@ -129,20 +132,20 @@ export default function SideBar({
                       setActiveSection(item.key);
                       setIsOpen(false);
                     }}
-                    className={`w-full flex items-center gap-4 px-5 py-4 rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all
                       ${activeSection === item.key
-                        ? "bg-yellow-500 text-black border-yellow-500 shadow-xl shadow-yellow-500/20 scale-[1.02]"
+                        ? "bg-yellow-500 text-black"
                         : isDark
-                          ? "text-zinc-500 bg-transparent border-transparent hover:bg-white/5 hover:text-white"
-                          : "text-zinc-600 bg-transparent border-transparent hover:bg-black/5 hover:text-black"
+                          ? "text-zinc-400 hover:bg-white/5 hover:text-white"
+                          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                       }`}
                   >
                     <span className={activeSection === item.key ? "text-black" : "text-yellow-500"}>
                       {item.icon}
                     </span>
-                    {item.label}
+                    <span className="flex-1 text-left">{item.label}</span>
                     {badge && (
-                      <span className="ml-auto bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full">
+                      <span className="bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
                         {badge > 9 ? "9+" : badge}
                       </span>
                     )}
@@ -152,28 +155,28 @@ export default function SideBar({
             </nav>
 
             {/* Logout Button */}
-            <div className={`p-4 border-t mt-auto font-['Outfit'] ${isDark ? "border-white/5" : "border-black/5"}`}>
+            <div className={`p-4 border-t mt-auto ${isDark ? "border-white/5" : "border-gray-200"}`}>
               <button
                 onClick={handleLogout}
-                className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${
                   isDark
-                    ? "text-rose-500 hover:bg-rose-500/10"
-                    : "text-rose-600 hover:bg-rose-50/50"
+                    ? "bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                    : "bg-red-50 text-red-600 hover:bg-red-100"
                 }`}
               >
-                <LogOut size={20} />
+                <LogOut size={16} />
                 Log Out
               </button>
             </div>
           </div>
         </div>
 
-        {/* Bottom Navigation Bar - Live Audit and Credits */}
+        {/* Bottom Navigation Bar */}
         <div
-          className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-2 py-3 border-t backdrop-blur-lg font-['Outfit'] ${
+          className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-3 py-2 border-t backdrop-blur-lg ${
             isDark
               ? "bg-zinc-950/95 border-white/10"
-              : "bg-white/95 border-black/10"
+              : "bg-white/95 border-gray-200 shadow-lg"
           }`}
         >
           {BOTTOM_NAV_ITEMS.map((item) => {
@@ -185,15 +188,13 @@ export default function SideBar({
             return (
               <button
                 key={item.key}
-                onClick={() => {
-                  setActiveSection(item.key);
-                }}
-                className={`relative flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-xl transition-all flex-1 max-w-[120px] ${
+                onClick={() => setActiveSection(item.key)}
+                className={`relative flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition-all ${
                   isActive
                     ? "bg-yellow-500 text-black"
                     : isDark
-                      ? "hover:bg-white/5 text-zinc-500 hover:text-white"
-                      : "hover:bg-black/5 text-zinc-600 hover:text-black"
+                      ? "text-zinc-500 hover:text-white"
+                      : "text-gray-600 hover:text-gray-900"
                 }`}
               >
                 <span className={isActive ? "text-black" : "text-yellow-500"}>
@@ -205,7 +206,7 @@ export default function SideBar({
                   {item.label}
                 </span>
                 {badge && (
-                  <span className={`absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-black flex items-center justify-center
+                  <span className={`absolute -top-1 -right-1 min-w-[18px] h-4 px-1 rounded-full text-[9px] font-black flex items-center justify-center
                     ${isActive ? "bg-black text-yellow-500" : "bg-yellow-500 text-black"}`}>
                     {badge > 9 ? "9+" : badge}
                   </span>
@@ -216,7 +217,7 @@ export default function SideBar({
         </div>
 
         {/* Bottom padding to prevent content from being hidden */}
-        <div className="pb-24" />
+        <div className="pb-20" />
       </>
     );
   }
@@ -225,11 +226,11 @@ export default function SideBar({
   return (
     <div
       className={`w-64 h-full flex flex-col border-r transition-colors duration-300 flex-shrink-0 font-['Outfit'] ${
-        isDark ? "bg-zinc-950 border-white/5" : "bg-white border-black/5"
+        isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200 shadow-sm"
       }`}
     >
       {/* Logo / header */}
-      <div className={`p-6 border-b font-['Outfit'] ${isDark ? "border-white/5" : "border-black/5"}`}>
+      <div className={`p-6 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
         <div className="flex items-center gap-3">
           <img
             src={logo}
@@ -237,12 +238,12 @@ export default function SideBar({
             className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20"
           />
           <div className="flex flex-col">
-            <h1 className={`text-[15px] font-bold uppercase tracking-tight leading-none ${
+            <h1 className={`text-[13px] font-black uppercase tracking-tight leading-tight ${
               isDark ? "text-white" : "text-zinc-900"
             }`}>
               KURAX FOOD LOUNGE & BISTRO
             </h1>
-            <p className="text-[9px] font-bold text-yellow-900 mt-1 uppercase tracking-widest">
+            <p className="text-[9px] font-bold text-yellow-600 mt-1 uppercase tracking-widest">
               ACCOUNTANT PANEL
             </p>
           </div>
@@ -250,9 +251,8 @@ export default function SideBar({
       </div>
 
       {/* Nav items */}
-      <nav className="flex-1 p-4 space-y-3 mt-6 font-['Outfit'] overflow-y-auto">
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {DESKTOP_MENU_ITEMS.map((item) => {
-          // Determine badge for specific items
           let badge = null;
           if (item.key === "LIVE_AUDIT" && voidCount > 0) badge = voidCount;
           if (item.key === "CREDITS" && creditCount > 0) badge = creditCount;
@@ -261,20 +261,20 @@ export default function SideBar({
             <button
               key={item.key}
               onClick={() => setActiveSection(item.key)}
-              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all
                 ${activeSection === item.key
-                  ? "bg-yellow-500 text-black border-yellow-500 shadow-xl shadow-yellow-500/20 scale-[1.02]"
+                  ? "bg-yellow-500 text-black shadow-md"
                   : isDark
-                    ? "text-zinc-500 bg-transparent border-transparent hover:bg-white/5 hover:text-white"
-                    : "text-zinc-600 bg-transparent border-transparent hover:bg-black/5 hover:text-black"
+                    ? "text-zinc-400 hover:bg-white/5 hover:text-white"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                 }`}
             >
               <span className={activeSection === item.key ? "text-black" : "text-yellow-500"}>
                 {item.icon}
               </span>
-              {item.label}
+              <span className="flex-1 text-left">{item.label}</span>
               {badge && (
-                <span className="ml-auto bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full">
+                <span className="bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
                   {badge > 9 ? "9+" : badge}
                 </span>
               )}
@@ -284,16 +284,16 @@ export default function SideBar({
       </nav>
 
       {/* Logout */}
-      <div className={`p-4 border-t font-['Outfit'] ${isDark ? "border-white/5" : "border-black/5"}`}>
+      <div className={`p-4 border-t ${isDark ? "border-white/5" : "border-gray-200"}`}>
         <button
           onClick={handleLogout}
-          className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+          className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${
             isDark
-              ? "text-rose-500 hover:bg-rose-500/10"
-              : "text-rose-600 hover:bg-rose-50/50"
+              ? "bg-red-500/10 text-red-400 hover:bg-red-500/20"
+              : "bg-red-50 text-red-600 hover:bg-red-100"
           }`}
         >
-          <LogOut size={20} />
+          <LogOut size={16} />
           Log Out
         </button>
       </div>

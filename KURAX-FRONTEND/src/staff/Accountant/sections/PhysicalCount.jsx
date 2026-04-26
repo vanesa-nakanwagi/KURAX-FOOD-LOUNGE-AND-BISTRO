@@ -36,12 +36,7 @@ export default function PhysicalCount({
   
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h2 className={`text-2xl font-black uppercase leading-none ${textClass}`}>
-          Physical Count
-        </h2>
-        <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Enter actual cash/card/momo on hand — saved to database</p>
-      </div>
+      
 
       {dayClosed && (
         <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-center">

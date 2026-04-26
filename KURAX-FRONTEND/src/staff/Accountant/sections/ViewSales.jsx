@@ -22,25 +22,32 @@ export default function ViewSales({
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>
+          <h2 className={`text-2xl font-medium text-yellow-900 uppercase leading-none transition-colors duration-300 ${textClass}`}>
             Station Sales
           </h2>
-          <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Kitchen · Barista · Bar — daily output per station</p>
+          <p className="text-zinc-600 text-[13px] font-medium mt-1 italic">Kitchen · Barista · Bar - daily output per station</p>
         </div>
         <div className="flex items-center gap-2">
-          <input type="date" value={salesDate} onChange={e => setSalesDate(e.target.value)}
-            className="bg-zinc-900 border border-white/10 rounded-2xl px-4 py-2.5 text-white text-xs font-bold outline-none focus:border-yellow-500/50"/>
-          <button onClick={() => loadSales(salesDate)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900 border border-white/5 rounded-2xl text-[10px] font-black text-zinc-400 uppercase hover:text-white transition-colors">
-            <RefreshCw size={12} className={salesLoading ? "animate-spin" : ""}/> Refresh
-          </button>
+          <input 
+  type="date" 
+  value={salesDate} 
+  onChange={e => setSalesDate(e.target.value)}
+  className="bg-white border border-gray-200 rounded-2xl px-4 py-2.5 text-yellow-900 text-xs font-bold outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30 shadow-sm"
+/>
+
+          <button 
+  onClick={() => loadSales(salesDate)}
+  className="flex items-center gap-2 px-4 py-2.5 bg-white border border-yellow-200 rounded-2xl text-[10px] font-black text-yellow-900 uppercase hover:bg-yellow-50 transition-colors shadow-sm"
+>
+  <RefreshCw size={12} className={salesLoading ? "animate-spin" : ""}/> Refresh
+</button>
         </div>
       </div>
 
       {hasData && (
         <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
           <div>
-            <p className="text-[9px] font-black uppercase text-black/60 tracking-widest">All Stations Combined</p>
+            <p className="text-[9px] font-black uppercase text-yellow-900 tracking-widest">All Stations Combined</p>
             <h3 className="text-3xl font-black text-black italic mt-0.5">{totalTickets} tickets</h3>
           </div>
           <div className="flex items-center gap-6 text-black">

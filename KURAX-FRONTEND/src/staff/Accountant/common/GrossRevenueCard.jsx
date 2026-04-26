@@ -41,7 +41,7 @@ export default function GrossRevenueCard({ grossSales, settledCredits, pendingCr
             <div className="w-1 h-3 bg-black/30 rounded-full" />
             <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em]">Gross Revenue</p>
           </div>
-          <h3 className="text-xl sm:text-2xl font-black text-black italic tracking-tighter leading-tight">
+          <h3 className="text-xl sm:text-2xl font-black text-black tracking-tighter leading-tight">
             {formatCurrencyCompact(grossSales)}
           </h3>
           <p className="text-[7px] font-bold text-black/40 uppercase tracking-wider mt-1">
@@ -58,7 +58,7 @@ export default function GrossRevenueCard({ grossSales, settledCredits, pendingCr
               </div>
               <div className="flex items-center gap-1">
                 <ArrowUpRight size={10} className="text-emerald-800" />
-                <p className="text-[10px] font-black text-emerald-900 italic">+ {formatCurrencyCompact(settledCredits)}</p>
+                <p className="text-[10px] font-black text-emerald-900 ">+ {formatCurrencyCompact(settledCredits)}</p>
               </div>
             </div>
             <div className="flex items-center justify-between gap-2 bg-black/20 backdrop-blur-sm rounded-xl px-3 py-2 group-hover:bg-black/30 transition-all">
@@ -66,7 +66,7 @@ export default function GrossRevenueCard({ grossSales, settledCredits, pendingCr
                 <Zap size={10} className="text-black/60" />
                 <p className="text-[7px] font-black uppercase text-black/70 tracking-wider">Combined Total</p>
               </div>
-              <p className="text-[11px] font-black text-black italic tracking-tighter">
+              <p className="text-[11px] font-black text-black  tracking-tighter">
                 {formatCurrencyCompact(combinedTotal)}
               </p>
             </div>

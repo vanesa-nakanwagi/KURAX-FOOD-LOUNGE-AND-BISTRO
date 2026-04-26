@@ -105,7 +105,7 @@ export default function MonthlyCosts({
       {/* HEADER */}
       <div className={`flex items-center justify-between px-6 py-5 border-b ${dividerClass} ${isDark ? 'bg-black/5' : 'bg-gray-50'}`}>
         <div>
-          <h3 className="text-[11px] font-black uppercase tracking-tighter text-yellow-600 italic">Expense Ledger</h3>
+          <h3 className="text-[16px] font-medium uppercase tracking-tighter text-yellow-900">Expense Ledger</h3>
           <p className={`text-[9px] font-bold uppercase ${subtextClass}`}>{monthLabel}</p>
         </div>
         <button 

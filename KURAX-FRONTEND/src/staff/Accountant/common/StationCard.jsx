@@ -28,7 +28,7 @@ export default function StationCard({ icon, label, color, borderColor, summary, 
               <span className={lightColor.text}>{IconComponent}</span>
             </div>
             <div>
-              <h3 className="font-black uppercase italic tracking-tighter text-gray-900 text-xl leading-none">{label}</h3>
+              <h3 className="font-medium uppercase tracking-tighter text-yellow-900 text-xl leading-none">{label}</h3>
               <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">{summary?.date || kampalaDate()}</p>
             </div>
           </div>
