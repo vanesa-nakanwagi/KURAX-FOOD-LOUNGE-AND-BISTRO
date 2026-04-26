@@ -6,11 +6,12 @@ import {
 import {
   Activity, Target, ClipboardList, TrendingUp, Award, Calendar,
   Clock, CheckCircle2, Loader2, RefreshCw, AlertCircle, BookOpen,
-  CheckCircle, XCircle, Clock as ClockIcon
+  CheckCircle, XCircle, Clock as ClockIcon, Sparkles, Crown, Star,
+  Coffee, Sunset, Moon, Sun, Zap, Heart, Smile, ThumbsUp
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 function getTodayLocal() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -28,12 +29,8 @@ function fmtUGX(n) {
 
 function fmtLargeNumber(n) {
   const num = Number(n || 0);
-  if (num >= 1_000_000) {
-    return `UGX ${(num / 1_000_000).toFixed(1)}M`;
-  }
-  if (num >= 1_000) {
-    return `UGX ${(num / 1_000).toFixed(0)}K`;
-  }
+  if (num >= 1_000_000) return `UGX ${(num / 1_000_000).toFixed(1)}M`;
+  if (num >= 1_000) return `UGX ${(num / 1_000).toFixed(0)}K`;
   return `UGX ${num.toLocaleString()}`;
 }
 
@@ -99,46 +96,151 @@ function getIndividualItems(order, creditsData) {
   });
 }
 
-function getCreditStatusDisplay(credit) {
-  const status = credit.status;
-  if (status === "FullySettled" || credit.paid === true)
-    return { label: "Settled ✓", color: "text-emerald-500", bg: "bg-emerald-500/10", icon: <CheckCircle2 size={10} /> };
-  if (status === "PartiallySettled")
-    return { label: "Partially Settled", color: "text-yellow-500", bg: "bg-yellow-500/10", icon: <ClockIcon size={10} /> };
-  if (status === "Rejected")
-    return { label: "Rejected ✗", color: "text-red-500", bg: "bg-red-500/10", icon: <XCircle size={10} /> };
-  if (status === "PendingManagerApproval" || status === "PendingCashier")
-    return { label: "Pending Approval", color: "text-orange-500", bg: "bg-orange-500/10", icon: <Clock size={10} className="animate-pulse" /> };
-  if (status === "Approved")
-    return { label: "Approved", color: "text-blue-500", bg: "bg-blue-500/10", icon: <CheckCircle size={10} /> };
-  return { label: "Outstanding", color: "text-purple-400", bg: "bg-purple-500/10", icon: <BookOpen size={10} /> };
-}
-
 function getItemPaymentStatus(item) {
   if (item.is_paid === true)
     return { label: "Paid", color: "text-emerald-500", bg: "bg-emerald-500/10", icon: <CheckCircle2 size={10} /> };
   if (item.is_credit === true)
     return { label: "Credit", color: "text-purple-500", bg: "bg-purple-500/10", icon: <BookOpen size={10} /> };
   if (item.is_payment_requested === true)
-    return { label: "Awaiting Cashier", color: "text-yellow-500", bg: "bg-yellow-500/10", icon: <Clock size={10} className="animate-pulse" /> };
-  return { label: "Pending", color: "text-zinc-500", bg: "bg-zinc-500/10", icon: <Clock size={10} /> };
+    return { label: "Awaiting", color: "text-yellow-500", bg: "bg-yellow-500/10", icon: <Clock size={10} className="animate-pulse" /> };
+  return { label: "Pending", color: "text-zinc-400", bg: "bg-zinc-500/10", icon: <Clock size={10} /> };
 }
 
-// ─── CHART TOOLTIP ────────────────────────────────────────────────────────────
+// ─── DAILY MOTIVATIONAL MESSAGES ──────────────────────────────────────────────
+// Messages organized by date hash for consistency
+const MOTIVATIONAL_MESSAGES = [
+  { icon: <Sparkles size={14} />, text: "Every plate tells a story. Make yours unforgettable!" },
+  { icon: <Crown size={14} />, text: "Excellence is not a skill. It's an attitude." },
+  { icon: <Star size={14} />, text: "Small moments. Big smiles. That's the Kurax way!" },
+  { icon: <TrendingUp size={14} />, text: "Today's service creates tomorrow's loyalty." },
+  { icon: <Award size={14} />, text: "You're not just serving food. You're crafting experiences." },
+  { icon: <Coffee size={14} />, text: "Start your shift with purpose. End it with pride." },
+  { icon: <Sun size={14} />, text: "Brighten every table with your positive energy." },
+  { icon: <Heart size={14} />, text: "Serve from the heart. That's the secret ingredient." },
+  { icon: <Zap size={14} />, text: "Speed + Smile = Perfect Service Formula!" },
+  { icon: <Smile size={14} />, text: "Your smile is the first taste of Kurax hospitality." },
+  { icon: <ThumbsUp size={14} />, text: "Every satisfied guest is your achievement badge!" },
+  { icon: <Moon size={14} />, text: "Evening service shines brighter with your dedication." },
+  { icon: <Sunset size={14} />, text: "Close the day knowing you made a difference." },
+];
+
+// Function to get daily motivation based on date (consistent for same date across years)
+function getDailyMotivation() {
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+  
+  // Create a deterministic hash from the date string
+  let hash = 0;
+  for (let i = 0; i < dateStr.length; i++) {
+    hash = ((hash << 5) - hash) + dateStr.charCodeAt(i);
+    hash = hash & hash;
+  }
+  
+  // Use the hash to pick a message (consistent for the same date)
+  const messageIndex = Math.abs(hash) % MOTIVATIONAL_MESSAGES.length;
+  return MOTIVATIONAL_MESSAGES[messageIndex];
+}
+
+// ─── TOOLTIP ──────────────────────────────────────────────────────────────────
 const CreditChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl bg-white border border-zinc-200 p-3 shadow-md text-[10px] font-black uppercase tracking-wider">
-      <p className="text-zinc-500 mb-2">{label}</p>
+    <div className="rounded-xl bg-white border border-zinc-200 p-3 shadow-md text-[10px] font-bold uppercase tracking-wider">
+      <p className="text-zinc-400 mb-2">{label}</p>
       {payload.map((entry, i) => (
         <div key={i} className="flex items-center gap-2 mb-1">
-          <span className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
+          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: entry.color }} />
           <span className="text-zinc-700">{entry.name}: {fmtUGX(entry.value)}</span>
         </div>
       ))}
     </div>
   );
 };
+
+// ─── STAT CARD ────────────────────────────────────────────────────────────────
+function StatCard({ icon, iconBg, iconColor, badge, label, value, sub, progress, progressColor, accent, children }) {
+  const isGradient = !!accent;
+  return (
+    <div className={`group relative overflow-hidden rounded-2xl p-4 sm:p-5 transition-all duration-300 border
+      ${isGradient
+        ? `${accent} border-transparent shadow-lg`
+        : "bg-white border-zinc-100 shadow-sm hover:shadow-md"
+      }`}>
+      <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-500" />
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-3">
+          <div className={`p-2 rounded-xl ${isGradient ? "bg-white/20" : iconBg}`}>
+            <span className={isGradient ? "text-white" : iconColor}>{icon}</span>
+          </div>
+          {badge && (
+            <span className={`text-[8px] font-bold uppercase tracking-wider ${isGradient ? "text-white/70" : "text-zinc-400"}`}>
+              {badge}
+            </span>
+          )}
+        </div>
+        <p className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${isGradient ? "text-white/70" : "text-zinc-400"}`}>
+          {label}
+        </p>
+        {children || (
+          <>
+            <p className={`text-xl sm:text-2xl font-black leading-tight break-all ${isGradient ? "text-white" : "text-zinc-900"}`}>
+              {value}
+            </p>
+            {sub && (
+              <p className={`text-[10px] mt-0.5 ${isGradient ? "text-white/60" : "text-zinc-400"}`}>{sub}</p>
+            )}
+          </>
+        )}
+        {progress !== undefined && (
+          <div className="mt-3">
+            <div className="flex justify-between text-[8px] font-bold mb-1">
+              <span className={isGradient ? "text-white/60" : "text-zinc-400"}>Progress</span>
+              <span className={isGradient ? "text-white" : progressColor}>{Math.round(progress)}%</span>
+            </div>
+            <div className={`w-full h-1.5 rounded-full overflow-hidden ${isGradient ? "bg-white/20" : "bg-zinc-100"}`}>
+              <div
+                className={`h-full rounded-full transition-all duration-1000 ease-out ${isGradient ? "bg-white" : getProgressBarColor(progress)}`}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getProgressColor(p) {
+  return p >= 75 ? "text-emerald-500" : p >= 50 ? "text-yellow-500" : p >= 25 ? "text-orange-500" : "text-red-500";
+}
+function getProgressBarColor(p) {
+  return p >= 75 ? "bg-emerald-500" : p >= 50 ? "bg-yellow-500" : p >= 25 ? "bg-orange-500" : "bg-red-500";
+}
+
+// ─── MOBILE ORDER ROW ─────────────────────────────────────────────────────────
+function MobileOrderRow({ item }) {
+  const status = getItemPaymentStatus(item);
+  const method = item.payment_method || (item.is_paid ? "Cash" : item.is_credit ? "Credit" : "Pending");
+  const timeStr = new Date(item.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <div className="py-3 border-b border-zinc-100 last:border-0">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] font-bold text-zinc-900 truncate">{item.name}</p>
+          <p className="text-[10px] text-zinc-400 mt-0.5">{item.table_name || "Walk-in"} · x{item.quantity} · {timeStr}</p>
+        </div>
+        <div className="text-right flex-shrink-0">
+          <p className="text-[12px] font-black text-emerald-500">{fmtLargeNumber(item.total)}</p>
+          <div className={`inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded-full ${status.bg}`}>
+            {status.icon}
+            <span className={`text-[8px] font-bold uppercase ${status.color}`}>{status.label}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function PerformanceDashboard({ theme = "light" }) {
@@ -153,6 +255,12 @@ export default function PerformanceDashboard({ theme = "light" }) {
   const [dayClosed, setDayClosed] = useState(false);
   const [currentDayDate, setCurrentDayDate] = useState(getTodayLocal());
   const [activeDay, setActiveDay] = useState(null);
+  const [dailyMotivation, setDailyMotivation] = useState(null);
+
+  // Load daily motivation when component mounts
+  useEffect(() => {
+    setDailyMotivation(getDailyMotivation());
+  }, []);
 
   const savedUser = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); }
@@ -162,22 +270,17 @@ export default function PerformanceDashboard({ theme = "light" }) {
   const currentStaffId = savedUser?.id;
   const currentStaffName = savedUser?.name || "Staff Member";
   const staffRole = savedUser?.role || "STAFF";
-  const staffInitial = (currentStaffName?.split(" ")[0] || "Staff").toUpperCase();
+  const staffInitial = (currentStaffName?.split(" ")[0] || "S")[0].toUpperCase();
 
-  // ─── FETCH ACTIVE DAY INFO ──────────────────────────────────────────────
   const fetchActiveDay = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/day-closure/active-day`);
       if (res.ok) {
         const data = await res.json();
         setActiveDay(data);
-        if (data.date) {
-          setCurrentDayDate(data.date);
-        }
+        if (data.date) setCurrentDayDate(data.date);
       }
-    } catch (err) {
-      console.error("Failed to fetch active day:", err);
-    }
+    } catch (err) { console.error("Failed to fetch active day:", err); }
   }, []);
 
   const loadTargets = useCallback(async () => {
@@ -187,62 +290,36 @@ export default function PerformanceDashboard({ theme = "light" }) {
       if (res.ok) {
         const list = await res.json();
         const me = list.find(s => String(s.id) === String(currentStaffId));
-        if (me) {
-          setStaffTargets({
-            daily_order_target: Number(me.daily_order_target) || 0,
-            monthly_income_target: Number(me.monthly_income_target) || 0,
-          });
-        }
+        if (me) setStaffTargets({ daily_order_target: Number(me.daily_order_target) || 0, monthly_income_target: Number(me.monthly_income_target) || 0 });
       }
-    } catch (err) { setFetchError("Failed to load targets"); }
+    } catch { setFetchError("Failed to load targets"); }
   }, [currentStaffId]);
 
   const fetchMonthlyIncome = useCallback(async () => {
     if (!currentStaffId && !currentStaffName) return;
     try {
       let url = `${API_URL}/api/summaries/staff-monthly-income?`;
-      if (currentStaffId) {
-        url += `staffId=${currentStaffId}`;
-      } else {
-        url += `staffName=${encodeURIComponent(currentStaffName)}`;
-      }
-      
+      url += currentStaffId ? `staffId=${currentStaffId}` : `staffName=${encodeURIComponent(currentStaffName)}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setMonthlyIncomeData(data);
-        if (data.monthly_target) {
-          setStaffTargets(prev => ({
-            ...prev,
-            monthly_income_target: data.monthly_target
-          }));
-        }
-      } else {
-        console.error("Failed to fetch monthly income:", await res.text());
+        if (data.monthly_target) setStaffTargets(prev => ({ ...prev, monthly_income_target: data.monthly_target }));
       }
-    } catch (err) {
-      console.error("Failed to fetch monthly income:", err);
-    }
+    } catch (err) { console.error("Failed to fetch monthly income:", err); }
   }, [currentStaffId, currentStaffName]);
 
   const fetchOrders = useCallback(async () => {
     try {
-      // Fetch only orders from the current active day
-      const url = activeDay?.date 
-        ? `${API_URL}/api/orders?date=${activeDay.date}`
-        : `${API_URL}/api/orders`;
+      const url = activeDay?.date ? `${API_URL}/api/orders?date=${activeDay.date}` : `${API_URL}/api/orders`;
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const allOrders = await res.json();
-      
-      // Filter orders for current staff only
-      const myOrders = allOrders.filter(order => {
+      setOrders(allOrders.filter(order => {
         const matchName = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase();
         const matchId = Number(order.staff_id) === Number(currentStaffId);
         return matchName || matchId;
-      });
-      
-      setOrders(myOrders);
+      }));
       setFetchError(null);
     } catch (err) { setFetchError(err.message); }
   }, [currentStaffId, currentStaffName, activeDay]);
@@ -250,18 +327,14 @@ export default function PerformanceDashboard({ theme = "light" }) {
   const fetchConfirmedQueue = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/orders/cashier-history`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const allQueue = await res.json();
-      
-      // Filter for current staff only and current day
-      const myQueue = allQueue.filter(item => {
+      setConfirmedQueue(allQueue.filter(item => {
         const matchStaff = String(item.staff_id) === String(currentStaffId) ||
           item.requested_by?.toLowerCase() === currentStaffName?.toLowerCase();
         const itemDate = formatOrderDate(item.confirmed_at || item.created_at);
         return matchStaff && itemDate === currentDayDate;
-      });
-      
-      setConfirmedQueue(myQueue);
+      }));
     } catch (err) { console.error("Queue fetch failed:", err); }
   }, [currentStaffId, currentStaffName, currentDayDate]);
 
@@ -270,502 +343,324 @@ export default function PerformanceDashboard({ theme = "light" }) {
       const res = await fetch(`${API_URL}/api/credits`);
       if (res.ok) {
         const allCredits = await res.json();
-        // Filter for current staff and current day
-        const myCreditsToday = allCredits.filter(credit => {
+        setCredits(allCredits.filter(credit => {
           const matchWaiter = credit.waiter_name?.toLowerCase() === currentStaffName?.toLowerCase();
           const creditDate = formatOrderDate(credit.created_at);
           return matchWaiter && creditDate === currentDayDate;
-        });
-        setCredits(myCreditsToday);
+        }));
       }
     } catch (err) { console.error("Credits fetch failed:", err); }
   }, [currentStaffName, currentDayDate]);
 
-  // ─── CHECK DAY CLOSURE STATUS ──────────────────────────────────────────────
   const checkDayClosure = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/day-closure/day-status`);
       if (res.ok) {
         const data = await res.json();
         if (data.is_closed && !dayClosed) {
-          console.log("Day is closed, resetting dashboard...");
           setDayClosed(true);
-          await handleDayClosureReset();
+          setConfirmedQueue([]); setOrders([]); setCredits([]); setMonthlyIncomeData(null);
+          await fetchActiveDay();
+          await Promise.all([loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits()]);
+          setLastRefresh(new Date());
         } else if (!data.is_closed && dayClosed) {
-          // Day has been reopened
           setDayClosed(false);
           await fetchActiveDay();
           await handleRefreshData();
         }
       }
-    } catch (err) {
-      console.error("Check day closure error:", err);
-    }
-  }, [dayClosed]);
+    } catch (err) { console.error("Check day closure error:", err); }
+  }, [dayClosed, fetchActiveDay, loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits]);
 
-  // ─── HANDLE DAY CLOSURE RESET ──────────────────────────────────────────────
-  const handleDayClosureReset = useCallback(async () => {
-    console.log("Resetting waiter dashboard after day closure...");
-    
-    // Clear all local states
-    setConfirmedQueue([]);
-    setOrders([]);
-    setCredits([]);
-    setMonthlyIncomeData(null);
-    
-    // Fetch new active day
-    await fetchActiveDay();
-    
-    // Force refresh all data for the new day
-    await Promise.all([
-      loadTargets(),
-      fetchMonthlyIncome(),
-      fetchOrders(),
-      fetchConfirmedQueue(),
-      fetchCredits()
-    ]);
-    
-    setLastRefresh(new Date());
-    
-    // Show notification
-    const notification = document.createElement('div');
-    notification.innerHTML = `
-      <div style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; background: #10B981; color: white; padding: 16px 24px; border-radius: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); animation: slideIn 0.3s ease-out; font-family: system-ui;">
-        ✅ New day started! All totals have been reset.
-      </div>
-      <style>
-        @keyframes slideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-      </style>
-    `;
-    document.body.appendChild(notification);
-    setTimeout(() => notification.remove(), 5000);
-  }, [fetchActiveDay, loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits]);
-
-  // ─── DAY CLOSURE EVENT LISTENER ────────────────────────────────────────────
-  useEffect(() => {
-    const handleDayClosed = () => {
-      console.log("Day closed event received - resetting waiter dashboard");
-      handleDayClosureReset();
-    };
-
-    const handleRefresh = () => {
-      console.log("Refresh event received");
-      handleRefreshData();
-    };
-
-    window.addEventListener('dayClosed', handleDayClosed);
-    window.addEventListener('refresh', handleRefresh);
-    
-    return () => {
-      window.removeEventListener('dayClosed', handleDayClosed);
-      window.removeEventListener('refresh', handleRefresh);
-    };
-  }, [handleDayClosureReset]);
-
-  // Initial load effect
   useEffect(() => {
     const initialize = async () => {
       await fetchActiveDay();
-      await Promise.all([
-        loadTargets(),
-        fetchMonthlyIncome(),
-        fetchOrders(),
-        fetchConfirmedQueue(),
-        fetchCredits()
-      ]);
+      await Promise.all([loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits()]);
     };
-    
     initialize();
-    
-    // Check day closure every 30 seconds
     const closureInterval = setInterval(checkDayClosure, 30000);
-    
-    // Refresh data every 30 seconds
     const interval = setInterval(() => {
-      if (!dayClosed) {
-        fetchMonthlyIncome();
-        fetchOrders();
-        fetchConfirmedQueue();
-        fetchCredits();
-      }
+      if (!dayClosed) { fetchMonthlyIncome(); fetchOrders(); fetchConfirmedQueue(); fetchCredits(); }
     }, 30000);
-    
-    return () => {
-      clearInterval(interval);
-      clearInterval(closureInterval);
-    };
-  }, [loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits, checkDayClosure, fetchActiveDay, dayClosed]);
+    return () => { clearInterval(interval); clearInterval(closureInterval); };
+  }, []);
 
   const handleRefreshData = async () => {
     setIsLoading(true);
     setFetchError(null);
-    await Promise.all([
-      loadTargets(),
-      fetchMonthlyIncome(),
-      fetchOrders(),
-      fetchConfirmedQueue(),
-      fetchCredits(),
-      fetchActiveDay()
-    ]);
+    await Promise.all([loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits(), fetchActiveDay()]);
     setLastRefresh(new Date());
     setIsLoading(false);
   };
 
-  // ─── COMPUTED VALUES ────────────────────────────────────────────────────────
+  // ─── COMPUTED ──────────────────────────────────────────────────────────────
   const dailyStaffItemsCount = useMemo(() => {
-    if (!orders.length) return 0;
     let count = 0;
     orders.forEach(order => {
-      const orderDate = formatOrderDate(order.created_at || order.timestamp);
-      if (orderDate === currentDayDate) {
+      if (formatOrderDate(order.created_at || order.timestamp) === currentDayDate)
         count += getItemCount(order.items);
-      }
     });
     return count;
   }, [orders, currentDayDate]);
 
   const monthlyRevenue = monthlyIncomeData?.monthly_income || 0;
   const revenueTarget = staffTargets.monthly_income_target || monthlyIncomeData?.monthly_target || 0;
-  
-  const grossToday = useMemo(() => {
-    if (!confirmedQueue.length) return 0;
-    return confirmedQueue.reduce((sum, row) => {
-      if (row.status !== "Confirmed") return sum;
-      const itemDate = formatOrderDate(row.confirmed_at || row.created_at);
-      if (itemDate !== currentDayDate) return sum;
-      return sum + (Number(row.amount) || 0);
-    }, 0);
-  }, [confirmedQueue, currentDayDate]);
 
-  const myCredits = useMemo(() => credits, [credits]);
+  const grossToday = useMemo(() => confirmedQueue.reduce((sum, row) => {
+    if (row.status !== "Confirmed") return sum;
+    if (formatOrderDate(row.confirmed_at || row.created_at) !== currentDayDate) return sum;
+    return sum + (Number(row.amount) || 0);
+  }, 0), [confirmedQueue, currentDayDate]);
 
   const creditStats = useMemo(() => {
-    const fullySettled = myCredits.filter(c => c.status === "FullySettled");
-    const partiallySettled = myCredits.filter(c => c.status === "PartiallySettled");
-    const approved = myCredits.filter(c => c.status === "Approved");
-    const rejected = myCredits.filter(c => c.status === "Rejected");
-    
-    const fullySettledAmount = fullySettled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
-    const partiallySettledPaidAmount = partiallySettled.reduce((s, c) => s + Number(c.amount_paid || 0), 0);
-    const settledAmount = fullySettledAmount + partiallySettledPaidAmount;
-    
-    const approvedAmount = approved.reduce((s, c) => s + Number(c.amount || 0), 0);
-    const partiallySettledRemaining = partiallySettled.reduce((s, c) => s + Number(c.balance || c.amount || 0), 0);
-    const outstandingAmount = approvedAmount + partiallySettledRemaining;
-    
-    const rejectedAmount = rejected.reduce((s, c) => s + Number(c.amount || 0), 0);
-    
+    const settled = credits.filter(c => c.status === "FullySettled");
+    const partial = credits.filter(c => c.status === "PartiallySettled");
+    const approved = credits.filter(c => c.status === "Approved");
+    const rejected = credits.filter(c => c.status === "Rejected");
     return {
-      settled: { count: fullySettled.length + partiallySettled.length, amount: settledAmount },
-      outstanding: { count: approved.length + partiallySettled.length, amount: outstandingAmount },
-      rejected: { count: rejected.length, amount: rejectedAmount },
-      total: myCredits.length,
-      totalAmount: myCredits.reduce((s, c) => s + Number(c.amount || 0), 0),
+      settled: { count: settled.length + partial.length, amount: settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0) + partial.reduce((s, c) => s + Number(c.amount_paid || 0), 0) },
+      outstanding: { count: approved.length + partial.length, amount: approved.reduce((s, c) => s + Number(c.amount || 0), 0) + partial.reduce((s, c) => s + Number(c.balance || c.amount || 0), 0) },
+      rejected: { count: rejected.length, amount: rejected.reduce((s, c) => s + Number(c.amount || 0), 0) },
+      total: credits.length,
+      totalAmount: credits.reduce((s, c) => s + Number(c.amount || 0), 0),
     };
-  }, [myCredits]);
+  }, [credits]);
 
   const recentOrderItems = useMemo(() => {
-    if (!orders.length) return [];
     const allItems = [];
     orders.forEach(order => {
-      const orderDate = formatOrderDate(order.created_at || order.timestamp);
-      if (orderDate === currentDayDate) {
+      if (formatOrderDate(order.created_at || order.timestamp) === currentDayDate)
         allItems.push(...getIndividualItems(order, credits));
-      }
     });
-    allItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    return allItems.slice(0, 20);
+    return allItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20);
   }, [orders, credits, currentDayDate]);
 
   const creditChartData = useMemo(() => {
-    const days = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() - (6 - i));
       const dateStr = formatOrderDate(d);
       const label = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-
-      let settled = 0, approved = 0, rejected = 0, outstanding = 0;
-      
-      myCredits.forEach(credit => {
-        const creditDate = formatOrderDate(credit.created_at);
-        if (creditDate !== dateStr) return;
-        const s = credit.status;
+      let Settled = 0, Approved = 0, Rejected = 0, Outstanding = 0;
+      credits.forEach(credit => {
+        if (formatOrderDate(credit.created_at) !== dateStr) return;
         const amount = Number(credit.amount || 0);
-        
-        if (s === "FullySettled") {
-          settled += amount;
-        } else if (s === "PartiallySettled") {
-          const amountPaid = Number(credit.amount_paid || 0);
-          const remaining = Number(credit.balance || credit.amount || 0);
-          settled += amountPaid;
-          outstanding += remaining;
-        } else if (s === "Approved") {
-          approved += amount;
-          outstanding += amount;
-        } else if (s === "Rejected") {
-          rejected += amount;
-        } else if (s === "PendingCashier" || s === "PendingManager") {
-          outstanding += amount;
-        }
+        const s = credit.status;
+        if (s === "FullySettled") { Settled += amount; }
+        else if (s === "PartiallySettled") { Settled += Number(credit.amount_paid || 0); Outstanding += Number(credit.balance || amount); }
+        else if (s === "Approved") { Approved += amount; Outstanding += amount; }
+        else if (s === "Rejected") { Rejected += amount; }
+        else { Outstanding += amount; }
       });
-
-      days.push({ 
-        date: label, 
-        Settled: settled, 
-        Approved: approved, 
-        Rejected: rejected,
-        Outstanding: outstanding,
-      });
-    }
-    return days;
-  }, [myCredits]);
+      return { date: label, Settled, Approved, Rejected, Outstanding };
+    });
+  }, [credits]);
 
   const orderTarget = staffTargets.daily_order_target || 0;
   const orderProgress = orderTarget > 0 ? Math.min((dailyStaffItemsCount / orderTarget) * 100, 100) : 0;
   const revenueProgress = revenueTarget > 0 ? Math.min((monthlyRevenue / revenueTarget) * 100, 100) : 0;
-
-  const getProgressColor = (p) => p >= 75 ? "text-emerald-500" : p >= 50 ? "text-yellow-500" : p >= 25 ? "text-orange-500" : "text-red-500";
-  const getProgressBarColor = (p) => p >= 75 ? "bg-gradient-to-r from-emerald-500 to-emerald-400" : p >= 50 ? "bg-gradient-to-r from-yellow-500 to-amber-400" : p >= 25 ? "bg-gradient-to-r from-orange-500 to-orange-400" : "bg-gradient-to-r from-red-500 to-red-400";
-
-  const today = getTodayLocal();
   const currentMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
-  const isDark = theme === "dark";
+
+  // Get today's date for display
+  const todayDisplay = new Date().toLocaleDateString("en-GB", { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
 
   return (
-    <div className="min-h-screen p-6 md:p-10 font-[Outfit] bg-gradient-to-br from-zinc-50 to-zinc-100">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-zinc-50 font-[Outfit]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-4 sm:space-y-6">
 
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-yellow-500 to-yellow-600 flex items-center justify-center font-black text-black text-2xl leading-none shadow-lg shadow-yellow-500/30">
-                {staffInitial[0]}
-              </div>
-              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white animate-pulse" />
-            </div>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tighter text-zinc-900">{currentStaffName}</h1>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-600 text-[8px] font-black uppercase tracking-wider">{staffRole}</span>
-                <span className="text-[10px] text-zinc-400 uppercase tracking-wider">
-                  {activeDay?.date || currentDayDate}
-                </span>
-                {activeDay && (
-                  <span className="text-[8px] text-emerald-500 font-black uppercase tracking-wider">
-                    ✓ Day Active
-                  </span>
-                )}
-              </div>
+        {/* ── HEADER with Captivating Text on Left and Waiter Name on Right ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Left side - Captivating motivational text */}
+          <div className="flex items-center gap-3 min-w-0">
+            
+            <div className="min-w-0">
+              <p className="text-[10px] sm:text-[19px] text-yellow-900 font-medium uppercase tracking-wider">
+                ✨ Today's Motivation ✨
+              </p>
+              <p className="text-xs sm:text-sm font-medium text-zinc-700 leading-tight mt-0.5">
+                {dailyMotivation?.text || "You're amazing! Keep serving with excellence!"}
+              </p>
+              <p className="text-[8px] text-zinc-400 mt-1 hidden sm:block">
+                {todayDisplay}
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-[8px] text-zinc-400">Last refresh: {lastRefresh.toLocaleTimeString()}</span>
-            <button onClick={handleRefreshData} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-zinc-200 text-zinc-600 text-[10px] font-black uppercase tracking-wider hover:bg-zinc-50 transition-all disabled:opacity-50">
-              {isLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              Refresh
-            </button>
+
+          {/* Right side - Waiter profile */}
+          <div className="flex items-center justify-end gap-3 sm:gap-4 flex-shrink-0">
+            <div className="text-right hidden sm:block">
+              <p className="text-sm font-black text-zinc-900">{currentStaffName}</p>
+              <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                <span className="px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-700 text-[8px] font-bold uppercase tracking-wider">
+                  {staffRole}
+                </span>
+                <span className="text-[8px] text-emerald-500 font-bold">✓ Active</span>
+              </div>
+            </div>
+            <div className="relative flex-shrink-0">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-yellow-500 to-amber-600 flex items-center justify-center font-black text-black text-xl sm:text-2xl shadow-lg">
+                {staffInitial}
+              </div>
+              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white" />
+            </div>
           </div>
         </div>
 
-        {/* Error */}
+        {/* Mobile date display */}
+        <div className="sm:hidden">
+          <p className="text-[8px] text-zinc-400 mt-0.5 text-center">
+            {todayDisplay}
+          </p>
+        </div>
+
+        {/* Mobile waiter info */}
+        <div className="sm:hidden flex items-center justify-between">
+          <div>
+            <p className="text-[9px] text-zinc-400 uppercase tracking-wider">Logged in as</p>
+            <p className="text-sm font-black text-zinc-900">{currentStaffName}</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-700 text-[8px] font-bold uppercase tracking-wider">
+              {staffRole}
+            </span>
+            <span className="text-[8px] text-emerald-500 font-bold">Active</span>
+          </div>
+        </div>
+
+        {/* ── ERROR ── */}
         {fetchError && (
-          <div className="rounded-2xl bg-red-500/10 border border-red-500/20 p-4 flex items-center gap-3">
-            <AlertCircle size={18} className="text-red-500" />
-            <div className="flex-1">
-              <p className="text-[10px] font-black text-red-500 uppercase tracking-wider">Connection Error</p>
-              <p className="text-[9px] text-red-400">{fetchError}</p>
-            </div>
-            <button onClick={handleRefreshData} className="text-[9px] text-red-500 underline">Retry</button>
+          <div className="rounded-xl bg-red-50 border border-red-200 p-3 flex items-center gap-3">
+            <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+            <p className="text-[11px] text-red-600 flex-1 min-w-0 truncate">{fetchError}</p>
+            <button onClick={handleRefreshData} className="text-[10px] text-red-500 underline flex-shrink-0">Retry</button>
           </div>
         )}
 
-        {/* Day Info Banner */}
-        <div className="rounded-2xl bg-blue-500/10 border border-blue-500/20 p-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
+        {/* ── STAT CARDS ── */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+
+          {/* Items Sold */}
+          <StatCard
+            icon={<ClipboardList size={16} />}
+            iconBg="bg-orange-500/10" iconColor="text-orange-500"
+            badge="Today" label="Items Sold"
+            value={dailyStaffItemsCount}
+            sub={`/ ${orderTarget || "—"} target`}
+            progress={orderProgress}
+            progressColor={getProgressColor(orderProgress)}
+          />
+
+          {/* Revenue Today */}
+          <StatCard
+            icon={<TrendingUp size={16} />}
+            iconBg="bg-yellow-500/10" iconColor="text-yellow-500"
+            badge="Today" label="Revenue"
+            value={fmtLargeNumber(grossToday)}
+            sub={revenueTarget > 0 ? `${Math.round((grossToday / revenueTarget) * 100)}% of monthly` : ""}
+          />
+
+          {/* Monthly Target */}
+          <StatCard
+            icon={<Target size={16} />}
+            badge={currentMonth}
+            label="Monthly Revenue"
+            accent="bg-gradient-to-br from-emerald-500 to-emerald-600"
+            progress={revenueProgress}
+          >
+            <p className="text-lg sm:text-xl font-black text-white leading-tight break-all">
+              {fmtLargeNumber(monthlyRevenue)}
+            </p>
+            <p className="text-[9px] text-white/60 mt-0.5">/ {fmtLargeNumber(revenueTarget)}</p>
+          </StatCard>
+
+          {/* Credits */}
+          <StatCard
+            icon={<BookOpen size={16} />}
+            badge="Today"
+            label="Credit Summary"
+            accent="bg-gradient-to-br from-purple-500 to-purple-600"
+          >
+            <div className="space-y-1 mt-1">
+              {[
+                { k: "Settled", v: creditStats.settled.amount },
+                { k: "Outstanding", v: creditStats.outstanding.amount },
+                { k: "Rejected", v: creditStats.rejected.amount },
+              ].map(({ k, v }) => (
+                <div key={k} className="flex items-center justify-between gap-1">
+                  <span className="text-[9px] text-white/60">{k}</span>
+                  <span className="text-[10px] font-black text-white">{fmtLargeNumber(v)}</span>
+                </div>
+              ))}
+              <div className="pt-1 mt-1 border-t border-white/20 flex items-center justify-between gap-1">
+                <span className="text-[9px] text-white/60">Total</span>
+                <span className="text-[10px] font-black text-yellow-300">{fmtLargeNumber(creditStats.totalAmount)}</span>
+              </div>
+            </div>
+          </StatCard>
+        </div>
+
+        {/* ── CHART ── */}
+        <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
             <div className="flex items-center gap-2">
-              <Calendar size={16} className="text-blue-500" />
-              <span className="text-[10px] font-black text-blue-600 uppercase tracking-wider">
-                Active Business Day: {activeDay?.date || currentDayDate}
-              </span>
-            </div>
-            {dayClosed && (
-              <span className="text-[9px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg">
-                New day started - totals reset
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* ── STAT CARDS (4 CARDS) ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
-          {/* 1 · Daily Items */}
-          <div className="group relative overflow-hidden rounded-2xl bg-white p-5 shadow-sm hover:shadow-md transition-all duration-300 border border-zinc-100">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500" />
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 rounded-xl bg-orange-500/10"><ClipboardList size={18} className="text-orange-500" /></div>
-                <span className="text-[8px] font-black text-orange-500 uppercase tracking-wider">Today</span>
-              </div>
-              <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider mb-1">Items Sold</p>
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-2xl font-black text-zinc-900 break-words">{dailyStaffItemsCount}</span>
-                <span className="text-xs text-zinc-400 break-words">/ {orderTarget || "—"}</span>
-              </div>
-              <div className="mt-3">
-                <div className="flex justify-between text-[8px] font-bold mb-1">
-                  <span className="text-zinc-500">Progress</span>
-                  <span className={getProgressColor(orderProgress)}>{Math.round(orderProgress)}%</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full bg-zinc-100 overflow-hidden">
-                  <div className={`h-full rounded-full ${getProgressBarColor(orderProgress)} transition-all duration-1000 ease-out`} style={{ width: `${orderProgress}%` }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 2 · Today Revenue */}
-          <div className="group relative overflow-hidden rounded-2xl bg-white p-5 shadow-sm hover:shadow-md transition-all duration-300 border border-zinc-100">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-500/5 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500" />
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 rounded-xl bg-yellow-500/10"><TrendingUp size={18} className="text-yellow-500" /></div>
-                <span className="text-[8px] font-black text-yellow-500 uppercase tracking-wider">Today</span>
-              </div>
-              <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider mb-1">Revenue Generated</p>
-              <span className="text-2xl font-black text-zinc-900 break-words block" title={fmtUGX(grossToday)}>
-                {fmtLargeNumber(grossToday)}
-              </span>
-              <div className="mt-3 pt-2 border-t border-zinc-100">
-                <div className="flex justify-between text-[8px] font-bold">
-                  <span className="text-zinc-500">Today's Contribution</span>
-                  <span className="text-emerald-500">{revenueTarget > 0 ? Math.round((grossToday / revenueTarget) * 100) : 0}% of monthly</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 3 · Monthly Target */}
-          <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 shadow-lg">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500" />
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 rounded-xl bg-white/20"><Target size={18} className="text-white" /></div>
-                <span className="text-[8px] font-black text-white/80 uppercase tracking-wider">{currentMonth}</span>
-              </div>
-              <p className="text-[9px] font-black text-white/70 uppercase tracking-wider mb-1">Monthly Revenue (Accumulated)</p>
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-2xl font-black text-white break-words">{fmtLargeNumber(monthlyRevenue)}</span>
-                <span className="text-xs text-white/60 break-words">/ {fmtLargeNumber(revenueTarget)}</span>
-              </div>
-              <div className="mt-3">
-                <div className="w-full h-1.5 rounded-full bg-white/20 overflow-hidden">
-                  <div className="h-full rounded-full bg-white transition-all duration-1000 ease-out" style={{ width: `${revenueProgress}%` }} />
-                </div>
-              </div>
-              <div className="mt-2 text-[8px] text-white/70 text-center">
-                {monthlyRevenue > 0 && `✨ ${fmtLargeNumber(monthlyRevenue)} earned so far this month`}
-              </div>
-            </div>
-          </div>
-
-          {/* 4 · Credit Summary */}
-          <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-500 to-purple-600 p-5 shadow-lg">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500" />
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 rounded-xl bg-white/20"><BookOpen size={18} className="text-white" /></div>
-                <span className="text-[8px] font-black text-white/80 uppercase tracking-wider">Credits Today</span>
-              </div>
-              <p className="text-[9px] font-black text-white/70 uppercase tracking-wider mb-1">Your Credit Summary</p>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-[9px] gap-2">
-                  <span className="text-white/70 shrink-0">Settled:</span>
-                  <span className="text-white font-black text-right break-words">{fmtLargeNumber(creditStats.settled.amount)}</span>
-                </div>
-                <div className="flex items-center justify-between text-[9px] gap-2">
-                  <span className="text-white/70 shrink-0">Outstanding:</span>
-                  <span className="text-white font-black text-right break-words">{fmtLargeNumber(creditStats.outstanding.amount)}</span>
-                </div>
-                <div className="flex items-center justify-between text-[9px] gap-2">
-                  <span className="text-white/70 shrink-0">Rejected:</span>
-                  <span className="text-white font-black text-right break-words">{fmtLargeNumber(creditStats.rejected.amount)}</span>
-                </div>
-              </div>
-              <div className="mt-2 pt-2 border-t border-white/20">
-                <div className="flex items-center justify-between text-[9px] gap-2">
-                  <span className="text-white/70 shrink-0">Total:</span>
-                  <span className="text-yellow-300 font-black text-right break-words">{fmtLargeNumber(creditStats.totalAmount)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── CREDIT ACTIVITY LINE CHART ── */}
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-zinc-100">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-            <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-indigo-500/10">
-                <TrendingUp size={16} className="text-indigo-500" />
+                <TrendingUp size={15} className="text-indigo-500" />
               </div>
               <div>
-                <h3 className="text-sm font-black uppercase tracking-tighter text-zinc-900">Daily Credit Activity</h3>
-                <p className="text-[9px] text-zinc-400 mt-0.5">Last 7 days — trends by status</p>
+                <h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Credit Activity</h3>
+                <p className="text-[9px] text-zinc-400">Last 7 days</p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-4 text-[9px] font-black uppercase tracking-wider">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />Settled</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" />Approved</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500" />Rejected</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-orange-500" />Outstanding</span>
+            <div className="flex flex-wrap gap-3 text-[9px] font-bold uppercase tracking-wider">
+              {[["Settled","#10b981"],["Approved","#3b82f6"],["Rejected","#ef4444"],["Outstanding","#f97316"]].map(([name, color]) => (
+                <span key={name} className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+                  {name}
+                </span>
+              ))}
             </div>
           </div>
-
-          <ResponsiveContainer width="100%" height={320}>
-            <LineChart data={creditChartData} margin={{ top: 8, right: 24, left: 0, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={creditChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 10, fill: "#a1a1aa", fontFamily: "Outfit, sans-serif", fontWeight: 700 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 10, fill: "#a1a1aa", fontFamily: "Outfit, sans-serif", fontWeight: 700 }}
-                tickLine={false}
-                axisLine={false}
-                allowDecimals={false}
-                tickFormatter={(value) => fmtLargeNumber(value).replace("UGX ", "")}
-              />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#a1a1aa", fontFamily: "Outfit, sans-serif" }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: "#a1a1aa", fontFamily: "Outfit, sans-serif" }} tickLine={false} axisLine={false} tickFormatter={v => fmtLargeNumber(v).replace("UGX ", "")} width={45} />
               <Tooltip content={<CreditChartTooltip />} />
-              <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
-              <Line type="monotone" dataKey="Settled" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: "#10b981" }} activeDot={{ r: 5 }} />
-              <Line type="monotone" dataKey="Approved" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3, fill: "#3b82f6" }} activeDot={{ r: 5 }} />
-              <Line type="monotone" dataKey="Rejected" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: "#ef4444" }} activeDot={{ r: 5 }} />
-              <Line type="monotone" dataKey="Outstanding" stroke="#f97316" strokeWidth={2} dot={{ r: 3, fill: "#f97316" }} activeDot={{ r: 5 }} />
+              <Line type="monotone" dataKey="Settled" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
+              <Line type="monotone" dataKey="Approved" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
+              <Line type="monotone" dataKey="Rejected" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
+              <Line type="monotone" dataKey="Outstanding" stroke="#f97316" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
-        {/* ── RECENT ORDER ITEMS ── */}
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-zinc-100">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-xl bg-blue-500/10"><Activity size={16} className="text-blue-500" /></div>
-            <h3 className="text-sm font-black uppercase tracking-tighter text-zinc-900">Today's Order Items</h3>
-            <span className="ml-auto text-[9px] text-zinc-400">Last 20 items</span>
+        {/* ── ORDER ITEMS ── */}
+        <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="p-2 rounded-xl bg-blue-500/10"><Activity size={15} className="text-blue-500" /></div>
+            <h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Today's Orders</h3>
+            <span className="ml-auto text-[9px] text-zinc-900">Last 20</span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="border-b border-zinc-200">
+
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-left" style={{ tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: "28%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "16%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "9%" }} />
+              </colgroup>
+              <thead className="border-b border-zinc-100">
                 <tr>
-                  {["Item", "Table", "Qty", "Amount", "Payment Method", "Status", "Time"].map(h => (
-                    <th key={h} className="pb-3 text-[9px] font-black text-zinc-400 uppercase tracking-wider">{h}</th>
+                  {["Item", "Table", "Qty", "Amount", "Method", "Status", "Time"].map(h => (
+                    <th key={h} className="pb-3 text-[9px] font-bold text-zinc-400 uppercase tracking-wider pr-2">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -775,105 +670,105 @@ export default function PerformanceDashboard({ theme = "light" }) {
                   const method = item.payment_method || (item.is_paid ? "Cash" : item.is_credit ? "Credit" : "Pending");
                   const timeStr = new Date(item.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
                   return (
-                    <tr key={idx} className="border-b border-zinc-100 hover:bg-zinc-50 transition-colors">
-                      <td className="py-3 text-[11px] font-bold text-zinc-900 break-words max-w-[150px]">{item.name}</td>
-                      <td className="py-3 text-[10px] text-zinc-600">{item.table_name || "WALK-IN"}</td>
-                      <td className="py-3 text-[10px] text-zinc-600">x{item.quantity}</td>
-                      <td className="py-3 text-[11px] font-black text-emerald-500 whitespace-nowrap">{fmtUGX(item.total)}</td>
-                      <td className="py-3">
-                        <span className={`text-[9px] font-black uppercase whitespace-nowrap ${method === "Credit" ? "text-purple-500" : method === "Cash" ? "text-emerald-500" : "text-zinc-400"}`}>{method}</span>
+                    <tr key={idx} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
+                      <td className="py-2.5 text-[11px] font-medium text-yellow-900 truncate pr-2">{item.name}</td>
+                      <td className="py-2.5 text-[10px] text-zinc-500 truncate pr-2">{item.table_name || "Walk-in"}</td>
+                      <td className="py-2.5 text-[10px] text-zinc-500 pr-2">×{item.quantity}</td>
+                      <td className="py-2.5 text-[10px] font-medium text-emerald-500 truncate pr-2">{fmtUGX(item.total)}</td>
+                      <td className="py-2.5 pr-2">
+                        <span className={`text-[9px] font-bold uppercase ${method === "Credit" ? "text-purple-500" : method === "Cash" ? "text-emerald-500" : "text-zinc-400"}`}>
+                          {method}
+                        </span>
                       </td>
-                      <td className="py-3">
-                        <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          {status.icon}
-                          <span className={`text-[9px] font-black uppercase ${status.color}`}>{status.label}</span>
-                        </div>
+                      <td className="py-2.5 pr-2">
+                        <span className={`text-[9px] font-bold uppercase ${status.color}`}>{status.label}</span>
                       </td>
-                      <td className="py-3 text-[9px] text-zinc-400 whitespace-nowrap">{timeStr}</td>
+                      <td className="py-2.5 text-[9px] text-zinc-400">{timeStr}</td>
                     </tr>
                   );
                 }) : (
                   <tr>
-                    <td colSpan="7" className="py-8 text-center">
-                      <p className="text-[10px] text-zinc-400">No order items for today</p>
-                      <p className="text-[8px] text-zinc-300 mt-1">Items you serve on {currentDayDate} will appear here</p>
+                    <td colSpan="7" className="py-10 text-center text-[10px] text-zinc-400">
+                      No order items for today
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* Mobile list */}
+          <div className="sm:hidden">
+            {recentOrderItems.length > 0
+              ? recentOrderItems.map((item, idx) => <MobileOrderRow key={idx} item={item} />)
+              : <p className="py-8 text-center text-[11px] text-zinc-400">No order items for today</p>
+            }
+          </div>
         </div>
 
         {/* ── PERFORMANCE INSIGHTS ── */}
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-zinc-100">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-xl bg-purple-500/10"><Award size={16} className="text-purple-500" /></div>
-            <h3 className="text-sm font-black uppercase tracking-tighter text-zinc-900">Performance Insights</h3>
+        <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="p-2 rounded-xl bg-purple-500/10"><Award size={15} className="text-purple-500" /></div>
+            <h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Performance Insights</h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl bg-gradient-to-r from-yellow-50 to-transparent">
-              <div className="flex items-center gap-2 mb-2">
-                <Target size={14} className="text-yellow-500" />
-                <span className="text-[9px] font-black text-yellow-600 uppercase tracking-wider">Daily Target Status</span>
-              </div>
-              <p className="text-[11px] text-zinc-600">
-                {dailyStaffItemsCount >= orderTarget && orderTarget > 0
-                  ? "🎉 Congratulations! You've achieved your daily item target!"
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              {
+                icon: <Target size={13} className="text-yellow-500" />,
+                label: "Daily Target", color: "text-yellow-600", bg: "bg-yellow-50",
+                text: dailyStaffItemsCount >= orderTarget && orderTarget > 0
+                  ? "🎉 Daily item target achieved!"
                   : orderTarget > 0
-                    ? `📋 You need ${orderTarget - dailyStaffItemsCount} more item${orderTarget - dailyStaffItemsCount !== 1 ? "s" : ""} to reach today's target`
-                    : "📋 No daily target set. Contact your manager to set targets."}
-              </p>
-            </div>
-            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-50 to-transparent">
-              <div className="flex items-center gap-2 mb-2">
-                <TrendingUp size={14} className="text-emerald-500" />
-                <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Monthly Revenue Status</span>
-              </div>
-              <p className="text-[11px] text-zinc-600">
-                {monthlyRevenue >= revenueTarget && revenueTarget > 0
-                  ? "🏆 Amazing! You've exceeded your monthly revenue target!"
+                    ? `📋 ${orderTarget - dailyStaffItemsCount} more item${orderTarget - dailyStaffItemsCount !== 1 ? "s" : ""} to reach today's target`
+                    : "📋 No daily target set",
+              },
+              {
+                icon: <TrendingUp size={13} className="text-emerald-500" />,
+                label: "Monthly Revenue", color: "text-emerald-600", bg: "bg-emerald-50",
+                text: monthlyRevenue >= revenueTarget && revenueTarget > 0
+                  ? "🏆 Monthly revenue target exceeded!"
                   : revenueTarget > 0
-                    ? `💰 You've generated ${Math.round(revenueProgress)}% of your monthly revenue target (${fmtLargeNumber(monthlyRevenue)} of ${fmtLargeNumber(revenueTarget)}). Keep going!`
-                    : "💰 No monthly target set. Contact your manager to set targets."}
-              </p>
-            </div>
-            <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-transparent">
-              <div className="flex items-center gap-2 mb-2">
-                <Calendar size={14} className="text-blue-500" />
-                <span className="text-[9px] font-black text-blue-600 uppercase tracking-wider">Daily Average Needed</span>
+                    ? `💰 ${Math.round(revenueProgress)}% of monthly target reached`
+                    : "💰 No monthly target set",
+              },
+              {
+                icon: <Calendar size={13} className="text-blue-500" />,
+                label: "Daily Average Needed", color: "text-blue-600", bg: "bg-blue-50",
+                text: revenueTarget > 0
+                  ? `Aim for ${fmtUGX(Math.ceil(revenueTarget / 30))} per day`
+                  : "Set a monthly target to see daily recommendations",
+              },
+              {
+                icon: <BookOpen size={13} className="text-purple-500" />,
+                label: "Credit Summary", color: "text-purple-600", bg: "bg-purple-50",
+                text: creditStats.total > 0
+                  ? `💳 ${creditStats.settled.count} settled · ${creditStats.outstanding.count} outstanding`
+                  : "💳 No credit records for today",
+              },
+            ].map(({ icon, label, color, bg, text }) => (
+              <div key={label} className={`p-3 sm:p-4 rounded-xl ${bg}`}>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  {icon}
+                  <span className={`text-[9px] font-bold uppercase tracking-wider ${color}`}>{label}</span>
+                </div>
+                <p className="text-[11px] text-zinc-600 leading-relaxed">{text}</p>
               </div>
-              <p className="text-[11px] text-zinc-600">
-                {revenueTarget > 0
-                  ? `To hit your monthly target, aim for approximately ${fmtUGX(Math.ceil(revenueTarget / 30))} per day`
-                  : "Set a monthly target to see daily recommendations"}
-              </p>
-            </div>
-            <div className="p-4 rounded-xl bg-gradient-to-r from-purple-50 to-transparent">
-              <div className="flex items-center gap-2 mb-2">
-                <BookOpen size={14} className="text-purple-500" />
-                <span className="text-[9px] font-black text-purple-600 uppercase tracking-wider">Credit Summary</span>
-              </div>
-              <p className="text-[11px] text-zinc-600">
-                {creditStats.total > 0
-                  ? `💳 Today: ${creditStats.settled.count} settled (${fmtLargeNumber(creditStats.settled.amount)}), ${creditStats.outstanding.count} outstanding (${fmtLargeNumber(creditStats.outstanding.amount)})`
-                  : "💳 No credit records for today"}
-              </p>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* Achievement Badge */}
+        {/* ── ACHIEVEMENT ── */}
         {(orderProgress >= 100 || revenueProgress >= 100) && (
-          <div className="rounded-2xl bg-gradient-to-r from-yellow-500 to-yellow-600 p-4 text-center animate-pulse">
+          <div className="rounded-2xl bg-yellow-500 p-4 text-center">
             <div className="flex items-center justify-center gap-2">
-              <Award size={20} className="text-white" />
-              <span className="text-[11px] font-black text-white uppercase tracking-wider">
+              <Award size={18} className="text-black" />
+              <span className="text-[11px] font-black text-black uppercase tracking-wider">
                 {orderProgress >= 100 && revenueProgress >= 100
-                  ? "🏆 Double Achievement! You've crushed both targets!"
+                  ? "🏆 Double Achievement! Both targets crushed!"
                   : orderProgress >= 100
-                    ? "🎯 Daily Target Achieved! Great work today!"
-                    : "🎯 Monthly Revenue Target Achieved! Outstanding performance!"}
+                    ? "🎯 Daily target achieved!"
+                    : "🎯 Monthly revenue target achieved!"}
               </span>
             </div>
           </div>

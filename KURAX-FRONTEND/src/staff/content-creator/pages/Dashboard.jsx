@@ -11,31 +11,68 @@ import {
 } from "lucide-react";
 
 export default function Dashboard() {
-  const { menus, events, orders } = useData(); // Removed currentUser from context if it's not syncing
+  const { menus, events, orders } = useData();
   const navigate = useNavigate();
   
-  // --- FIX: FETCH LOGGED IN USER FROM LOCAL STORAGE ---
+  // Get logged in user from localStorage
   const loggedInUser = useMemo(() => {
     const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing user data:", e);
+        return null;
+      }
+    }
+    return null;
   }, []);
 
-  const userName = loggedInUser?.name || "Administrator";
+  // Also check for kurax_user (in case that's where the data is stored)
+  const kuraxUser = useMemo(() => {
+    const saved = localStorage.getItem('kurax_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing kurax_user data:", e);
+        return null;
+      }
+    }
+    return null;
+  }, []);
+
+  // Get the user name from whichever storage has it
+  const userName = useMemo(() => {
+    const user = loggedInUser || kuraxUser;
+    if (user?.name) {
+      return user.name;
+    }
+    if (user?.fullName) {
+      return user.fullName;
+    }
+    if (user?.username) {
+      return user.username;
+    }
+    return "Administrator";
+  }, [loggedInUser, kuraxUser]);
+
+  // Get first name for welcome message
+  const firstName = userName.split(" ")[0];
 
   // States
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedItem, setSelectedItem] = useState(null);
   const [dailyVisits, setDailyVisits] = useState(0);
 
-  // --- LOGOUT HANDLER ---
+  // Logout handler
   const handleLogout = () => {
     localStorage.removeItem('user');
+    localStorage.removeItem('kurax_user');
     navigate('/staff/login');
   };
 
-  /**
-   * 1. FETCH LIVE STATS
-   */
+  // Fetch live stats
   useEffect(() => {
     const fetchLiveStats = async () => {
       try {
@@ -51,9 +88,7 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  /**
-   * 2. ACTIVITY LOGIC
-   */
+  // Activity logic
   const allActivity = [...(menus || []), ...(events || [])].sort((a, b) => {
     const dateA = new Date(a.created_at || 0);
     const dateB = new Date(b.created_at || 0);
@@ -64,9 +99,7 @@ export default function Dashboard() {
     item.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  /**
-   * 3. DYNAMIC STATS CONFIGURATION
-   */
+  // Dynamic stats configuration
   const stats = [
     { 
       title: "Total Menus", 
@@ -110,22 +143,24 @@ export default function Dashboard() {
           <div className="mb-10 flex justify-between items-end">
             <div>
               <div className="flex items-center gap-3 mb-2">
-                  <div className="w-1 h-6 bg-yellow-500 rounded-full" />
-                  <h4 className="text-xs font-black uppercase tracking-[0.2em] text-yellow-500/80">Management Overview</h4>
+                <div className="w-1 h-6 bg-yellow-500 rounded-full" />
+                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-yellow-500/80">
+                  Management Overview
+                </h4>
               </div>
               <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-                Welcome back, <span className="text-yellow-400 capitalize">{userName}</span>
+                Welcome back,{" "}
+                <span className="text-yellow-400 capitalize">
+                  {firstName}
+                </span>
               </h2>
+              {userName !== "Administrator" && (
+                <p className="text-sm text-slate-400 mt-1">
+                  Logged in as: <span className="text-slate-300">{userName}</span>
+                </p>
+              )}
             </div>
 
-            {/* Added a quick logout for the creator side too */}
-            <button 
-              onClick={handleLogout}
-              className="p-3 bg-zinc-900 border border-slate-800 rounded-2xl text-slate-500 hover:text-rose-500 hover:border-rose-500/30 transition-all"
-              title="Logout"
-            >
-              <Power size={20} />
-            </button>
           </div>
 
           {/* Stats Grid */}
@@ -167,8 +202,8 @@ export default function Dashboard() {
                 >
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 ${
                     item.price 
-                        ? 'bg-blue-500/5 border-blue-500/20 text-blue-400 group-hover:border-blue-500/40' 
-                        : 'bg-yellow-500/5 border-yellow-500/20 text-yellow-500 group-hover:border-yellow-500/40'
+                      ? 'bg-blue-500/5 border-blue-500/20 text-blue-400 group-hover:border-blue-500/40' 
+                      : 'bg-yellow-500/5 border-yellow-500/20 text-yellow-500 group-hover:border-yellow-500/40'
                   }`}>
                     {item.price ? <Utensils className="w-6 h-6" /> : <Calendar className="w-6 h-6" />}
                   </div>
@@ -183,7 +218,7 @@ export default function Dashboard() {
                       </span>
                       <span className="w-1 h-1 bg-slate-700 rounded-full" />
                       <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
+                        
                         {new Date(item.created_at || Date.now()).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                       </span>
                     </div>
@@ -252,12 +287,12 @@ export default function Dashboard() {
                 ) : (
                   <div className="grid grid-cols-2 gap-4 w-full">
                     <div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Time</span>
-                        <div className="text-sm font-bold text-white">{selectedItem.time || 'TBD'}</div>
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Time</span>
+                      <div className="text-sm font-bold text-white">{selectedItem.time || 'TBD'}</div>
                     </div>
                     <div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Location</span>
-                        <div className="text-sm font-bold text-white">{selectedItem.location || 'Lounge'}</div>
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Location</span>
+                      <div className="text-sm font-bold text-white">{selectedItem.location || 'Lounge'}</div>
                     </div>
                   </div>
                 )}
@@ -266,8 +301,8 @@ export default function Dashboard() {
               <div className="flex gap-3">
                 <button onClick={() => setSelectedItem(null)} className="flex-1 py-4 bg-zinc-800/50 text-white text-xs font-black rounded-2xl border border-slate-800">Close</button>
                 <button 
-                   onClick={() => handleEditRedirect(selectedItem)}
-                   className="flex-1 py-4 bg-yellow-500 text-black text-xs font-black uppercase rounded-2xl hover:bg-yellow-600 transition-all flex items-center justify-center gap-2"
+                  onClick={() => handleEditRedirect(selectedItem)}
+                  className="flex-1 py-4 bg-yellow-500 text-black text-xs font-black uppercase rounded-2xl hover:bg-yellow-600 transition-all flex items-center justify-center gap-2"
                 >
                   <Edit3 size={16} /> Edit
                 </button>

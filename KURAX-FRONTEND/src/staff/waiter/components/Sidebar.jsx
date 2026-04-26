@@ -18,20 +18,20 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 
 const DEFAULT_MENU = [
   { id: "order", label: "TAKE ORDER", icon: <ClipboardList size={20} /> },
-  { id: "manage", label: "MANAGE ORDER", icon: <Clock size={20} /> },
+  { id: "manage", label: "PERFORMANCE HUB", icon: <Clock size={20} /> },
   { id: "tables", label: "MANAGE TABLE", icon: <LayoutGrid size={20} /> },
 ];
 
 // Bottom navigation items for mobile - ONLY Take Order and Manage Order
 const BOTTOM_NAV_ITEMS = [
   { id: "order", label: "TAKE ORDER", icon: <ClipboardList size={22} /> },
-  { id: "manage", label: "MANAGE ORDER", icon: <Clock size={22} /> },
+  { id: "tables", label: "MANAGE TABLE", icon: <LayoutGrid size={22} /> },
 ];
 
 // All items that go in the drawer menu
 const DRAWER_MENU_ITEMS = [
   { id: "order", label: "TAKE ORDER", icon: <ClipboardList size={20} /> },
-  { id: "manage", label: "MANAGE ORDER", icon: <Clock size={20} /> },
+  { id: "performance", label: "PERFORMANCE HUB", icon: <Clock size={20} /> },
   { id: "tables", label: "MANAGE TABLE", icon: <LayoutGrid size={20} /> },
 ];
 
@@ -76,14 +76,14 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
   if (isMobile) {
     return (
       <>
-        {/* 3 Vertical Dots Button - Naked, on the right */}
+        {/* 3 Vertical Dots / X Button - Changes icon when menu is open */}
         <button
-          onClick={() => setIsMenuOpen(true)}
-          className={`fixed top-4 right-4 z-50 p-1 transition-all ${
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          className={`fixed top-4 right-4 z-50 p-1 transition-all font-['Outfit'] ${
             theme === "dark" ? "text-white" : "text-black"
           }`}
         >
-          <MoreVertical size={24} />
+          {isMenuOpen ? <X size={24} /> : <MoreVertical size={24} />}
         </button>
 
         {/* Mobile Drawer - Shows Logo, Text, Menu Items, and Logout */}
@@ -109,7 +109,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
             }`}
           >
             {/* Logo and Header Section - Pushed lower */}
-            <div className={`pt-20 pb-6 px-6 border-b ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
+            <div className={`pt-20 pb-6 px-6 border-b font-['Outfit'] ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
               <div className="flex items-center gap-3">
                 <img
                   src={logo}
@@ -129,16 +129,8 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
               </div>
             </div>
 
-            {/* Close Button - Moved to top right corner */}
-            <button
-              onClick={() => setIsMenuOpen(false)}
-              className="absolute top-5 right-5 p-1 rounded-full hover:bg-black/10"
-            >
-              <X size={20} />
-            </button>
-
             {/* Menu Items */}
-            <nav className="flex-1 p-4 space-y-3 mt-6">
+            <nav className="flex-1 p-4 space-y-3 mt-6 font-['Outfit']">
               {DRAWER_MENU_ITEMS.map((item) => (
                 <button
                   key={item.id}
@@ -163,7 +155,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
             </nav>
 
             {/* Logout Button */}
-            <div className={`p-4 border-t mt-auto ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
+            <div className={`p-4 border-t mt-auto font-['Outfit'] ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
               <button
                 onClick={handleLogout}
                 className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
@@ -181,7 +173,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
 
         {/* Bottom Navigation Bar - Only Take Order and Manage Order */}
         <div
-          className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-2 py-3 border-t backdrop-blur-lg ${
+          className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-2 py-3 border-t backdrop-blur-lg font-['Outfit'] ${
             theme === "dark"
               ? "bg-zinc-950/95 border-white/10"
               : "bg-white/95 border-black/10"
@@ -222,12 +214,12 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
   // ========== DESKTOP VIEW ==========
   return (
     <div
-      className={`w-64 h-full flex flex-col border-r transition-colors duration-300 flex-shrink-0 ${
+      className={`w-64 h-full flex flex-col border-r transition-colors duration-300 flex-shrink-0 font-['Outfit'] ${
         theme === "dark" ? "bg-zinc-950 border-white/5" : "bg-white border-black/5"
       }`}
     >
       {/* Logo / header */}
-      <div className={`p-6 border-b ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
+      <div className={`p-6 border-b font-['Outfit'] ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
         <div className="flex items-center gap-3">
           <img
             src={logo}
@@ -235,12 +227,12 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
             className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20"
           />
           <div className="flex flex-col">
-            <h1 className={`text-[11px] font-black uppercase tracking-tight leading-none ${
+            <h1 className={`text-[15px] font-bold uppercase tracking-tight leading-none ${
               theme === "dark" ? "text-white" : "text-zinc-900"
             }`}>
               KURAX FOOD LOUNGE & BISTRO
             </h1>
-            <p className="text-[9px] font-bold text-yellow-500 mt-1 uppercase tracking-widest italic">
+            <p className="text-[9px] font-bold text-yellow-900 mt-1 uppercase tracking-widest">
               WAITER PANEL
             </p>
           </div>
@@ -248,7 +240,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
       </div>
 
       {/* Nav items */}
-      <nav className="flex-1 p-4 space-y-3 mt-6">
+      <nav className="flex-1 p-4 space-y-3 mt-6 font-['Outfit']">
         {items.map((item) => (
           <button
             key={item.id}
@@ -270,7 +262,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
       </nav>
 
       {/* Logout */}
-      <div className={`p-4 border-t ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
+      <div className={`p-4 border-t font-['Outfit'] ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
         <button
           onClick={handleLogout}
           className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${

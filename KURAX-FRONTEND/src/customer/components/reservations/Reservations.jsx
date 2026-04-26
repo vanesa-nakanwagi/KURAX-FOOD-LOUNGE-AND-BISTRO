@@ -71,9 +71,12 @@ export default function ReservationsPage() {
       <TopSection searchPlaceholder="Search menu items..." />
 
       <section className="flex-grow px-4 md:px-16 py-12">
-        <h2 className="text-3xl md:text-4xl font-serif mb-6 text-yellow-500 text-center">
-          Reserve Your Table
-        </h2>
+        <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter text-center">
+  Reserve{" "}
+  <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent whitespace-nowrap">
+    Your Table
+  </span>
+</h2>
         <p className="text-gray-600 dark:text-gray-400 text-center mb-8">
           Book your luxury dining experience at Kurax Food Lounge & Bistro
         </p>
@@ -177,7 +180,7 @@ export default function ReservationsPage() {
           {/* Submit Button */}
           <button
             type="submit"
-            className="w-full py-3 bg-yellow-500 text-black font-semibold rounded-none hover:bg-yellow-400 transition"
+            className="w-full py-3 bg-yellow-400 text-black  rounded-none hover:bg-yellow-400 transition"
           >
             Reserve Now
           </button>

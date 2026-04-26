@@ -141,19 +141,7 @@ export default function FooterGlobal() {
               </div>
             </div>
 
-            <div className="pt-6 border-t border-white/5">
-              <p className="text-[10px] tracking-[0.2em] text-zinc-500 uppercase mb-4">Newsletter</p>
-              <div className="flex border-b border-white/20 pb-2 focus-within:border-yellow-600 transition-all">
-                <input 
-                  type="email" 
-                  placeholder="Your Email" 
-                  className="bg-transparent border-none outline-none text-xs w-full font-light tracking-widest placeholder:text-zinc-700"
-                />
-                <button className="text-yellow-600 hover:text-white transition-colors">
-                  <ArrowUpRight size={18} />
-                </button>
-              </div>
-            </div>
+           
           </div>
         </div>
 

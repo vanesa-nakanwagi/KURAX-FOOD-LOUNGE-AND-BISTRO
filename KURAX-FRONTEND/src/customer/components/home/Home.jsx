@@ -195,7 +195,7 @@ export default function Home() {
           >
             <div className="space-y-2 flex-1">
               <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">
-                Exclusive Experiences
+                Kurax Experiences
               </span>
               <div className="flex items-center gap-2 md:gap-3">
                 <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />

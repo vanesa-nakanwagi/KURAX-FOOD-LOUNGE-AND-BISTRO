@@ -171,7 +171,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
               
               <div className="flex items-center gap-3">
                 <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
-                <h2 className="text-3xl font-black uppercase tracking-widest leading-none">Explore Menu</h2>
+                <h2 className="text-3xl font-light text-yellow-900 uppercase tracking-widest leading-none">Explore Menu</h2>
               </div>
             </div>
 
@@ -199,13 +199,13 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
                 }`}
               />
             </div>
-            <ThemeToggle />
+           
 
             <div className="relative flex items-center justify-center ml-2">
               <button 
                 onClick={() => setIsCartOpen(true)}
-                className={`p-3 rounded-2xl transition-all active:scale-95 hover:scale-105 ${
-                  theme === 'dark' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-black'
+                className={`p-3 rounded-full transition-all active:scale-95 hover:scale-105 ${
+                  theme === 'dark' ? 'bg-zinc-900 text-white' : 'bg-yellow-400 text-black'
                 }`}
               >
                 <ShoppingCart size={24} />

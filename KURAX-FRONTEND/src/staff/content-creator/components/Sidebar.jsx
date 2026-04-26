@@ -21,9 +21,11 @@ export default function Sidebar() {
     { icon: Calendar, label: "Events", path: "/content-creator/events" },
   ];
 
-  // Drawer menu items - Dashboard only
+  // Drawer menu items - Dashboard, Menus, and Events
   const DRAWER_MENU_ITEMS = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/content-creator" },
+    { icon: UtensilsCrossed, label: "Menus", path: "/content-creator/menus" },
+    { icon: Calendar, label: "Events", path: "/content-creator/events" },
   ];
 
   const handleLogout = () => {
@@ -106,7 +108,7 @@ export default function Sidebar() {
               <X className="w-6 h-6" />
             </button>
             
-            {/* Drawer Menu Items - Only Dashboard */}
+            {/* Drawer Menu Items - Dashboard, Menus, and Events */}
             <NavLinks items={DRAWER_MENU_ITEMS} />
 
             {/* Logout Button */}
@@ -161,7 +163,7 @@ export default function Sidebar() {
         </div>
 
         {/* Desktop shows all items */}
-        <NavLinks items={[...DRAWER_MENU_ITEMS, ...BOTTOM_NAV_ITEMS]} />
+        <NavLinks items={DRAWER_MENU_ITEMS} />
 
         <div className="pt-6 border-t border-slate-800">
           <button 
