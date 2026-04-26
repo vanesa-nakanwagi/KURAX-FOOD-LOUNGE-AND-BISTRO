@@ -8,7 +8,7 @@ export default function PhysInput({ label, value, onChange, color }) {
         type="number"
         value={value}
         onChange={e => onChange(Number(e.target.value))}
-        className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-white font-black text-lg outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/30 transition-all duration-200 text-right hover:border-white/20"
+        className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-gray-900 font-black text-lg outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200 transition-all duration-200 text-right hover:border-gray-300 shadow-sm"
       />
     </div>
   );

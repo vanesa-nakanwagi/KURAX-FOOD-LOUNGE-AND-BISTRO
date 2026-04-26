@@ -335,7 +335,7 @@ function CreditedItemsPanel({ creditedItems, theme }) {
         <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
           <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
             <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-emerald-500/10"><CheckCircle2 size={14} className="text-emerald-500" /></div>
-            <h3 className={`text-xs sm:text-sm font-black uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>Settled Credits</h3>
+            <h3 className={`text-xs sm:text-sm font-medium text-yellow-600 uppercase tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>Settled Credits</h3>
             <span className="ml-auto text-[8px] sm:text-[10px] font-black text-emerald-500 whitespace-nowrap">{creditStats.settled.count} records</span>
           </div>
           <div className="mb-3 pb-2 border-b border-zinc-100">

@@ -36,20 +36,20 @@ function fmtDate(d) {
   return new Date(d).toLocaleDateString("en-UG", { day: "numeric", month: "short", year: "numeric" });
 }
 
-const METHOD_STYLES = {
-  "Cash":        { color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", icon: <Banknote size={12} /> },
-  "Card":        { color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/30",       icon: <CreditCard size={12} /> },
-  "Momo-MTN":    { color: "text-yellow-400",  bg: "bg-yellow-500/10 border-yellow-500/30",   icon: <Smartphone size={12} /> },
-  "Momo-Airtel": { color: "text-red-400",     bg: "bg-red-500/10 border-red-500/30",         icon: <Smartphone size={12} /> },
+const METHOD_STYLES_LIGHT = {
+  "Cash":        { color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200", icon: <Banknote size={12} /> },
+  "Card":        { color: "text-blue-700",    bg: "bg-blue-50 border-blue-200",       icon: <CreditCard size={12} /> },
+  "Momo-MTN":    { color: "text-yellow-700",  bg: "bg-yellow-50 border-yellow-200",   icon: <Smartphone size={12} /> },
+  "Momo-Airtel": { color: "text-red-700",     bg: "bg-red-50 border-red-200",         icon: <Smartphone size={12} /> },
 };
 
-const STATUS_META = {
-  PendingCashier:    { label: "Needs Forwarding",    color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/30",   pulse: true  },
-  PendingManagerApproval: { label: "Awaiting Manager",    color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/30",   pulse: true  },
-  Approved:          { label: "Approved – Unsettled", color: "text-cyan-400",   bg: "bg-cyan-500/10 border-cyan-500/30",       pulse: false },
-  PartiallySettled:  { label: "Partial Payment",     color: "text-yellow-400",  bg: "bg-yellow-500/10 border-yellow-500/30",   pulse: false },
-  FullySettled:      { label: "Fully Settled",       color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", pulse: false },
-  Rejected:          { label: "Rejected",            color: "text-red-400",     bg: "bg-red-500/10 border-red-500/30",         pulse: false },
+const STATUS_META_LIGHT = {
+  PendingCashier:    { label: "Needs Forwarding",    color: "text-orange-700",  bg: "bg-orange-50 border-orange-200",   pulse: true  },
+  PendingManagerApproval: { label: "Awaiting Manager",    color: "text-purple-700",  bg: "bg-purple-50 border-purple-200",   pulse: true  },
+  Approved:          { label: "Approved – Unsettled", color: "text-cyan-700",   bg: "bg-cyan-50 border-cyan-200",       pulse: false },
+  PartiallySettled:  { label: "Partial Payment",     color: "text-yellow-700",  bg: "bg-yellow-50 border-yellow-200",   pulse: false },
+  FullySettled:      { label: "Fully Settled",       color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200", pulse: false },
+  Rejected:          { label: "Rejected",            color: "text-red-700",     bg: "bg-red-50 border-red-200",         pulse: false },
 };
 
 // ─── Settle Modal ─────────────────────────────────────────────────────────────
@@ -67,10 +67,10 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
   const canSubmit = amtNum > 0 && amtNum <= balance && (!isMomo || txn.trim());
 
   const PAY_METHODS = [
-    { key: "Cash",        label: "Cash",        color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30" },
-    { key: "Card",        label: "Card",        color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/30" },
-    { key: "Momo-MTN",    label: "MTN Momo",    color: "text-yellow-400",  bg: "bg-yellow-500/10 border-yellow-500/30" },
-    { key: "Momo-Airtel", label: "Airtel Momo", color: "text-red-400",     bg: "bg-red-500/10 border-red-500/30" },
+    { key: "Cash",        label: "Cash",        color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
+    { key: "Card",        label: "Card",        color: "text-blue-700",    bg: "bg-blue-50 border-blue-200" },
+    { key: "Momo-MTN",    label: "MTN Momo",    color: "text-yellow-700",  bg: "bg-yellow-50 border-yellow-200" },
+    { key: "Momo-Airtel", label: "Airtel Momo", color: "text-red-700",     bg: "bg-red-50 border-red-200" },
   ];
 
   const handleSubmit = async () => {
@@ -105,21 +105,21 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[500] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-[#0f0f0f] border border-emerald-500/20 rounded-[3rem] p-8 shadow-2xl overflow-y-auto max-h-[90vh]">
+    <div className="fixed inset-0 z-[500] bg-white/95 backdrop-blur-xl flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white border border-blue-200 rounded-[3rem] p-8 shadow-2xl overflow-y-auto max-h-[90vh]">
 
         {/* Header */}
-        <div className="flex items-start justify-between mb-7 pb-5 border-b border-white/5">
+        <div className="flex items-start justify-between mb-7 pb-5 border-b border-blue-100">
           <div>
-            <p className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-1">Record Settlement</p>
-            <h2 className="text-base font-black text-white uppercase italic tracking-tighter">
+            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Record Settlement</p>
+            <h2 className="text-base font-black text-zinc-900 uppercase italic tracking-tighter">
               {credit.client_name}
             </h2>
             <p className="text-zinc-500 text-[10px] mt-0.5">
               {credit.table_name} · Original: UGX {Number(credit.amount).toLocaleString()}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 bg-zinc-900 rounded-full text-zinc-500 hover:text-white">
+          <button onClick={onClose} className="p-2 bg-zinc-100 rounded-full text-zinc-500 hover:text-zinc-700">
             <X size={18} />
           </button>
         </div>
@@ -127,17 +127,17 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
         <div className="space-y-5">
           {/* Balance overview */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-3 text-center">
-              <p className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-1">Total</p>
-              <p className="text-sm font-black text-white">UGX {Number(credit.amount).toLocaleString()}</p>
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 text-center">
+              <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-1">Total</p>
+              <p className="text-sm font-black text-zinc-900">UGX {Number(credit.amount).toLocaleString()}</p>
             </div>
-            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-3 text-center">
-              <p className="text-[8px] font-black text-emerald-400 uppercase tracking-widest mb-1">Paid</p>
-              <p className="text-sm font-black text-emerald-400">UGX {Number(credit.amount_paid || 0).toLocaleString()}</p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-center">
+              <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest mb-1">Paid</p>
+              <p className="text-sm font-black text-emerald-700">UGX {Number(credit.amount_paid || 0).toLocaleString()}</p>
             </div>
-            <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-3 text-center">
-              <p className="text-[8px] font-black text-yellow-400 uppercase tracking-widest mb-1">Balance</p>
-              <p className="text-sm font-black text-yellow-400">UGX {balance.toLocaleString()}</p>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-3 text-center">
+              <p className="text-[8px] font-black text-yellow-600 uppercase tracking-widest mb-1">Balance</p>
+              <p className="text-sm font-black text-yellow-700">UGX {balance.toLocaleString()}</p>
             </div>
           </div>
 
@@ -151,8 +151,8 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
                   onClick={() => { setMethod(key); setTxn(""); }}
                   className={`py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all
                     ${method === key
-                      ? `${bg} ${color} scale-[1.02]`
-                      : "border-white/5 bg-white/[0.02] text-zinc-500 hover:border-white/20"}`}
+                      ? `${bg} ${color} scale-[1.02] shadow-md`
+                      : "border-zinc-200 bg-white text-zinc-500 hover:border-blue-300"}`}
                 >
                   {label}
                 </button>
@@ -163,7 +163,7 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
           {/* Amount input */}
           <div>
             <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2">
-              Amount Paying Now <span className="text-zinc-600">(UGX · partial allowed)</span>
+              Amount Paying Now <span className="text-zinc-400">(UGX · partial allowed)</span>
             </p>
             <input
               type="number"
@@ -171,10 +171,10 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
               max={balance}
               onChange={e => setAmount(e.target.value)}
               placeholder={`Max: ${balance.toLocaleString()}`}
-              className="w-full bg-black border border-white/10 rounded-2xl p-4 text-white font-black text-xl text-center outline-none focus:border-emerald-500/50 placeholder:text-zinc-700"
+              className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-zinc-900 font-black text-xl text-center outline-none focus:border-blue-500 placeholder:text-zinc-300"
             />
             {amtNum > balance && (
-              <p className="text-red-400 text-[9px] font-black mt-1 text-center uppercase tracking-widest">
+              <p className="text-red-600 text-[9px] font-black mt-1 text-center uppercase tracking-widest">
                 Cannot exceed balance of UGX {balance.toLocaleString()}
               </p>
             )}
@@ -184,14 +184,14 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
           {isMomo && (
             <div>
               <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2">
-                Transaction ID <span className="text-red-400">*</span>
+                Transaction ID <span className="text-red-500">*</span>
               </p>
               <input
                 type="text"
                 value={txn}
                 onChange={e => setTxn(e.target.value)}
                 placeholder="Enter transaction reference"
-                className="w-full bg-black border border-yellow-500/30 rounded-2xl p-4 text-white font-black text-sm text-center uppercase tracking-widest outline-none focus:border-yellow-500"
+                className="w-full bg-zinc-50 border border-yellow-300 rounded-2xl p-4 text-zinc-900 font-black text-sm text-center uppercase tracking-widest outline-none focus:border-yellow-500"
               />
             </div>
           )}
@@ -203,17 +203,17 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
               value={notes}
               onChange={e => setNotes(e.target.value)}
               placeholder="Any notes about this settlement…"
-              className="w-full bg-black border border-white/5 rounded-2xl p-4 text-white text-sm outline-none focus:border-white/20 resize-none h-16"
+              className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-zinc-700 text-sm outline-none focus:border-blue-300 resize-none h-16"
             />
           </div>
 
           {error && (
-            <p className="text-red-400 text-[10px] font-black text-center uppercase tracking-widest">⚠ {error}</p>
+            <p className="text-red-600 text-[10px] font-black text-center uppercase tracking-widest">⚠ {error}</p>
           )}
 
           {/* Actions */}
           <div className="flex gap-3 pt-1">
-            <button onClick={onClose} className="flex-1 py-4 text-zinc-600 font-black uppercase text-[10px]">
+            <button onClick={onClose} className="flex-1 py-4 text-zinc-500 font-black uppercase text-[10px]">
               Cancel
             </button>
             <button
@@ -221,8 +221,8 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
               disabled={loading || !canSubmit}
               className={`flex-[2] py-4 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 transition-all
                 ${canSubmit && !loading
-                  ? "bg-emerald-500 text-black hover:bg-emerald-400 active:scale-[0.98] shadow-xl shadow-emerald-500/20"
-                  : "bg-zinc-800 text-zinc-600 cursor-not-allowed"}`}
+                  ? "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-xl shadow-blue-500/30"
+                  : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}
             >
               {loading
                 ? <><Loader2 size={13} className="animate-spin" /> Processing…</>
@@ -259,7 +259,7 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
   const status = credit.status === "PendingManagerApproval" ? "PendingManagerApproval" : 
                  (credit.status === "PendingManager" ? "PendingManagerApproval" : credit.status);
   
-  const meta = STATUS_META[status] || STATUS_META["Rejected"];
+  const meta = STATUS_META_LIGHT[status] || STATUS_META_LIGHT["Rejected"];
   const amount = Number(credit.amount || 0);
   const paid = Number(credit.amount_paid || 0);
   const balance = amount - paid;
@@ -279,26 +279,26 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
   };
 
   return (
-    <div className={`border rounded-[2.5rem] overflow-hidden transition-all duration-300
-      ${status === "PendingCashier" ? "bg-orange-500/3 border-orange-500/20" :
-        status === "PendingManagerApproval" ? "bg-purple-500/3 border-purple-500/15" :
-        status === "Approved" ? "bg-cyan-500/3 border-cyan-500/20" :
-        status === "PartiallySettled" ? "bg-yellow-500/3 border-yellow-500/20" :
-        status === "FullySettled" ? "bg-zinc-900/10 border-white/5 opacity-60" :
-        "bg-red-500/3 border-red-500/10 opacity-50"}`}
+    <div className={`border rounded-[2.5rem] overflow-hidden transition-all duration-300 bg-white shadow-sm
+      ${status === "PendingCashier" ? "border-orange-200 bg-orange-50/30" :
+        status === "PendingManagerApproval" ? "border-purple-200 bg-purple-50/30" :
+        status === "Approved" ? "border-cyan-200 bg-cyan-50/30" :
+        status === "PartiallySettled" ? "border-yellow-200 bg-yellow-50/30" :
+        status === "FullySettled" ? "border-zinc-200 bg-zinc-50/50" :
+        "border-red-200 bg-red-50/30"}`}
     >
       {/* ── Summary row ── */}
       <button
         className="w-full p-5 flex items-center gap-4 text-left"
         onClick={() => setExpanded(e => !e)}
       >
-        <div className={`p-3.5 rounded-2xl bg-black border shrink-0 ${meta.bg.split(" ")[1]} ${meta.color}`}>
+        <div className={`p-3.5 rounded-2xl bg-white border shrink-0 ${meta.bg.split(" ")[1]} ${meta.color}`}>
           <BookOpen size={18} />
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-0.5">
-            <span className="font-black text-white italic uppercase tracking-tighter text-sm">
+            <span className="font-black text-zinc-900 italic uppercase tracking-tighter text-sm">
               {credit.client_name}
             </span>
             <span className={`text-[8px] border font-black uppercase tracking-widest px-2 py-0.5 rounded-lg ${meta.bg} ${meta.color} ${meta.pulse ? "animate-pulse" : ""}`}>
@@ -315,27 +315,27 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
           {/* Progress bar for partial payments */}
           {(status === "PartiallySettled" || status === "FullySettled") && paid > 0 && (
             <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
+              <div className="flex-1 h-1 bg-zinc-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${status === "FullySettled" ? "bg-emerald-500" : "bg-yellow-500"}`}
                   style={{ width: `${Math.min(pct, 100)}%` }}
                 />
               </div>
-              <span className="text-[8px] font-black text-zinc-500">{pct}%</span>
+              <span className="text-[8px] font-black text-zinc-400">{pct}%</span>
             </div>
           )}
         </div>
 
         <div className="text-right shrink-0 mr-2">
           {status === "FullySettled" ? (
-            <p className="text-base font-black text-emerald-400 italic">Settled</p>
+            <p className="text-base font-black text-emerald-600 italic">Settled</p>
           ) : (
             <>
-              <p className="text-base font-black text-white italic tracking-tighter">
+              <p className="text-base font-black text-zinc-900 italic tracking-tighter">
                 UGX {balance.toLocaleString()}
               </p>
               {paid > 0 && (
-                <p className="text-[9px] text-zinc-500 font-bold">of {amount.toLocaleString()}</p>
+                <p className="text-[9px] text-zinc-400 font-bold">of {amount.toLocaleString()}</p>
               )}
             </>
           )}
@@ -343,52 +343,52 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
 
         <ChevronDown
           size={15}
-          className={`text-zinc-600 transition-transform duration-200 shrink-0 ${expanded ? "rotate-180" : ""}`}
+          className={`text-zinc-400 transition-transform duration-200 shrink-0 ${expanded ? "rotate-180" : ""}`}
         />
       </button>
 
       {/* ── Expanded ── */}
       {expanded && (
-        <div className="px-5 pb-6 border-t border-white/5 space-y-4 pt-4">
+        <div className="px-5 pb-6 border-t border-zinc-100 space-y-4 pt-4">
 
           {/* Client + Amounts detail */}
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-3 md:col-span-1 space-y-2">
-              <p className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Client</p>
+              <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Client</p>
               <div className="flex items-center gap-1.5">
-                <User size={11} className="text-zinc-500" />
-                <span className="text-xs font-black text-white">{credit.client_name}</span>
+                <User size={11} className="text-zinc-400" />
+                <span className="text-xs font-black text-zinc-900">{credit.client_name}</span>
               </div>
               {credit.client_phone && (
                 <div className="flex items-center gap-1.5">
-                  <Phone size={11} className="text-zinc-500" />
-                  <span className="text-xs text-zinc-300">{credit.client_phone}</span>
+                  <Phone size={11} className="text-zinc-400" />
+                  <span className="text-xs text-zinc-700">{credit.client_phone}</span>
                 </div>
               )}
               {credit.pay_by && (
                 <div className="flex items-center gap-1.5">
-                  <Calendar size={11} className="text-zinc-500" />
-                  <span className="text-xs text-zinc-300">{fmtDate(credit.pay_by)}</span>
+                  <Calendar size={11} className="text-zinc-400" />
+                  <span className="text-xs text-zinc-700">{fmtDate(credit.pay_by)}</span>
                 </div>
               )}
             </div>
-            <div className="bg-black border border-white/5 rounded-2xl p-3 text-center">
-              <p className="text-[8px] font-black text-zinc-600 uppercase mb-1">Total</p>
-              <p className="text-sm font-black text-white">UGX {amount.toLocaleString()}</p>
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 text-center">
+              <p className="text-[8px] font-black text-zinc-500 uppercase mb-1">Total</p>
+              <p className="text-sm font-black text-zinc-900">UGX {amount.toLocaleString()}</p>
             </div>
-            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-3 text-center">
-              <p className="text-[8px] font-black text-emerald-400 uppercase mb-1">Paid</p>
-              <p className="text-sm font-black text-emerald-400">UGX {paid.toLocaleString()}</p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-center">
+              <p className="text-[8px] font-black text-emerald-600 uppercase mb-1">Paid</p>
+              <p className="text-sm font-black text-emerald-700">UGX {paid.toLocaleString()}</p>
             </div>
           </div>
 
           {/* Settlement history */}
           {settlements.length > 0 && (
             <div>
-              <p className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-2">Payment History</p>
+              <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-2">Payment History</p>
               <div className="space-y-2">
                 {settlements.map((s, i) => {
-                  const sm = METHOD_STYLES[s.method] || METHOD_STYLES["Cash"];
+                  const sm = METHOD_STYLES_LIGHT[s.method] || METHOD_STYLES_LIGHT["Cash"];
                   return (
                     <div key={i} className={`flex items-center justify-between px-4 py-3 rounded-2xl border ${sm.bg}`}>
                       <div className="flex items-center gap-2">
@@ -396,13 +396,13 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
                         <div>
                           <p className={`text-[10px] font-black uppercase ${sm.color}`}>{s.method}</p>
                           {s.transaction_id && (
-                            <p className="text-[8px] text-zinc-600 font-mono">TXN: {s.transaction_id}</p>
+                            <p className="text-[8px] text-zinc-500 font-mono">TXN: {s.transaction_id}</p>
                           )}
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-black text-white">UGX {Number(s.amount_paid).toLocaleString()}</p>
-                        <p className="text-[8px] text-zinc-600">{timeAgo(s.created_at)}</p>
+                        <p className="text-sm font-black text-zinc-900">UGX {Number(s.amount_paid).toLocaleString()}</p>
+                        <p className="text-[8px] text-zinc-500">{timeAgo(s.created_at)}</p>
                       </div>
                     </div>
                   );
@@ -413,10 +413,10 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
 
           {/* Rejection info */}
           {status === "Rejected" && credit.reject_reason && (
-            <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4">
-              <p className="text-[8px] font-black text-red-400 uppercase tracking-widest mb-1">Rejection Reason</p>
-              <p className="text-xs text-zinc-400">{credit.reject_reason}</p>
-              <p className="text-[8px] text-zinc-600 mt-1">By {credit.rejected_by} · {timeAgo(credit.rejected_at)}</p>
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+              <p className="text-[8px] font-black text-red-600 uppercase tracking-widest mb-1">Rejection Reason</p>
+              <p className="text-xs text-zinc-700">{credit.reject_reason}</p>
+              <p className="text-[8px] text-zinc-500 mt-1">By {credit.rejected_by} · {timeAgo(credit.rejected_at)}</p>
             </div>
           )}
 
@@ -425,7 +425,7 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
             <button
               onClick={handleForward}
               disabled={forwarding}
-              className="w-full py-4 bg-purple-500 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-purple-400 active:scale-[0.98] transition-all disabled:opacity-60"
+              className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-[0.98] transition-all disabled:opacity-60 shadow-md shadow-blue-500/20"
             >
               {forwarding
                 ? <><Loader2 size={13} className="animate-spin" /> Forwarding…</>
@@ -435,9 +435,9 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
           )}
 
           {status === "PendingManagerApproval" && (
-            <div className="flex items-center justify-center gap-2 py-3 bg-purple-500/5 border border-purple-500/10 rounded-2xl">
-              <Clock size={13} className="text-purple-400 animate-pulse" />
-              <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">
+            <div className="flex items-center justify-center gap-2 py-3 bg-purple-50 border border-purple-200 rounded-2xl">
+              <Clock size={13} className="text-purple-600 animate-pulse" />
+              <p className="text-[10px] font-black text-purple-700 uppercase tracking-widest">
                 Waiting for manager approval · {timeAgo(credit.forwarded_at || credit.created_at)}
               </p>
             </div>
@@ -446,7 +446,7 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
           {(status === "Approved" || status === "PartiallySettled") && (
             <button
               onClick={() => onSettle(credit)}
-              className="w-full py-4 bg-emerald-500 text-black rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-emerald-400 active:scale-[0.98] transition-all shadow-xl shadow-emerald-500/20"
+              className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-md shadow-blue-500/20"
             >
               <CircleDollarSign size={14} /> Record Settlement Payment
             </button>
@@ -469,7 +469,6 @@ export default function CreditLedgerPanel({ cashierName }) {
       const res = await fetch(`${API_URL}/api/credits`);
       if (res.ok) {
         const data = await res.json();
-        // Log for debugging
         console.log("📋 Credits loaded:", data.map(c => ({ id: c.id, status: c.status, client: c.client_name })));
         setCredits(data);
       }
@@ -543,25 +542,25 @@ export default function CreditLedgerPanel({ cashierName }) {
 
       {/* ── Today settlement totals ── */}
       {todaySettlementTotals.total > 0 && (
-        <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-6">
-          <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-4">
+        <div className="bg-white border border-blue-100 rounded-[2.5rem] p-6 shadow-sm">
+          <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-4">
             Today's Credit Settlements
           </p>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
-              { label: "Cash",        value: todaySettlementTotals.cash,        color: "text-emerald-400" },
-              { label: "Card",        value: todaySettlementTotals.card,        color: "text-blue-400" },
-              { label: "MTN Momo",    value: todaySettlementTotals.momo_mtn,    color: "text-yellow-400" },
-              { label: "Airtel Momo", value: todaySettlementTotals.momo_airtel, color: "text-red-400" },
-            ].map(({ label, value, color }) => value > 0 ? (
-              <div key={label} className="bg-black border border-white/5 rounded-2xl p-3 text-center">
+              { label: "Cash",        value: todaySettlementTotals.cash,        color: "text-emerald-700", bg: "bg-emerald-50" },
+              { label: "Card",        value: todaySettlementTotals.card,        color: "text-blue-700",    bg: "bg-blue-50" },
+              { label: "MTN Momo",    value: todaySettlementTotals.momo_mtn,    color: "text-yellow-700",  bg: "bg-yellow-50" },
+              { label: "Airtel Momo", value: todaySettlementTotals.momo_airtel, color: "text-red-700",     bg: "bg-red-50" },
+            ].map(({ label, value, color, bg }) => value > 0 ? (
+              <div key={label} className={`${bg} border border-zinc-200 rounded-2xl p-3 text-center`}>
                 <p className={`text-[8px] font-black uppercase tracking-widest mb-1 ${color}`}>{label}</p>
-                <p className="text-sm font-black text-white">UGX {value.toLocaleString()}</p>
+                <p className="text-sm font-black text-zinc-900">UGX {value.toLocaleString()}</p>
               </div>
             ) : null)}
-            <div className="bg-yellow-500 rounded-2xl p-3 text-center col-span-2 md:col-span-1">
-              <p className="text-[8px] font-black text-black/60 uppercase tracking-widest mb-1">Total Collected</p>
-              <p className="text-base font-black text-black italic">UGX {todaySettlementTotals.total.toLocaleString()}</p>
+            <div className="bg-blue-600 rounded-2xl p-3 text-center col-span-2 md:col-span-1 shadow-md">
+              <p className="text-[8px] font-black text-blue-100 uppercase tracking-widest mb-1">Total Collected</p>
+              <p className="text-base font-black text-white italic">UGX {todaySettlementTotals.total.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -573,10 +572,10 @@ export default function CreditLedgerPanel({ cashierName }) {
           {needsAction > 0 && (
             <button
               onClick={() => setFilter("PendingCashier")}
-              className="flex items-center gap-2 px-4 py-2.5 bg-orange-500/10 border border-orange-500/30 rounded-2xl hover:bg-orange-500/20 transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 bg-orange-50 border border-orange-200 rounded-2xl hover:bg-orange-100 transition-all"
             >
-              <AlertTriangle size={12} className="text-orange-400" />
-              <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest">
+              <AlertTriangle size={12} className="text-orange-600" />
+              <span className="text-[10px] font-black text-orange-700 uppercase tracking-widest">
                 {needsAction} Need Forwarding
               </span>
             </button>
@@ -584,10 +583,10 @@ export default function CreditLedgerPanel({ cashierName }) {
           {pendingMgr > 0 && (
             <button
               onClick={() => setFilter("PendingManagerApproval")}
-              className="flex items-center gap-2 px-4 py-2.5 bg-purple-500/10 border border-purple-500/30 rounded-2xl hover:bg-purple-500/20 transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 bg-purple-50 border border-purple-200 rounded-2xl hover:bg-purple-100 transition-all"
             >
-              <Clock size={12} className="text-purple-400 animate-pulse" />
-              <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest">
+              <Clock size={12} className="text-purple-600 animate-pulse" />
+              <span className="text-[10px] font-black text-purple-700 uppercase tracking-widest">
                 {pendingMgr} Awaiting Manager
               </span>
             </button>
@@ -595,10 +594,10 @@ export default function CreditLedgerPanel({ cashierName }) {
           {readyToSettle > 0 && (
             <button
               onClick={() => setFilter("Approved")}
-              className="flex items-center gap-2 px-4 py-2.5 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl hover:bg-cyan-500/20 transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 bg-cyan-50 border border-cyan-200 rounded-2xl hover:bg-cyan-100 transition-all"
             >
-              <CircleDollarSign size={12} className="text-cyan-400" />
-              <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest">
+              <CircleDollarSign size={12} className="text-cyan-600" />
+              <span className="text-[10px] font-black text-cyan-700 uppercase tracking-widest">
                 {readyToSettle} Ready to Settle
               </span>
             </button>
@@ -607,7 +606,7 @@ export default function CreditLedgerPanel({ cashierName }) {
       )}
 
       {/* ── Filter tabs ── */}
-      <div className="flex gap-1 flex-wrap border-b border-white/5 pb-1">
+      <div className="flex gap-1 flex-wrap border-b border-zinc-100 pb-1">
         {FILTERS.map(f => {
           let count = 0;
           if (f.key === "ALL") {
@@ -624,13 +623,13 @@ export default function CreditLedgerPanel({ cashierName }) {
               onClick={() => setFilter(f.key)}
               className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5
                 ${filter === f.key
-                  ? "bg-yellow-500 text-black"
-                  : "text-zinc-500 hover:text-zinc-300"}`}
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-zinc-500 hover:text-blue-600 hover:bg-blue-50"}`}
             >
               {f.label}
               {count > 0 && (
                 <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black
-                  ${filter === f.key ? "bg-black/20 text-black" : "bg-white/5 text-zinc-400"}`}>
+                  ${filter === f.key ? "bg-white/20 text-white" : "bg-zinc-100 text-zinc-500"}`}>
                   {count}
                 </span>
               )}
@@ -639,7 +638,7 @@ export default function CreditLedgerPanel({ cashierName }) {
         })}
         <button
           onClick={load}
-          className="ml-auto p-2 bg-zinc-900 rounded-xl text-zinc-500 hover:text-white transition-colors"
+          className="ml-auto p-2 bg-zinc-100 rounded-xl text-zinc-500 hover:text-blue-600 transition-colors"
         >
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
         </button>
@@ -649,13 +648,13 @@ export default function CreditLedgerPanel({ cashierName }) {
       {loading ? (
         <div className="space-y-3">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-20 rounded-[2.5rem] bg-zinc-900/20 animate-pulse border border-white/5" />
+            <div key={i} className="h-20 rounded-[2.5rem] bg-zinc-100 animate-pulse border border-zinc-200" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="py-20 text-center border-2 border-dashed border-white/5 rounded-[3rem]">
-          <ShieldCheck size={28} className="mx-auto text-zinc-700 mb-3" />
-          <p className="text-zinc-600 font-black uppercase text-[10px] tracking-widest">No credits in this category</p>
+        <div className="py-20 text-center border-2 border-dashed border-zinc-200 rounded-[3rem] bg-zinc-50">
+          <ShieldCheck size={28} className="mx-auto text-zinc-400 mb-3" />
+          <p className="text-zinc-500 font-black uppercase text-[10px] tracking-widest">No credits in this category</p>
         </div>
       ) : (
         <div className="space-y-3">

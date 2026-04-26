@@ -14,7 +14,8 @@ export default function FinancialHistory({
   profitLoad, 
   fetchMonthlyData, 
   API_URL, 
-  isDark 
+    isDark = false
+  
 }) {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -23,8 +24,8 @@ export default function FinancialHistory({
           <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${isDark ? 'text-white' : 'text-gray-900'}`}>
             Today's Revenue
           </h2>
-          <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue — updates every 15 seconds</p>
-          <p className="text-[9px] text-zinc-500 mt-1">✅ Credit requests are NOT included in gross until approved and settled</p>
+          <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue and updates every 15 seconds</p>
+          <p className="text-[9px] text-zinc-500 mt-1"> Credit requests are NOT included in gross until approved and settled</p>
         </div>
         <div className="flex items-center gap-1 text-[8px] text-zinc-600">
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

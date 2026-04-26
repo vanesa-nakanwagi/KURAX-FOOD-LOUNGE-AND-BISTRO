@@ -25,6 +25,7 @@ export default function TopSection({ searchPlaceholder }) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [headerHeight, setHeaderHeight] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
   const headerRef = useRef(null);
 
   // Measure header height for the spacer
@@ -37,6 +38,13 @@ export default function TopSection({ searchPlaceholder }) {
     updateHeight();
     window.addEventListener("resize", updateHeight);
     return () => window.removeEventListener("resize", updateHeight);
+  }, []);
+
+  // Track scroll for background change
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   // Scroll-driven shadow intensity
@@ -81,31 +89,25 @@ export default function TopSection({ searchPlaceholder }) {
 
   return (
     <>
-      {/*
-        ─── SPACER ───────────────────────────────────────────────────────────────
-        Pushes page content down by exactly the header's rendered height so
-        nothing is hidden behind the fixed bar. Height is measured dynamically
-        so it stays correct no matter how the header wraps on small screens.
-      */}
+      {/* Spacer */}
       <div style={{ height: headerHeight }} aria-hidden="true" />
 
-      {/*
-        ─── FIXED HEADER ─────────────────────────────────────────────────────────
-        `fixed` + `top-0` guarantees it stays on screen regardless of any parent
-        `overflow` rule that would break `sticky`.  `w-full` is required because
-        fixed elements are taken out of normal flow and default to shrink-wrap.
-      */}
+      {/* Fixed Header with Yellow Theme */}
       <motion.header
         ref={headerRef}
         initial={{ y: -100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
         style={{ boxShadow: headerShadow }}
-        className="fixed top-0 left-0 right-0 w-full z-50 transition-colors duration-300 font-['Outfit'] bg-white/90 dark:bg-black/90 backdrop-blur-md"
+        className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 font-['Outfit']
+          ${scrolled 
+            ? "bg-white/95 border-b border-gray-200 shadow-sm" 
+            : "bg-gradient-to-r from-yellow-50 via-white to-yellow-50"
+          }`}
       >
         {/* Scroll Progress Indicator */}
         <motion.div
-          className="absolute bottom-0 left-0 h-[2px] bg-yellow-500 z-50"
+          className="absolute bottom-0 left-0 h-[3px] bg-gradient-to-r from-yellow-500 to-yellow-600 z-50"
           style={{
             scaleX: useTransform(scrollY, [0, 1000], [0, 1]),
             originX: 0,
@@ -129,10 +131,11 @@ export default function TopSection({ searchPlaceholder }) {
               <div className="absolute inset-0 rounded-full bg-yellow-500/20 blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             <div>
-              <h1 className="text-xl md:text-2xl font-outfit font-medium tracking-tight text-black dark:text-white leading-tight">
+              <h1 className={`text-xl md:text-2xl font-outfit font-medium tracking-tight transition-colors duration-300
+                ${scrolled ? "text-gray-900" : "text-gray-800"}`}>
                 KURAX FOOD LOUNGE & BISTRO
               </h1>
-              <p className="text-[10px] uppercase tracking-[0.4em] font-bold text-yellow-700">
+              <p className="text-[10px] uppercase tracking-[0.4em] font-bold text-yellow-600">
                 Luxury Dining & Rooftop Vibes
               </p>
             </div>
@@ -142,7 +145,7 @@ export default function TopSection({ searchPlaceholder }) {
           <div className="w-full md:w-auto flex flex-wrap items-center gap-4">
             {/* SEARCH BAR */}
             <div className="relative group flex-1 min-w-0 md:w-80">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-yellow-500">
                 <Search size={18} strokeWidth={2} />
               </div>
               <input
@@ -151,7 +154,11 @@ export default function TopSection({ searchPlaceholder }) {
                 onChange={handleSearchChange}
                 onKeyPress={handleKeyPress}
                 placeholder={searchPlaceholder || "Search menus, events..."}
-                className="w-full min-w-0 rounded-full bg-zinc-100 dark:bg-zinc-800/50 border border-transparent focus:border-yellow-500/50 text-sm pl-10 pr-4 py-2.5 focus:outline-none focus:ring-4 focus:ring-yellow-500/10 transition-all duration-300"
+                className={`w-full min-w-0 rounded-full border transition-all duration-300 text-sm pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-yellow-500/30
+                  ${scrolled 
+                    ? "bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-yellow-500" 
+                    : "bg-white/80 border-yellow-200 text-gray-800 placeholder:text-gray-400 focus:border-yellow-500"
+                  }`}
               />
             </div>
 
@@ -160,7 +167,7 @@ export default function TopSection({ searchPlaceholder }) {
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={() => setIsCartOpen(true)}
-              className="relative w-11 h-11 rounded-full bg-yellow-500 flex items-center justify-center shadow-xl shadow-yellow-500/20 group"
+              className="relative w-11 h-11 rounded-full bg-yellow-500 flex items-center justify-center shadow-lg shadow-yellow-500/30 group hover:bg-yellow-600 transition-all"
             >
               <ShoppingCart size={20} className="text-black" />
               <AnimatePresence>
@@ -180,7 +187,7 @@ export default function TopSection({ searchPlaceholder }) {
         </div>
 
         {/* --- NAVIGATION LINKS --- */}
-        <nav className="flex flex-wrap justify-center items-center gap-6 py-6 overflow-x-auto no-scrollbar">
+        <nav className="flex flex-wrap justify-center items-center gap-6 py-4 overflow-x-auto no-scrollbar">
           {[
             { name: "Home", path: "/" },
             { name: "Menus", path: "/menus" },
@@ -190,7 +197,11 @@ export default function TopSection({ searchPlaceholder }) {
             <Link
               key={link.name}
               to={link.path}
-              className="relative group text-[16px] text-zinc-700 dark:text-zinc-400 hover:text-black dark:hover:text-white transition-colors whitespace-nowrap"
+              className={`relative group text-[15px] transition-colors whitespace-nowrap font-medium
+                ${scrolled 
+                  ? "text-gray-600 hover:text-yellow-600" 
+                  : "text-gray-700 hover:text-yellow-600"
+                }`}
             >
               {link.name}
               <motion.span

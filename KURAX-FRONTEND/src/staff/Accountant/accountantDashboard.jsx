@@ -392,156 +392,7 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
     </div>
   );
 }
-
-// ─── THEME TOGGLE ─────────────────────────────────────────────────────────────
-function ThemeToggle({ isDark, onToggle }) {
-  return (
-    <button
-      onClick={onToggle}
-      className="relative w-12 h-6 rounded-full bg-gradient-to-r from-yellow-500 to-yellow-600 p-0.5 transition-all duration-300 hover:scale-105 focus:outline-none"
-    >
-      <div className={`absolute inset-0 rounded-full bg-black/20 transition-opacity duration-300 ${isDark ? 'opacity-0' : 'opacity-100'}`} />
-      <div className={`relative w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-300 flex items-center justify-center ${isDark ? 'translate-x-6' : 'translate-x-0'}`}>
-        {isDark ? <Moon size={10} className="text-zinc-800" /> : <Sun size={10} className="text-yellow-500" />}
-      </div>
-    </button>
-  );
-}
-
-// ─── REOPEN DAY MODAL ────────────────────────────────────────────────────────
-function ReopenDayModal({ isOpen, onClose, closedDays, loading, onReopen, reopening }) {
-  const [selectedDate, setSelectedDate] = useState('');
-  const [reason, setReason] = useState('');
-  
-  if (!isOpen) return null;
-  
-  const selectedDayData = closedDays.find(d => d.closing_date === selectedDate);
-  
-  return (
-    <div className="fixed inset-0 z-[600] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300">
-      <div className="w-full max-w-md bg-[#0f0f0f] border border-white/10 rounded-3xl p-8 shadow-2xl">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-purple-500/10">
-              <RotateCcw size={20} className="text-purple-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-white uppercase tracking-tighter">Reopen Day</h3>
-              <p className="text-[9px] text-zinc-500 mt-0.5">Restore a previously closed day</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-all">
-            <XCircleIcon size={18} className="text-zinc-400" />
-          </button>
-        </div>
-        
-        {loading ? (
-          <div className="py-12 text-center">
-            <Loader2 size={32} className="animate-spin mx-auto text-purple-400" />
-            <p className="text-[10px] text-zinc-500 mt-3">Loading closed days...</p>
-          </div>
-        ) : closedDays.length === 0 ? (
-          <div className="py-12 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-purple-500/10 flex items-center justify-center mx-auto mb-4">
-              <Calendar size={28} className="text-purple-400" />
-            </div>
-            <p className="text-zinc-500 font-black text-[10px] uppercase">No closed days found</p>
-            <p className="text-[8px] text-zinc-600 mt-1">Only previously closed days can be reopened</p>
-          </div>
-        ) : (
-          <>
-            <div className="mb-4">
-              <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2 block">
-                Select Date to Reopen
-              </label>
-              <select
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-white font-bold outline-none focus:border-purple-500/50 transition-all"
-              >
-                <option value="">-- Select a closed day --</option>
-                {closedDays.map(day => (
-                  <option key={day.closing_date} value={day.closing_date}>
-                    {day.closing_date} - UGX {Number(day.gross).toLocaleString()} revenue
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            {selectedDayData && (
-              <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-4 mb-4">
-                <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest mb-2">Day Snapshot</p>
-                <div className="grid grid-cols-2 gap-2 text-[10px]">
-                  <div>
-                    <p className="text-zinc-500">Cash Revenue</p>
-                    <p className="text-white font-black">UGX {Number(selectedDayData.cash).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-zinc-500">Card Revenue</p>
-                    <p className="text-white font-black">UGX {Number(selectedDayData.card).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-zinc-500">Mobile Money</p>
-                    <p className="text-white font-black">UGX {(Number(selectedDayData.mtn) + Number(selectedDayData.airtel)).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-zinc-500">Orders</p>
-                    <p className="text-white font-black">{selectedDayData.order_count}</p>
-                  </div>
-                </div>
-                <p className="text-[7px] text-zinc-600 mt-2">
-                  Closed by: {selectedDayData.recorded_by} · {new Date(selectedDayData.closed_at).toLocaleDateString()}
-                </p>
-              </div>
-            )}
-            
-            <div className="mb-6">
-              <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2 block">
-                Reason (Optional)
-              </label>
-              <textarea
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Why are you reopening this day?"
-                className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-white text-sm outline-none focus:border-purple-500/50 resize-none h-20"
-              />
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={onClose}
-                className="flex-1 py-4 rounded-2xl border border-white/10 text-zinc-400 font-black text-[10px] uppercase hover:bg-white/5 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => onReopen(selectedDate, reason)}
-                disabled={!selectedDate || reopening}
-                className={`flex-[2] py-4 rounded-2xl font-black text-[10px] uppercase transition-all flex items-center justify-center gap-2
-                  ${!selectedDate || reopening
-                    ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
-                    : "bg-purple-500 text-white hover:bg-purple-400 active:scale-[0.98]"
-                  }`}
-              >
-                {reopening ? (
-                  <><Loader2 size={14} className="animate-spin" /> Reopening...</>
-                ) : (
-                  <><RotateCcw size={14} /> Reopen Day</>
-                )}
-              </button>
-            </div>
-            
-            <div className="mt-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
-              <p className="text-[8px] font-black text-yellow-400 uppercase tracking-widest text-center">
-                ⚠️ Reopening will restore all data from that day. Staff can continue working.
-              </p>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+me
 
 // ─── START NEW DAY MODAL ──────────────────────────────────────────────────────
 function StartNewDayModal({ isOpen, onClose, onStart, starting }) {
@@ -1250,10 +1101,7 @@ export default function AccountantDashboard() {
     }
   };
 
-  const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.documentElement.classList.toggle('dark');
-  };
+
 
   const bgClass      = isDark ? 'bg-[#0a0a0a]'                        : 'bg-gray-50';
   const textClass    = isDark ? 'text-white'                           : 'text-gray-900';
@@ -1343,8 +1191,8 @@ export default function AccountantDashboard() {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
-              <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Theme</span>
-              <ThemeToggle isDark={isDark} onToggle={toggleTheme} />
+              
+              
             </div>
             
             <button 
@@ -1416,73 +1264,73 @@ export default function AccountantDashboard() {
           )}
 
           {/* FINANCIAL HISTORY */}
-          {activeSection === "FINANCIAL_HISTORY" && (
-            <div className="space-y-8 animate-in fade-in duration-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Today's Revenue</h2>
-                  <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue — updates every 15 seconds</p>
-                </div>
-                <div className="flex items-center gap-1 text-[8px] text-zinc-600">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="font-black uppercase tracking-wider">Live</span>
-                </div>
-              </div>
+{activeSection === "FINANCIAL_HISTORY" && (
+  <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="flex items-center justify-between">
+      <div>
+        <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Today's Revenue</h2>
+        <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue and updates every 15 seconds</p>
+      </div>
+      <div className="flex items-center gap-1 text-[8px] text-gray-600">
+        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="font-black uppercase tracking-wider">Live</span>
+      </div>
+    </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                <StatCard
-                  icon={<Banknote size={20} className="text-emerald-400" />}
-                  label="Cash Revenue"
-                  value={dayClosed ? 0 : sys.cash}
-                  color="text-emerald-500"
-                  gradient="from-emerald-900/30 to-emerald-800/10"
-                  trend={5.2}
-                />
-                <StatCard
-                  icon={<CreditCard size={20} className="text-blue-400" />}
-                  label="Card Payments"
-                  value={dayClosed ? 0 : sys.card}
-                  color="text-blue-400"
-                  gradient="from-blue-900/30 to-blue-800/10"
-                  trend={-2.1}
-                />
-                <StatCard
-                  icon={<Smartphone size={20} className="text-purple-400" />}
-                  label="Mobile Money"
-                  value={dayClosed ? 0 : totalMobileMoney}
-                  color="text-purple-400"
-                  gradient="from-purple-900/30 to-purple-800/10"
-                  note="MTN + Airtel"
-                  trend={8.3}
-                />
-                <GrossRevenueCard
-                  grossSales={dayClosed ? 0 : sys.gross}
-                  settledCredits={dayClosed ? 0 : totalSettledToday}
-                />
-              </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <StatCard
+        icon="cash"
+        label="Cash Revenue"
+        value={dayClosed ? 0 : sys.cash}
+        color="text-emerald-700"
+        bg="bg-emerald-50"
+        trend={5.2}
+      />
+      <StatCard
+        icon="card"
+        label="Card Payments"
+        value={dayClosed ? 0 : sys.card}
+        color="text-blue-700"
+        bg="bg-blue-50"
+        trend={-2.1}
+      />
+      <StatCard
+        icon="mobile"
+        label="Mobile Money"
+        value={dayClosed ? 0 : totalMobileMoney}
+        color="text-purple-700"
+        bg="bg-purple-50"
+        note="MTN + Airtel"
+        trend={8.3}
+      />
+      <GrossRevenueCard
+        grossSales={dayClosed ? 0 : sys.gross}
+        settledCredits={dayClosed ? 0 : totalSettledToday}
+      />
+    </div>
 
-              <div className="pt-4">
-                <div className="mb-4">
-                  <h2 className={`text-xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Monthly Expenses</h2>
-                  <p className="text-zinc-500 text-[11px] font-medium mt-1 italic uppercase tracking-wider">Fixed Costs & Operational Overheads</p>
-                </div>
-                <MonthlyCosts
-                  month={selectedMonth}
-                  monthLabel={selectedMonth}
-                  fixedItems={profitData?.costs?.fixed_items || []}
-                  profitLoad={profitLoad}
-                  onRefresh={fetchMonthlyData}
-                  API_URL={API_URL}
-                  dark={isDark}
-                  t={{
-                    card: isDark ? "bg-zinc-900/30" : "bg-white/80",
-                    divider: isDark ? "border-white/5" : "border-gray-200",
-                    subtext: isDark ? "text-zinc-500" : "text-gray-500"
-                  }}
-                />
-              </div>
-            </div>
-          )}
+    <div className="pt-4">
+      <div className="mb-4">
+        <h2 className={`text-xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Monthly Expenses</h2>
+        <p className="text-gray-500 text-[11px] font-medium mt-1 italic uppercase tracking-wider">Fixed Costs & Operational Overheads</p>
+      </div>
+      <MonthlyCosts
+        month={selectedMonth}
+        monthLabel={selectedMonth}
+        fixedItems={profitData?.costs?.fixed_items || []}
+        profitLoad={profitLoad}
+        onRefresh={fetchMonthlyData}
+        API_URL={API_URL}
+        dark={isDark}
+        t={{
+          card: isDark ? "bg-zinc-900/30" : "bg-white/80",
+          divider: isDark ? "border-white/5" : "border-gray-200",
+          subtext: isDark ? "text-zinc-500" : "text-gray-500"
+        }}
+      />
+    </div>
+  </div>
+)}
 
           {/* PHYSICAL COUNT - Shows zeros when day is closed */}
           {activeSection === "PHYSICAL_COUNT" && (

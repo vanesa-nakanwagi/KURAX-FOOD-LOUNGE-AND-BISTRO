@@ -18,14 +18,12 @@ import MonthlyCosts from "./MonthlyCosts";
 import ReopenDayModal from "./modals/ReopenDayModal";
 import StartNewDayModal from "./modals/StartNewDayModal";
 
-// Import helpers and theme toggle
-import ThemeToggle from "./common/ThemeToggle";
 import { kampalaDate, fmt, toLocalDateStr, formatCurrencyCompact, getCreditStatus, forceHardRefresh } from "./utils/helpers";
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function AccountantLayout() {
   const { todaySummary, orders = [], refreshData } = useData() || {};
-  const [isDark, setIsDark] = useState(true);
+
   const [activeSection, setActiveSection] = useState("FINANCIAL_HISTORY");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [error, setError] = useState(null);
@@ -619,14 +617,11 @@ export default function AccountantLayout() {
     }
   };
 
-  const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.documentElement.classList.toggle('dark');
-  };
-
-  const bgClass = isDark ? 'bg-[#0a0a0a]' : 'bg-gray-50';
-  const textClass = isDark ? 'text-white' : 'text-gray-900';
-  const cardBgClass = isDark ? 'bg-zinc-900/30 border-white/5' : 'bg-white/80 border-gray-200 shadow-sm';
+  // Light theme classes (fixed light theme - no toggle)
+  const bgClass = 'bg-gray-50';
+  const textClass = 'text-gray-900';
+  const cardBgClass = 'bg-white border-gray-200 shadow-sm';
+  const headerBgClass = 'bg-white/80 border-gray-200 backdrop-blur-md';
 
   useEffect(() => {
     const handleDayClosed = () => {
@@ -685,26 +680,35 @@ export default function AccountantLayout() {
   }, []);
 
   return (
-    <div className={`flex flex-col lg:flex-row min-h-screen ${bgClass} font-[Outfit] transition-colors duration-300`}>
-      <SideBar
-        activeSection={activeSection}
-        setActiveSection={setActiveSection}
-        isOpen={mobileMenuOpen}
-        setIsOpen={setMobileMenuOpen}
-        isDark={isDark}
-      />
+    <div className={`flex flex-row min-h-screen ${bgClass} font-[Outfit] transition-colors duration-300`}>
+      {/* Sidebar - Sticky/fixed so it doesn't scroll */}
+      <div className="sticky top-0 h-screen flex-shrink-0">
+        <SideBar
+  activeSection={activeSection}
+  setActiveSection={setActiveSection}
+  isOpen={mobileMenuOpen}
+  setIsOpen={setMobileMenuOpen}
+  isDark={false}
+  voidCount={voidRequests.length}
+  creditCount={creditsLedger.filter(c => 
+    c.status === "PendingCashier" || 
+    c.status === "PendingManagerApproval" || 
+    c.status === "Approved"
+  ).length}
+/>
+      </div>
 
-      <div className="flex-1 flex flex-col">
-        <header className={`flex justify-between items-center px-6 py-4 border-b sticky top-0 z-50 backdrop-blur-md transition-colors duration-300
-          ${isDark ? 'bg-black/40 border-white/5' : 'bg-white/80 border-gray-200'}`}>
+      {/* Main content area - This scrolls */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto h-screen">
+        <header className={`flex justify-between items-center px-6 py-4 border-b transition-colors duration-300 ${headerBgClass}`}>
           <div className="flex items-center gap-4">
-            <button onClick={() => setMobileMenuOpen(true)} className="lg:hidden p-2 bg-zinc-900 rounded-xl text-yellow-500">
+            <button onClick={() => setMobileMenuOpen(true)} className="lg:hidden p-2 bg-gray-100 rounded-xl text-yellow-600">
               <Menu size={20}/>
             </button>
             <div>
               <div className="flex items-center gap-2 mb-0.5">
                 <div className="w-1 h-5 bg-yellow-500 rounded-full"/>
-                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-500/80">Accountant</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-600">Accountant</h4>
               </div>
               <h2 className={`text-xl font-black uppercase italic tracking-tighter transition-colors duration-300 ${textClass}`}>
                 {activeSection.replace(/_/g," ")}
@@ -712,21 +716,16 @@ export default function AccountantLayout() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
-              <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Theme</span>
-              <ThemeToggle isDark={isDark} onToggle={toggleTheme} />
-            </div>
-            
             <button 
               onClick={() => forceHardRefresh()}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-500 text-black font-black text-[10px] uppercase tracking-wider hover:bg-yellow-400 transition-all"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-500 text-black font-black text-[10px] uppercase tracking-wider hover:bg-yellow-600 transition-all shadow-sm"
             >
               <RefreshCw size={12} /> Hard Refresh
             </button>
             
             {voidRequests.length > 0 && (
               <button onClick={() => setActiveSection("LIVE_AUDIT")}
-                className="flex items-center gap-2 px-3 py-2 bg-rose-500 rounded-xl animate-pulse hover:bg-rose-600 transition-all">
+                className="flex items-center gap-2 px-3 py-2 bg-rose-500 rounded-xl animate-pulse hover:bg-rose-600 transition-all shadow-sm">
                 <AlertTriangle size={13} className="text-white"/>
                 <span className="text-[10px] font-black text-white uppercase">{voidRequests.length} Void</span>
               </button>
@@ -734,11 +733,11 @@ export default function AccountantLayout() {
           </div>
         </header>
 
-        <main className="p-4 md:p-10 space-y-8 flex-1">
+        <main className="p-4 md:p-10 space-y-8 flex-1 overflow-y-auto">
           {dayClosed && (
-            <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-4 text-center animate-in fade-in duration-500">
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-center animate-in fade-in duration-500">
               <div className="flex items-center justify-center gap-2">
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">
+                <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">
                   ✅ Day Closed - All revenue and physical count totals have been reset. Credits persist for the month.
                 </span>
               </div>
@@ -746,14 +745,14 @@ export default function AccountantLayout() {
           )}
 
           {!hasPhysicalCount && activeSection !== "PHYSICAL_COUNT" && !dayClosed && (
-            <div className="rounded-2xl bg-yellow-500/10 border border-yellow-500/20 p-4 text-center animate-pulse">
+            <div className="rounded-2xl bg-yellow-50 border border-yellow-200 p-4 text-center animate-pulse">
               <div className="flex items-center justify-center gap-2">
-                <span className="text-[10px] font-black text-yellow-600 uppercase tracking-wider">
+                <span className="text-[10px] font-black text-yellow-700 uppercase tracking-wider">
                   ⚠️ Physical count required before closing the day!
                 </span>
                 <button 
                   onClick={() => setActiveSection("PHYSICAL_COUNT")}
-                  className="ml-2 px-3 py-1 bg-yellow-500 text-black rounded-lg text-[9px] font-black"
+                  className="ml-2 px-3 py-1 bg-yellow-500 text-black rounded-lg text-[9px] font-black shadow-sm hover:bg-yellow-600"
                 >
                   Go to Physical Count
                 </button>
@@ -772,7 +771,7 @@ export default function AccountantLayout() {
               profitLoad={profitLoad}
               fetchMonthlyData={fetchMonthlyData}
               API_URL={API_URL}
-              isDark={isDark}
+              isDark={false}
             />
           )}
 
@@ -801,7 +800,7 @@ export default function AccountantLayout() {
               varAirtel={varAirtel}
               varCard={varCard}
               varTotal={varTotal}
-              isDark={isDark}
+              isDark={false}
               cardBgClass={cardBgClass}
               textClass={textClass}
             />
@@ -821,7 +820,7 @@ export default function AccountantLayout() {
               error={error}
               handleDayClosure={handleDayClosure}
               setActiveSection={setActiveSection}
-              isDark={isDark}
+              isDark={false}
               cardBgClass={cardBgClass}
               textClass={textClass}
             />
@@ -837,7 +836,7 @@ export default function AccountantLayout() {
               rejectVoid={rejectVoid}
               loadVoidRequests={loadVoidRequests}
               loadVoidHistory={loadVoidHistory}
-              isDark={isDark}
+              isDark={false}
             />
           )}
 
@@ -851,7 +850,7 @@ export default function AccountantLayout() {
               totalOutstanding={totalOutstanding}
               totalSettled={totalSettled}
               totalRejected={totalRejected}
-              isDark={isDark}
+              isDark={false}
               cardBgClass={cardBgClass}
             />
           )}
@@ -865,7 +864,7 @@ export default function AccountantLayout() {
               baristaSummary={baristaSummary}
               barmanSummary={barmanSummary}
               loadSales={loadSales}
-              isDark={isDark}
+              isDark={false}
               textClass={textClass}
             />
           )}
@@ -877,17 +876,12 @@ export default function AccountantLayout() {
               fixedItems={profitData?.costs?.fixed_items || []}
               profitLoad={profitLoad}
               onRefresh={fetchMonthlyData}
-              dark={isDark}
-              t={{
-                card: isDark ? "bg-zinc-900/30 border-white/5" : "bg-white/80 border-gray-200 shadow-sm",
-                divider: isDark ? "border-white/5" : "border-gray-200",
-                subtext: isDark ? "text-zinc-500" : "text-gray-500"
-              }}
+              dark={false}
               API_URL={API_URL}
             />
           )}
         </main>
-        <Footer isDark={isDark} />
+        <Footer isDark={false} />
       </div>
 
       <ReopenDayModal

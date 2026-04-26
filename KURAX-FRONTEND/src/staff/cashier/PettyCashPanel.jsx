@@ -1,5 +1,5 @@
 /**
- * PettyCashPanel.jsx - WITH EDIT FUNCTIONALITY - FIXED
+ * PettyCashPanel.jsx - WITH EDIT FUNCTIONALITY - LIGHT THEME
  * Correct Accounting Logic:
  * - Replenishment (IN): Money moved from main cash drawer to petty cash wallet
  *   → Decreases Cash on Counter
@@ -28,19 +28,19 @@ const CATEGORIES = [
   "Cash Replenishment", "Surplus Handover", "Loan Return"
 ];
 
-const CATEGORY_COLORS = {
-  "Charcoal / Fuel": "text-orange-400 bg-orange-500/10 border-orange-500/20",
-  "Groceries / Ingredients": "text-green-400 bg-green-500/10 border-green-500/20",
-  "Cleaning Supplies": "text-blue-400 bg-blue-500/10 border-blue-500/20",
-  "Utilities": "text-purple-400 bg-purple-500/10 border-purple-500/20",
-  "Maintenance": "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
-  "Transport": "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
-  "Staff Welfare": "text-pink-400 bg-pink-500/10 border-pink-500/20",
-  "Packaging": "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
-  "Cash Replenishment": "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-  "Surplus Handover": "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-  "Loan Return": "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-  "General": "text-zinc-400 bg-zinc-500/10 border-zinc-500/20",
+const CATEGORY_COLORS_LIGHT = {
+  "Charcoal / Fuel": "text-orange-700 bg-orange-100 border-orange-200",
+  "Groceries / Ingredients": "text-green-700 bg-green-100 border-green-200",
+  "Cleaning Supplies": "text-blue-700 bg-blue-100 border-blue-200",
+  "Utilities": "text-purple-700 bg-purple-100 border-purple-200",
+  "Maintenance": "text-yellow-700 bg-yellow-100 border-yellow-200",
+  "Transport": "text-cyan-700 bg-cyan-100 border-cyan-200",
+  "Staff Welfare": "text-pink-700 bg-pink-100 border-pink-200",
+  "Packaging": "text-indigo-700 bg-indigo-100 border-indigo-200",
+  "Cash Replenishment": "text-emerald-700 bg-emerald-100 border-emerald-200",
+  "Surplus Handover": "text-emerald-700 bg-emerald-100 border-emerald-200",
+  "Loan Return": "text-emerald-700 bg-emerald-100 border-emerald-200",
+  "General": "text-zinc-700 bg-zinc-100 border-zinc-200",
 };
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ export default function PettyCashPanel({
   role = "CASHIER", 
   staffName = "", 
   grossCash = 0, 
-  theme = "dark",
+  theme = "light",
   onTotalChange
 }) {
   const isDark = theme === "dark";
@@ -296,32 +296,33 @@ export default function PettyCashPanel({
     return filterCat === "All" ? reversed : reversed.filter(e => e.category === filterCat);
   }, [entries, filterCat]);
 
-  const cardBg = isDark ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm";
+  const cardBg = "bg-white border-black/10 shadow-sm";
+  const inputBg = "bg-zinc-50 border-zinc-200 focus:border-yellow-400";
 
   return (
-    <div className={`min-h-screen font-[Outfit] pb-20 ${isDark ? "bg-black text-white" : "bg-zinc-50 text-zinc-900"}`}>
+    <div className="min-h-screen font-[Outfit] pb-20 bg-zinc-50 text-zinc-900">
       {/* Header */}
-      <div className={`sticky top-0 z-20 border-b px-5 py-4 flex items-center justify-between gap-4 ${isDark ? "bg-zinc-950/95 backdrop-blur-xl border-white/5" : "bg-white/95 backdrop-blur-xl border-black/5 shadow-sm"}`}>
+      <div className="sticky top-0 z-20 border-b px-5 py-4 flex items-center justify-between gap-4 bg-white/95 backdrop-blur-xl border-black/10 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-yellow-500 flex items-center justify-center text-black">
             <Wallet size={20} />
           </div>
           <div>
-            <h1 className="text-base font-black uppercase tracking-tighter leading-none">Petty Cash</h1>
+            <h1 className="text-base font-black uppercase tracking-tighter leading-none text-zinc-900">Petty Cash</h1>
             <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{isCashier ? `Today · ${today}` : "Management View"}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={fetchData} className="w-9 h-9 rounded-xl border border-white/10 flex items-center justify-center hover:bg-white/5 transition-all">
+          <button onClick={fetchData} className="w-9 h-9 rounded-xl border border-black/10 flex items-center justify-center hover:bg-zinc-100 transition-all">
             <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
           </button>
           {isCashier && !editing && (
-            <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-yellow-500 text-black rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-yellow-400 transition-all">
+            <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-yellow-500 text-black rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-yellow-600 transition-all">
               {showForm ? "Cancel" : "Log Entry"}
             </button>
           )}
           {editing && (
-            <button onClick={handleCancelEdit} className="px-4 py-2 bg-red-500/20 text-red-400 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-red-500/30 transition-all">
+            <button onClick={handleCancelEdit} className="px-4 py-2 bg-red-100 text-red-700 rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-red-200 transition-all">
               Cancel Edit
             </button>
           )}
@@ -352,26 +353,26 @@ export default function PettyCashPanel({
           )}
           
           {/* Total Replenishment (IN) - Money moved to petty cash */}
-          <div className={`p-4 rounded-2xl border ${isDark ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50"}`}>
-            <ArrowUpCircle size={18} className="text-emerald-400 mb-1" />
-            <p className="text-[8px] font-black uppercase opacity-60">Total Replenishment (IN)</p>
-            <p className="text-lg font-black text-emerald-400">UGX {totalIn.toLocaleString()}</p>
-            <p className="text-[7px] text-zinc-500 mt-1">Money moved TO petty cash wallet</p>
+          <div className="p-4 rounded-2xl border bg-emerald-50 border-emerald-200">
+            <ArrowUpCircle size={18} className="text-emerald-600 mb-1" />
+            <p className="text-[8px] font-black uppercase text-emerald-700">Total Replenishment (IN)</p>
+            <p className="text-lg font-black text-emerald-700">UGX {totalIn.toLocaleString()}</p>
+            <p className="text-[7px] text-emerald-600 mt-1">Money moved TO petty cash wallet</p>
           </div>
           
           {/* Total Expenses (OUT) - Money spent from petty cash */}
-          <div className={`p-4 rounded-2xl border ${isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50"}`}>
-            <ArrowDownCircle size={18} className="text-red-400 mb-1" />
-            <p className="text-[8px] font-black uppercase opacity-60">Total Expenses (OUT)</p>
-            <p className="text-lg font-black text-red-400">UGX {totalOut.toLocaleString()}</p>
-            <p className="text-[7px] text-zinc-500 mt-1">Money spent FROM petty cash</p>
+          <div className="p-4 rounded-2xl border bg-red-50 border-red-200">
+            <ArrowDownCircle size={18} className="text-red-600 mb-1" />
+            <p className="text-[8px] font-black uppercase text-red-700">Total Expenses (OUT)</p>
+            <p className="text-lg font-black text-red-700">UGX {totalOut.toLocaleString()}</p>
+            <p className="text-[7px] text-red-600 mt-1">Money spent FROM petty cash</p>
           </div>
           
           {/* Petty Cash Balance */}
-          <div className={`p-4 rounded-2xl border ${pettyCashBalance >= 0 ? (isDark ? "bg-blue-500/10 border-blue-500/20" : "bg-blue-50") : (isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-50")}`}>
-            <Wallet size={18} className={pettyCashBalance >= 0 ? "text-blue-400" : "text-red-400"} />
-            <p className="text-[8px] font-black uppercase opacity-60">Petty Cash Balance</p>
-            <p className={`text-lg font-black ${pettyCashBalance >= 0 ? "text-blue-400" : "text-red-400"}`}>
+          <div className={`p-4 rounded-2xl border ${pettyCashBalance >= 0 ? "bg-blue-50 border-blue-200" : "bg-red-50 border-red-200"}`}>
+            <Wallet size={18} className={pettyCashBalance >= 0 ? "text-blue-600" : "text-red-600"} />
+            <p className="text-[8px] font-black uppercase tracking-widest opacity-60">Petty Cash Balance</p>
+            <p className={`text-lg font-black ${pettyCashBalance >= 0 ? "text-blue-700" : "text-red-700"}`}>
               UGX {pettyCashBalance.toLocaleString()}
             </p>
             <p className="text-[7px] text-zinc-500 mt-1">
@@ -384,11 +385,11 @@ export default function PettyCashPanel({
         {isCashier && showForm && (
           <div className={`p-5 rounded-2xl border ${cardBg} space-y-4 shadow-2xl animate-in slide-in-from-top duration-300`}>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-black uppercase tracking-wider">
+              <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">
                 {editing ? "Edit Entry" : "New Entry"}
               </h3>
               {editing && (
-                <span className="text-[8px] text-yellow-500 font-black uppercase">Editing ID: #{editing.id}</span>
+                <span className="text-[8px] text-yellow-600 font-black uppercase">Editing ID: #{editing.id}</span>
               )}
             </div>
             
@@ -398,13 +399,13 @@ export default function PettyCashPanel({
                 <button 
                   onClick={() => setDirection("OUT")} 
                   className={`flex-1 py-3 rounded-xl border-2 font-black text-[10px] uppercase transition-all
-                    ${direction === "OUT" ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/20" : "border-white/5 text-zinc-500 hover:border-red-500/50"}`}>
+                    ${direction === "OUT" ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/20" : "border-zinc-300 text-zinc-600 hover:border-red-400"}`}>
                   Expense (OUT)
                 </button>
                 <button 
                   onClick={() => setDirection("IN")} 
                   className={`flex-1 py-3 rounded-xl border-2 font-black text-[10px] uppercase transition-all
-                    ${direction === "IN" ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "border-white/5 text-zinc-500 hover:border-emerald-500/50"}`}>
+                    ${direction === "IN" ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "border-zinc-300 text-zinc-600 hover:border-emerald-400"}`}>
                   Replenishment (IN)
                 </button>
               </div>
@@ -424,13 +425,13 @@ export default function PettyCashPanel({
                 value={amount} 
                 onChange={e => setAmount(e.target.value)} 
                 placeholder="0" 
-                className="w-full bg-black/50 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-white font-black text-lg outline-none focus:border-yellow-500 transition-all" 
+                className={`w-full bg-${inputBg} border border-zinc-200 rounded-xl pl-12 pr-4 py-4 text-zinc-900 font-black text-lg outline-none focus:border-yellow-500 transition-all`} 
               />
             </div>
             <select 
               value={category} 
               onChange={e => setCategory(e.target.value)} 
-              className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white font-bold outline-none focus:border-yellow-500 transition-all"
+              className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-900 font-bold outline-none focus:border-yellow-500 transition-all"
             >
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -438,9 +439,9 @@ export default function PettyCashPanel({
               value={description} 
               onChange={e => setDescription(e.target.value)} 
               placeholder="Description..." 
-              className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white font-bold outline-none focus:border-yellow-500 transition-all h-24 resize-none" 
+              className="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-900 font-bold outline-none focus:border-yellow-500 transition-all h-24 resize-none" 
             />
-            <div className="text-[10px] text-zinc-500 p-3 rounded-xl bg-white/5">
+            <div className="text-[10px] text-zinc-600 p-3 rounded-xl bg-zinc-100 border border-zinc-200">
               <p className="font-black uppercase tracking-widest">Accounting Impact:</p>
               <div className="grid grid-cols-2 gap-2 mt-2 text-[8px]">
                 <div>
@@ -459,14 +460,14 @@ export default function PettyCashPanel({
               <button 
                 onClick={editing ? handleUpdate : handleSubmit} 
                 disabled={submitting || !amount || !description.trim()} 
-                className="flex-1 py-4 bg-yellow-500 text-black rounded-xl font-black uppercase text-sm tracking-widest hover:bg-yellow-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 py-4 bg-yellow-500 text-black rounded-xl font-black uppercase text-sm tracking-widest hover:bg-yellow-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? <Loader size={16} className="animate-spin mx-auto" /> : (editing ? "Update Entry" : "Save Entry")}
               </button>
               {editing && (
                 <button 
                   onClick={handleCancelEdit}
-                  className="px-6 py-4 bg-red-500/20 text-red-400 rounded-xl font-black uppercase text-sm tracking-widest hover:bg-red-500/30 transition-all"
+                  className="px-6 py-4 bg-red-100 text-red-700 rounded-xl font-black uppercase text-sm tracking-widest hover:bg-red-200 transition-all"
                 >
                   Cancel
                 </button>
@@ -488,42 +489,42 @@ export default function PettyCashPanel({
               <span className="text-sm font-bold tracking-wide">{toast.message}</span>
             </div>
           )}
-          <div className="p-4 border-b border-white/5 flex justify-between items-center">
+          <div className="p-4 border-b border-black/10 flex justify-between items-center">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Transaction History</p>
-              <p className="text-[8px] text-zinc-600 mt-0.5">{displayEntries.length} entries</p>
+              <p className="text-[8px] text-zinc-400 mt-0.5">{displayEntries.length} entries</p>
             </div>
-            <Filter size={14} className="text-zinc-500" />
+            <Filter size={14} className="text-zinc-400" />
           </div>
           <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
             {displayEntries.length === 0 ? (
               <div className="text-center py-12">
-                <Wallet size={32} className="mx-auto text-zinc-700 mb-3" />
+                <Wallet size={32} className="mx-auto text-zinc-400 mb-3" />
                 <p className="text-zinc-500 font-black uppercase text-[10px]">No entries for today</p>
-                <p className="text-[8px] text-zinc-600 mt-1">Add your first petty cash transaction</p>
+                <p className="text-[8px] text-zinc-400 mt-1">Add your first petty cash transaction</p>
               </div>
             ) : (
               displayEntries.map(entry => {
-                const categoryColor = CATEGORY_COLORS[entry.category] || CATEGORY_COLORS["General"];
+                const categoryColor = CATEGORY_COLORS_LIGHT[entry.category] || CATEGORY_COLORS_LIGHT["General"];
                 return (
-                  <div key={entry.id} className={`flex items-center justify-between p-4 rounded-2xl border transition-all hover:shadow-md ${isDark ? "bg-white/5 border-white/10" : "bg-zinc-50 border-zinc-200"}`}>
+                  <div key={entry.id} className={`flex items-center justify-between p-4 rounded-2xl border transition-all hover:shadow-md bg-white border-zinc-200`}>
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${entry.direction === "OUT" ? "bg-red-500/10 text-red-500" : "bg-emerald-500/10 text-emerald-500"}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${entry.direction === "OUT" ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600"}`}>
                         {entry.direction === "OUT" ? <ArrowDownCircle size={18} /> : <ArrowUpCircle size={18} />}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-black text-white leading-tight truncate">{entry.description}</p>
+                        <p className="text-sm font-black text-zinc-900 leading-tight truncate">{entry.description}</p>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${categoryColor}`}>
                             {entry.category}
                           </span>
                           <span className="text-[8px] text-zinc-500">by {entry.logged_by}</span>
-                          <span className="text-[8px] text-zinc-600">{new Date(entry.created_at).toLocaleTimeString()}</span>
+                          <span className="text-[8px] text-zinc-400">{new Date(entry.created_at).toLocaleTimeString()}</span>
                         </div>
                       </div>
                     </div>
                     <div className="text-right shrink-0 ml-3">
-                      <p className={`font-black text-base ${entry.direction === "OUT" ? "text-red-400" : "text-emerald-400"}`}>
+                      <p className={`font-black text-base ${entry.direction === "OUT" ? "text-red-600" : "text-emerald-600"}`}>
                         {entry.direction === "OUT" ? "-" : "+"} UGX {Number(entry.amount).toLocaleString()}
                       </p>
                       <p className="text-[8px] text-zinc-500 mt-0.5">
@@ -533,14 +534,14 @@ export default function PettyCashPanel({
                         <div className="flex items-center justify-end gap-2 mt-1">
                           <button 
                             onClick={() => handleEdit(entry)} 
-                            className="text-blue-500 hover:text-blue-400 transition-colors"
+                            className="text-blue-600 hover:text-blue-800 transition-colors"
                             title="Edit entry"
                           >
                             <Edit2 size={12} />
                           </button>
                           <button 
                             onClick={() => handleDelete(entry)} 
-                            className="text-zinc-500 hover:text-red-500 transition-colors"
+                            className="text-zinc-500 hover:text-red-600 transition-colors"
                             title="Delete entry"
                           >
                             <Trash2 size={12} />
