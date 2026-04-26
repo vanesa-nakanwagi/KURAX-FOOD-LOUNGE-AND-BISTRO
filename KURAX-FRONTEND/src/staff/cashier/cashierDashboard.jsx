@@ -316,7 +316,6 @@ export default function CashierDashboard() {
       
       if (cRes.ok) {
         const allCredits = await cRes.json();
-        // Debug logging
         console.log("📋 Credits from API:", {
           total: allCredits.length,
           pendingCashier: allCredits.filter(c => c.status === "PendingCashier").length,
@@ -363,12 +362,6 @@ export default function CashierDashboard() {
         approved: credits.filter(c => c.status === "Approved").length,
         settled: credits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled").length,
         rejected: credits.filter(c => c.status === "Rejected").length,
-        sample_approved: credits.filter(c => c.status === "Approved").slice(0, 2).map(c => ({
-          id: c.id,
-          table: c.table_name,
-          amount: c.amount,
-          client: c.client_name
-        }))
       });
     }
   }, [credits]);
@@ -394,63 +387,95 @@ export default function CashierDashboard() {
     setRejecting(false);
     setRejectNote("");
   };
-const handleFinalConfirm = async () => {
-  const order = processingOrder;
-  const isMomo = order.method === "Momo-MTN" || order.method === "Momo-Airtel";
-  const isSplit = order.split_payments && order.split_payments.length > 0;
-  
-  if (!isSplit && isMomo && !momoTransactionId.trim()) return;
-  
-  setConfirming(true);
-  setAnimatingIds(prev => [...prev, order.id]);
-  try {
-    const payload = {
-      confirmed_by: cashierName,
-      transaction_id: momoTransactionId.trim() || null,
-    };
+
+  const handleFinalConfirm = async () => {
+    const order = processingOrder;
+    const isMomo = order.method === "Momo-MTN" || order.method === "Momo-Airtel";
+    const isSplit = order.split_payments && order.split_payments.length > 0;
     
-    // Add split payments if this is a split payment order
-    if (isSplit) {
-      payload.split_payments = order.split_payments;
-    }
+    if (!isSplit && isMomo && !momoTransactionId.trim()) return;
     
-    const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${order.id}/confirm`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error || "Confirm failed");
-      setConfirming(false);
+    setConfirming(true);
+    setAnimatingIds(prev => [...prev, order.id]);
+    try {
+      const payload = {
+        confirmed_by: cashierName,
+        transaction_id: momoTransactionId.trim() || null,
+      };
+      
+      if (isSplit) {
+        payload.split_payments = order.split_payments;
+      }
+      
+      const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${order.id}/confirm`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || "Confirm failed");
+        setConfirming(false);
+        setAnimatingIds(prev => prev.filter(id => id !== order.id));
+        return;
+      }
+      await fetchAll();
+    } catch (e) { console.error("Confirm failed:", e); }
+    setTimeout(() => {
       setAnimatingIds(prev => prev.filter(id => id !== order.id));
+      setProcessingOrder(null);
+      setConfirming(false);
+    }, 500);
+  };
+
+  // ✅ FIXED: Enhanced credit forwarding with validation
+  const handleForwardCredit = async (order) => {
+    // Validation 1: Check if it's actually a credit request
+    if (order.method !== "Credit") {
+      alert("❌ This is not a credit request! Please select 'Credit' as payment method before forwarding.");
       return;
     }
-    await fetchAll();
-  } catch (e) { console.error("Confirm failed:", e); }
-  setTimeout(() => {
-    setAnimatingIds(prev => prev.filter(id => id !== order.id));
-    setProcessingOrder(null);
-    setConfirming(false);
-  }, 500);
-};
-
-  const handleForwardCredit = async (order) => {
+    
+    // Validation 2: Check if client name is provided
+    if (!order.credit_name || order.credit_name.trim() === "") {
+      alert("❌ Client name is required for credit requests!\n\nPlease ask the waiter to provide the client's name.");
+      return;
+    }
+    
+    // Validation 3: Check if client phone is provided
+    if (!order.credit_phone || order.credit_phone.trim() === "") {
+      alert("❌ Client phone number is required for credit requests!\n\nPlease ask the waiter to provide the client's phone number.");
+      return;
+    }
+    
+    // Validation 4: Check if amount is reasonable
+    if (!order.amount || order.amount <= 0) {
+      alert("❌ Invalid credit amount. Please check the order total.");
+      return;
+    }
+    
     setRequestingApproval(true);
     try {
       const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${order.id}/request-approval`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requested_by: cashierName }),
+        body: JSON.stringify({ 
+          requested_by: cashierName,
+          // Explicitly ensure these fields are preserved
+          payment_method: "CREDIT",
+          status: "PendingManagerApproval"
+        }),
       });
+      
       if (res.ok) {
         await fetchAll();
         setProcessingOrder(null);
         setRequestingApproval(false);
-        alert("✅ Credit request forwarded to manager for approval.");
+        alert(`✅ Credit request forwarded to manager for approval!\n\nClient: ${order.credit_name}\nAmount: ${formatCurrencyCompact(order.amount)}\n\nThe manager will review and approve the credit.`);
         return;
       }
+      
       const error = await res.json();
       if (error.error && error.error.includes("table_name")) {
         alert(
@@ -943,16 +968,21 @@ const handleFinalConfirm = async () => {
               </span>
             </div>
 
+            {/* ✅ FIXED: Enhanced credit info display with validation warnings */}
             {isCredit && (
               <div className="bg-purple-500/5 border border-purple-500/20 rounded-3xl p-5 mb-6 space-y-2">
-                <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-3">Client Info</p>
+                <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-3">Client Info (REQUIRED)</p>
                 <div className="flex items-center gap-2">
                   <User size={12} className="text-zinc-500 shrink-0" />
-                  <span className="text-sm font-black text-white truncate">{processingOrder.credit_name || "—"}</span>
+                  <span className={`text-sm font-black truncate ${processingOrder.credit_name ? "text-white" : "text-red-400"}`}>
+                    {processingOrder.credit_name || "⚠️ Missing - Required!"}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Phone size={12} className="text-zinc-500 shrink-0" />
-                  <span className="text-sm text-zinc-300 truncate">{processingOrder.credit_phone || "—"}</span>
+                  <span className={`text-sm truncate ${processingOrder.credit_phone ? "text-zinc-300" : "text-red-400"}`}>
+                    {processingOrder.credit_phone || "⚠️ Missing - Required!"}
+                  </span>
                 </div>
                 {processingOrder.credit_pay_by && (
                   <div className="flex items-center gap-2">
@@ -960,8 +990,11 @@ const handleFinalConfirm = async () => {
                     <span className="text-sm text-zinc-300 truncate">{processingOrder.credit_pay_by}</span>
                   </div>
                 )}
-                <div className="mt-3 pt-3 border-t border-purple-500/10 bg-purple-500/5 rounded-xl p-3">
-                  <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest text-center">
+                <div className="mt-3 pt-3 border-t border-purple-500/10 bg-yellow-500/5 rounded-xl p-3">
+                  <p className="text-[9px] font-black text-yellow-400 uppercase tracking-widest text-center">
+                    ⚠️ Client name and phone number are required before forwarding
+                  </p>
+                  <p className="text-[8px] text-purple-300/70 text-center mt-1">
                     Manager approval required · Forwarding creates a credit record in the ledger
                   </p>
                 </div>
@@ -1000,8 +1033,15 @@ const handleFinalConfirm = async () => {
                   <>
                     <button
                       onClick={() => handleForwardCredit(processingOrder)}
-                      disabled={requestingApproval}
-                      className="w-full py-5 bg-purple-500 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-purple-400 active:scale-[0.98] transition-all disabled:opacity-50"
+                      disabled={requestingApproval || !processingOrder.credit_name || !processingOrder.credit_phone}
+                      className={`w-full py-5 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all
+                        ${(!processingOrder.credit_name || !processingOrder.credit_phone)
+                          ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                          : "bg-purple-500 text-white hover:bg-purple-400 active:scale-[0.98]"
+                        }`}
+                      title={!processingOrder.credit_name || !processingOrder.credit_phone 
+                        ? "Client name and phone number are required" 
+                        : ""}
                     >
                       {requestingApproval ? "Forwarding…" : <><Send size={14} /> Forward to Manager</>}
                     </button>
@@ -1148,6 +1188,9 @@ function LiveOrderCard({ order, onConfirm, onDelivery }) {
           <p className="text-zinc-500 text-[10px] font-bold uppercase mt-1 truncate">
             {order.requested_by} · {timeAgo(order.created_at)}
             {isCredit && order.credit_name && ` · ${order.credit_name}`}
+            {isCredit && !order.credit_name && (
+              <span className="text-red-400 ml-1">⚠️ Missing client name!</span>
+            )}
           </p>
         </div>
         <div className="text-right shrink-0">
@@ -1164,7 +1207,13 @@ function LiveOrderCard({ order, onConfirm, onDelivery }) {
           <>
             <button
               onClick={onConfirm}
-              className="flex-1 py-3 bg-purple-500 text-white font-black text-[10px] uppercase rounded-xl hover:bg-purple-400 transition-all flex items-center justify-center gap-2"
+              disabled={!order.credit_name || !order.credit_phone}
+              className={`flex-1 py-3 font-black text-[10px] uppercase rounded-xl transition-all flex items-center justify-center gap-2
+                ${(!order.credit_name || !order.credit_phone)
+                  ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                  : "bg-purple-500 text-white hover:bg-purple-400"
+                }`}
+              title={!order.credit_name || !order.credit_phone ? "Client name and phone required" : ""}
             >
               <Send size={13} /> Forward to Manager
             </button>

@@ -206,7 +206,7 @@ export default function Events() {
       {/* ── AMBIANCE SECTION ── */}
       <section className="relative pt-10 pb-32 px-6 max-w-7xl mx-auto overflow-hidden">
         <div className="flex flex-col lg:flex-row gap-12 lg:gap-16 items-start">
-          <div className="w-full lg:w-3/5 relative h-[320px] md:h-[500px] lg:h-[650px] group shadow-[0_0_50px_rgba(0,0,0,0.3)] overflow-hidden rounded-[2rem]">
+          <div className="w-full lg:w-3/5 relative h-[320px] md:h-[500px] lg:h-[650px] group shadow-[0_0_50px_rgba(0,0,0,0.3)] overflow-hidden rounded-none">
             <div className="absolute top-8 left-8 z-30 mix-blend-difference overflow-hidden" />
 
             <AnimatePresence mode="wait">

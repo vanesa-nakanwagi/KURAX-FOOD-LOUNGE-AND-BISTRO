@@ -22,57 +22,53 @@ router.get('/today', async (req, res) => {
   try {
     const today = kampalaDate();
     
-    // Get ONLY non-credit, paid orders (exclude ALL credit orders from gross revenue)
+    // Get only paid/confirmed non-credit orders, with robust case-insensitive method matching.
     const ordersResult = await pool.query(`
       SELECT
-        COALESCE(SUM(CASE 
-          WHEN payment_method IN ('Cash', 'Card', 'Momo-MTN', 'Momo-Airtel') 
-          THEN total 
-          ELSE 0 
-        END), 0) AS total_gross,
-        COALESCE(SUM(CASE WHEN payment_method = 'Cash' THEN total ELSE 0 END), 0) AS total_cash,
-        COALESCE(SUM(CASE WHEN payment_method = 'Card' THEN total ELSE 0 END), 0) AS total_card,
-        COALESCE(SUM(CASE WHEN payment_method = 'Momo-MTN' THEN total ELSE 0 END), 0) AS total_mtn,
-        COALESCE(SUM(CASE WHEN payment_method = 'Momo-Airtel' THEN total ELSE 0 END), 0) AS total_airtel,
-        COALESCE(SUM(CASE WHEN payment_method = 'Credit' THEN total ELSE 0 END), 0) AS total_credit,
-        COUNT(*) AS order_count
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) IN ('CASH','CARD','MOMO-MTN','MOMO-AIRTEL','MIXED') THEN total ELSE 0 END), 0) AS total_gross,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) = 'CASH' THEN total ELSE 0 END), 0) AS total_cash,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) = 'CARD' OR UPPER(payment_method) LIKE '%VISA%' OR UPPER(payment_method) LIKE '%POS%' THEN total ELSE 0 END), 0) AS total_card,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) = 'MOMO-MTN' THEN total ELSE 0 END), 0) AS total_mtn,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) = 'MOMO-AIRTEL' THEN total ELSE 0 END), 0) AS total_airtel,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) = 'CREDIT' THEN total ELSE 0 END), 0) AS total_credit,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) = 'MIXED' THEN total ELSE 0 END), 0) AS total_mixed,
+        COUNT(*) FILTER (WHERE UPPER(payment_method) != 'CREDIT') AS order_count
       FROM orders
-      WHERE status IN ('Paid', 'Confirmed', 'Closed', 'Served')
-        AND payment_method IS NOT NULL
-        AND payment_method != 'Credit'
-        AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
+      WHERE DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
+        AND (
+          is_archived = true
+          OR LOWER(status) IN ('paid', 'confirmed', 'closed', 'served')
+        )
     `, [today]);
     
-    // Get credit settlements that were PAID today (actual cash collected from credit orders)
+    // Get credit settlements that were actually collected today.
     const creditSettlements = await pool.query(`
       SELECT 
         COALESCE(SUM(amount_paid), 0) AS total_settled,
-        COALESCE(SUM(CASE WHEN settle_method = 'Cash' THEN amount_paid ELSE 0 END), 0) AS settled_cash,
-        COALESCE(SUM(CASE WHEN settle_method = 'Card' THEN amount_paid ELSE 0 END), 0) AS settled_card,
-        COALESCE(SUM(CASE WHEN settle_method = 'Momo-MTN' THEN amount_paid ELSE 0 END), 0) AS settled_mtn,
-        COALESCE(SUM(CASE WHEN settle_method = 'Momo-Airtel' THEN amount_paid ELSE 0 END), 0) AS settled_airtel,
+        COALESCE(SUM(CASE WHEN UPPER(method) = 'CASH' THEN amount_paid ELSE 0 END), 0) AS settled_cash,
+        COALESCE(SUM(CASE WHEN UPPER(method) = 'CARD' OR UPPER(method) LIKE '%VISA%' OR UPPER(method) LIKE '%POS%' THEN amount_paid ELSE 0 END), 0) AS settled_card,
+        COALESCE(SUM(CASE WHEN UPPER(method) = 'MOMO-MTN' THEN amount_paid ELSE 0 END), 0) AS settled_mtn,
+        COALESCE(SUM(CASE WHEN UPPER(method) = 'MOMO-AIRTEL' THEN amount_paid ELSE 0 END), 0) AS settled_airtel,
         COUNT(*) AS settlement_count
-      FROM credits 
-      WHERE status IN ('FullySettled')
-        AND DATE(paid_at AT TIME ZONE 'Africa/Nairobi') = $1
+      FROM credit_settlements
+      WHERE DATE(created_at AT TIME ZONE 'Africa/Nairobi') = $1
     `, [today]);
     
-    // Get pending credit requests (NOT included in gross revenue)
+    // Get pending credit requests (not part of gross revenue yet).
     const pendingCredits = await pool.query(`
       SELECT 
         COALESCE(SUM(total), 0) AS total_pending,
         COUNT(*) AS pending_count
       FROM orders
-      WHERE payment_method = 'Credit'
-        AND status NOT IN ('Paid', 'Closed')
-        AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
+      WHERE UPPER(payment_method) = 'CREDIT'
+        AND LOWER(status) NOT IN ('paid', 'closed')
+        AND DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
     `, [today]);
     
     const orders = ordersResult.rows[0];
     const settlements = creditSettlements.rows[0];
     const pending = pendingCredits.rows[0];
     
-    // Gross revenue = paid orders + credit settlements collected today
     const totalGross = Number(orders.total_gross) + Number(settlements.total_settled);
     const totalCash = Number(orders.total_cash) + Number(settlements.settled_cash);
     const totalCard = Number(orders.total_card) + Number(settlements.settled_card);
@@ -100,7 +96,7 @@ router.get('/today', async (req, res) => {
       total_mtn: totalMtn,
       total_airtel: totalAirtel,
       total_credit: Number(orders.total_credit),
-      total_mixed: 0,
+      total_mixed: Number(orders.total_mixed),
       order_count: Number(orders.order_count),
       credit_settlements_today: Number(settlements.total_settled),
       credit_settlements_count: Number(settlements.settlement_count),
@@ -131,9 +127,9 @@ router.get('/pending-credits-total', async (req, res) => {
         COALESCE(SUM(total), 0) AS total_pending,
         COUNT(*) AS pending_count
       FROM orders
-      WHERE payment_method = 'Credit'
-        AND status NOT IN ('Paid', 'Closed')
-        AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
+      WHERE UPPER(payment_method) = 'CREDIT'
+        AND LOWER(status) NOT IN ('paid', 'closed')
+        AND DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
     `, [today]);
     
     res.json({ 

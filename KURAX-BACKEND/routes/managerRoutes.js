@@ -37,12 +37,16 @@ router.get('/target-progress', async (req, res) => {
       : 0;
 
     const todayQuery = `
-      SELECT COALESCE(SUM(total), 0) AS today_revenue
+      SELECT COALESCE(SUM(CASE WHEN UPPER(payment_method) NOT LIKE '%CREDIT%' THEN total ELSE 0 END), 0) 
+             + COALESCE((
+                SELECT SUM(amount_paid) FROM credit_settlements
+                WHERE DATE(created_at AT TIME ZONE 'Africa/Nairobi') = DATE(NOW() AT TIME ZONE 'Africa/Nairobi')
+             ), 0) AS today_revenue
       FROM orders 
-      WHERE DATE(COALESCE(timestamp, created_at)) = CURRENT_DATE
+      WHERE DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = DATE(NOW() AT TIME ZONE 'Africa/Nairobi')
         AND (
           is_archived = true 
-          OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'credit')
+          OR LOWER(status) IN ('paid', 'closed', 'confirmed')
         )
     `;
     const todayResult = await pool.query(todayQuery);
@@ -70,15 +74,25 @@ router.get('/analytics/daily', async (req, res) => {
 
     const query = `
       SELECT 
-        COALESCE(SUM(total), 0) AS total_gross,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) NOT LIKE '%CREDIT%' THEN total ELSE 0 END), 0) + COALESCE(settled.total_settled, 0) AS total_gross,
         COUNT(*) AS total_orders,
-        COALESCE(SUM(CASE WHEN UPPER(payment_method) LIKE '%CASH%' THEN total ELSE 0 END), 0) AS cash_total,
-        COALESCE(SUM(CASE WHEN UPPER(payment_method) LIKE '%MTN%' THEN total ELSE 0 END), 0) AS mtn_total,
-        COALESCE(SUM(CASE WHEN UPPER(payment_method) LIKE '%AIRTEL%' THEN total ELSE 0 END), 0) AS airtel_total,
-        COALESCE(SUM(CASE WHEN UPPER(payment_method) LIKE '%CARD%' OR UPPER(payment_method) LIKE '%VISA%' OR UPPER(payment_method) LIKE '%POS%' THEN total ELSE 0 END), 0) AS card_total,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) LIKE '%CASH%' AND UPPER(payment_method) NOT LIKE '%CREDIT%' THEN total ELSE 0 END), 0) + COALESCE(settled.cash, 0) AS cash_total,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) LIKE '%MTN%' AND UPPER(payment_method) NOT LIKE '%CREDIT%' THEN total ELSE 0 END), 0) + COALESCE(settled.mtn, 0) AS mtn_total,
+        COALESCE(SUM(CASE WHEN UPPER(payment_method) LIKE '%AIRTEL%' AND UPPER(payment_method) NOT LIKE '%CREDIT%' THEN total ELSE 0 END), 0) + COALESCE(settled.airtel, 0) AS airtel_total,
+        COALESCE(SUM(CASE WHEN (UPPER(payment_method) LIKE '%CARD%' OR UPPER(payment_method) LIKE '%VISA%' OR UPPER(payment_method) LIKE '%POS%') AND UPPER(payment_method) NOT LIKE '%CREDIT%' THEN total ELSE 0 END), 0) + COALESCE(settled.card, 0) AS card_total,
         COALESCE(SUM(CASE WHEN UPPER(payment_method) LIKE '%CREDIT%' OR LOWER(status) = 'credit' THEN total ELSE 0 END), 0) AS credit_total
       FROM orders 
-      WHERE DATE(COALESCE(timestamp, created_at)) = $1
+      LEFT JOIN LATERAL (
+        SELECT
+          COALESCE(SUM(amount_paid), 0) AS total_settled,
+          COALESCE(SUM(CASE WHEN LOWER(method) = 'cash' THEN amount_paid ELSE 0 END), 0) AS cash,
+          COALESCE(SUM(CASE WHEN LOWER(method) = 'card' OR LOWER(method) = 'visa' OR LOWER(method) = 'pos' THEN amount_paid ELSE 0 END), 0) AS card,
+          COALESCE(SUM(CASE WHEN LOWER(method) = 'momo-mtn' THEN amount_paid ELSE 0 END), 0) AS mtn,
+          COALESCE(SUM(CASE WHEN LOWER(method) = 'momo-airtel' THEN amount_paid ELSE 0 END), 0) AS airtel
+        FROM credit_settlements
+        WHERE DATE(created_at AT TIME ZONE 'Africa/Nairobi') = $1
+      ) AS settled ON TRUE
+      WHERE DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
         AND (
           is_archived = true
           OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'credit')

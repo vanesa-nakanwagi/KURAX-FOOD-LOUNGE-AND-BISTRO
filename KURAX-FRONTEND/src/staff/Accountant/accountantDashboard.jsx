@@ -693,7 +693,7 @@ export default function AccountantDashboard() {
 
   const fetchLiveSummary = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/summaries/today?t=${Date.now()}`);
+      const res = await fetch(`${API_URL}/api/accountant/today?t=${Date.now()}`);
       if (res.ok) setLiveSummary(await res.json());
     } catch (e) { console.error("live summary:", e); }
   }, []);

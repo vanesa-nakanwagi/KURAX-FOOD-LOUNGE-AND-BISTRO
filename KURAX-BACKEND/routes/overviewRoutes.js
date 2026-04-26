@@ -63,23 +63,19 @@ router.get('/today', async (req, res) => {
     const settleGrandRes = await pool.query(
       `SELECT COALESCE(SUM(cs.amount_paid), 0) AS total
        FROM credit_settlements cs
-       WHERE cs.created_at::date = $1`,
+       WHERE DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') = $1`,
       [today]
     );
 
     // ── Credit settlements breakdown by payment method ──────────────────────
     const settleBreakdownRes = await pool.query(
       `SELECT
-         COALESCE(SUM(CASE WHEN LOWER(cq.method) = 'cash'        THEN cs.amount_paid ELSE 0 END), 0) AS cash,
-         COALESCE(SUM(CASE WHEN LOWER(cq.method) = 'card'        THEN cs.amount_paid ELSE 0 END), 0) AS card,
-         COALESCE(SUM(CASE WHEN LOWER(cq.method) = 'momo-mtn'    THEN cs.amount_paid ELSE 0 END), 0) AS mtn,
-         COALESCE(SUM(CASE WHEN LOWER(cq.method) = 'momo-airtel' THEN cs.amount_paid ELSE 0 END), 0) AS airtel
+         COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'cash' THEN cs.amount_paid ELSE 0 END), 0) AS cash,
+         COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'card' THEN cs.amount_paid ELSE 0 END), 0) AS card,
+         COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'momo-mtn' THEN cs.amount_paid ELSE 0 END), 0) AS mtn,
+         COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'momo-airtel' THEN cs.amount_paid ELSE 0 END), 0) AS airtel
        FROM credit_settlements cs
-       LEFT JOIN cashier_queue cq
-         ON cq.reference_id = cs.id::text
-        AND cq.status = 'Confirmed'
-        AND cq.method != 'Credit'
-       WHERE cs.created_at::date = $1`,
+       WHERE DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') = $1`,
       [today]
     );
 

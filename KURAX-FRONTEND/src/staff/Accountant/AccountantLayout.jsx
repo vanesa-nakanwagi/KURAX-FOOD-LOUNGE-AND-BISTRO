@@ -89,10 +89,10 @@ export default function AccountantLayout() {
   // ── FETCH LIVE SUMMARY WITH DEBUGGING ──────────────────────────────────────
   const fetchLiveSummary = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/summaries/today?t=${Date.now()}`);
+      const res = await fetch(`${API_URL}/api/accountant/today?t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
-        console.log("🔍 API Response from /api/summaries/today:", data);
+        console.log("🔍 API Response from /api/accountant/today:", data);
         console.log("📊 Gross Revenue:", data.total_gross);
         console.log("💰 Cash:", data.total_cash);
         console.log("💳 Card:", data.total_card);

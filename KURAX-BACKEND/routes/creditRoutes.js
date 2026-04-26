@@ -16,6 +16,7 @@
 import express from 'express';
 import pool    from '../db.js';
 import logActivity from '../utils/logsActivity.js';
+import { updateDailySummary } from '../helpers/summaryHelper.js';
 
 const router = express.Router();
 
@@ -584,6 +585,9 @@ router.patch('/:id/settle', async (req, res) => {
             paid_at = NOW()
         WHERE id = $3
       `, [newStatus === 'FullySettled' ? 'Paid' : 'Credit', method || "Cash", credit.order_id]);
+
+      // Record credit settlement in the authoritative daily_summary table.
+      await updateDailySummary({ amount: payment, method, orderCount: 0 });
       
       // Update individual items - ONLY mark credit-requested items as paid
       const orderRes = await client.query(

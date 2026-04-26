@@ -1,428 +1,736 @@
+// routes/sendToCashierRoute.js - FIXED VERSION
 
-
-import express from 'express';
-import pool    from '../db.js';
-import logActivity from '../utils/logsActivity.js';
+import express from "express";
+import pool from "../db.js";
+import { updateDailySummary } from '../helpers/summaryHelper.js';
+import logActivity from '../utils/logsActivity.js'; 
 
 const router = express.Router();
 
-// ── Kampala / EAT date helper (UTC+3) ────────────────────────────────────────
-function kampalaDate(date = new Date()) {
-  return new Date(date.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }))
-    .toISOString().split('T')[0];
+// Helper function to get table_name from order_ids if missing
+async function getTableNameFromOrderIds(orderIds) {
+  if (!orderIds || orderIds.length === 0) return null;
+  try {
+    const result = await pool.query(
+      `SELECT table_name FROM orders WHERE id = $1 LIMIT 1`,
+      [orderIds[0]]
+    );
+    return result.rows[0]?.table_name || null;
+  } catch (err) {
+    console.error("Error fetching table_name:", err.message);
+    return null;
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 1.  GET /api/accountant/physical-count
-//     Returns today's physical count entry (or zeros if none recorded yet).
-// ─────────────────────────────────────────────────────────────────────────────
-router.get('/physical-count', async (req, res) => {
-  const date = req.query.date || kampalaDate();
-  try {
-    const result = await pool.query(
-      `SELECT * FROM physical_counts WHERE count_date = $1 ORDER BY created_at DESC LIMIT 1`,
-      [date]
-    );
-    if (result.rows.length > 0) {
-      res.json(result.rows[0]);
-    } else {
-      res.json({ cash: 0, momo_mtn: 0, momo_airtel: 0, card: 0, notes: '' });
+// POST /api/cashier-ops/send-to-cashier
+router.post("/send-to-cashier", async (req, res) => {
+  let {
+    order_ids, table_name, label, method, amount,
+    is_item = false, item, items, credit_info, requested_by, staff_id,
+    split_payments,
+    is_split = false
+  } = req.body;
+
+  console.log("🔵 SEND-TO-CASHIER Request:", { method, amount, is_item, order_ids, table_name });
+
+  // Handle split payments
+  if (split_payments && Array.isArray(split_payments) && split_payments.length > 0) {
+    try {
+      let formattedOrderIds = [];
+      if (!Array.isArray(order_ids)) {
+        if (typeof order_ids === 'number' || typeof order_ids === 'string') {
+          formattedOrderIds = [parseInt(order_ids)];
+        } else if (typeof order_ids === 'object' && order_ids !== null) {
+          formattedOrderIds = Object.values(order_ids).map(id => parseInt(id));
+        }
+      } else {
+        formattedOrderIds = order_ids.map(id => parseInt(id));
+      }
+
+      if (!table_name && formattedOrderIds && formattedOrderIds.length > 0) {
+        table_name = await getTableNameFromOrderIds(formattedOrderIds);
+      }
+
+      if (!table_name) {
+        table_name = "WALK-IN";
+      }
+
+      // Create orders for split payments
+      for (const payment of split_payments) {
+        const paymentMethod = payment.method.toLowerCase();
+        const amount = payment.amount;
+        const transactionId = payment.transaction_id || null;
+        const creditInfo = payment.creditInfo || null;
+        
+        // Create individual paid order for each split payment
+        const orderResult = await pool.query(
+          `INSERT INTO orders 
+             (original_order_ids, table_name, payment_method, total, status, paid_at, transaction_id, is_archived, created_at)
+           VALUES ($1::jsonb, $2, $3, $4, 'Paid', NOW(), $5, false, NOW())
+           RETURNING id`,
+          [JSON.stringify(formattedOrderIds), table_name, paymentMethod, amount, transactionId]
+        );
+        
+        console.log(`✅ SPLIT: Created PAID order #${orderResult.rows[0].id} for UGX ${amount} via ${paymentMethod}`);
+        
+        // Update daily summary
+        await updateDailySummary({ amount: amount, method: paymentMethod });
+      }
+
+      // Mark original orders as processed
+      if (formattedOrderIds?.length) {
+        await pool.query(
+          `UPDATE orders SET sent_to_cashier = true, is_archived = true WHERE id = ANY($1::int[])`,
+          [formattedOrderIds]
+        );
+      }
+
+      res.json({ 
+        success: true, 
+        split: true,
+        message: `${split_payments.length} payment records created`
+      });
+      return;
+    } catch (err) {
+      console.error("split payment failed:", err);
+      return res.status(500).json({ error: err.message });
     }
-  } catch (err) {
-    console.error('Physical count GET error:', err.message);
-    res.status(500).json({ error: err.message });
   }
-});
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 2.  POST /api/accountant/physical-count
-//     Upserts the physical count for today.
-// ─────────────────────────────────────────────────────────────────────────────
-router.post('/physical-count', async (req, res) => {
-  const { cash, momo_mtn, momo_airtel, card, notes, submitted_by } = req.body;
-  const date = kampalaDate();
+  // Original single payment logic
+  if (!method || amount === undefined || amount === null) {
+    return res.status(400).json({ error: "method and amount are required" });
+  }
+
+  let formattedOrderIds = [];
+  if (!Array.isArray(order_ids)) {
+    if (typeof order_ids === 'number' || typeof order_ids === 'string') {
+      formattedOrderIds = [parseInt(order_ids)];
+    } else if (typeof order_ids === 'object' && order_ids !== null) {
+      formattedOrderIds = Object.values(order_ids).map(id => parseInt(id));
+    }
+  } else {
+    formattedOrderIds = order_ids.map(id => parseInt(id));
+  }
+
+  if (!table_name && formattedOrderIds && formattedOrderIds.length > 0) {
+    table_name = await getTableNameFromOrderIds(formattedOrderIds);
+  }
+
+  if (!table_name) {
+    table_name = "WALK-IN";
+  }
+
   try {
     const result = await pool.query(
-      `INSERT INTO physical_counts (count_date, cash, momo_mtn, momo_airtel, card, notes, submitted_by, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-       ON CONFLICT (count_date) DO UPDATE
-         SET cash        = EXCLUDED.cash,
-             momo_mtn    = EXCLUDED.momo_mtn,
-             momo_airtel = EXCLUDED.momo_airtel,
-             card        = EXCLUDED.card,
-             notes       = EXCLUDED.notes,
-             submitted_by= EXCLUDED.submitted_by,
-             updated_at  = NOW()
-       RETURNING *`,
-      [date, cash || 0, momo_mtn || 0, momo_airtel || 0, card || 0, notes || '', submitted_by || 'Accountant']
+      `INSERT INTO cashier_queue
+         (order_ids, table_name, label, method, amount, is_item, item,
+          requested_by, staff_id, credit_name, credit_phone, credit_pay_by,
+          status, created_at)
+       VALUES ($1::jsonb, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, 'Pending', NOW())
+       RETURNING id`,
+      [
+        JSON.stringify(formattedOrderIds),
+        table_name,
+        label || null,
+        method,
+        Number(amount),
+        is_item,
+        item ? JSON.stringify(item) : null,
+        requested_by || null,
+        staff_id || null,
+        credit_info?.name || null,
+        credit_info?.phone || null,
+        credit_info?.pay_by || null,
+      ]
     );
 
-    await logActivity(pool, {
-      type:    'PHYSICAL_COUNT',
-      actor:   submitted_by || 'Accountant',
-      role:    'ACCOUNTANT',
-      message: `Physical count saved for ${date}`,
-      meta:    { cash, momo_mtn, momo_airtel, card },
-    });
+    const newQueueId = result.rows[0].id;
+    console.log(`🔵 Created cashier_queue entry #${newQueueId} for ${method} payment of UGX ${amount}`);
 
-    res.json(result.rows[0]);
+    if (formattedOrderIds?.length) {
+      await pool.query(
+        `UPDATE orders SET sent_to_cashier = true WHERE id = ANY($1::int[])`,
+        [formattedOrderIds]
+      );
+    }
+
+    // When method is Credit, also create a row in the credits table
+    if (method === 'Credit' && credit_info?.name) {
+      try {
+        await pool.query(
+          `INSERT INTO credits
+             (order_id, table_name, label, amount, amount_paid, balance,
+              client_name, client_phone, pay_by, waiter_name, status, cashier_queue_id, created_at)
+           VALUES ($1, $2, $3, $4, 0, $4, $5, $6, $7, $8, 'PendingCashier', $9, NOW())`,
+          [
+            formattedOrderIds?.[0] || null,
+            table_name,
+            label || `Credit – ${table_name}`,
+            Number(amount),
+            credit_info.name.trim(),
+            credit_info.phone?.trim() || null,
+            credit_info.pay_by?.trim() || null,
+            requested_by || null,
+            newQueueId,
+          ]
+        );
+        console.log(`✅ Credit record created with cashier_queue_id: ${newQueueId}`);
+      } catch (creditErr) {
+        console.error('Credit record creation warning:', creditErr.message);
+      }
+    }
+
+    res.json({ success: true, queue_id: newQueueId });
   } catch (err) {
-    console.error('Physical count POST error:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error("send-to-cashier failed:", err);
+    res.status(500).json({ error: "Failed to send to cashier" });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 3.  POST /api/accountant/finalize-day
-//     THE MAIN "CLOSE DAY" ENDPOINT
-// ─────────────────────────────────────────────────────────────────────────────
-router.post('/finalize-day', async (req, res) => {
-  const { final_gross, recorded_by } = req.body;
-  const date = kampalaDate();
-  const actor = recorded_by || 'Accountant';
+// ✅ FIXED: PATCH /api/cashier-ops/cashier-queue/:id/confirm
+router.patch("/cashier-queue/:id/confirm", async (req, res) => {
+  const { id } = req.params;
+  const { confirmed_by, transaction_id, split_payments } = req.body || {};
 
-  const client = await pool.connect();
+  console.log(`🔵 CONFIRMING payment for queue item #${id} by ${confirmed_by || 'Cashier'}`);
+
   try {
-    await client.query('BEGIN');
+    const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
+    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
+    const q = qRes.rows[0];
 
-    // ── a. Snapshot daily_summary → day_closings ─────────────────────────────
-    await client.query(
-      `INSERT INTO day_closings
-         (closing_date, recorded_by, gross, cash, mtn, airtel, card, credit, order_count, closed_at)
-       SELECT
-         $1, $2,
-         COALESCE(total_gross,  0),
-         COALESCE(total_cash,   0),
-         COALESCE(total_mtn,    0),
-         COALESCE(total_airtel, 0),
-         COALESCE(total_card,   0),
-         COALESCE(total_credit, 0),
-         COALESCE(order_count,  0),
-         NOW()
-       FROM daily_summary
-       WHERE summary_date = $1
-       ON CONFLICT (closing_date) DO UPDATE
-         SET recorded_by  = EXCLUDED.recorded_by,
-             gross        = EXCLUDED.gross,
-             cash         = EXCLUDED.cash,
-             mtn          = EXCLUDED.mtn,
-             airtel       = EXCLUDED.airtel,
-             card         = EXCLUDED.card,
-             credit       = EXCLUDED.credit,
-             order_count  = EXCLUDED.order_count,
-             closed_at    = NOW()`,
-      [date, actor]
+    console.log(`📋 Queue item: method=${q.method}, amount=${q.amount}, is_item=${q.is_item}, order_ids=${q.order_ids}`);
+
+    // Skip if already confirmed
+    if (q.status === 'Confirmed') {
+      return res.json({ success: true, message: "Already confirmed" });
+    }
+
+    // Handle Credit payments
+    if (q.method === "Credit") {
+      return res.status(400).json({
+        error: "Credit payments require manager approval — use Request Approval instead"
+      });
+    }
+
+    // Validate Momo transaction ID
+    if ((q.method === "Momo-MTN" || q.method === "Momo-Airtel") && !transaction_id) {
+      return res.status(400).json({ error: "Transaction ID is required for Momo payments" });
+    }
+
+    // Update cashier_queue status
+    await pool.query(
+      `UPDATE cashier_queue
+       SET status = 'Confirmed',
+           confirmed_by = $1,
+           confirmed_at = NOW(),
+           transaction_id = $2
+       WHERE id = $3`,
+      [confirmed_by || "Cashier", transaction_id || null, id]
     );
 
-    // ── b. Mark all today's orders as day_cleared ─────────────────────────────
-    const ordersResult = await client.query(
-      `UPDATE orders
-       SET day_cleared    = true,
-           shift_cleared  = true,
-           updated_at     = NOW()
-       WHERE DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
-         AND day_cleared IS NOT TRUE
-       RETURNING id`,
-      [date]
+    const paymentMethod = q.method.toLowerCase();
+
+    if (q.is_item) {
+      // ✅ INDIVIDUAL ITEM PAYMENT
+      console.log(`🔵 Processing INDIVIDUAL ITEM payment: ${q.amount} via ${paymentMethod}`);
+      
+      if (q.order_ids?.length && q.item) {
+        for (const orderId of q.order_ids) {
+          // Get the current order
+          const orderRes = await pool.query(
+            `SELECT items, table_name, status FROM orders WHERE id = $1`,
+            [orderId]
+          );
+          
+          if (orderRes.rows.length > 0) {
+            let items = orderRes.rows[0].items;
+            if (typeof items === 'string') {
+              items = JSON.parse(items);
+            }
+            
+            // Update the specific item to paid
+            let found = false;
+            const updatedItems = items.map(item => {
+              const itemName = item.name?.trim().toLowerCase();
+              if (!found && itemName === q.item.name?.trim().toLowerCase() && !item._rowPaid) {
+                found = true;
+                return {
+                  ...item,
+                  _rowPaid: true,
+                  payment_method: paymentMethod,
+                  paid_at: new Date().toISOString()
+                };
+              }
+              return item;
+            });
+            
+            if (found) {
+              await pool.query(
+                `UPDATE orders SET items = $1, updated_at = NOW() WHERE id = $2`,
+                [JSON.stringify(updatedItems), orderId]
+              );
+              console.log(`✅ Updated item ${q.item.name} in order #${orderId} as paid via ${paymentMethod}`);
+            }
+            
+            // Check if ALL items in this order are now paid
+            const allItemsPaid = updatedItems.every(item => item._rowPaid === true || item.status === 'VOIDED');
+            
+            if (allItemsPaid) {
+              // ✅ CRITICAL: Mark the entire order as Paid with correct payment method
+              await pool.query(
+                `UPDATE orders 
+                 SET status = 'Paid', 
+                     payment_method = $1,
+                     paid_at = NOW(),
+                     is_archived = false
+                 WHERE id = $2`,
+                [paymentMethod, orderId]
+              );
+              console.log(`✅ Order #${orderId} fully paid, marked as Paid via ${paymentMethod}`);
+            }
+          }
+        }
+      }
+      
+      // Update daily summary
+      await updateDailySummary({ amount: q.amount, method: paymentMethod, orderCount: 0 });
+      console.log(`✅ Updated daily summary for item payment: ${q.amount} via ${paymentMethod}`);
+      
+    } else {
+      // ✅ FULL TABLE PAYMENT - Mark the existing order as Paid
+      console.log(`🔵 Processing FULL TABLE payment: ${q.amount} via ${paymentMethod}`);
+      
+      if (q.order_ids?.length) {
+        for (const orderId of q.order_ids) {
+          // Get current order
+          const orderRes = await pool.query(
+            `SELECT items, table_name FROM orders WHERE id = $1`,
+            [orderId]
+          );
+          
+          if (orderRes.rows.length > 0) {
+            let items = orderRes.rows[0].items;
+            if (typeof items === 'string') {
+              items = JSON.parse(items);
+            }
+            
+            // Mark ALL items as paid
+            const updatedItems = items.map(item => ({
+              ...item,
+              _rowPaid: true,
+              payment_method: paymentMethod,
+              paid_at: new Date().toISOString()
+            }));
+            
+            // ✅ CRITICAL: Update the EXISTING order to Paid with correct payment method
+            await pool.query(
+              `UPDATE orders 
+               SET items = $1,
+                   status = 'Paid', 
+                   payment_method = $2,
+                   paid_at = NOW(),
+                   is_archived = false
+               WHERE id = $3`,
+              [JSON.stringify(updatedItems), paymentMethod, orderId]
+            );
+            
+            console.log(`✅ Order #${orderId} marked as Paid via ${paymentMethod} for UGX ${q.amount}`);
+          }
+        }
+      }
+      
+      // Update daily summary
+      await updateDailySummary({ amount: q.amount, method: paymentMethod });
+      console.log(`✅ Updated daily summary for table payment: ${q.amount} via ${paymentMethod}`);
+    }
+
+    await logActivity(pool, 'SALE',
+      `${q.table_name || 'Table'} — UGX ${Number(q.amount).toLocaleString()} ${q.method} confirmed by ${confirmed_by || 'Cashier'}`,
+      { queue_id: id, method: q.method, amount: q.amount }
     );
-    const clearedOrders = ordersResult.rowCount;
-
-    // ── c. Clear kitchen / barista / barman tickets ───────────────────────────
-    const ticketsResult = await client.query(
-      `UPDATE kitchen_tickets
-       SET cleared_by_kitchen = true,
-           cleared_by         = $1,
-           cleared_at         = NOW(),
-           updated_at         = NOW()
-       WHERE ticket_date       = $2
-         AND cleared_by_kitchen = false
-       RETURNING id`,
-      [actor, date]
-    );
-    const clearedTickets = ticketsResult.rowCount;
-
-    // ── d. Zero out today's daily_summary ─────────────────────────────────────
-    await client.query(
-      `UPDATE daily_summary
-       SET total_gross   = 0,
-           total_cash    = 0,
-           total_mtn     = 0,
-           total_airtel  = 0,
-           total_card    = 0,
-           total_credit  = 0,
-           total_mixed   = 0,
-           order_count   = 0,
-           day_closed    = true,
-           closed_by     = $1,
-           closed_at     = NOW()
-       WHERE summary_date = $2`,
-      [actor, date]
-    );
-
-    // If no row existed yet for today, insert a zeroed + closed one
-    await client.query(
-      `INSERT INTO daily_summary
-         (summary_date, total_gross, total_cash, total_mtn, total_airtel,
-          total_card, total_credit, total_mixed, order_count, day_closed, closed_by, closed_at)
-       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, true, $2, NOW())
-       ON CONFLICT (summary_date) DO NOTHING`,
-      [date, actor]
-    );
-
-    // ── e. Expire pending void requests ──────────────────────────────────────
-    await client.query(
-      `UPDATE void_requests
-       SET status      = 'Expired',
-           resolved_by = $1,
-           resolved_at = NOW()
-       WHERE status    = 'Pending'
-         AND DATE(created_at AT TIME ZONE 'Africa/Nairobi') = $2`,
-      [actor, date]
-    );
-
-    // ── f. Log the close-day event ────────────────────────────────────────────
-    await logActivity(pool, {
-      type:    'DAY_CLOSED',
-      actor,
-      role:    'ACCOUNTANT',
-      message: `Day closed by ${actor}. ${clearedOrders} orders archived, ${clearedTickets} tickets cleared.`,
-      meta:    { date, final_gross, cleared_orders: clearedOrders, cleared_tickets: clearedTickets },
-    });
-
-    await client.query('COMMIT');
-
-    res.json({
-      success:         true,
-      date,
-      cleared_orders:  clearedOrders,
-      cleared_tickets: clearedTickets,
-      message:         `Day closed successfully. ${clearedOrders} orders and ${clearedTickets} kitchen tickets cleared.`,
-    });
-
+    
+    res.json({ success: true });
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Finalize day error:', err.message);
+    console.error("cashier confirm failed:", err);
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 4.  GET /api/accountant/day-closings
-//     Returns the audit trail of all past day-closings.
-// ─────────────────────────────────────────────────────────────────────────────
-router.get('/day-closings', async (req, res) => {
+// GET /api/cashier-ops/cashier-queue
+router.get("/cashier-queue", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM day_closings ORDER BY closing_date DESC LIMIT 90`
+      `SELECT * FROM cashier_queue
+       WHERE status IN ('Pending','PendingManagerApproval')
+       ORDER BY created_at ASC`
     );
     res.json(result.rows);
   } catch (err) {
-    console.error('Day closings GET error:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error("cashier-queue fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch queue" });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 5.  GET /api/accountant/petty-cash
-//     Returns petty cash summary with IN and OUT totals for a specific date
-// ─────────────────────────────────────────────────────────────────────────────
-router.get('/petty-cash', async (req, res) => {
-  try {
-    const { date } = req.query;
-    const targetDate = date || kampalaDate();
+// PATCH /api/cashier-ops/cashier-queue/:id/request-approval
+router.patch("/cashier-queue/:id/request-approval", async (req, res) => {
+  const { id } = req.params;
+  const { requested_by } = req.body || {};
 
-    const query = `
-      SELECT 
-        COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE 0 END), 0) AS total_out,
-        COALESCE(SUM(CASE WHEN direction = 'IN' THEN amount ELSE 0 END), 0) AS total_in,
-        COUNT(CASE WHEN direction = 'OUT' THEN 1 END) AS out_count,
-        COUNT(CASE WHEN direction = 'IN' THEN 1 END) AS in_count
-      FROM petty_cash 
-      WHERE DATE(created_at AT TIME ZONE 'Africa/Nairobi') = $1
-    `;
-    
-    const result = await pool.query(query, [targetDate]);
-    const row = result.rows[0];
-    
-    res.json({
-      total_out: parseFloat(row.total_out) || 0,
-      total_in: parseFloat(row.total_in) || 0,
-      out_count: parseInt(row.out_count) || 0,
-      in_count: parseInt(row.in_count) || 0,
-      net: (parseFloat(row.total_in) || 0) - (parseFloat(row.total_out) || 0),
-      date: targetDate
-    });
-  } catch (err) {
-    console.error('Petty cash fetch error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 6.  GET /api/accountant/petty-cash/range
-//     Returns petty cash summary with entries for a date range
-// ─────────────────────────────────────────────────────────────────────────────
-router.get('/petty-cash/range', async (req, res) => {
   try {
-    const { from, to } = req.query;
-    if (!from || !to) {
-      return res.status(400).json({ error: 'from and to dates are required' });
+    const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
+    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
+    const q = qRes.rows[0];
+
+    if (q.method !== "Credit") {
+      return res.status(400).json({ error: "Only Credit queue items need manager approval" });
+    }
+    if (q.status !== "Pending") {
+      return res.status(400).json({ error: `Already in status: ${q.status}` });
     }
 
-    const query = `
-      SELECT 
-        COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE 0 END), 0) AS total_out,
-        COALESCE(SUM(CASE WHEN direction = 'IN' THEN amount ELSE 0 END), 0) AS total_in,
-        COUNT(CASE WHEN direction = 'OUT' THEN 1 END) AS out_count,
-        COUNT(CASE WHEN direction = 'IN' THEN 1 END) AS in_count,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', id,
-              'amount', amount,
-              'direction', direction,
-              'category', category,
-              'description', description,
-              'logged_by', logged_by,
-              'created_at', created_at
-            ) ORDER BY created_at DESC
-          ) FILTER (WHERE id IS NOT NULL),
-          '[]'::json
-        ) AS entries
-      FROM petty_cash 
-      WHERE DATE(created_at AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2
-    `;
-    
-    const result = await pool.query(query, [from, to]);
-    const row = result.rows[0];
-    
-    res.json({
-      total_out: parseFloat(row.total_out) || 0,
-      total_in: parseFloat(row.total_in) || 0,
-      out_count: parseInt(row.out_count) || 0,
-      in_count: parseInt(row.in_count) || 0,
-      net: (parseFloat(row.total_in) || 0) - (parseFloat(row.total_out) || 0),
-      entries: row.entries || []
-    });
-  } catch (err) {
-    console.error('Petty cash range error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 7.  POST /api/accountant/petty-cash
-//     Create new petty cash entry
-// ─────────────────────────────────────────────────────────────────────────────
-router.post('/petty-cash', async (req, res) => {
-  const { amount, direction, category, description, logged_by } = req.body;
-  
-  if (!amount || !direction || !description) {
-    return res.status(400).json({ error: 'amount, direction, and description are required' });
-  }
-  
-  try {
-    const result = await pool.query(
-      `INSERT INTO petty_cash 
-         (amount, direction, category, description, logged_by, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       RETURNING *`,
-      [amount, direction, category || 'General', description, logged_by || 'Cashier']
-    );
-    
-    await logActivity(pool, {
-      type: 'PETTY_CASH_ENTRY',
-      actor: logged_by || 'Cashier',
-      role: 'CASHIER',
-      message: `${direction === 'OUT' ? 'Expense' : 'Replenishment'} of UGX ${Number(amount).toLocaleString()} - ${description}`,
-      meta: { amount, direction, category, description }
-    });
-    
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('Petty cash create error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 8.  PUT /api/accountant/petty-cash/:id
-//     Update petty cash entry
-// ─────────────────────────────────────────────────────────────────────────────
-router.put('/petty-cash/:id', async (req, res) => {
-  const { id } = req.params;
-  const { amount, direction, category, description, logged_by } = req.body;
-  
-  try {
-    const result = await pool.query(
-      `UPDATE petty_cash 
-       SET amount = $1, direction = $2, category = $3, description = $4, 
-           logged_by = $5, updated_at = NOW()
-       WHERE id = $6
-       RETURNING *`,
-      [amount, direction, category, description, logged_by, id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Entry not found' });
+    if (!q.credit_name || !q.credit_phone) {
+      return res.status(400).json({ 
+        error: "Missing client information. Client name and phone number are required for credit requests." 
+      });
     }
-    
-    await logActivity(pool, {
-      type: 'PETTY_CASH_UPDATED',
-      actor: logged_by || 'Cashier',
-      role: 'CASHIER',
-      message: `Updated petty cash entry: ${direction === 'OUT' ? 'Expense' : 'Replenishment'} of UGX ${Number(amount).toLocaleString()} - ${description}`,
-      meta: { id, amount, direction, category, description }
-    });
-    
-    res.json(result.rows[0]);
+
+    let tableName = q.table_name;
+    if (!tableName && q.order_ids && q.order_ids.length > 0) {
+      tableName = await getTableNameFromOrderIds(q.order_ids);
+      if (tableName) {
+        await pool.query(
+          `UPDATE cashier_queue SET table_name = $1 WHERE id = $2`,
+          [tableName, id]
+        );
+      }
+    }
+
+    if (!tableName) {
+      return res.status(400).json({ 
+        error: "table_name is required - cannot determine table for this credit request." 
+      });
+    }
+
+    await pool.query(
+      `UPDATE cashier_queue
+       SET status = 'PendingManagerApproval', confirmed_by = $1
+       WHERE id = $2`,
+      [requested_by || "Cashier", id]
+    );
+
+    await pool.query(
+      `UPDATE credits
+       SET status = 'PendingManagerApproval'
+       WHERE UPPER(table_name) = UPPER($1)
+         AND status = 'PendingCashier'`,
+      [tableName]
+    );
+
+    res.json({ success: true });
   } catch (err) {
-    console.error('Petty cash update error:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error("request-approval failed:", err);
+    res.status(500).json({ error: "Failed to request approval" });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 9.  DELETE /api/accountant/petty-cash/:id
-//     Delete petty cash entry
-// ─────────────────────────────────────────────────────────────────────────────
-router.delete('/petty-cash/:id', async (req, res) => {
+// PATCH /api/cashier-ops/cashier-queue/:id/reject
+router.patch("/cashier-queue/:id/reject", async (req, res) => {
   const { id } = req.params;
-  
+  const { reason } = req.body || {};
+
   try {
-    // First get the entry to log what was deleted
-    const entryResult = await pool.query(
-      `SELECT * FROM petty_cash WHERE id = $1`,
+    const qRes = await pool.query(
+      `SELECT order_ids, table_name FROM cashier_queue WHERE id = $1`,
       [id]
     );
-    
-    if (entryResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Entry not found' });
+    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
+    const q = qRes.rows[0];
+    const ids = q.order_ids || [];
+
+    await pool.query(
+      `UPDATE cashier_queue
+       SET status = 'Rejected', confirmed_by = $1, confirmed_at = NOW()
+       WHERE id = $2`,
+      [reason || "Rejected by cashier", id]
+    );
+
+    if (ids && ids.length > 0) {
+      await pool.query(
+        `UPDATE orders SET sent_to_cashier = false, status = 'Served'
+         WHERE id = ANY($1::int[]) AND status NOT IN ('Paid','Credit')`,
+        [ids]
+      );
     }
-    
-    const entry = entryResult.rows[0];
-    
+
+    if (q.table_name) {
+      try {
+        await pool.query(
+          `UPDATE credits
+           SET status = 'Rejected', reject_reason = $1
+           WHERE UPPER(table_name) = UPPER($2) 
+             AND status IN ('PendingCashier', 'PendingManagerApproval')`,
+          [reason || "Rejected by cashier", q.table_name]
+        );
+      } catch (e) {
+        console.error("Failed to update credit status:", e.message);
+      }
+    }
+
+    await logActivity(pool, 'REJECT',
+      `Payment rejected — ${reason || 'No reason given'}`,
+      { queue_id: id }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("cashier reject failed:", err);
+    res.status(500).json({ error: "Failed to reject" });
+  }
+});
+
+// GET /api/cashier-ops/credit-approvals
+router.get("/credit-approvals", async (req, res) => {
+  try {
     const result = await pool.query(
-      `DELETE FROM petty_cash WHERE id = $1 RETURNING *`,
-      [id]
+      `SELECT cq.*, 
+              c.client_name, c.client_phone, c.pay_by, c.amount as credit_amount
+       FROM cashier_queue cq
+       LEFT JOIN credits c ON c.cashier_queue_id = cq.id
+       WHERE cq.status = 'PendingManagerApproval'
+       ORDER BY cq.created_at ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("credit-approvals fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch credit approvals" });
+  }
+});
+
+// PATCH /api/cashier-ops/credit-approvals/:id/approve
+router.patch("/credit-approvals/:id/approve", async (req, res) => {
+  const { id } = req.params;
+  const { approved_by } = req.body || {};
+
+  try {
+    const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
+    if (!qRes.rows.length) return res.status(404).json({ error: "Approval request not found" });
+    const q = qRes.rows[0];
+
+    if (q.status !== "PendingManagerApproval") {
+      return res.status(400).json({ error: `Cannot approve — current status: ${q.status}` });
+    }
+
+    if (!q.credit_name || !q.credit_phone) {
+      return res.status(400).json({ 
+        error: "Cannot approve credit: missing client information. Please reject and have the waiter resend." 
+      });
+    }
+
+    let tableName = q.table_name;
+    if (!tableName && q.order_ids && q.order_ids.length > 0) {
+      const orderRes = await pool.query(
+        `SELECT table_name FROM orders WHERE id = $1`,
+        [q.order_ids[0]]
+      );
+      if (orderRes.rows.length > 0 && orderRes.rows[0].table_name) {
+        tableName = orderRes.rows[0].table_name;
+      }
+    }
+
+    if (!tableName) {
+      return res.status(400).json({ 
+        error: "Cannot approve credit: table_name is missing." 
+      });
+    }
+
+    await pool.query(
+      `UPDATE cashier_queue
+       SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW()
+       WHERE id = $2`,
+      [approved_by || "Manager", id]
+    );
+
+    // Update credits status to Approved
+    const creditUpdateRes = await pool.query(
+      `UPDATE credits
+       SET status = 'Approved',
+           approved_by = $1,
+           approved_at = NOW()
+       WHERE UPPER(table_name) = UPPER($2)
+         AND status IN ('PendingCashier', 'PendingManagerApproval')
+       RETURNING id`,
+      [approved_by || "Manager", tableName]
+    );
+
+    if (!creditUpdateRes.rows.length) {
+      await pool.query(
+        `INSERT INTO credits
+           (order_id, table_name, label, amount, amount_paid, balance,
+            client_name, client_phone, pay_by, approved_by, status, cashier_queue_id, created_at)
+         VALUES ($1, $2, $3, $4, 0, $4, $5, $6, $7, $8, 'Approved', $9, NOW())`,
+        [
+          q.order_ids?.[0] || null,
+          tableName,
+          q.label || `Credit – ${tableName}`,
+          Number(q.amount),
+          q.credit_name || null,
+          q.credit_phone || null,
+          q.credit_pay_by || null,
+          approved_by || "Manager",
+          id
+        ]
+      );
+    }
+
+    if (q.order_ids?.length) {
+      await pool.query(
+        `UPDATE orders
+         SET status = 'Credit', payment_method = 'Credit', sent_to_cashier = false
+         WHERE id = ANY($1::int[])`,
+        [q.order_ids]
+      );
+    }
+
+    await logActivity(pool, 'CREDIT_APPROVED',
+      `Credit approved — ${tableName} · ${q.credit_name || 'Client'} · UGX ${Number(q.amount).toLocaleString()} by ${approved_by || 'Manager'}`,
+      { queue_id: id, amount: q.amount, client: q.credit_name }
     );
     
-    await logActivity(pool, {
-      type: 'PETTY_CASH_DELETED',
-      actor: 'Accountant',
-      role: 'ACCOUNTANT',
-      message: `Deleted petty cash entry: ${entry.direction === 'OUT' ? 'Expense' : 'Replenishment'} of UGX ${Number(entry.amount).toLocaleString()} - ${entry.description}`,
-      meta: { id, amount: entry.amount, direction: entry.direction, category: entry.category }
-    });
-    
-    res.json({ message: 'Entry deleted successfully', deleted: result.rows[0] });
+    res.json({ success: true });
   } catch (err) {
-    console.error('Petty cash delete error:', err.message);
+    console.error("credit approve failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/cashier-ops/cashier-history
+router.get("/cashier-history", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT cq.*
+       FROM cashier_queue cq
+       WHERE cq.status IN ('Confirmed', 'Rejected')
+         AND cq.method != 'Credit'
+         AND DATE(cq.created_at) = CURRENT_DATE
+       ORDER BY cq.confirmed_at DESC NULLS LAST
+       LIMIT 500`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("cashier-history failed:", err);
+    res.status(500).json({ error: "Failed to fetch history" });
+  }
+});
+
+// GET /api/cashier-ops/credits
+router.get("/credits", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM credits ORDER BY created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("credits fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch credits" });
+  }
+});
+
+// GET /api/staff/credit-settlements
+router.get("/staff/credit-settlements", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT 
+         cs.amount_paid,
+         cs.method as settle_method,
+         cs.created_at as settled_at,
+         c.waiter_name,
+         c.table_name,
+         c.client_name,
+         c.id as credit_id
+       FROM credit_settlements cs
+       JOIN credits c ON cs.credit_id = c.id
+       WHERE DATE(cs.created_at) = CURRENT_DATE
+       ORDER BY cs.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Staff credit settlements fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch credit settlements" });
+  }
+});
+
+// PATCH /api/cashier-ops/credits/:id/settle
+router.patch("/credits/:id/settle", async (req, res) => {
+  const { id } = req.params;
+  const { settled_by, method, transaction_id, notes, amount_paid } = req.body || {};
+
+  try {
+    const cRes = await pool.query(`SELECT * FROM credits WHERE id = $1`, [id]);
+    if (!cRes.rows.length) return res.status(404).json({ error: "Credit not found" });
+    const credit = cRes.rows[0];
+
+    const paid_amount = Number(amount_paid) || 0;
+    const credit_total = Number(credit.amount);
+    const already_paid = Number(credit.amount_paid || 0);
+    const total_paid = already_paid + paid_amount;
+    const is_full = total_paid >= credit_total;
+
+    // Insert settlement record
+    await pool.query(
+      `INSERT INTO credit_settlements 
+         (credit_id, amount_paid, method, transaction_id, notes, settled_by)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, paid_amount, method || "Cash", transaction_id || null, notes || null, settled_by]
+    );
+
+    // Update credit record
+    await pool.query(
+      `UPDATE credits
+       SET paid = $1,
+           paid_at = CASE WHEN $1 THEN NOW() ELSE paid_at END,
+           settle_method = $2,
+           settle_txn = $3,
+           amount_paid = $4,
+           balance = $5,
+           status = $6
+       WHERE id = $7`,
+      [
+        is_full,
+        method || "Cash",
+        transaction_id,
+        total_paid,
+        credit_total - total_paid,
+        is_full ? 'FullySettled' : 'PartiallySettled',
+        id
+      ]
+    );
+
+    // ✅ CRITICAL: Update the associated order to Paid with correct payment method
+    if (credit.order_id) {
+      await pool.query(
+        `UPDATE orders
+         SET status = 'Paid',
+             payment_method = $1,
+             paid_at = NOW()
+         WHERE id = $2`,
+        [method || "Cash", credit.order_id]
+      );
+    }
+
+    // Update daily summary
+    await updateDailySummary({ amount: paid_amount, method: method || "Cash" });
+
+    res.json({ 
+      success: true, 
+      fully_settled: is_full,
+      remaining_balance: credit_total - total_paid,
+      total_paid: total_paid
+    });
+  } catch (err) {
+    console.error("settle credit failed:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 export default router;
-

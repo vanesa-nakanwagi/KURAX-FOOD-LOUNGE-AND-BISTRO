@@ -3,7 +3,7 @@ import pool from '../db.js';
 
 /**
  * updateDailySummary
- * Upserts into daily_summaries for the given date.
+ * Upserts into daily_summary for the given date.
  *
  * @param {Object} params
  * @param {number} params.amount        - Payment amount
@@ -37,18 +37,18 @@ export async function updateDailySummary({ amount, method, date, orderCount = 1 
 
   try {
     await pool.query(
-      `INSERT INTO daily_summaries
+      `INSERT INTO daily_summary
          (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, total_credit, total_mixed, order_count, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
        ON CONFLICT (summary_date) DO UPDATE SET
-         total_gross   = daily_summaries.total_gross   + EXCLUDED.total_gross,
-         total_cash    = daily_summaries.total_cash    + EXCLUDED.total_cash,
-         total_card    = daily_summaries.total_card    + EXCLUDED.total_card,
-         total_mtn     = daily_summaries.total_mtn     + EXCLUDED.total_mtn,
-         total_airtel  = daily_summaries.total_airtel  + EXCLUDED.total_airtel,
-         total_credit  = daily_summaries.total_credit  + EXCLUDED.total_credit,
-         total_mixed   = daily_summaries.total_mixed   + EXCLUDED.total_mixed,
-         order_count   = daily_summaries.order_count   + EXCLUDED.order_count,
+         total_gross   = daily_summary.total_gross   + EXCLUDED.total_gross,
+         total_cash    = daily_summary.total_cash    + EXCLUDED.total_cash,
+         total_card    = daily_summary.total_card    + EXCLUDED.total_card,
+         total_mtn     = daily_summary.total_mtn     + EXCLUDED.total_mtn,
+         total_airtel  = daily_summary.total_airtel  + EXCLUDED.total_airtel,
+         total_credit  = daily_summary.total_credit  + EXCLUDED.total_credit,
+         total_mixed   = daily_summary.total_mixed   + EXCLUDED.total_mixed,
+         order_count   = daily_summary.order_count   + EXCLUDED.order_count,
          updated_at    = NOW()`,
       [
         summaryDate,

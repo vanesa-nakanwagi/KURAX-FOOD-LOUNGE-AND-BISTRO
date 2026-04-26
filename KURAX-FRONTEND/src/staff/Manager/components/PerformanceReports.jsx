@@ -7,7 +7,7 @@ import {
   BookOpen, CheckCircle2, XCircle, Clock, User, Phone,
   Calendar, ChevronDown, ChevronUp, RefreshCw, ShieldCheck,
   AlertCircle, Banknote, Users, Sparkles, Zap, ArrowUpRight,
-  CircleDollarSign, Award, Target, Activity, Gem
+  CircleDollarSign, Award, Target, Activity, Gem, Hourglass
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
@@ -45,7 +45,6 @@ function isApprovedButNotSettled(c) {
 // ─── ENHANCED STAT CARD (Matches Accountant Dashboard) ────────────────────────
 function StatCard({ label, value, sub, icon, color, gradient, isDark, trend }) {
   const formattedValue = typeof value === 'string' ? value : fmtK(value);
-  const numericValue = typeof value === 'number' ? value : 0;
   
   const trendIcon = trend > 0 ? <TrendingUp size={12} /> : trend < 0 ? <TrendingDown size={12} /> : null;
   const trendColor = trend > 0 ? "text-emerald-400" : trend < 0 ? "text-red-400" : "text-zinc-500";
@@ -180,18 +179,28 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
   const ageMin = Math.floor((Date.now() - new Date(row.created_at)) / 60000);
   const ageStr = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ago`;
 
+  // Check if client info is missing
+  const missingClientInfo = !row.credit_name || !row.credit_phone;
+  const missingTableInfo = !row.table_name || row.table_name === "Unknown";
+
   return (
     <div className={`group relative overflow-hidden rounded-2xl border transition-all duration-300 hover:shadow-xl hover:scale-[1.01]
-      ${isDark ? "bg-gradient-to-br from-yellow-500/5 to-transparent border-yellow-500/30" : "bg-gradient-to-br from-yellow-50 to-transparent border-yellow-200"}`}>
+      ${missingClientInfo || missingTableInfo
+        ? isDark ? "bg-gradient-to-br from-red-500/5 to-transparent border-red-500/30" : "bg-gradient-to-br from-red-50 to-transparent border-red-200"
+        : isDark ? "bg-gradient-to-br from-yellow-500/5 to-transparent border-yellow-500/30" : "bg-gradient-to-br from-yellow-50 to-transparent border-yellow-200"}`}>
       
       <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-yellow-500/5 to-transparent rounded-full -mr-20 -mt-20 group-hover:scale-150 transition-transform duration-700" />
       
       {/* Strip */}
       <div className={`flex items-center justify-between px-5 py-3 border-b
-        ${isDark ? "bg-yellow-500/10 border-yellow-500/20" : "bg-yellow-100 border-yellow-200"}`}>
+        ${missingClientInfo || missingTableInfo
+          ? isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-100 border-red-200"
+          : isDark ? "bg-yellow-500/10 border-yellow-500/20" : "bg-yellow-100 border-yellow-200"}`}>
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"/>
-          <span className="text-[9px] font-black text-yellow-500 uppercase tracking-widest">Awaiting Approval</span>
+          <span className={`text-[9px] font-black uppercase tracking-widest ${missingClientInfo || missingTableInfo ? "text-red-400" : "text-yellow-500"}`}>
+            Awaiting Approval
+          </span>
           <span className={`text-[9px] font-bold ${isDark ? "text-zinc-600" : "text-yellow-700/60"}`}>· {ageStr}</span>
         </div>
         <span className={`text-[9px] font-bold ${isDark ? "text-zinc-500" : "text-yellow-700/60"}`}>
@@ -204,7 +213,7 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
         <div className="flex-1 min-w-0 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`font-black italic uppercase tracking-tight text-base ${isDark ? "text-white" : "text-zinc-900"}`}>
-              {row.table_name}
+              {missingTableInfo ? "⚠️ Missing Table" : row.table_name}
             </span>
             <span className="font-black italic text-yellow-500 text-sm">
               {row.label || `#${String(row.id).slice(-5)}`}
@@ -216,16 +225,16 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
           </div>
           
           <div className="grid grid-cols-1 gap-2">
-            <div className="flex items-center gap-2 p-2 rounded-xl bg-white/5">
+            <div className={`flex items-center gap-2 p-2 rounded-xl ${!row.credit_name ? "bg-red-500/10 border border-red-500/20" : "bg-white/5"}`}>
               <User size={12} className="text-purple-400 shrink-0"/>
-              <span className={`text-sm font-black ${isDark ? "text-white" : "text-zinc-900"}`}>
-                {row.credit_name || "—"}
+              <span className={`text-sm font-black ${isDark ? "text-white" : "text-zinc-900"} ${!row.credit_name ? "text-red-400" : ""}`}>
+                {row.credit_name || "⚠️ Missing - Required!"}
               </span>
             </div>
-            <div className="flex items-center gap-2 p-2 rounded-xl bg-white/5">
+            <div className={`flex items-center gap-2 p-2 rounded-xl ${!row.credit_phone ? "bg-red-500/10 border border-red-500/20" : "bg-white/5"}`}>
               <Phone size={12} className="text-purple-400 shrink-0"/>
-              <span className={`text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
-                {row.credit_phone || "—"}
+              <span className={`text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"} ${!row.credit_phone ? "text-red-400" : ""}`}>
+                {row.credit_phone || "⚠️ Missing - Required!"}
               </span>
             </div>
             {row.credit_pay_by && (
@@ -237,6 +246,15 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
               </div>
             )}
           </div>
+          
+          {(missingClientInfo || missingTableInfo) && (
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-red-500/10 border border-red-500/20">
+              <AlertCircle size={12} className="text-red-400 shrink-0"/>
+              <span className="text-[9px] font-black text-red-400">
+                ⚠️ Missing required information. Ask waiter to resend with complete details.
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Right — amount + actions */}
@@ -252,8 +270,14 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
               className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-black text-[10px] uppercase tracking-widest hover:bg-red-500/20 transition-all flex items-center justify-center gap-1.5 hover:scale-105">
               <XCircle size={12}/> Reject
             </button>
-            <button onClick={onApprove} disabled={approvingId === row.id}
-              className="flex-[2] sm:flex-initial px-6 py-2.5 rounded-xl bg-emerald-500 text-black font-black text-[10px] uppercase tracking-widest hover:bg-emerald-400 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 hover:scale-105">
+            <button 
+              onClick={onApprove} 
+              disabled={approvingId === row.id || missingClientInfo || missingTableInfo}
+              className={`flex-[2] sm:flex-initial px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 hover:scale-105 disabled:opacity-50
+                ${(missingClientInfo || missingTableInfo)
+                  ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                  : "bg-emerald-500 text-black hover:bg-emerald-400 active:scale-[0.98]"}`}
+              title={missingClientInfo || missingTableInfo ? "Missing client or table info - cannot approve" : ""}>
               {approvingId === row.id
                 ? <><RefreshCw size={12} className="animate-spin"/> Approving…</>
                 : <><CheckCircle2 size={12}/> Approve</>}
@@ -354,7 +378,7 @@ function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
             </p>
           )}
           
-          {/* Approve button only for approved credits that need settlement */}
+          {/* Settle button only for approved credits that need settlement */}
           {approvedButNotSettled && (
             <div className="flex gap-2 mt-3 justify-end">
               <button
@@ -402,21 +426,30 @@ export default function PerformanceReports() {
   const [rejectReason,    setRejectReason]    = useState("");
   const [ledgerExpanded,  setLedgerExpanded]  = useState(true);
   const [creditFilter,    setCreditFilter]    = useState("all");
+  const [pendingCredits,  setPendingCredits]  = useState(0);
 
   const currentMonth = selectedDate.substring(0, 7);
 
-  // ── Fetchers ─────────────────────────────────────────────────────────────
+  // ✅ FIXED: Changed from /api/summaries/today to /api/accountant/today
   const fetchDaySummary = useCallback(async () => {
     setDayLoading(true);
     try {
       const today = new Date().toISOString().split("T")[0];
-      const url   = selectedDate === today
-        ? `${API_URL}/api/summaries/today`
+      // Use accountant endpoint for today's data
+      const url = selectedDate === today
+        ? `${API_URL}/api/accountant/today?t=${Date.now()}`
         : `${API_URL}/api/summaries/range?from=${selectedDate}&to=${selectedDate}`;
       const res = await fetch(url);
       if (res.ok) {
         const d = await res.json();
-        setDaySummary(Array.isArray(d) ? (d[0] || null) : d);
+        // Handle both array and object responses
+        const summaryData = Array.isArray(d) ? (d[0] || null) : d;
+        setDaySummary(summaryData);
+        if (selectedDate === today && summaryData) {
+          setPendingCredits(Number(summaryData.pending_credit_requests_amount || 0));
+        }
+      } else {
+        console.error("Failed to fetch day summary:", res.status);
       }
     } catch (e) { console.error("Day summary:", e); }
     finally { setDayLoading(false); }
@@ -510,12 +543,12 @@ export default function PerformanceReports() {
     return acc;
   }, [settledTodayCredits]);
 
-  // ─── TOTALS - FIXED: Only add SETTLED credits, NOT approved ones ────────
-  const totalGross   = Number(daySummary?.total_gross ?? 0) + creditSettledByMethod.total;
-  const totalCash    = Number(daySummary?.total_cash   ?? 0) + creditSettledByMethod.cash;
-  const totalCard    = Number(daySummary?.total_card   ?? 0) + creditSettledByMethod.card;
-  const totalMTN     = Number(daySummary?.total_mtn    ?? 0) + creditSettledByMethod.mtn;
-  const totalAirtel  = Number(daySummary?.total_airtel ?? 0) + creditSettledByMethod.airtel;
+  // ✅ FIXED: Use data from accountant endpoint
+  const totalGross   = Number(daySummary?.total_gross ?? 0);
+  const totalCash    = Number(daySummary?.total_cash   ?? 0);
+  const totalCard    = Number(daySummary?.total_card   ?? 0);
+  const totalMTN     = Number(daySummary?.total_mtn    ?? 0);
+  const totalAirtel  = Number(daySummary?.total_airtel ?? 0);
   const orderCount   = Number(daySummary?.order_count  ?? 0);
   const totalMobileMoney = totalMTN + totalAirtel;
 
@@ -551,6 +584,7 @@ export default function PerformanceReports() {
       if (res.ok) {
         setCreditApprovals(prev => prev.filter(r => r.id !== queueId));
         await fetchCredits();
+        await fetchDaySummary();
         alert("✅ Credit approved successfully!");
       } else {
         const error = await res.json();
@@ -598,6 +632,7 @@ export default function PerformanceReports() {
       
       if (res.ok) {
         await fetchCredits();
+        await fetchDaySummary();
         alert("✅ Credit settled successfully!");
       } else {
         const error = await res.json();
@@ -643,6 +678,9 @@ export default function PerformanceReports() {
   const card  = isDark ? "bg-zinc-900/40 border-white/5" : "bg-white border-black/5 shadow-sm";
   const muted = isDark ? "text-zinc-500" : "text-zinc-400";
 
+  const today = new Date().toISOString().split("T")[0];
+  const isToday = selectedDate === today;
+
   return (
     <div className="p-4 md:p-8 space-y-6 animate-in fade-in duration-700 pb-32">
 
@@ -663,6 +701,26 @@ export default function PerformanceReports() {
             ${isDark ? "bg-zinc-900 border-white/10 text-white hover:border-yellow-500/50" : "bg-white border-black/10 text-zinc-900"}`}
         />
       </div>
+
+      {/* Pending Credits Warning Banner (only for today) */}
+      {isToday && pendingCredits > 0 && (
+        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 animate-in fade-in duration-500">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-amber-500/20">
+              <Hourglass size={16} className="text-amber-500" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-black text-amber-500 uppercase tracking-wider">
+                Pending Credit Requests
+              </p>
+              <p className="text-[9px] text-zinc-500">
+                UGX {pendingCredits.toLocaleString()} in credit requests waiting for approval.
+                These will be added to gross revenue when approved AND settled.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── ENHANCED REVENUE STAT CARDS (5 cards in one row) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
@@ -702,6 +760,24 @@ export default function PerformanceReports() {
           orderCount={orderCount}
           isDark={isDark}
         />
+      </div>
+
+      {/* Monthly Target Progress Bar */}
+      <div className={`rounded-2xl p-5 border ${isDark ? "bg-gradient-to-r from-blue-900/30 to-purple-900/30 border-blue-500/20" : "bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200"}`}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Target size={16} className="text-blue-400" />
+            <p className="text-[9px] font-black uppercase tracking-widest text-blue-400">Monthly Target Progress</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[8px] font-black text-zinc-500">Target: {fmtK(monthTarget)}</span>
+            <span className="text-[10px] font-black text-blue-400">{progressPct}%</span>
+          </div>
+        </div>
+        <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500" style={{ width: `${progressPct}%` }} />
+        </div>
+        <p className="text-[9px] text-zinc-500 mt-2">{fmtK(monthlyRevenue)} collected so far this month</p>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
@@ -939,6 +1015,31 @@ export default function PerformanceReports() {
           <RevenueChart/>
         </div>
       </div>
+
+      {/* Staff Performance Summary */}
+      {Object.keys(waiterStats).length > 0 && (
+        <div className={`rounded-[2rem] border p-6 ${card}`}>
+          <div className="flex items-center gap-2 mb-4">
+            <Users size={14} className="text-yellow-400" />
+            <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>Staff Performance</p>
+          </div>
+          <div className="space-y-2">
+            {Object.entries(waiterStats)
+              .sort((a, b) => b[1] - a[1])
+              .map(([name, total], idx) => (
+                <div key={name} className="flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all">
+                  <div className="flex items-center gap-3">
+                    <span className={`text-[10px] font-black ${idx === 0 ? "text-yellow-400" : "text-zinc-500"}`}>
+                      #{idx + 1}
+                    </span>
+                    <span className="text-sm font-black uppercase tracking-tighter">{name}</span>
+                  </div>
+                  <span className="text-sm font-black italic text-emerald-400">{fmtK(total)}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* ─── REJECT MODAL (Enhanced) ── */}
       {rejectingRow && (

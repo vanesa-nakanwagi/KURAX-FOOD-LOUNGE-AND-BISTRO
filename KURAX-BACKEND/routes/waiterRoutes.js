@@ -312,12 +312,18 @@ router.post('/finalize-day', async (req, res) => {
     );
 
     // ── 2.5 NEW: RESET REVENUE SUMMARY TABLE ──────────────────────────────
-    // This is what actually clears the cards in your "MY COLLECTIONS" view
+    // This now clears the authoritative daily_summary row used by dashboards
     await pool.query(
-      `UPDATE daily_summaries 
-       SET total_cash = 0, total_mtn = 0, total_airtel = 0, total_card = 0, 
-           gross_revenue = 0, order_count = 0, total_credits = 0
-       WHERE date = $1`,
+      `UPDATE daily_summary 
+       SET total_cash = 0,
+           total_mtn = 0,
+           total_airtel = 0,
+           total_card = 0,
+           total_gross = 0,
+           total_credit = 0,
+           total_mixed = 0,
+           order_count = 0
+       WHERE summary_date = $1`,
       [today]
     );
 

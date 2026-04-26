@@ -76,7 +76,8 @@ export const DataProvider = ({ children }) => {
   const fetchMonthlySummary = useCallback(async (month) => {
     const m = month || new Date().toISOString().substring(0, 7);
     try {
-      const res = await fetch(`${API_URL}/api/summaries/monthly?month=${m}`);
+      //const res = await fetch(`${API_URL}/api/summaries/monthly?month=${m}`);
+      const res = await fetch(`${API_URL}/api/accountant/today?t=${Date.now()}`);
       if (res.ok) setMonthlySummary(await res.json());
     } catch (err) {
       console.error("Failed to fetch monthly summary:", err);

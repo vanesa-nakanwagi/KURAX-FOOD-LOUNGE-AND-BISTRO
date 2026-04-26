@@ -1,0 +1,23 @@
+                                         Table "public.credit_settlements"
+     Column     |           Type           | Collation | Nullable |                    Default                     
+----------------+--------------------------+-----------+----------+------------------------------------------------
+ id             | integer                  |           | not null | nextval('credit_settlements_id_seq'::regclass)
+ credit_id      | integer                  |           | not null | 
+ amount_paid    | numeric(12,2)            |           | not null | 
+ method         | text                     |           | not null | 
+ transaction_id | text                     |           |          | 
+ notes          | text                     |           |          | 
+ settled_by     | text                     |           | not null | 'Cashier'::text
+ created_at     | timestamp with time zone |           | not null | now()
+Indexes:
+    "credit_settlements_pkey" PRIMARY KEY, btree (id)
+    "idx_credit_settlements_created_at" btree (created_at DESC)
+    "idx_credit_settlements_credit_id" btree (credit_id)
+Check constraints:
+    "credit_settlements_amount_paid_check" CHECK (amount_paid > 0::numeric)
+    "credit_settlements_method_check" CHECK (method = ANY (ARRAY['Cash'::text, 'Card'::text, 'Momo-MTN'::text, 'Momo-Airtel'::text]))
+Foreign-key constraints:
+    "credit_settlements_credit_id_fkey" FOREIGN KEY (credit_id) REFERENCES credits(id) ON DELETE CASCADE
+Triggers:
+    trg_sync_credit_balance AFTER INSERT OR DELETE OR UPDATE ON credit_settlements FOR EACH ROW EXECUTE FUNCTION sync_credit_balance()
+

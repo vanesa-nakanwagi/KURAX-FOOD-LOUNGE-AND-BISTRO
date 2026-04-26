@@ -7,7 +7,7 @@ import {
   Utensils, ChevronUp, ChevronDown, CheckCircle, 
   AlertTriangle, Clock, Receipt, Banknote,
   Calendar, User, BookOpen, ClipboardList, Search, Hourglass,
-  CheckCircle2, XCircle, Award
+  CheckCircle2, XCircle, Award, CircleDollarSign, Zap
 } from 'lucide-react';
 import API_URL from "../../../config/api";
 
@@ -47,7 +47,7 @@ const PAY_METHODS = [
   { key: "Credit",      label: "Credit",      icon: <BookOpen size={20}/>,   color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/30" },
 ];
 
-// ─── PAY MODAL ───────────────────────────────────────────────────────────────
+// ─── PAY MODAL (Single Payment) ───────────────────────────────────────────────
 function PayModal({ target, onClose, onSend }) {
   const [method,      setMethod]      = useState(null);
   const [creditName,  setCreditName]  = useState("");
@@ -70,19 +70,14 @@ function PayModal({ target, onClose, onSend }) {
     if (!canSend || sending) return;
     setSending(true);
     try {
-      const orderId  = isItem ? (target?.item?._orderId ?? null) : null;
-      const orderIds = isItem
-        ? (orderId ? [orderId] : [])
-        : (target?.orderIds || []);
-
       await onSend({
         type:       target?.type,
         tableName:  target?.tableName,
         method,
         amount,
         label,
-        orderId,
-        orderIds,
+        orderId:    target?.orderId,
+        orderIds:   target?.orderIds || [],
         item:       isItem ? target?.item : null,
         creditInfo: isCredit
           ? { name: creditName.trim(), phone: creditPhone.trim(), pay_by: creditNote.trim() }
@@ -142,7 +137,7 @@ function PayModal({ target, onClose, onSend }) {
           )}
           {isCredit && (
             <div className="space-y-3">
-              <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Client Details</p>
+              <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Client Details (Required)</p>
               <div className="relative">
                 <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
                 <input 
@@ -170,7 +165,7 @@ function PayModal({ target, onClose, onSend }) {
               />
               <div className="flex items-center gap-2 px-3 py-2 bg-purple-500/10 border border-purple-500/20 rounded-xl">
                 <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse shrink-0" />
-                <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest">Requires cashier → manager approval</p>
+                <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest">Credit requires cashier → manager approval</p>
               </div>
             </div>
           )}
@@ -286,8 +281,8 @@ function getCreditStatusDisplay(credit) {
   return { label: "Outstanding", color: "text-purple-400", bg: "bg-purple-500/10", icon: <BookOpen size={10} /> };
 }
 
-// ─── CREDITED ITEMS PANEL ─────────
-function CreditedItemsPanel({ creditedItems, theme, onMarkCreditCollected }) {
+// ─── CREDITED ITEMS PANEL ────────────────────────────────────────────────────
+function CreditedItemsPanel({ creditedItems, theme }) {
   const isDark = theme === "dark";
   
   const myCredits = creditedItems || [];
@@ -348,31 +343,28 @@ function CreditedItemsPanel({ creditedItems, theme, onMarkCreditCollected }) {
             <p className="text-lg font-black text-emerald-600 break-words">{fmtLargeNumber(creditStats.settled.amount)}</p>
           </div>
           <div className="space-y-3 max-h-80 overflow-y-auto">
-            {myCredits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled" || c.paid === true).length > 0
-              ? myCredits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled" || c.paid === true).map((credit, idx) => {
-                  const sd = getCreditStatusDisplay(credit);
-                  const displayAmount = credit.status === "PartiallySettled" ? credit.amount_paid : (credit.amount_paid || credit.amount);
-                  return (
-                    <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
-                          <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"} · {credit.label || "Credit"}</p>
-                          {credit.settle_method && <p className="text-[7px] text-emerald-500 mt-1 break-words">Paid via {credit.settle_method}</p>}
-                          {credit.status === "PartiallySettled" && credit.balance > 0 && (
-                            <p className="text-[7px] text-yellow-500 mt-1 break-words">Remaining: {fmtUGX(credit.balance)}</p>
-                          )}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-[11px] font-black text-emerald-500 whitespace-nowrap">{fmtUGX(displayAmount)}</p>
-                          <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
-                        </div>
-                      </div>
+            {myCredits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled" || c.paid === true).map((credit, idx) => {
+              const sd = getCreditStatusDisplay(credit);
+              const displayAmount = credit.status === "PartiallySettled" ? credit.amount_paid : (credit.amount_paid || credit.amount);
+              return (
+                <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
+                      <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"} · {credit.label || "Credit"}</p>
+                      {credit.settle_method && <p className="text-[7px] text-emerald-500 mt-1 break-words">Paid via {credit.settle_method}</p>}
+                      {credit.status === "PartiallySettled" && credit.balance > 0 && (
+                        <p className="text-[7px] text-yellow-500 mt-1 break-words">Remaining: {fmtUGX(credit.balance)}</p>
+                      )}
                     </div>
-                  );
-                })
-              : <div className="text-center py-8"><p className="text-[10px] text-zinc-400">No settled credits</p></div>
-            }
+                    <div className="text-right shrink-0">
+                      <p className="text-[11px] font-black text-emerald-500 whitespace-nowrap">{fmtUGX(displayAmount)}</p>
+                      <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -388,28 +380,25 @@ function CreditedItemsPanel({ creditedItems, theme, onMarkCreditCollected }) {
             <p className="text-lg font-black text-orange-600 break-words">{fmtLargeNumber(creditStats.outstanding.amount)}</p>
           </div>
           <div className="space-y-3 max-h-80 overflow-y-auto">
-            {myCredits.filter(c => c.status === "Approved" || c.status === "PartiallySettled").length > 0
-              ? myCredits.filter(c => c.status === "Approved" || c.status === "PartiallySettled").map((credit, idx) => {
-                  const sd = getCreditStatusDisplay(credit);
-                  const displayAmount = credit.status === "PartiallySettled" ? (credit.balance || credit.amount) : credit.amount;
-                  return (
-                    <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
-                          <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"} · {credit.pay_by ? `Pay by: ${credit.pay_by}` : "No due date"}</p>
-                          {Number(credit.amount_paid) > 0 && <p className="text-[7px] text-yellow-500 mt-1 break-words">Paid: {fmtUGX(credit.amount_paid)}</p>}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-[11px] font-black text-orange-500 whitespace-nowrap">{fmtUGX(displayAmount)}</p>
-                          <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
-                        </div>
-                      </div>
+            {myCredits.filter(c => c.status === "Approved" || c.status === "PartiallySettled").map((credit, idx) => {
+              const sd = getCreditStatusDisplay(credit);
+              const displayAmount = credit.status === "PartiallySettled" ? (credit.balance || credit.amount) : credit.amount;
+              return (
+                <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
+                      <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"} · {credit.pay_by ? `Pay by: ${credit.pay_by}` : "No due date"}</p>
+                      {Number(credit.amount_paid) > 0 && <p className="text-[7px] text-yellow-500 mt-1 break-words">Paid: {fmtUGX(credit.amount_paid)}</p>}
                     </div>
-                  );
-                })
-              : <div className="text-center py-8"><p className="text-[10px] text-zinc-400">No outstanding credits</p></div>
-            }
+                    <div className="text-right shrink-0">
+                      <p className="text-[11px] font-black text-orange-500 whitespace-nowrap">{fmtUGX(displayAmount)}</p>
+                      <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -425,27 +414,24 @@ function CreditedItemsPanel({ creditedItems, theme, onMarkCreditCollected }) {
             <p className="text-lg font-black text-red-600 break-words">{fmtLargeNumber(creditStats.rejected.amount)}</p>
           </div>
           <div className="space-y-3 max-h-80 overflow-y-auto">
-            {myCredits.filter(c => c.status === "Rejected").length > 0
-              ? myCredits.filter(c => c.status === "Rejected").map((credit, idx) => {
-                  const sd = getCreditStatusDisplay(credit);
-                  return (
-                    <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
-                          <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"}</p>
-                          {credit.reject_reason && <p className="text-[7px] text-red-500 mt-1 break-words">Reason: {credit.reject_reason}</p>}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-[11px] font-black text-red-500 whitespace-nowrap">{fmtUGX(credit.amount)}</p>
-                          <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
-                        </div>
-                      </div>
+            {myCredits.filter(c => c.status === "Rejected").map((credit, idx) => {
+              const sd = getCreditStatusDisplay(credit);
+              return (
+                <div key={idx} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-[11px] font-black break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{credit.table_name || "Table"}</p>
+                      <p className={`text-[8px] font-bold uppercase mt-0.5 break-words ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{credit.client_name || "Client"}</p>
+                      {credit.reject_reason && <p className="text-[7px] text-red-500 mt-1 break-words">Reason: {credit.reject_reason}</p>}
                     </div>
-                  );
-                })
-              : <div className="text-center py-8"><p className="text-[10px] text-zinc-400">No rejected credits</p></div>
-            }
+                    <div className="text-right shrink-0">
+                      <p className="text-[11px] font-black text-red-500 whitespace-nowrap">{fmtUGX(credit.amount)}</p>
+                      <div className="flex items-center gap-1 mt-1 justify-end">{sd.icon}<span className={`text-[7px] font-black uppercase ${sd.color}`}>{sd.label}</span></div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -486,11 +472,10 @@ function CreditedItemsPanel({ creditedItems, theme, onMarkCreditCollected }) {
   );
 }
 
-// ─── RECENTLY PAID ITEMS PANEL - Shows ALL paid items (not tables) ────────────
+// ─── RECENTLY PAID ITEMS PANEL ────────────────────────────────────────────────
 function RecentlyPaidItemsPanel({ orders, theme }) {
   const isDark = theme === "dark";
   
-  // Collect all paid items from all orders (not filtered by date or staff)
   const paidItems = useMemo(() => {
     const items = [];
     orders.forEach(order => {
@@ -504,7 +489,6 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
       }
       
       orderItems.forEach(item => {
-        // Check if item is paid (has _rowPaid flag or paid_at timestamp)
         if (item._rowPaid === true || item.paid_at) {
           items.push({
             id: `${order.id}_${item.name}`,
@@ -522,9 +506,8 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
       });
     });
     
-    // Sort by paid_at (newest first)
     items.sort((a, b) => new Date(b.paid_at) - new Date(a.paid_at));
-    return items; // Return ALL paid items, not just last 20
+    return items;
   }, [orders]);
 
   if (paidItems.length === 0) {
@@ -645,7 +628,6 @@ function OrderCard({
     item => item._rowPaid === true || item.paymentRequested === true || item.creditRequested === true || item.status === "VOIDED" || item.voidProcessed === true
   );
 
-  // Calculate payment status based on INDIVIDUAL ITEM FLAGS
   const nonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
   const allItemsPaid = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
   const hasAnyPaidItems = nonVoidedItems.some(item => item._rowPaid === true);
@@ -653,27 +635,11 @@ function OrderCard({
   const hasAnyPendingItems = nonVoidedItems.some(item => !item._rowPaid && !item.paymentRequested && !item.creditRequested);
   const hasAnyPaymentRequested = nonVoidedItems.some(item => item.paymentRequested === true);
 
-  // Check if payment has been sent for this table
   const hasTablePaymentRequested = order.orderIds?.some(orderId => 
     localStorage.getItem(`payment_sent_${orderId}`) === 'true'
   ) || false;
 
-  // Handle Pay Full Table button click
-  const handlePayTableClick = async () => {
-    setIsSendingPayment(true);
-    try {
-      await onPayTable(order);
-      order.orderIds?.forEach(orderId => {
-        localStorage.setItem(`payment_sent_${orderId}`, 'true');
-      });
-      setIsSendingPayment(false);
-    } catch (err) {
-      console.error("Pay table failed:", err);
-      setIsSendingPayment(false);
-    }
-  };
-
-  // Determine pill display based on ITEM FLAGS
+  // Display status pill
   let displayStatus = order.status;
   let displayColor = "text-zinc-400";
   let displayBg = "bg-zinc-500/10 border-zinc-500/20";
@@ -783,6 +749,12 @@ function OrderCard({
 
       {expanded && (
         <div className="px-4 pb-3 space-y-2 border-t border-black/5 pt-3">
+          <div className="mb-2 flex items-center gap-2">
+            <CircleDollarSign size={12} className="text-yellow-500" />
+            <p className="text-[8px] font-black text-yellow-400 uppercase tracking-widest">
+              Click the receipt icon on any item to pay it individually
+            </p>
+          </div>
           {nonVoidedItems.map((item, i) => (
             <div key={i} className={`p-3 rounded-xl ${theme === "dark" ? "bg-white/5" : "bg-zinc-50"}`}>
               <div className="flex justify-between items-center">
@@ -811,7 +783,8 @@ function OrderCard({
                   {isServed && !item._rowPaid && item.status !== 'VOIDED' && !item.voidProcessed && !item.paymentRequested && !item.creditRequested && !hasTablePaymentRequested && (
                     <button
                       onClick={() => onPayItem && onPayItem(item, order)}
-                      className="p-1.5 bg-yellow-500/10 text-yellow-500 rounded-lg hover:bg-yellow-500/20 transition-all">
+                      className="p-1.5 bg-yellow-500/10 text-yellow-500 rounded-lg hover:bg-yellow-500/20 transition-all"
+                      title="Pay this item individually">
                       <Receipt size={12} />
                     </button>
                   )}
@@ -824,7 +797,8 @@ function OrderCard({
                   {!item._rowPaid && item.status !== 'VOIDED' && !item.voidProcessed && !item.voidRequested && !item.paymentRequested && !item.creditRequested && !hasTablePaymentRequested && (
                     <button
                       onClick={() => onVoidItem && onVoidItem(item, order)}
-                      className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all">
+                      className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all"
+                      title="Request void for this item">
                       <AlertTriangle size={12} />
                     </button>
                   )}
@@ -891,14 +865,14 @@ function OrderCard({
 
           {isServed && payableItems.length > 0 && !hasPendingPayment && !hasAnyPaymentRequested && !hasTablePaymentRequested && (
             <button 
-              onClick={handlePayTableClick}
+              onClick={() => onPayTable && onPayTable(order)}
               disabled={isSendingPayment}
               className={`w-full py-2.5 font-black text-[10px] uppercase tracking-widest rounded-xl flex items-center justify-center gap-1.5 shadow-lg transition-all
                 ${isSendingPayment 
                   ? "bg-zinc-600 text-zinc-300 cursor-not-allowed" 
                   : "bg-yellow-500 text-black hover:bg-yellow-400 active:scale-[0.98] shadow-yellow-500/20"}`}>
               {isSendingPayment ? (
-                <><Hourglass size={13} className="animate-spin" /> Sending to Cashier...</>
+                <><Hourglass size={13} className="animate-spin" /> Sending...</>
               ) : (
                 <><Send size={13}/> Pay Full Table</>
               )}
@@ -1166,41 +1140,33 @@ export default function OrderHistory({ onAddItems }) {
     } catch (err) { console.error("Mark paid failed:", err); }
   }, [refreshData, fetchCredits]);
 
-  const handleMarkCreditCollected = useCallback(async (credit) => {
-    try {
-      const res = await fetch(`${API_URL}/api/cashier-ops/credits/${credit.id}/settle`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          settled_by: currentStaffName,
-          settle_method: "Cash",
-          amount_paid: credit.balance || credit.amount,
-        }),
-      });
-      if (res.ok) {
-        refreshData?.();
-        fetchCredits();
-      }
-    } catch (err) { console.error("Mark credit collected failed:", err); }
-  }, [currentStaffName, refreshData, fetchCredits]);
-
   const handleSend = useCallback(async (payload) => {
     try {
+      // Validate credit requests
+      if (payload.method === "Credit") {
+        if (!payload.creditInfo?.name || !payload.creditInfo?.phone) {
+          alert("❌ Client name and phone number are required for credit requests!");
+          return;
+        }
+      }
+      
+      const requestBody = {
+        order_ids: payload.orderIds,
+        table_name: payload.tableName,
+        label: payload.label,
+        method: payload.method,
+        amount: payload.amount,
+        is_item: payload.type === "item",
+        item: payload.item,
+        credit_info: payload.creditInfo,
+        requested_by: currentStaffName,
+        staff_id: currentStaffId,
+      };
+      
       const res = await fetch(`${API_URL}/api/cashier-ops/send-to-cashier`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          order_ids: payload.orderIds,
-          table_name: payload.tableName,
-          label: payload.label,
-          method: payload.method,
-          amount: payload.amount,
-          is_item: payload.type === "item",
-          item: payload.item,
-          credit_info: payload.creditInfo,
-          requested_by: currentStaffName,
-          staff_id: currentStaffId,
-        }),
+        body: JSON.stringify(requestBody),
       });
       
       if (res.ok) {
@@ -1211,7 +1177,7 @@ export default function OrderHistory({ onAddItems }) {
               [`${orderId}_table`]: true
             }));
           });
-          alert(`✅ Payment request for ${payload.tableName} (UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
+          alert(`✅ Payment request for ${payload.tableName} (${payload.method} of UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
         } else if (payload.type === "item" && payload.orderId) {
           setPendingPayments(prev => ({
             ...prev,
@@ -1232,52 +1198,40 @@ export default function OrderHistory({ onAddItems }) {
     }
   }, [currentStaffName, currentStaffId, refreshData, fetchCredits]);
 
-const handleVoidConfirm = useCallback(async (item, reason) => {
-  const orderId = item?._orderId;
-  if (!orderId) {
-    console.error("No Order ID found for void request — item:", item);
-    alert("Error: Could not find order ID for this item");
-    return;
-  }
-  
-  console.log("Sending void request:", {
-    order_id: orderId,
-    item_name: item.name,
-    reason: reason,
-    requested_by: currentStaffName
-  });
-  
-  try {
-    const res = await fetch(`${API_URL}/api/orders/void-item`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        order_id: orderId,
-        item_name: item.name,
-        reason: reason,
-        requested_by: currentStaffName,
-      }),
-    });
-    
-    console.log("Response status:", res.status);
-    
-    if (res.ok) {
-      const data = await res.json();
-      console.log("Void request successful:", data);
-      alert(`✅ Void request for "${item.name}" sent to accountant for approval!`);
-      refreshData?.();
-    } else {
-      const errData = await res.json().catch(() => ({}));
-      console.error("Void failed with status:", res.status, errData);
-      alert(`❌ Failed to send void request: ${errData.error || "Unknown error"}`);
+  const handleVoidConfirm = useCallback(async (item, reason) => {
+    const orderId = item?._orderId;
+    if (!orderId) {
+      console.error("No Order ID found for void request — item:", item);
+      alert("Error: Could not find order ID for this item");
+      return;
     }
-  } catch (err) {
-    console.error("Void request network error:", err);
-    alert(`❌ Network error: ${err.message}`);
-  }
-}, [currentStaffName, refreshData]);
+    
+    try {
+      const res = await fetch(`${API_URL}/api/orders/void-item`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order_id: orderId,
+          item_name: item.name,
+          reason: reason,
+          requested_by: currentStaffName,
+        }),
+      });
+      
+      if (res.ok) {
+        alert(`✅ Void request for "${item.name}" sent to accountant for approval!`);
+        refreshData?.();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(`❌ Failed to send void request: ${errData.error || "Unknown error"}`);
+      }
+    } catch (err) {
+      console.error("Void request network error:", err);
+      alert(`❌ Network error: ${err.message}`);
+    }
+  }, [currentStaffName, refreshData]);
 
-  // ─── FILTERING - FIXED: Strictly exclude credit orders from Live tab ─────────────
+  // ─── FILTERING ─────────────────────────────────────────────────────────────
   const filteredOrders = useMemo(() =>
     enrichedGroups.filter(g => {
       const matchSearch = g.tableName.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1290,13 +1244,11 @@ const handleVoidConfirm = useCallback(async (item, reason) => {
       const hasAnyPaidItems = (g.items || []).some(item => item._rowPaid === true);
       const hasAnyCreditItems = (g.items || []).some(item => item.creditRequested === true);
       
-      // CRITICAL FIX: Check if ANY order in this group has status "Credit"
       const hasCreditOrderStatus = g.orderIds?.some(orderId => {
         const order = orders.find(o => o.id === orderId);
         return order?.status === "Credit" || order?.payment_method === "Credit";
       }) || false;
       
-      // Live group should have NO paid items, NO credit items, NO credit orders, and has non-voided items
       const isLiveGroup = !hasAnyPaidItems && !hasAnyCreditItems && !hasCreditOrderStatus && hasNonVoidedItems;
       const isServedGroup = g.status === "Served" && !allNonVoidedItemsPaid && hasNonVoidedItems;
       
@@ -1309,7 +1261,6 @@ const handleVoidConfirm = useCallback(async (item, reason) => {
           matchTab = isServedGroup;
           break;
         case "Paid":
-          // NO tables under Paid tab - they are shown in RecentlyPaidItemsPanel instead
           matchTab = false;
           break;
         default:
@@ -1318,7 +1269,6 @@ const handleVoidConfirm = useCallback(async (item, reason) => {
       return matchSearch && matchTab;
     }), [enrichedGroups, searchQuery, activeTab, orders]);
 
-  // Count ALL paid items for the badge
   const totalPaidItemsCount = useMemo(() => {
     let count = 0;
     orders.forEach(order => {
@@ -1339,7 +1289,6 @@ const handleVoidConfirm = useCallback(async (item, reason) => {
     return count;
   }, [orders]);
 
-  // FIXED: Counts - exclude credit orders from Live count
   const counts = useMemo(() => {
     const acc = { Live: 0, Served: 0, Paid: totalPaidItemsCount, Credits: creditsData.length, Voided: voidedItemsList.length };
     enrichedGroups.forEach(g => {
@@ -1352,7 +1301,6 @@ const handleVoidConfirm = useCallback(async (item, reason) => {
       const hasAnyPaidItems = (g.items || []).some(item => item._rowPaid === true);
       const hasAnyCreditItems = (g.items || []).some(item => item.creditRequested === true);
       
-      // CRITICAL FIX: Check order status for credit
       const hasCreditOrderStatus = g.orderIds?.some(orderId => {
         const order = orders.find(o => o.id === orderId);
         return order?.status === "Credit" || order?.payment_method === "Credit";
@@ -1438,15 +1386,10 @@ const handleVoidConfirm = useCallback(async (item, reason) => {
           <CreditedItemsPanel 
             creditedItems={creditsData} 
             theme={theme} 
-            onMarkCreditCollected={handleMarkCreditCollected}
           />
         ) : activeTab === "Paid" ? (
-          <>
-            {/* Recently Paid Items Section - Shows ALL paid items (not tables) */}
-            <RecentlyPaidItemsPanel orders={orders} theme={theme} />
-          </>
+          <RecentlyPaidItemsPanel orders={orders} theme={theme} />
         ) : (
-          // Live and Served tabs - Show order grids
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredOrders.map(order => (
               <OrderCard

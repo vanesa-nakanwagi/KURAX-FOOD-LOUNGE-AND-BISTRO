@@ -1,55 +1,226 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { 
-  ClipboardList, 
-  Clock, 
-  LogOut, 
-  LayoutGrid
+import {
+  ClipboardList,
+  Clock,
+  LogOut,
+  LayoutGrid,
+  Menu,
+  X,
+  Users,
+  DollarSign,
+  History,
+  Target,
+  UserPlus
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 
 const DEFAULT_MENU = [
-  { 
-    id: "order",  
-    label: "TAKE ORDER",        
-    icon: <ClipboardList size={20} /> 
-  },
-  { 
-    id: "manage", 
-    label: "MANAGE ORDER",  
-    icon: <Clock size={20} /> 
-  },
-  { 
-    id: "tables", 
-    label: "MANAGE TABLE", 
-    icon: <LayoutGrid size={20} /> // New Item
-  },
+  { id: "order", label: "TAKE ORDER", icon: <ClipboardList size={20} /> },
+  { id: "manage", label: "MANAGE ORDER", icon: <Clock size={20} /> },
+  { id: "tables", label: "MANAGE TABLE", icon: <LayoutGrid size={20} /> },
 ];
 
-export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
-  const { theme } = useTheme();
-  const navigate  = useNavigate();
+// Bottom navigation items for mobile
+const BOTTOM_NAV_ITEMS = [
+  { id: "delivery", label: "DELIVERY", icon: <ClipboardList size={22} /> },
+  { id: "rider", label: "RIDER", icon: <Users size={22} /> },
+  { id: "finances", label: "FINANCES", icon: <DollarSign size={22} /> },
+  { id: "history", label: "HISTORY", icon: <History size={22} /> },
+  { id: "targets", label: "TARGETS", icon: <Target size={22} /> },
+  { id: "riders", label: "RIDERS", icon: <UserPlus size={22} /> },
+];
 
-  // Use caller-supplied items if provided, otherwise fall back to default
-  const items = menuItems || DEFAULT_MENU;
+export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }) {
+  const { theme } = useTheme();
+  const navigate = useNavigate();
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkScreenSize();
+    window.addEventListener("resize", checkScreenSize);
+    return () => window.removeEventListener("resize", checkScreenSize);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (isMenuOpen && !e.target.closest(".mobile-sidebar")) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isMenuOpen]);
 
   const handleLogout = () => {
     localStorage.removeItem("user");
     localStorage.removeItem("kurax_user");
-    navigate("/staff/login");
+    if (onLogout) {
+      onLogout();
+    } else {
+      navigate("/staff/login");
+    }
   };
 
-  return (
-    <div className={`w-64 h-screen flex flex-col border-r transition-colors duration-300 ${
-      theme === "dark" ? "bg-zinc-950 border-white/5" : "bg-white border-black/5"
-    }`}>
+  const items = menuItems || DEFAULT_MENU;
 
-      {/* ── Logo / header ─────────────────────────────────────────────────── */}
+  // ========== MOBILE VIEW ==========
+  if (isMobile) {
+    return (
+      <>
+        {/* Hamburger Button */}
+        <button
+          onClick={() => setIsMenuOpen(true)}
+          className={`fixed top-4 left-4 z-50 p-2.5 rounded-xl transition-all ${
+            theme === "dark"
+              ? "bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white"
+              : "bg-white/90 backdrop-blur-md border border-black/10 text-black"
+          }`}
+        >
+          <Menu size={22} />
+        </button>
+
+        {/* Mobile Sidebar Drawer */}
+        <div
+          className={`fixed inset-0 z-40 transition-all duration-300 mobile-sidebar ${
+            isMenuOpen ? "visible" : "invisible"
+          }`}
+        >
+          <div
+            className={`absolute inset-0 transition-opacity duration-300 ${
+              isMenuOpen ? "opacity-100 bg-black/50" : "opacity-0"
+            }`}
+            onClick={() => setIsMenuOpen(false)}
+          />
+
+          <div
+            className={`absolute left-0 top-0 h-full w-72 transition-transform duration-300 ${
+              isMenuOpen ? "translate-x-0" : "-translate-x-full"
+            } ${
+              theme === "dark"
+                ? "bg-zinc-950 border-r border-white/5"
+                : "bg-white border-r border-black/5"
+            }`}
+          >
+            <div className={`p-6 border-b ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
+              <div className="flex items-center gap-3">
+                <img
+                  src={logo}
+                  alt="Logo"
+                  className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20"
+                />
+                <div className="flex flex-col">
+                  <h1 className={`text-[11px] font-black uppercase tracking-tight leading-none ${
+                    theme === "dark" ? "text-white" : "text-zinc-900"
+                  }`}>
+                    KURAX FOOD LOUNGE & BISTRO
+                  </h1>
+                  <p className="text-[9px] font-bold text-yellow-500 mt-1 uppercase tracking-widest ">
+                    Waiter Portal
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsMenuOpen(false)}
+                className="absolute top-5 right-5 p-1 rounded-full hover:bg-black/10"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <nav className="flex-1 p-4 space-y-3 mt-6">
+              {items.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setIsMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-4 px-5 py-4 rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border
+                    ${activeTab === item.id
+                      ? "bg-yellow-500 text-black border-yellow-500 shadow-xl shadow-yellow-500/20 scale-[1.02]"
+                      : theme === "dark"
+                        ? "text-zinc-500 bg-transparent border-transparent hover:bg-white/5 hover:text-white"
+                        : "text-zinc-600 bg-transparent border-transparent hover:bg-black/5 hover:text-black"
+                    }`}
+                >
+                  <span className={activeTab === item.id ? "text-black" : "text-yellow-500"}>
+                    {item.icon}
+                  </span>
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+
+            <div className={`p-4 border-t mt-auto ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
+              <button
+                onClick={handleLogout}
+                className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  theme === "dark"
+                    ? "text-rose-500 hover:bg-rose-500/10"
+                    : "text-rose-600 hover:bg-rose-50/50"
+                }`}
+              >
+                <LogOut size={20} />
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Navigation Bar */}
+        <div
+          className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-2 py-2 border-t backdrop-blur-lg ${
+            theme === "dark"
+              ? "bg-zinc-950/95 border-white/10"
+              : "bg-white/95 border-black/10"
+          }`}
+        >
+          {BOTTOM_NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                console.log(`Bottom nav clicked: ${item.id}`);
+              }}
+              className={`flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-xl transition-all min-w-[64px] ${
+                theme === "dark"
+                  ? "hover:bg-white/5 text-zinc-500 hover:text-white"
+                  : "hover:bg-black/5 text-zinc-600 hover:text-black"
+              }`}
+            >
+              <span className="text-yellow-500">{item.icon}</span>
+              <span className="text-[9px] font-black uppercase tracking-wider">
+                {item.label}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Bottom padding to prevent content from being hidden */}
+        <div className="pb-20" />
+      </>
+    );
+  }
+
+  // ========== DESKTOP VIEW ==========
+  // The sidebar will fit perfectly in your existing flex layout
+  return (
+    <div
+      className={`w-64 h-full flex flex-col border-r transition-colors duration-300 flex-shrink-0 ${
+        theme === "dark" ? "bg-zinc-950 border-white/5" : "bg-white border-black/5"
+      }`}
+    >
+      {/* Logo / header */}
       <div className={`p-6 border-b ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
         <div className="flex items-center gap-3">
           <img
-            src={logo} alt="Logo"
+            src={logo}
+            alt="Logo"
             className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20"
           />
           <div className="flex flex-col">
@@ -65,7 +236,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
         </div>
       </div>
 
-      {/* ── Nav items ─────────────────────────────────────────────────────── */}
+      {/* Nav items */}
       <nav className="flex-1 p-4 space-y-3 mt-6">
         {items.map((item) => (
           <button
@@ -87,7 +258,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
         ))}
       </nav>
 
-      {/* ── Logout ────────────────────────────────────────────────────────── */}
+      {/* Logout */}
       <div className={`p-4 border-t ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
         <button
           onClick={handleLogout}
@@ -101,7 +272,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
           Log Out
         </button>
       </div>
-
     </div>
   );
 }

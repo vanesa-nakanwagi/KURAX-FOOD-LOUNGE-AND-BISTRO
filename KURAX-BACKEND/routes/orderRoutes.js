@@ -65,6 +65,7 @@ router.get('/cashier-queue', async (req, res) => {
        LEFT JOIN staff s ON o.staff_id = s.id
        WHERE o.status NOT IN ('Paid', 'Closed', 'Voided', 'Cancelled')
          AND o.shift_cleared = FALSE
+         AND (o.payment_method IS NULL OR o.payment_method = '')
        ORDER BY o.created_at DESC`
     );
     
@@ -112,6 +113,7 @@ router.get('/tables/all', async (req, res) => {
           AND o.table_name IS NOT NULL
           AND o.table_name != 'WALK-IN'
           AND o.shift_cleared = FALSE
+          AND (o.payment_method IS NULL OR o.payment_method = '')
         GROUP BY o.table_name
       )
       SELECT
@@ -252,17 +254,19 @@ router.get('/void-requests/history', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/orders - Create new order
+// POST /api/orders - Create new order (FIXED: No default payment_method)
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   const { staffId, staffRole, tableName, items, total, paymentMethod } = req.body;
 
   try {
+    // CRITICAL FIX: Do NOT set payment_method by default
+    // Payment method should be NULL until cashier confirms payment
     const orderResult = await pool.query(
       `INSERT INTO orders (
          staff_id, staff_role, table_name,
-         items, total, payment_method, status, date
-       ) VALUES ($1, $2, $3, $4, $5, $6, 'Pending', CURRENT_DATE)
+         items, total, payment_method, status, date, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, NOW())
        RETURNING *`,
       [
         staffId       || 1,
@@ -270,7 +274,8 @@ router.post('/', async (req, res) => {
         tableName     || 'WALK-IN',
         JSON.stringify(items),
         total,
-        paymentMethod || 'Cash',
+        null,  // ← FIXED: No default payment method
+        'Pending',   // ← FIXED: Status is Pending, not Served
       ]
     );
 
@@ -294,10 +299,10 @@ router.post('/', async (req, res) => {
     }
 
     await logActivity(pool, {
-      type:    'ORDER_SENT',
+      type:    'ORDER_CREATED',
       actor:   `Staff ID: ${staffId}`,
       role:    staffRole,
-      message: `New order sent for ${tableName}`,
+      message: `New order created for ${tableName}`,
       meta:    { order_id: newOrder.id, total },
     });
 
@@ -362,7 +367,6 @@ router.post('/void-item', async (req, res) => {
     let chefName = null;
     
     try {
-      // Query kitchen_tickets to find who was assigned to this order
       const kitchenResult = await pool.query(
         `SELECT staff_name, staff_role, items
          FROM kitchen_tickets 
@@ -378,7 +382,6 @@ router.post('/void-item', async (req, res) => {
       if (kitchenResult.rows.length > 0) {
         const kitchenTicket = kitchenResult.rows[0];
         
-        // Parse kitchen ticket items
         let kitchenItems = kitchenTicket.items;
         if (typeof kitchenItems === 'string') {
           try {
@@ -388,14 +391,12 @@ router.post('/void-item', async (req, res) => {
           }
         }
         
-        // Search for the item in the kitchen ticket's items array
         if (Array.isArray(kitchenItems)) {
           const foundItem = kitchenItems.find(kItem => 
             kItem.name === item_name || kItem.item_name === item_name
           );
           
           if (foundItem) {
-            // Extract chef from assignedTo field
             chefName = foundItem.assignedTo || foundItem.assigned_to || foundItem.chef_name || null;
             console.log(`Found chef from kitchen_tickets item: ${chefName}`);
           }
@@ -405,13 +406,11 @@ router.post('/void-item', async (req, res) => {
       console.error("Error checking kitchen_tickets:", err.message);
     }
     
-    // If no chef found, try to get from the order item's assignedChef field
     if (!chefName && targetItem.assignedChef) {
       chefName = targetItem.assignedChef;
       console.log(`Found chef from order item: ${chefName}`);
     }
     
-    // If still no chef, try to get from assignedTo in the target item itself
     if (!chefName && targetItem.assignedTo) {
       chefName = targetItem.assignedTo;
       console.log(`Found chef from target item assignedTo: ${chefName}`);
@@ -426,7 +425,6 @@ router.post('/void-item', async (req, res) => {
       originalPrice, originalQuantity, itemTotal, chefName
     });
 
-    // Insert void request with chef information (using your column names)
     const voidRes = await pool.query(
       `INSERT INTO void_requests
          (order_id, item_name, reason, requested_by,
@@ -441,7 +439,6 @@ router.post('/void-item', async (req, res) => {
 
     console.log("Void request inserted, ID:", voidRes.rows[0].id);
 
-    // Update the order items to mark void requested
     let found = false;
     const updatedItems = items.map(item => {
       if (!found && item.name === item_name && !item.voidRequested && !item.voidProcessed) {
@@ -486,7 +483,7 @@ router.post('/void-item', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PATCH /api/orders/:id/status - Update order status
+// PATCH /api/orders/:id/status - Update order status (FIXED: No revenue impact)
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/status', async (req, res) => {
   const { id } = req.params;
@@ -498,9 +495,111 @@ router.patch('/:id/status', async (req, res) => {
   }
 
   try {
+    // Get current order to check if it's already paid or credit
+    const currentOrder = await pool.query(
+      `SELECT payment_method, status FROM orders WHERE id = $1`,
+      [id]
+    );
+    
+    if (currentOrder.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    const order = currentOrder.rows[0];
+    
+    // CRITICAL FIX: Prevent changing status of paid or credit orders to Served
+    if ((order.payment_method === 'Credit' || order.payment_method === 'Paid') && status === 'Served') {
+      return res.status(400).json({ 
+        error: `Cannot mark ${order.payment_method === 'Credit' ? 'credit' : 'paid'} order as Served` 
+      });
+    }
+    
+    // If marking as Served, ensure payment_method is still NULL
+    if (status === 'Served') {
+      await pool.query(
+        `UPDATE orders SET status = $1, void_reason = $2, updated_at = NOW() WHERE id = $3`,
+        [status, void_reason || null, id]
+      );
+    } else {
+      const result = await pool.query(
+        `UPDATE orders SET status = $1, void_reason = $2, updated_at = NOW() WHERE id = $3 RETURNING *`,
+        [status, void_reason || null, id]
+      );
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      
+      const updatedOrder = result.rows[0];
+      
+      let items = updatedOrder.items;
+      if (typeof items === 'string') {
+        items = JSON.parse(items);
+      }
+
+      await logActivity(pool, {
+        type:    status === 'Voided' ? 'ORDER_VOIDED' : 'STATUS_UPDATE',
+        actor:   staff_name || 'System',
+        role:    role || 'STAFF',
+        message: status === 'Voided'
+          ? `Order #${id} was VOIDED. Reason: ${void_reason}`
+          : `Order #${id} (${updatedOrder.table_name}) is now ${status}`,
+        meta:    { status, order_id: id, reason: void_reason },
+      });
+
+      return res.json({
+        ...updatedOrder,
+        items: items
+      });
+    }
+    
+    res.json({ success: true, status });
+  } catch (err) {
+    console.error('Update Status Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/orders/:id/pay - Mark order as paid (ONLY THIS AFFECTS REVENUE)
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/:id/pay', async (req, res) => {
+  const { id } = req.params;
+  const { status = 'Paid', payment_method } = req.body;
+
+  if (!payment_method) {
+    return res.status(400).json({ error: 'payment_method is required' });
+  }
+
+  try {
+    // Get current order to check if it's already paid
+    const currentOrder = await pool.query(
+      `SELECT status, payment_method, total, table_name FROM orders WHERE id = $1`,
+      [id]
+    );
+    
+    if (currentOrder.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    const order = currentOrder.rows[0];
+    
+    // Prevent double payment
+    if (order.status === 'Paid') {
+      return res.status(400).json({ error: 'Order is already paid' });
+    }
+    
+    // Update order to paid
     const result = await pool.query(
-      `UPDATE orders SET status = $1, void_reason = $2 WHERE id = $3 RETURNING *`,
-      [status, void_reason || null, id]
+      `UPDATE orders 
+       SET status = $1, 
+           payment_method = $2, 
+           is_paid = true, 
+           paid_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $3 
+       RETURNING *`,
+      [status, payment_method, id]
     );
 
     if (result.rows.length === 0) {
@@ -514,59 +613,28 @@ router.patch('/:id/status', async (req, res) => {
       items = JSON.parse(items);
     }
 
-    await logActivity(pool, {
-      type:    status === 'Voided' ? 'ORDER_VOIDED' : 'STATUS_UPDATE',
-      actor:   staff_name || 'System',
-      role:    role || 'STAFF',
-      message: status === 'Voided'
-        ? `Order #${id} was VOIDED. Reason: ${void_reason}`
-        : `Order #${id} (${updatedOrder.table_name}) is now ${status}`,
-      meta:    { status, order_id: id, reason: void_reason },
-    });
-
-    res.json({
-      ...updatedOrder,
-      items: items
-    });
-  } catch (err) {
-    console.error('Update Status Error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PATCH /api/orders/:id/pay - Mark order as paid
-// ─────────────────────────────────────────────────────────────────────────────
-router.patch('/:id/pay', async (req, res) => {
-  const { id } = req.params;
-  const { status = 'Paid', payment_method } = req.body;
-
-  try {
-    const result = await pool.query(
-      `UPDATE orders SET status = $1, payment_method = $2, is_paid = true, updated_at = NOW()
-       WHERE id = $3 RETURNING *`,
-      [status, payment_method, id]
+    // Mark individual items as paid
+    const updatedItems = items.map(item => ({
+      ...item,
+      _rowPaid: true,
+      payment_method: payment_method,
+      paid_at: new Date().toISOString()
+    }));
+    
+    await pool.query(
+      `UPDATE orders SET items = $1 WHERE id = $2`,
+      [JSON.stringify(updatedItems), id]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    const order = result.rows[0];
-    
-    let items = order.items;
-    if (typeof items === 'string') {
-      items = JSON.parse(items);
-    }
-
-    if (order.table_name) {
+    // Update table status if this table has no more pending orders
+    if (updatedOrder.table_name && updatedOrder.table_name !== 'WALK-IN') {
       try {
         const pendingCheck = await pool.query(
           `SELECT COUNT(*) AS cnt FROM orders
            WHERE UPPER(table_name) = UPPER($1)
-             AND status NOT IN ('Paid', 'Closed', 'Voided', 'Cancelled', 'Credit')
+             AND status NOT IN ('Paid', 'Closed', 'Voided', 'Cancelled')
              AND shift_cleared = FALSE`,
-          [order.table_name]
+          [updatedOrder.table_name]
         );
         const remaining = parseInt(pendingCheck.rows[0].cnt, 10);
         if (remaining === 0) {
@@ -574,7 +642,7 @@ router.patch('/:id/pay', async (req, res) => {
             `UPDATE tables
              SET status = 'Available', last_order_id = NULL, updated_at = NOW()
              WHERE UPPER(name) = UPPER($1)`,
-            [order.table_name]
+            [updatedOrder.table_name]
           ).catch(err => console.warn('Table update skipped:', err.message));
         }
       } catch (err) {
@@ -582,28 +650,38 @@ router.patch('/:id/pay', async (req, res) => {
       }
     }
 
-    await updateDailySummary({ amount: order.total, method: payment_method });
+    // ✅ ONLY HERE do we update daily summary (affects revenue)
+    await updateDailySummary({ amount: updatedOrder.total, method: payment_method });
     
+    // Record in cashier_queue
     try {
       await pool.query(
         `INSERT INTO cashier_queue 
            (order_ids, table_name, label, method, amount, status, confirmed_by, confirmed_at, created_at)
          VALUES ($1, $2, $3, $4, $5, 'Confirmed', 'Cashier', NOW(), NOW())`,
         [
-          JSON.stringify([order.id]),
-          order.table_name || 'WALK-IN',
-          `Order #${order.id}`,
-          payment_method || 'Cash',
-          Number(order.total),
+          JSON.stringify([updatedOrder.id]),
+          updatedOrder.table_name || 'WALK-IN',
+          `Order #${updatedOrder.id}`,
+          payment_method,
+          Number(updatedOrder.total),
         ]
       );
     } catch (err) {
       console.warn('Failed to record in cashier_queue:', err.message);
     }
     
+    await logActivity(pool, {
+      type: 'PAYMENT_CONFIRMED',
+      actor: 'Cashier',
+      role: 'CASHIER',
+      message: `Order #${id} (${updatedOrder.table_name}) paid via ${payment_method} - UGX ${Number(updatedOrder.total).toLocaleString()}`,
+      meta: { order_id: id, amount: updatedOrder.total, method: payment_method }
+    });
+    
     res.json({
-      ...order,
-      items: items
+      ...updatedOrder,
+      items: updatedItems
     });
   } catch (err) {
     console.error('Pay Order Error:', err.message);
@@ -619,7 +697,6 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
   const { approved_by } = req.body;
   
   try {
-    // Get the void request first
     const voidReq = await pool.query(
       `SELECT * FROM void_requests WHERE id = $1 AND status = 'Pending'`,
       [id]
@@ -631,7 +708,6 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
     
     const vr = voidReq.rows[0];
     
-    // Update the order: mark the item as voided
     const orderRes = await pool.query(
       `SELECT items FROM orders WHERE id = $1`,
       [vr.order_id]
@@ -643,7 +719,6 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
         items = JSON.parse(items);
       }
       
-      // Find and mark the item as voided
       let found = false;
       const updatedItems = items.map(item => {
         if (!found && item.name === vr.item_name && !item.voidProcessed) {
@@ -660,7 +735,6 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
         return item;
       });
       
-      // Update order total by subtracting voided item amount
       const newTotal = updatedItems
         .filter(item => item.status !== 'VOIDED' && !item.voidProcessed)
         .reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity || 1)), 0);
@@ -671,7 +745,6 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
       );
     }
     
-    // Update the void request status
     const result = await pool.query(
       `UPDATE void_requests 
        SET status = 'Approved', 
@@ -706,7 +779,6 @@ router.patch('/void-requests/:id/reject', async (req, res) => {
   const { rejected_by } = req.body;
   
   try {
-    // Get the void request first
     const voidReq = await pool.query(
       `SELECT * FROM void_requests WHERE id = $1 AND status = 'Pending'`,
       [id]
@@ -718,7 +790,6 @@ router.patch('/void-requests/:id/reject', async (req, res) => {
     
     const vr = voidReq.rows[0];
     
-    // Update the order to remove void request flag
     const orderRes = await pool.query(
       `SELECT items FROM orders WHERE id = $1`,
       [vr.order_id]
@@ -749,7 +820,6 @@ router.patch('/void-requests/:id/reject', async (req, res) => {
       );
     }
     
-    // Update the void request status
     const result = await pool.query(
       `UPDATE void_requests 
        SET status = 'Rejected', 
@@ -785,7 +855,7 @@ router.get('/debug/staff-orders/:staffId', async (req, res) => {
   
   try {
     const allOrders = await pool.query(
-      `SELECT id, staff_id, waiter_name, staff_name, table_name, total, status, 
+      `SELECT id, staff_id, waiter_name, staff_name, table_name, total, status, payment_method,
               DATE(timestamp) as order_date, timestamp, shift_cleared
        FROM orders 
        ORDER BY id DESC 
@@ -793,7 +863,7 @@ router.get('/debug/staff-orders/:staffId', async (req, res) => {
     );
     
     const staffOrders = await pool.query(
-      `SELECT id, staff_id, waiter_name, staff_name, table_name, total, status, 
+      `SELECT id, staff_id, waiter_name, staff_name, table_name, total, status, payment_method,
               DATE(timestamp) as order_date, timestamp, shift_cleared
        FROM orders 
        WHERE staff_id = $1 OR waiter_name ILIKE $2 OR staff_name ILIKE $2
@@ -802,7 +872,7 @@ router.get('/debug/staff-orders/:staffId', async (req, res) => {
     );
     
     const todayOrders = await pool.query(
-      `SELECT id, staff_id, waiter_name, staff_name, table_name, total, status, 
+      `SELECT id, staff_id, waiter_name, staff_name, table_name, total, status, payment_method,
               DATE(timestamp) as order_date, timestamp, shift_cleared
        FROM orders 
        WHERE (staff_id = $1 OR waiter_name ILIKE $2 OR staff_name ILIKE $2)
@@ -823,7 +893,8 @@ router.get('/debug/staff-orders/:staffId', async (req, res) => {
       staffOrders: staffOrders.rows,
       staffOrdersCount: staffOrders.rows.length,
       todayOrders: todayOrders.rows,
-      todayOrdersCount: todayOrders.rows.length
+      todayOrdersCount: todayOrders.rows.length,
+      note: "Orders only affect revenue when payment_method is set and status is 'Paid'"
     });
   } catch (err) {
     console.error('Debug error:', err.message);
@@ -832,7 +903,7 @@ router.get('/debug/staff-orders/:staffId', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Debug endpoint - Check void requests (FIXED to use chef_name)
+// Debug endpoint - Check void requests
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/debug/void-requests', async (req, res) => {
   try {
@@ -878,8 +949,10 @@ router.get('/test', (req, res) => {
       'PATCH /:id/pay',
       'PATCH /void-requests/:id/approve',
       'PATCH /void-requests/:id/reject',
-      'GET /debug/void-requests'
-    ]
+      'GET /debug/void-requests',
+      'GET /debug/staff-orders/:staffId'
+    ],
+    important_note: "✅ Orders only affect revenue when payment_method is set and status is 'Paid' via the /pay endpoint"
   });
 });
 

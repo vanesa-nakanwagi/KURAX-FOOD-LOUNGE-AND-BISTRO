@@ -109,7 +109,7 @@ function DashboardStatCard({ label, value, sub, icon, color, isDark, largeValue 
   );
 }
 
-// ─── Credit Summary Card ──────────────────────────────────────────────────────
+// ─── CREDIT SUMMARY CARD ──────────────────────────────────────────────────────
 function CreditSummaryCard({
   isDark,
   creditsLoading,
@@ -306,22 +306,32 @@ export default function OverviewSection({ onViewRegistry }) {
     }
   }, [currentMonth, currentYear]);
 
-  // ─── Fetchers ───────────────────────────────────────────────────────────────
+  // ✅ FIXED: Changed from /api/summaries/today to /api/accountant/today
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/summaries/today?t=${Date.now()}`);
+      const res = await fetch(`${API_URL}/api/accountant/today?t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
-        console.log("Summary fetched:", {
+        console.log("✅ Director Summary fetched from /accountant/today:", {
           total_cash: data.total_cash,
           total_card: data.total_card,
           total_mtn: data.total_mtn,
           total_airtel: data.total_airtel,
           total_gross: data.total_gross,
+          pending_credits: data.pending_credit_requests_amount,
         });
         setSummary(data);
+      } else {
+        console.error("Failed to fetch from /accountant/today, falling back to /summaries/today");
+        // Fallback to old endpoint if needed
+        const fallbackRes = await fetch(`${API_URL}/api/summaries/today?t=${Date.now()}`);
+        if (fallbackRes.ok) {
+          setSummary(await fallbackRes.json());
+        }
       }
-    } catch (e) { console.error("Summary fetch failed:", e); }
+    } catch (e) { 
+      console.error("Summary fetch failed:", e); 
+    }
     finally { setSumLoad(false); }
   }, []);
 
@@ -596,12 +606,14 @@ export default function OverviewSection({ onViewRegistry }) {
   const totalOutstandingCredits = totalApprovedAmount + totalPendingCashierAmount + totalPendingManagerAmount + totalPartiallySettledOutstanding;
   const totalExpectedCredits = totalSettledCredits + totalOutstandingCredits;
 
-  // ─── Revenue figures ─────────────────────────────────────────────────────────
+  // ✅ FIXED: Revenue figures now come from /accountant/today which excludes pending credits
   const rawCash    = Number(summary?.total_cash    ?? 0);
   const rawCard    = Number(summary?.total_card    ?? 0);
   const rawMTN     = Number(summary?.total_mtn     ?? 0);
   const rawAirtel  = Number(summary?.total_airtel  ?? 0);
   const rawGross   = Number(summary?.total_gross   ?? 0);
+  const pendingCredits = Number(summary?.pending_credit_requests_amount ?? 0);
+  const settledCreditsToday = Number(summary?.credit_settlements_today ?? 0);
 
   const bk           = summary?.credit_settlements_breakdown ?? {};
   const settleCash   = Number(bk.cash   ?? 0);
@@ -610,11 +622,15 @@ export default function OverviewSection({ onViewRegistry }) {
   const settleAirtel = Number(bk.airtel ?? 0);
   const settleTotal  = Number(summary?.credit_settlements_today ?? 0);
 
-  const displayCash    = rawCash   - settleCash;
-  const displayCard    = rawCard   - settleCard;
-  const displayMTN     = rawMTN    - settleMTN;
-  const displayAirtel  = rawAirtel - settleAirtel;
-  const displayGross   = rawGross;
+  // Display values - GROSS REVENUE is rawGross (already cash+card+mtn+airtel from paid orders ONLY)
+  const displayCash    = rawCash;
+  const displayCard    = rawCard;
+  const displayMTN     = rawMTN;
+  const displayAirtel  = rawAirtel;
+  const displayGross   = rawGross;  // This is 90k (45k cash + 45k card)
+
+  // Total mobile money
+  const totalMobileMoney = displayMTN + displayAirtel;
 
   // ─── Petty derived ──────────────────────────────────────────────────────────
   const pettyOut      = Number(pettyData.total_out ?? 0);
@@ -649,9 +665,31 @@ export default function OverviewSection({ onViewRegistry }) {
   };
   const filteredCredits = getFilteredCredits();
 
+  const orderCount = Number(summary?.order_count ?? 0);
+
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+
+      {/* Pending Credits Warning Banner */}
+      {!dayClosed && pendingCredits > 0 && (
+        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 animate-in fade-in duration-500">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-amber-500/20">
+              <Hourglass size={16} className="text-amber-500" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-black text-amber-500 uppercase tracking-wider">
+                Pending Credit Requests
+              </p>
+              <p className="text-[9px] text-zinc-500">
+                UGX {pendingCredits.toLocaleString()} in credit requests waiting for approval.
+                These will be added to gross revenue when approved AND settled.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Day Closed Banner */}
       {dayClosed && (
@@ -674,11 +712,9 @@ export default function OverviewSection({ onViewRegistry }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
 
         <DashboardStatCard
-          label="Cash on Hand"
+          label="Cash Revenue"
           value={summaryLoading ? "..." : (dayClosed ? 0 : displayCash)}
-          sub={settleCash > 0 && !dayClosed
-            ? `${fmtLargeNumber(settleCash)} credit settlements deducted`
-            : dayClosed ? "Day closed - totals reset" : "Cash payments only"}
+          sub={dayClosed ? "Day closed - totals reset" : "Cash payments only"}
           icon={<Banknote size={18} className="text-emerald-500" />}
           color="text-emerald-500"
           isDark={isDark}
@@ -687,11 +723,9 @@ export default function OverviewSection({ onViewRegistry }) {
         />
 
         <DashboardStatCard
-          label="Card"
+          label="Card Revenue"
           value={summaryLoading ? "..." : (dayClosed ? 0 : displayCard)}
-          sub={settleCard > 0 && !dayClosed
-            ? `${fmtLargeNumber(settleCard)} credit settlements deducted`
-            : dayClosed ? "Day closed - totals reset" : "POS card payments only"}
+          sub={dayClosed ? "Day closed - totals reset" : "POS card payments only"}
           icon={<CreditCard size={18} className="text-blue-500" />}
           color="text-blue-500"
           isDark={isDark}
@@ -700,11 +734,9 @@ export default function OverviewSection({ onViewRegistry }) {
         />
 
         <DashboardStatCard
-          label="MTN Momo"
+          label="MTN Momo Revenue"
           value={summaryLoading ? "..." : (dayClosed ? 0 : displayMTN)}
-          sub={settleMTN > 0 && !dayClosed
-            ? `${fmtLargeNumber(settleMTN)} credit settlements deducted`
-            : dayClosed ? "Day closed - totals reset" : "MTN mobile money only"}
+          sub={dayClosed ? "Day closed - totals reset" : "MTN mobile money only"}
           icon={<Smartphone size={18} className="text-yellow-500" />}
           color="text-yellow-500"
           isDark={isDark}
@@ -713,11 +745,9 @@ export default function OverviewSection({ onViewRegistry }) {
         />
 
         <DashboardStatCard
-          label="Airtel Money"
+          label="Airtel Money Revenue"
           value={summaryLoading ? "..." : (dayClosed ? 0 : displayAirtel)}
-          sub={settleAirtel > 0 && !dayClosed
-            ? `${fmtLargeNumber(settleAirtel)} credit settlements deducted`
-            : dayClosed ? "Day closed - totals reset" : "Airtel mobile money only"}
+          sub={dayClosed ? "Day closed - totals reset" : "Airtel mobile money only"}
           icon={<Smartphone size={18} className="text-red-500" />}
           color="text-red-500"
           isDark={isDark}
@@ -730,7 +760,7 @@ export default function OverviewSection({ onViewRegistry }) {
           value={summaryLoading ? "..." : (dayClosed ? 0 : displayGross)}
           sub={settleTotal > 0 && !dayClosed
             ? `${fmtLargeNumber(settleTotal)} credit settlements collected today`
-            : dayClosed ? "Day closed - totals reset" : "Cash + Card + MTN + Airtel"}
+            : dayClosed ? "Day closed - totals reset" : "Cash + Card + MTN + Airtel (Paid orders only)"}
           icon={<TrendingUp size={18} className="text-emerald-500" />}
           color="text-emerald-500"
           isDark={isDark}
@@ -738,6 +768,27 @@ export default function OverviewSection({ onViewRegistry }) {
           isLive={!dayClosed}
         />
       </div>
+
+      {/* Credit Settlements Today Banner */}
+      {!dayClosed && settleTotal > 0 && (
+        <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-3 animate-in fade-in duration-500">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-emerald-500" />
+              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">
+                Credits Settled Today:
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              {settleCash > 0 && <span className="text-[9px] font-black text-emerald-500">Cash: {fmtLargeNumber(settleCash)}</span>}
+              {settleCard > 0 && <span className="text-[9px] font-black text-emerald-500">Card: {fmtLargeNumber(settleCard)}</span>}
+              {settleMTN > 0 && <span className="text-[9px] font-black text-emerald-500">MTN: {fmtLargeNumber(settleMTN)}</span>}
+              {settleAirtel > 0 && <span className="text-[9px] font-black text-emerald-500">Airtel: {fmtLargeNumber(settleAirtel)}</span>}
+              <span className="text-[10px] font-black text-emerald-700">Total: {fmtLargeNumber(settleTotal)}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── CREDIT SUMMARY CARD ── */}
       <CreditSummaryCard
