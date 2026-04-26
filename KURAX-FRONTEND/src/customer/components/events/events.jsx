@@ -108,103 +108,97 @@ export default function Events() {
     setShowModal(true);
   };
 
+  const clearSearch = () => {
+    setIsSearching(false);
+    setSearchQuery("");
+  };
+
   return (
     <div className="bg-[#FCFCFB] dark:bg-[#050505] text-zinc-900 dark:text-white font-['Outfit'] transition-colors duration-700 selection:bg-yellow-500/30 overflow-x-hidden">
       
       <TopSection searchPlaceholder="Search upcoming experiences..." />
 
-      {/* ── HEADER AREA ── */}
-      <section className="relative pt-20 pb-10 px-6 max-w-7xl mx-auto">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-10 lg:gap-8 min-w-0">
-          <div className="space-y-8 w-full lg:w-auto min-w-0">
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-4"
-            >
-              <span className="h-[1px] w-12 bg-yellow-500/50" />
-              <span className="text-yellow-600 dark:text-yellow-500 text-xs font-black uppercase tracking-[0.3em]">
-                Exclusive Experiences
-              </span> 
-            </motion.div>
-            <div className="flex items-start sm:items-center gap-2 md:gap-3 min-w-0">
-              <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
-              <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-5xl font-serif leading-[0.95] tracking-tighter min-w-0">
-                Upcoming{" "}
-                <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
-                  At Kurax
-                </span>
-              </h1>
-            </div>
-          </div>
-
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="w-full lg:w-auto flex flex-wrap justify-between items-center gap-4 sm:gap-8 border-t lg:border-t-0 lg:border-l border-white/10 pt-6 lg:pt-4 lg:pl-16"
-          >
-            {[
-              { icon: <Music size={20}/>, label: "Live Music" },
-              { icon: <Martini size={20}/>, label: "Curated Mixology" },
-              { icon: <MapPin size={20}/>, label: "Rooftop Views" }
-            ].map((item, i) => (
-              <div key={i} className="flex flex-col items-center lg:items-start gap-2 group cursor-default min-w-[120px]">
-                <div className="text-yellow-500/80 group-hover:text-yellow-400 transition-colors duration-300">
-                  {item.icon}
-                </div>
-                <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-500 text-center">
-                  {item.label}
-                </span>
-              </div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
+      {/* ── CONSISTENT HEADER WITH MENU PAGE STYLE ── */}
+<header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 pb-4">
+  <div className="flex flex-row items-center justify-between gap-4 border-b border-zinc-100 dark:border-zinc-900 pb-8 min-w-0">
+    <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+      <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full flex-shrink-0" />
+      <h2 className="text-lg sm:text-2xl md:text-3xl lg:text-5xl font-serif leading-[0.95] tracking-tighter truncate">
+        {isSearching ? "Search" : "Upcoming"}{" "}
+        <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent whitespace-nowrap">
+          {isSearching ? "Results" : "Events"}
+        </span>
+      </h2>
+    </div>
+    <div className="text-right shrink-0">
+      <p className="hidden sm:block text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-700 leading-tight">
+        {isSearching 
+          ? `Matching "${searchQuery}"` 
+          : "Live & Upcoming"}
+      </p>
+      <p className="text-base sm:text-lg md:text-2xl font-semibold leading-none">
+        {filteredEvents.length}{" "}
+        <span className="text-[8px] sm:text-[10px] font-normal opacity-60">
+          {filteredEvents.length === 1 ? "Event" : "Events"}
+        </span>
+      </p>
+    </div>
+  </div>
+</header>
 
       {/* ── EVENTS GRID ── */}
-      <section className="relative pt-0 pb-0 px-6 max-w-7xl mx-auto z-10">
+      <section className="relative pt-0 pb-0 px-5 md:px-12 max-w-7xl mx-auto z-10">
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {[1, 2, 3].map((n) => (
               <div key={n} className="h-[500px] bg-zinc-100 dark:bg-zinc-900/50 rounded-[2rem] animate-pulse" />
             ))}
           </div>
         ) : (
           <>
-            {/* Search Results Banner - REMOVED */}
-
-            <motion.div 
-              initial="hidden"
-              whileInView="visible"
-            viewport={{ once: true }}
-            variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-12 gap-x-10"
-          >
-            {filteredEvents.length > 0 ? (
-              filteredEvents.map((event) => (
-                <motion.div 
-                  key={event.id}
-                  variants={{
-                    hidden: { opacity: 0, y: 40 },
-                    visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } }
-                  }}
-                  className="" 
-                >
-                  <EventCard event={event} onBook={() => handleBook(event)} />
-                </motion.div>
-              ))
-            ) : (
-              <div className="col-span-full py-40 text-center border border-dashed border-zinc-200 dark:border-white/10 rounded-[3rem] bg-zinc-50 dark:bg-zinc-900/20">
-                <p className="text-[11px] font-black uppercase tracking-[0.5em] text-zinc-400">The stage is being set. Check back soon.</p>
+            {filteredEvents.length === 0 ? (
+              <div className="py-40 text-center border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-[2.5rem]">
+                <p className="italic text-zinc-400 text-[11px] font-black uppercase tracking-[0.5em]">
+                  {isSearching 
+                    ? `No events found matching "${searchQuery}"`
+                    : "The stage is being set. Check back soon."}
+                </p>
+                {isSearching && (
+                  <button
+                    onClick={clearSearch}
+                    className="mt-6 text-sm text-yellow-600 hover:text-yellow-700 underline font-medium"
+                  >
+                    Browse all events
+                  </button>
+                )}
               </div>
+            ) : (
+              <motion.div 
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true }}
+                variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8"
+              >
+                {filteredEvents.map((event) => (
+                  <motion.div 
+                    key={event.id}
+                    variants={{
+                      hidden: { opacity: 0, y: 40 },
+                      visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } }
+                    }}
+                  >
+                    <EventCard event={event} onBook={() => handleBook(event)} />
+                  </motion.div>
+                ))}
+              </motion.div>
             )}
-          </motion.div>
           </>
         )}
       </section>
 
       {/* ── AMBIANCE SECTION ── */}
-      <section className="relative pt-10 pb-32 px-6 max-w-7xl mx-auto overflow-hidden">
+      <section className="relative pt-20 pb-32 px-5 md:px-12 max-w-7xl mx-auto overflow-hidden">
         <div className="flex flex-col lg:flex-row gap-12 lg:gap-16 items-start">
           <div className="w-full lg:w-3/5 relative h-[320px] md:h-[500px] lg:h-[650px] group shadow-[0_0_50px_rgba(0,0,0,0.3)] overflow-hidden rounded-none">
             <div className="absolute top-8 left-8 z-30 mix-blend-difference overflow-hidden" />
@@ -245,16 +239,16 @@ export default function Events() {
                 </motion.div>
                 <h2 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-serif leading-[0.95] tracking-tight">
                   Where <br/>
-                   <span
-                  style={{
-                    background: "linear-gradient(135deg, #f59e0b 0%, #fde68a 45%, #d97706 100%)",
-                    WebkitBackgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
-                    backgroundClip: "text",
-                  }}
-                >
-                Style
-                </span> <br/>
+                  <span
+                    style={{
+                      background: "linear-gradient(135deg, #f59e0b 0%, #fde68a 45%, #d97706 100%)",
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                      backgroundClip: "text",
+                    }}
+                  >
+                    Style
+                  </span> <br/>
                   Meets the Sky.
                 </h2>
               </div>
@@ -262,7 +256,6 @@ export default function Events() {
                 <p className="text-zinc-700 dark:text-zinc-400 text-base sm:text-lg font-light leading-relaxed border-l-2 border-yellow-500/10 pl-6">
                   Step into a world where high-energy nightlife effortlessly merges with the art of fine dining. At Kurax, every detail is a curated experience designed for the elite.
                 </p>
-    
               </div>
             </div>
           </div>
@@ -271,11 +264,11 @@ export default function Events() {
 
       <AnimatePresence>
         {showModal && (
-            <BookingModal 
-                show={showModal} 
-                onClose={() => setShowModal(false)} 
-                eventTitle={selectedEvent?.title} 
-            />
+          <BookingModal 
+            show={showModal} 
+            onClose={() => setShowModal(false)} 
+            eventTitle={selectedEvent?.title} 
+          />
         )}
       </AnimatePresence>
     </div>

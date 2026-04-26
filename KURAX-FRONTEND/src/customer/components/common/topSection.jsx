@@ -163,12 +163,11 @@ export default function TopSection({ searchPlaceholder }) {
             </AnimatePresence>
           </motion.button>
 
-          <ThemeToggle />
         </div>
       </div>
 
       {/* --- NAVIGATION LINKS --- */}
-      <nav className="flex flex-wrap justify-center items-center gap-4 py-4 overflow-x-auto no-scrollbar">
+      <nav className="flex flex-wrap justify-center items-center gap-6 py-6 overflow-x-auto no-scrollbar">
         {[
           { name: "Home", path: "/" },
           { name: "Menus", path: "/menus" },

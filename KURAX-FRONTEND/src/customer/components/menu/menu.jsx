@@ -199,8 +199,6 @@ export default function Menu() {
       <div className="sticky top-0 z-50 bg-[#F9F9F7]/90 dark:bg-[#080808]/90 backdrop-blur-xl border-b border-zinc-200/50 dark:border-zinc-800/50">
         <TopSection searchPlaceholder="Search flavors..." />
         
-        {/* Search Results Banner - REMOVED */}
-
         {/* Category Tabs - Mobile Optimized */}
         {!isSearching && (
           <div className="w-full flex justify-center border-b border-zinc-200/50 dark:border-zinc-800/50 overflow-x-auto no-scrollbar">
@@ -229,24 +227,27 @@ export default function Menu() {
         )}
       </div>
 
-      {/* HEADER */}
+      {/* HEADER - Mobile Optimized with title and count on same row */}
       <header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 pb-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-2 border-b border-zinc-100 dark:border-zinc-900 pb-8 min-w-0">
-          <div className="flex items-start sm:items-center gap-2 md:gap-3 min-w-0">
-            <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
-            <h2 className="text-2xl md:text-3xl lg:text-5xl font-serif leading-[0.95] tracking-tighter min-w-0">
+        <div className="flex flex-row items-center justify-between gap-4 border-b border-zinc-100 dark:border-zinc-900 pb-8 min-w-0">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+            <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full flex-shrink-0" />
+            <h2 className="text-lg sm:text-2xl md:text-3xl lg:text-5xl font-serif leading-[0.95] tracking-tighter truncate">
               {isSearching ? "Search" : "Explore"}{" "}
-              <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent whitespace-nowrap">
                 {isSearching ? "Results" : "Menu"}
               </span>
             </h2>
           </div>
-          <div className="text-left sm:text-right shrink-0 min-w-0">
-            <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-700 leading-tight">
+          <div className="text-right shrink-0">
+            <p className="hidden sm:block text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-700 leading-tight">
               {isSearching ? "Matching your taste" : `Available in ${selectedCategory}`}
             </p>
-            <p className="text-lg md:text-2xl font-semibold leading-none">
-              {filteredMenus.length} <span className="text-[10px] font-normal opacity-60">Dishes</span>
+            <p className="text-base sm:text-lg md:text-2xl font-semibold leading-none">
+              {filteredMenus.length}{" "}
+              <span className="text-[8px] sm:text-[10px] font-normal opacity-60">
+                Dishes
+              </span>
             </p>
           </div>
         </div>

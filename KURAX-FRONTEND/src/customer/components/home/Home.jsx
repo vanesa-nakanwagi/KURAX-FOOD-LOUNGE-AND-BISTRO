@@ -149,21 +149,21 @@ export default function Home() {
           whileInView="visible"
           viewport={{ once: true, amount: 0.2 }}
         >
-          <motion.header variants={fadeInUp} className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6">
-            <div className="space-y-2">
+          <motion.header variants={fadeInUp} className="flex flex-row items-center justify-between mb-16 gap-4">
+            <div className="space-y-2 flex-1">
               <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">Our Selection</span>
               <div className="flex items-center gap-2 md:gap-3">
-  <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
-  <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
-    Signature{" "}
-    <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
-      Dishes
-    </span>
-  </h2>
-</div>
+                <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
+                <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
+                  Signature{" "}
+                  <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent whitespace-nowrap">
+                    Dishes
+                  </span>
+                </h2>
+              </div>
             </div>
-            <Link to="/menus" className="text-yellow-600  uppercase tracking-widest text-sm flex items-center gap-2 group">
-              View Menu <ArrowRight size={18} className="group-hover:translate-x-2 transition-transform" />
+            <Link to="/menus" className="text-yellow-600 uppercase tracking-widest text-[10px] sm:text-sm flex items-center gap-2 group shrink-0">
+              View Menu <ArrowRight size={16} sm:size={18} className="group-hover:translate-x-2 transition-transform" />
             </Link>
           </motion.header>
           
@@ -180,64 +180,64 @@ export default function Home() {
       </section>
 
       {/* ---  UPCOMING SCHEDULE / EVENTS SECTION --- */}
-<section className="py-24 px-6 bg-[#FCFCFB] relative overflow-hidden">
-  <motion.div 
-    className="max-w-7xl mx-auto relative z-10"
-    initial="hidden"
-    whileInView="visible"
-    viewport={{ once: true, amount: 0.2 }}
-  >
-    
-    {/* REFINED HEADER AREA (MIRRORS SIGNATURE DISHES) */}
-    <motion.header 
-      variants={fadeInUp} 
-      className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6"
-    >
-      <div className="space-y-2">
-        <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">
-          Exclusive Experiences
-        </span>
-        <div className="flex items-center gap-2 md:gap-3">
-  <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
-  <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
-    Upcoming{" "}
-    <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
-      Schedule
-    </span>
-  </h2>
-</div>
-      </div>
-      
-      <Link 
-        to="/events" 
-        className="text-yellow-600  uppercase tracking-widest text-sm flex items-center gap-2 group"
-      >
-        VIew Events 
-        <ArrowRight size={18} className="group-hover:translate-x-2 transition-transform" />
-      </Link>
-    </motion.header>
-    
-    {/* EVENTS GRID */}
-    <motion.div variants={staggerContainer} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-      {loadingEvents ? (
-        [1, 2, 3].map(n => (
-          <div key={n} className="h-96 bg-zinc-200/50 rounded-[2.5rem] animate-pulse" />
-        ))
-      ) : (
-        dbEvents.map(event => (
-          <EventCard 
-            key={event.id}
-            event={{...event, image: getImageSrc(event.image_url)}} 
-            onBook={() => {
-              setSelectedEventTitle(event.title);
-              setIsModalOpen(true);
-            }} 
-          />
-        ))
-      )}
-    </motion.div>
-  </motion.div>
-</section>
+      <section className="py-24 px-6 bg-[#FCFCFB] relative overflow-hidden">
+        <motion.div 
+          className="max-w-7xl mx-auto relative z-10"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+        >
+          
+          {/* REFINED HEADER AREA (MIRRORS SIGNATURE DISHES) */}
+          <motion.header 
+            variants={fadeInUp} 
+            className="flex flex-row items-center justify-between mb-16 gap-4"
+          >
+            <div className="space-y-2 flex-1">
+              <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">
+                Exclusive Experiences
+              </span>
+              <div className="flex items-center gap-2 md:gap-3">
+                <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
+                <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
+                  Upcoming{" "}
+                  <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent whitespace-nowrap">
+                    Schedule
+                  </span>
+                </h2>
+              </div>
+            </div>
+            
+            <Link 
+              to="/events" 
+              className="text-yellow-600 uppercase tracking-widest text-[10px] sm:text-sm flex items-center gap-2 group shrink-0"
+            >
+              View Events 
+              <ArrowRight size={16} sm:size={18} className="group-hover:translate-x-2 transition-transform" />
+            </Link>
+          </motion.header>
+          
+          {/* EVENTS GRID */}
+          <motion.div variants={staggerContainer} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            {loadingEvents ? (
+              [1, 2, 3].map(n => (
+                <div key={n} className="h-96 bg-zinc-200/50 rounded-[2.5rem] animate-pulse" />
+              ))
+            ) : (
+              dbEvents.map(event => (
+                <EventCard 
+                  key={event.id}
+                  event={{...event, image: getImageSrc(event.image_url)}} 
+                  onBook={() => {
+                    setSelectedEventTitle(event.title);
+                    setIsModalOpen(true);
+                  }} 
+                />
+              ))
+            )}
+          </motion.div>
+        </motion.div>
+      </section>
 
       <About />
       <Services />
@@ -275,7 +275,7 @@ function HomeMenuCard({ item, onOrder }) {
     <motion.div 
       variants={fadeInUp}
       whileHover={{ y: -8 }}
-      className="group relative bg-white rounded-[1rem]  font-outfit overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 transition-all duration-500"
+      className="group relative bg-white rounded-[1rem] font-outfit overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 transition-all duration-500"
     >
       <div className="relative h-56 overflow-hidden">
         <motion.img
@@ -285,7 +285,7 @@ function HomeMenuCard({ item, onOrder }) {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
         <div className="absolute top-4 left-4">
-           <div className="bg-yellow-500 text-black text-[8px]  px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest">
+           <div className="bg-yellow-500 text-black text-[8px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest">
              <Sparkles size={8} /> New
            </div>
         </div>
@@ -293,27 +293,27 @@ function HomeMenuCard({ item, onOrder }) {
       
       <div className="p-6 space-y-4">
         <div className="space-y-1">
-          <h4 className="text-lg  font-[Outfit] text-yellow-700  tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
+          <h4 className="text-lg font-[Outfit] text-yellow-700 tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
             {item.name}
           </h4>
-          <p className="text-zinc-900 text-[14px] font-light leading-relaxed line-clamp-2 ">
+          <p className="text-zinc-900 text-[14px] font-light leading-relaxed line-clamp-2">
             {item.description || "Indulge in our masterfully crafted signature dish."}
           </p>
         </div>
 
         <div className="flex items-center justify-between pt-4 border-t border-zinc-200">
           <motion.button 
-  whileTap={{ scale: 0.95 }}
-  onClick={() => onOrder(item)} 
-  className="group/btn flex items-center gap-1 px-4 py-3 bg-yellow-400 hover:bg-yellow-400 text-black text-[10px]  uppercase tracking-[0.2em] rounded-2xl transition-all duration-300 shadow-md"
->
-  <Plus 
-    size={14} 
-    strokeWidth={3} 
-    className="transition-transform duration-500 group-hover/btn:rotate-90" 
-  />
-  <span>Order Now</span>
-</motion.button>
+            whileTap={{ scale: 0.95 }}
+            onClick={() => onOrder(item)} 
+            className="group/btn flex items-center gap-1 px-4 py-3 bg-yellow-400 hover:bg-yellow-400 text-black text-[10px] uppercase tracking-[0.2em] rounded-2xl transition-all duration-300 shadow-md"
+          >
+            <Plus 
+              size={14} 
+              strokeWidth={3} 
+              className="transition-transform duration-500 group-hover/btn:rotate-90" 
+            />
+            <span>Order Now</span>
+          </motion.button>
 
           <div className="text-right">
             <span className="block text-xl text-zinc-900 tracking-tighter leading-none">
