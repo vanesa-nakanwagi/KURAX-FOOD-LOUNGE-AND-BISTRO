@@ -1,13 +1,13 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import AccountantDashboard from '../Accountant/accountantDashboard'; // Adjust path if needed
+import AccountantLayout from '../Accountant/AccountantLayout'; // Adjust path if needed
 
 // You can add more sub-pages here later (e.g., Inventory, PettyCashLogs)
 export default function AccountantRoutes() {
   return (
     <Routes>
       {/* Default view for accountant */}
-      <Route path="/" element={<AccountantDashboard />} />
+      <Route path="/" element={<AccountantLayout />} />
       
       {/* Example of a sub-route if you want to separate reconciliation */}
       {/* <Route path="/reconcile" element={<DailyReconciliation />} /> */}

@@ -3,7 +3,7 @@ import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../Director/components/shared/ThemeContext";
 import { RevenueChart } from "../components/charts";
 import {
-  TrendingUp, Smartphone, Wallet,TrendingDown, CreditCard, Download,
+  TrendingUp, Smartphone, Wallet, TrendingDown, CreditCard, Download,
   BookOpen, CheckCircle2, XCircle, Clock, User, Phone,
   Calendar, ChevronDown, ChevronUp, RefreshCw, ShieldCheck,
   AlertCircle, Banknote, Users, Sparkles, Zap, ArrowUpRight,
@@ -28,14 +28,18 @@ function fmtK(n) {
   return `UGX ${v.toLocaleString()}`;
 }
 
-// isSettled — covers all DB representations (postgres bool, string, status field)
+// isSettled — only count as settled if FullySettled or paid is true
 function isSettledCredit(c) {
   return (
-    c.paid    === true || c.paid    === "t" || c.paid    === "true"  ||
-    c.settled === true || c.settled === "t" || c.settled === "true"  ||
-    c.status  === "settled" || c.status  === "Settled" ||
-    c.status  === "FullySettled"
+    c.status === "FullySettled" ||
+    c.paid === true || c.paid === "t" || c.paid === "true" ||
+    c.settled === true || c.settled === "t" || c.settled === "true"
   );
+}
+
+// isApprovedButNotSettled — credits that are approved but not yet paid
+function isApprovedButNotSettled(c) {
+  return c.status === "Approved" && !isSettledCredit(c);
 }
 
 // ─── ENHANCED STAT CARD (Matches Accountant Dashboard) ────────────────────────
@@ -130,7 +134,7 @@ function GrossRevenueCard({ grossSales, settledCredits, orderCount, isDark }) {
             {formattedGross}
           </h3>
           <p className="text-[7px] font-bold text-black/40 uppercase tracking-wider mt-1">
-            Cash + Card + Mobile Money
+            Cash + Card + Mobile Money (Paid Orders Only)
           </p>
         </div>
 
@@ -261,15 +265,17 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
   );
 }
 
-// ─── CREDIT LEDGER ROW (Enhanced with better UI) ───────────────────────────
+// ─── CREDIT LEDGER ROW (Enhanced and Fixed) ───────────────────────────
 function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
   const settled = isSettledCredit(credit);
-  const isOutstanding = !settled;
+  const approvedButNotSettled = credit.status === "Approved" && !settled;
   
   return (
     <div className={`group relative overflow-hidden rounded-xl p-4 border transition-all duration-300 hover:shadow-lg hover:scale-[1.01]
       ${settled
         ? isDark ? "bg-zinc-900/20 border-white/5 opacity-75" : "bg-zinc-50 border-zinc-100"
+        : approvedButNotSettled
+        ? isDark ? "bg-gradient-to-r from-emerald-500/10 to-transparent border-emerald-500/30" : "bg-gradient-to-r from-emerald-50 to-transparent border-emerald-200"
         : isDark ? "bg-gradient-to-r from-purple-500/10 to-transparent border-purple-500/30" : "bg-gradient-to-r from-purple-50 to-transparent border-purple-200"}`}>
       
       <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/5 to-transparent rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
@@ -283,6 +289,10 @@ function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
             {settled ? (
               <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase flex items-center gap-1">
                 <CheckCircle2 size={10}/> Settled
+              </span>
+            ) : approvedButNotSettled ? (
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase animate-pulse flex items-center gap-1">
+                <AlertCircle size={10}/> Approved - Awaiting Payment
               </span>
             ) : (
               <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[8px] font-black uppercase animate-pulse flex items-center gap-1">
@@ -321,8 +331,17 @@ function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
           )}
           
           <p className={`text-[8px] mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
-            Approved by {credit.approved_by} · {toLocalDateStr(new Date(credit.created_at))}
+            {credit.approved_by ? `Approved by ${credit.approved_by} · ` : ""}
+            {toLocalDateStr(new Date(credit.created_at))}
           </p>
+          
+          {/* Show approval note */}
+          {approvedButNotSettled && (
+            <p className="text-[8px] text-emerald-500/70 mt-1 flex items-center gap-1">
+              <CheckCircle2 size={8} />
+              Credit approved. Waiting for customer payment to settle.
+            </p>
+          )}
         </div>
         
         <div className="text-right shrink-0">
@@ -335,25 +354,18 @@ function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
             </p>
           )}
           
-          {/* Approve and Reject buttons for Outstanding credits */}
-          {isOutstanding && (
+          {/* Approve button only for approved credits that need settlement */}
+          {approvedButNotSettled && (
             <div className="flex gap-2 mt-3 justify-end">
-              <button
-                onClick={() => onReject(credit)}
-                disabled={approvingId === credit.id}
-                className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 font-black text-[8px] uppercase tracking-widest hover:bg-red-500/20 transition-all flex items-center gap-1 hover:scale-105"
-              >
-                <XCircle size={10}/> Reject
-              </button>
               <button
                 onClick={() => onApprove(credit)}
                 disabled={approvingId === credit.id}
                 className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-black text-[8px] uppercase tracking-widest hover:bg-emerald-500/20 transition-all flex items-center gap-1 hover:scale-105"
               >
                 {approvingId === credit.id ? (
-                  <><RefreshCw size={10} className="animate-spin"/> Approving…</>
+                  <><RefreshCw size={10} className="animate-spin"/> Processing…</>
                 ) : (
-                  <><CheckCircle2 size={10}/> Approve</>
+                  <><CircleDollarSign size={10}/> Record Settlement</>
                 )}
               </button>
             </div>
@@ -460,19 +472,24 @@ export default function PerformanceReports() {
     return () => clearInterval(credId);
   }, [fetchDaySummary, fetchMonthSummary, fetchCredits, selectedDate]);
 
-  // ── Credits derived values ────────────────────────────────────────────────
-  const outstanding      = creditsLedger.filter(c => !c.paid);
-  const settled          = creditsLedger.filter(c =>  c.paid);
+  // ── Credits derived values - FIXED: Only count FULLY SETTLED credits ────
+  const outstanding = creditsLedger.filter(c => !isSettledCredit(c) && c.status !== "Approved");
+  const approvedButNotSettled = creditsLedger.filter(c => c.status === "Approved" && !isSettledCredit(c));
+  const settled = creditsLedger.filter(c => isSettledCredit(c));
+  
   const totalOutstanding = outstanding.reduce((s, c) => s + Number(c.amount || 0), 0);
-  const totalSettled     = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
-  const filteredCredits  =
+  const totalApprovedButNotSettled = approvedButNotSettled.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const totalSettled = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
+  
+  const filteredCredits =
     creditFilter === "outstanding" ? outstanding :
-    creditFilter === "settled"     ? settled     : creditsLedger;
+    creditFilter === "approved" ? approvedButNotSettled :
+    creditFilter === "settled" ? settled : creditsLedger;
 
-  // ── Credit settlement additions ───────────────────────────────────────────
+  // ── Credit settlement additions - ONLY SETTLED credits ───────────────────
   const settledTodayCredits = useMemo(() =>
     creditsLedger.filter(c => {
-      if (!c.paid) return false;
+      if (!isSettledCredit(c)) return false;
       const d = c.paid_at || c.updated_at || c.created_at;
       return d && toLocalDateStr(new Date(d)) === selectedDate;
     }),
@@ -493,7 +510,8 @@ export default function PerformanceReports() {
     return acc;
   }, [settledTodayCredits]);
 
-  const totalGross   = Number(daySummary?.total_gross  ?? 0) + creditSettledByMethod.total;
+  // ─── TOTALS - FIXED: Only add SETTLED credits, NOT approved ones ────────
+  const totalGross   = Number(daySummary?.total_gross ?? 0) + creditSettledByMethod.total;
   const totalCash    = Number(daySummary?.total_cash   ?? 0) + creditSettledByMethod.cash;
   const totalCard    = Number(daySummary?.total_card   ?? 0) + creditSettledByMethod.card;
   const totalMTN     = Number(daySummary?.total_mtn    ?? 0) + creditSettledByMethod.mtn;
@@ -546,48 +564,50 @@ export default function PerformanceReports() {
     setApprovingId(null);
   };
 
-  // ─── Approve credit directly from ledger ────────────────────────────────
-  const handleApproveFromLedger = async (credit) => {
+  // ─── Settle approved credit from ledger ────────────────────────────────
+  const handleSettleCredit = async (credit) => {
     setApprovingId(credit.id);
+    const amount = credit.amount;
+    const method = prompt("Enter payment method (Cash, Card, Momo-MTN, Momo-Airtel):", "Cash");
+    if (!method) {
+      setApprovingId(null);
+      return;
+    }
+    
+    const transactionId = (method === "Momo-MTN" || method === "Momo-Airtel") 
+      ? prompt("Enter transaction ID:") 
+      : null;
+    
+    if ((method === "Momo-MTN" || method === "Momo-Airtel") && !transactionId) {
+      alert("Transaction ID is required for mobile money payments");
+      setApprovingId(null);
+      return;
+    }
+    
     try {
-      const res = await fetch(`${API_URL}/api/cashier-ops/credit-approvals`, {
-        method: "GET",
+      const res = await fetch(`${API_URL}/api/credits/${credit.id}/settle`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount_paid: amount,
+          method: method,
+          transaction_id: transactionId,
+          settled_by: currentStaffName,
+        }),
       });
       
       if (res.ok) {
-        const approvals = await res.json();
-        const pendingApproval = approvals.find(a => a.table_name === credit.table_name);
-        
-        if (pendingApproval) {
-          const approveRes = await fetch(`${API_URL}/api/cashier-ops/credit-approvals/${pendingApproval.id}/approve`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ approved_by: currentStaffName }),
-          });
-          
-          if (approveRes.ok) {
-            await fetchCredits();
-            alert("✅ Credit approved successfully!");
-          } else {
-            const error = await approveRes.json();
-            alert(error.error || "Failed to approve credit");
-          }
-        } else {
-          alert("No pending approval found for this credit");
-        }
+        await fetchCredits();
+        alert("✅ Credit settled successfully!");
+      } else {
+        const error = await res.json();
+        alert(error.error || "Failed to settle credit");
       }
-    } catch (e) {
-      console.error("Approve from ledger error:", e);
-      alert("Network error while approving");
+    } catch (e) { 
+      console.error("Settle error:", e);
+      alert("Network error while settling");
     }
     setApprovingId(null);
-  };
-
-  // ─── Reject credit directly from ledger ────────────────────────────────
-  const handleRejectFromLedger = (credit) => {
-    setRejectingRow(credit.id);
-    setRejectReason("");
   };
 
   // ─── Credit reject ────────────────────────────────────────────────────────
@@ -708,6 +728,11 @@ export default function PerformanceReports() {
                       <AlertCircle size={10}/> {creditApprovals.length} pending approval
                     </span>
                   )}
+                  {approvedButNotSettled.length > 0 && (
+                    <span className="text-emerald-400 font-bold flex items-center gap-1">
+                      <CheckCircle2 size={10}/> {approvedButNotSettled.length} approved - ready to settle
+                    </span>
+                  )}
                   {outstanding.length > 0 && (
                     <span className="flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
@@ -739,7 +764,7 @@ export default function PerformanceReports() {
         </div>
 
         {/* Summary tiles - Enhanced */}
-        <div className={`grid grid-cols-3 gap-4 px-6 pb-5 border-t pt-5 ${isDark ? "border-white/5" : "border-black/5"}`}>
+        <div className={`grid grid-cols-4 gap-4 px-6 pb-5 border-t pt-5 ${isDark ? "border-white/5" : "border-black/5"}`}>
           <div className={`group relative overflow-hidden rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-purple-500/10" : "bg-purple-50 border border-purple-100"}`}>
             <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-purple-500/10 to-transparent rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-700" />
             <div className="relative z-10">
@@ -747,6 +772,16 @@ export default function PerformanceReports() {
               <p className="text-purple-400 font-[900] italic text-xl leading-none">{fmtK(totalOutstanding)}</p>
               <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-purple-400/60"}`}>
                 {outstanding.length} client{outstanding.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+          </div>
+          <div className={`group relative overflow-hidden rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-emerald-500/10" : "bg-emerald-50 border border-emerald-100"}`}>
+            <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-700" />
+            <div className="relative z-10">
+              <p className={`text-[8px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-emerald-500"}`}>Approved</p>
+              <p className="text-emerald-400 font-[900] italic text-xl leading-none">{fmtK(totalApprovedButNotSettled)}</p>
+              <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-emerald-500/60"}`}>
+                Awaiting settlement
               </p>
             </div>
           </div>
@@ -764,7 +799,7 @@ export default function PerformanceReports() {
             <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-white/20 to-transparent rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-700" />
             <div className="relative z-10">
               <p className="text-[8px] font-black uppercase tracking-widest mb-2 text-black/50">All Time</p>
-              <p className="text-black font-[900] italic text-xl leading-none">{fmtK(totalOutstanding + totalSettled)}</p>
+              <p className="text-black font-[900] italic text-xl leading-none">{fmtK(totalOutstanding + totalApprovedButNotSettled + totalSettled)}</p>
               <p className="text-[9px] mt-1.5 text-black/50">{creditsLedger.length} entries</p>
             </div>
           </div>
@@ -842,6 +877,7 @@ export default function PerformanceReports() {
                 {[
                   { k: "all",         l: "All", icon: <BookOpen size={10}/> },
                   { k: "outstanding", l: "Outstanding", icon: <AlertCircle size={10}/> },
+                  { k: "approved",    l: "Approved", icon: <CheckCircle2 size={10}/> },
                   { k: "settled",     l: "Settled", icon: <CheckCircle2 size={10}/> },
                 ].map(({ k, l, icon }) => (
                   <button key={k} onClick={() => setCreditFilter(k)}
@@ -855,7 +891,7 @@ export default function PerformanceReports() {
                 ))}
               </div>
 
-              {/* List with Approve/Reject buttons for outstanding credits */}
+              {/* List with Settle buttons for approved credits */}
               {creditsLoading ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map(i => (
@@ -876,8 +912,8 @@ export default function PerformanceReports() {
                       key={c.id} 
                       credit={c} 
                       isDark={isDark}
-                      onApprove={handleApproveFromLedger}
-                      onReject={handleRejectFromLedger}
+                      onApprove={handleSettleCredit}
+                      onReject={() => {}}
                       approvingId={approvingId}
                     />
                   ))}
@@ -903,8 +939,6 @@ export default function PerformanceReports() {
           <RevenueChart/>
         </div>
       </div>
-
-    
 
       {/* ─── REJECT MODAL (Enhanced) ── */}
       {rejectingRow && (

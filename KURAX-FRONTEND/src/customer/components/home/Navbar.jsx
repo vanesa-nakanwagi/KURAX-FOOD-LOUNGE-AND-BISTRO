@@ -40,19 +40,19 @@ export default function Navbar() {
             alt="Kurax Logo"
             className="w-12 h-12 md:w-14 md:h-14 rounded-full object-cover border border-yellow-500/20"
           />
-          <h1 className={`text-sm md:text-xl font-bold tracking-tight transition-colors duration-300
+          <h1 className={`text-sm md:text-xl font-medium tracking-tight transition-colors duration-300
             ${scrolled ? "text-zinc-900" : "text-white"}`}>
             KURAX FOOD LOUNGE &amp; BISTRO
           </h1>
         </div>
 
         {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-8">
+        <nav className="hidden md:flex max-w-full flex-wrap items-center gap-6 overflow-x-auto no-scrollbar">
           {navLinks.map(link => (
             <Link
               key={link.name}
               to={link.path}
-              className={`text-md font-medium transition-colors duration-300
+              className={`text-md whitespace-nowrap transition-colors duration-300
                 ${scrolled
                   ? "text-zinc-700 hover:text-yellow-500"
                   : "text-white/80 hover:text-yellow-400"}`}

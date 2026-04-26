@@ -3,6 +3,10 @@
 @tailwind components;
 @tailwind utilities;
 body{font-family:Inter,sans-serif}
+html, body {
+  min-height: 100%;
+  overflow-x: hidden;
+}
 body {
   height: 100%;
 }

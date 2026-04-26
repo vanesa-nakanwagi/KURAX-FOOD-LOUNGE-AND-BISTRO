@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { Plus, Sparkles } from "lucide-react";
-import { motion } from "framer-motion";
+import { useState, useEffect, useCallback } from "react";
+import { Plus, Sparkles, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import CartModal from "./cart/CartModal.jsx";
 import TopSection from "../common/topSection.jsx";
 import { useCart } from "../context/CartContext.jsx";
@@ -20,7 +20,6 @@ function MenuCard({ item, onOrder, isNew }) {
   return (
     <div className="group relative font-outfit flex flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
       
-      {/* NEW BADGE: Consistent with Signature Cards */}
       {isNew && (
         <div className="absolute top-4 left-4 z-30">
           <div className="bg-yellow-500 text-white text-[8px] font-black px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
@@ -29,7 +28,6 @@ function MenuCard({ item, onOrder, isNew }) {
         </div>
       )}
 
-      {/* IMAGE CONTAINER */}
       <div className="relative h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
         {!imgLoaded && (
           <div className="absolute inset-0 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
@@ -45,40 +43,33 @@ function MenuCard({ item, onOrder, isNew }) {
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
       </div>
 
-      {/* CONTENT SECTION */}
       <div className="p-6 flex-1 flex flex-col justify-between">
         <div className="space-y-2 text-left">
-         <h4 className="text-lg font-[OUtfit] text-yellow-600 dark:text-white tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
-  {item.name}
-</h4>
+          <h4 className="text-lg font-[OUtfit] text-yellow-700 dark:text-white tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
+            {item.name}
+          </h4>
           <p className="text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed line-clamp-2 ">
             {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
           </p>
         </div>
 
-        {/* INTERACTION BAR (Button Left | Price Right) */}
-        <div className="flex items-center justify-between pt-5 mt-4 border-t border-zinc-50 dark:border-zinc-800/50">
-          
-          {/* ACTION: ORDER BUTTON WITH PLUS ICON */}
+        <div className="flex items-center justify-between pt-5 mt-4 border-t border-zinc-200 dark:border-zinc-800/50">
           <button
             onClick={() => onOrder(item)}
-            className="group/btn flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
+            className="group/btn flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
           >
-            {/* Plus Icon adds a clear 'Add' intent */}
             <Plus size={14} strokeWidth={3} className="transition-transform group-hover/btn:rotate-90" />
             Order Now
           </button>
 
-          {/* DISPLAY: PRICE */}
           <div className="text-right">
-            <span className="block text-xl  text-zinc-900 dark:text-white tracking-tighter leading-none">
+            <span className="block text-xl text-zinc-900 dark:text-white tracking-tighter leading-none">
               {Number(item.price).toLocaleString()}
             </span>
             <span className="text-[9px] text-yellow-600 font-bold uppercase tracking-widest leading-none">
               UGX
             </span>
           </div>
-          
         </div>
       </div>
     </div>
@@ -90,8 +81,11 @@ function MenuCard({ item, onOrder, isNew }) {
 ========================= */
 export default function Menu() {
   const [dbMenus, setDbMenus] = useState([]);
+  const [filteredMenus, setFilteredMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("Starters");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
 
   const {
     cart, isCartOpen, setIsCartOpen, activeDish, setActiveDish,
@@ -99,6 +93,7 @@ export default function Menu() {
     totalAmount, checkoutStep, setCheckoutStep, customerDetails, setCustomerDetails,
   } = useCart();
 
+  // Fetch menus
   useEffect(() => {
     const fetchMenus = async () => {
       try {
@@ -116,12 +111,85 @@ export default function Menu() {
     fetchMenus();
   }, []);
 
+  // Check for search query on mount and when localStorage changes
+  useEffect(() => {
+    const checkForSearch = () => {
+      const savedSearch = localStorage.getItem('searchQuery');
+      if (savedSearch && savedSearch.trim()) {
+        setSearchQuery(savedSearch);
+        setIsSearching(true);
+        localStorage.removeItem('searchQuery');
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    };
+
+    // Check immediately
+    checkForSearch();
+
+    // Listen for storage events (in case of multiple tabs)
+    window.addEventListener('storage', checkForSearch);
+    
+    return () => window.removeEventListener('storage', checkForSearch);
+  }, []);
+
+  // Listen for custom search event
+  useEffect(() => {
+    const handleGlobalSearch = (event) => {
+      const query = event.detail;
+      if (query && query.trim()) {
+        setSearchQuery(query);
+        setIsSearching(true);
+        setSelectedCategory(null); // Clear category when searching
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        // Clear search when query is empty
+        setSearchQuery("");
+        setIsSearching(false);
+        setSelectedCategory("Starters"); // Reset to default category
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    };
+
+    window.addEventListener('search', handleGlobalSearch);
+    return () => window.removeEventListener('search', handleGlobalSearch);
+  }, []);
+
+  // Filter menus based on search or category
+  useEffect(() => {
+    if (dbMenus.length === 0) return;
+
+    let results = [];
+    
+    if (isSearching && searchQuery) {
+      const query = searchQuery.toLowerCase().trim();
+      results = dbMenus.filter(item => 
+        item.name.toLowerCase().includes(query) ||
+        (item.description && item.description.toLowerCase().includes(query)) ||
+        item.category.toLowerCase().includes(query)
+      );
+    } else if (selectedCategory) {
+      results = dbMenus.filter(item => item.category === selectedCategory);
+    } else {
+      // Default to first category if nothing selected
+      results = dbMenus.filter(item => item.category === "Starters");
+    }
+    
+    setFilteredMenus(results);
+  }, [dbMenus, selectedCategory, searchQuery, isSearching]);
+
   const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
-  const filteredMenus = dbMenus.filter((item) => item.category === selectedCategory);
 
   const handleCategoryChange = (cat) => {
     setSelectedCategory(cat);
+    setIsSearching(false);
+    setSearchQuery("");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const clearSearch = () => {
+    setIsSearching(false);
+    setSearchQuery("");
+    setSelectedCategory("Starters");
   };
 
   return (
@@ -130,43 +198,52 @@ export default function Menu() {
       {/* STICKY NAV */}
       <div className="sticky top-0 z-50 bg-[#F9F9F7]/90 dark:bg-[#080808]/90 backdrop-blur-xl border-b border-zinc-200/50 dark:border-zinc-800/50">
         <TopSection searchPlaceholder="Search flavors..." />
-        <div className="w-full flex justify-center border-b border-zinc-200/50 dark:border-zinc-800/50">
-          <div className="flex justify-start sm:justify-center gap-6 md:gap-16 px-6 py-3 md:py-4 overflow-x-auto no-scrollbar mx-auto">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => handleCategoryChange(cat)}
-                className={`relative text-[10px] md:text-[12px] font-bold pb-2 transition-all whitespace-nowrap uppercase tracking-[0.25em] ${
-                  selectedCategory === cat
-                    ? "text-zinc-900 dark:text-white"
-                    : "text-zinc-700 dark:text-zinc-600 hover:text-zinc-500"
-                }`}
-              >
-                {cat}
-                {selectedCategory === cat && (
-                  <motion.span 
-                    layoutId="underline"
-                    className="absolute bottom-0 left-0 w-full h-[3px] bg-yellow-500 rounded-full" 
-                  />
-                )}
-              </button>
-            ))}
+        
+        {/* Search Results Banner - REMOVED */}
+
+        {/* Category Tabs - Mobile Optimized */}
+        {!isSearching && (
+          <div className="w-full flex justify-center border-b border-zinc-200/50 dark:border-zinc-800/50 overflow-x-auto no-scrollbar">
+            <div className="flex justify-start sm:justify-center gap-4 md:gap-8 lg:gap-16 px-4 md:px-6 py-3 md:py-4 min-w-max mx-auto">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => handleCategoryChange(cat)}
+                  className={`relative text-[10px] md:text-[12px] font-bold pb-2 transition-all whitespace-nowrap uppercase tracking-[0.25em] ${
+                    selectedCategory === cat
+                      ? "text-zinc-900 dark:text-white"
+                      : "text-zinc-700 dark:text-zinc-600 hover:text-zinc-500"
+                  }`}
+                >
+                  {cat}
+                  {selectedCategory === cat && (
+                    <motion.span 
+                      layoutId="underline"
+                      className="absolute bottom-0 left-0 w-full h-[3px] bg-yellow-500 rounded-full" 
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* HEADER */}
       <header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 pb-4">
-        <div className="flex flex-row items-center justify-between gap-2 border-b border-zinc-100 dark:border-zinc-900 pb-8">
-          <div className="flex items-center gap-2 md:gap-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-2 border-b border-zinc-100 dark:border-zinc-900 pb-8 min-w-0">
+          <div className="flex items-start sm:items-center gap-2 md:gap-3 min-w-0">
             <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
-            <h2 className="text-lg md:text-2xl font-serif font-bold uppercase tracking-widest whitespace-nowrap">
-              Explore Menu
+            <h2 className="text-2xl md:text-3xl lg:text-5xl font-serif leading-[0.95] tracking-tighter min-w-0">
+              {isSearching ? "Search" : "Explore"}{" "}
+              <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
+                {isSearching ? "Results" : "Menu"}
+              </span>
             </h2>
           </div>
-          <div className="text-right shrink-0">
-            <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-700">
-              Available in {selectedCategory}
+          <div className="text-left sm:text-right shrink-0 min-w-0">
+            <p className="text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-700 leading-tight">
+              {isSearching ? "Matching your taste" : `Available in ${selectedCategory}`}
             </p>
             <p className="text-lg md:text-2xl font-semibold leading-none">
               {filteredMenus.length} <span className="text-[10px] font-normal opacity-60">Dishes</span>
@@ -185,7 +262,20 @@ export default function Menu() {
           </div>
         ) : filteredMenus.length === 0 ? (
           <div className="py-20 text-center border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-[2.5rem]">
-            <p className="italic text-zinc-400">Our chefs are preparing something new...</p>
+            <p className="italic text-zinc-400">
+              {isSearching 
+                ? `No items found matching "${searchQuery}"`
+                : "Our chefs are preparing something new..."
+              }
+            </p>
+            {isSearching && (
+              <button
+                onClick={clearSearch}
+                className="mt-4 text-sm text-yellow-600 hover:text-yellow-700 underline"
+              >
+                Browse all menus
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">

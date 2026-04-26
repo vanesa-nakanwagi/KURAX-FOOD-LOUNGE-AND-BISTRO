@@ -62,7 +62,7 @@ export default function BookingModal({ show, onClose, eventTitle }) {
         </button>
 
         {/* Event Title */}
-        <h2 className="text-2xl font-bold mb-4 text-yellow-500 dark:text-yellow-400 text-center">
+        <h2 className="text-2xl  mb-4 text-yellow-500 dark:text-yellow-400 text-center">
           {eventTitle}
         </h2>
 
@@ -145,7 +145,7 @@ export default function BookingModal({ show, onClose, eventTitle }) {
           {/* Submit */}
           <button
             type="submit"
-            className="w-full bg-yellow-400 dark:bg-yellow-500 text-black dark:text-black py-2 rounded-none font-semibold hover:bg-yellow-300 dark:hover:bg-yellow-400 transition"
+            className="w-full bg-yellow-400 dark:bg-yellow-500 text-black dark:text-black py-2 rounded-xl font-semibold hover:bg-yellow-300 dark:hover:bg-yellow-400 transition"
           >
             Submit Booking
           </button>

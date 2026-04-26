@@ -45,7 +45,7 @@ const METHOD_STYLES = {
 
 const STATUS_META = {
   PendingCashier:    { label: "Needs Forwarding",    color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/30",   pulse: true  },
-  PendingManager:    { label: "Awaiting Manager",    color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/30",   pulse: true  },
+  PendingManagerApproval: { label: "Awaiting Manager",    color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/30",   pulse: true  },
   Approved:          { label: "Approved – Unsettled", color: "text-cyan-400",   bg: "bg-cyan-500/10 border-cyan-500/30",       pulse: false },
   PartiallySettled:  { label: "Partial Payment",     color: "text-yellow-400",  bg: "bg-yellow-500/10 border-yellow-500/30",   pulse: false },
   FullySettled:      { label: "Fully Settled",       color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", pulse: false },
@@ -255,12 +255,15 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
   const [expanded,  setExpanded]  = useState(false);
   const [forwarding, setForwarding] = useState(false);
 
-  const status  = credit.status || "PendingCashier";
-  const meta    = STATUS_META[status] || STATUS_META["Rejected"];
-  const amount  = Number(credit.amount || 0);
-  const paid    = Number(credit.amount_paid || 0);
+  // Fix: Map status correctly - handle both 'PendingManagerApproval' and 'PendingManager'
+  const status = credit.status === "PendingManagerApproval" ? "PendingManagerApproval" : 
+                 (credit.status === "PendingManager" ? "PendingManagerApproval" : credit.status);
+  
+  const meta = STATUS_META[status] || STATUS_META["Rejected"];
+  const amount = Number(credit.amount || 0);
+  const paid = Number(credit.amount_paid || 0);
   const balance = amount - paid;
-  const pct     = amount > 0 ? Math.round((paid / amount) * 100) : 0;
+  const pct = amount > 0 ? Math.round((paid / amount) * 100) : 0;
 
   const settlements = Array.isArray(credit.settlements) ? credit.settlements : [];
 
@@ -278,10 +281,10 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
   return (
     <div className={`border rounded-[2.5rem] overflow-hidden transition-all duration-300
       ${status === "PendingCashier" ? "bg-orange-500/3 border-orange-500/20" :
-        status === "PendingManager" ? "bg-purple-500/3 border-purple-500/15" :
-        status === "Approved"       ? "bg-cyan-500/3 border-cyan-500/20" :
+        status === "PendingManagerApproval" ? "bg-purple-500/3 border-purple-500/15" :
+        status === "Approved" ? "bg-cyan-500/3 border-cyan-500/20" :
         status === "PartiallySettled" ? "bg-yellow-500/3 border-yellow-500/20" :
-        status === "FullySettled"   ? "bg-zinc-900/10 border-white/5 opacity-60" :
+        status === "FullySettled" ? "bg-zinc-900/10 border-white/5 opacity-60" :
         "bg-red-500/3 border-red-500/10 opacity-50"}`}
     >
       {/* ── Summary row ── */}
@@ -431,6 +434,15 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
             </button>
           )}
 
+          {status === "PendingManagerApproval" && (
+            <div className="flex items-center justify-center gap-2 py-3 bg-purple-500/5 border border-purple-500/10 rounded-2xl">
+              <Clock size={13} className="text-purple-400 animate-pulse" />
+              <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">
+                Waiting for manager approval · {timeAgo(credit.forwarded_at || credit.created_at)}
+              </p>
+            </div>
+          )}
+
           {(status === "Approved" || status === "PartiallySettled") && (
             <button
               onClick={() => onSettle(credit)}
@@ -438,15 +450,6 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
             >
               <CircleDollarSign size={14} /> Record Settlement Payment
             </button>
-          )}
-
-          {status === "PendingManager" && (
-            <div className="flex items-center justify-center gap-2 py-3 bg-purple-500/5 border border-purple-500/10 rounded-2xl">
-              <Clock size={13} className="text-purple-400 animate-pulse" />
-              <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">
-                Waiting for manager · {timeAgo(credit.forwarded_at)}
-              </p>
-            </div>
           )}
         </div>
       )}
@@ -464,14 +467,21 @@ export default function CreditLedgerPanel({ cashierName }) {
   const load = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/credits`);
-      if (res.ok) setCredits(await res.json());
-    } catch { /* silent */ }
+      if (res.ok) {
+        const data = await res.json();
+        // Log for debugging
+        console.log("📋 Credits loaded:", data.map(c => ({ id: c.id, status: c.status, client: c.client_name })));
+        setCredits(data);
+      }
+    } catch (err) {
+      console.error("Failed to load credits:", err);
+    }
     setLoading(false);
   }, []);
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 10_000);
+    const id = setInterval(load, 10000);
     return () => clearInterval(id);
   }, [load]);
 
@@ -498,23 +508,35 @@ export default function CreditLedgerPanel({ cashierName }) {
     return base;
   }, [credits, todayKey]);
 
-  // ── Filtered list ──────────────────────────────────────────────────────────
-  const FILTERS = [
-    { key: "ALL",             label: "All" },
-    { key: "PendingCashier",  label: "Need Action" },
-    { key: "PendingManager",  label: "Awaiting Manager" },
-    { key: "Approved",        label: "Approved" },
-    { key: "PartiallySettled",label: "Partial" },
-    { key: "FullySettled",    label: "Settled" },
-    { key: "Rejected",        label: "Rejected" },
-  ];
+  // ── Filtered list - FIXED: Proper status mapping ───────────────────────────
+  const getFilteredCredits = (statusFilter) => {
+    if (statusFilter === "ALL") return credits;
+    
+    return credits.filter(c => {
+      // Map both 'PendingManager' and 'PendingManagerApproval' to the same filter
+      if (statusFilter === "PendingManagerApproval") {
+        return c.status === "PendingManagerApproval" || c.status === "PendingManager";
+      }
+      return c.status === statusFilter;
+    });
+  };
 
-  const filtered = filter === "ALL" ? credits : credits.filter(c => c.status === filter);
+  const filtered = getFilteredCredits(filter);
 
-  // ── Counts for badges ──────────────────────────────────────────────────────
+  // ── Counts for badges - FIXED: Include both status variations ──────────────
   const needsAction = credits.filter(c => c.status === "PendingCashier").length;
-  const pendingMgr  = credits.filter(c => c.status === "PendingManager").length;
-  const readyToSettle = credits.filter(c => ["Approved","PartiallySettled"].includes(c.status)).length;
+  const pendingMgr = credits.filter(c => c.status === "PendingManagerApproval" || c.status === "PendingManager").length;
+  const readyToSettle = credits.filter(c => ["Approved", "PartiallySettled"].includes(c.status)).length;
+
+  const FILTERS = [
+    { key: "ALL",                    label: "All" },
+    { key: "PendingCashier",         label: "Need Action" },
+    { key: "PendingManagerApproval", label: "Awaiting Manager" },
+    { key: "Approved",               label: "Approved" },
+    { key: "PartiallySettled",       label: "Partial" },
+    { key: "FullySettled",           label: "Settled" },
+    { key: "Rejected",               label: "Rejected" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -560,12 +582,15 @@ export default function CreditLedgerPanel({ cashierName }) {
             </button>
           )}
           {pendingMgr > 0 && (
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-purple-500/10 border border-purple-500/30 rounded-2xl">
+            <button
+              onClick={() => setFilter("PendingManagerApproval")}
+              className="flex items-center gap-2 px-4 py-2.5 bg-purple-500/10 border border-purple-500/30 rounded-2xl hover:bg-purple-500/20 transition-all"
+            >
               <Clock size={12} className="text-purple-400 animate-pulse" />
               <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest">
                 {pendingMgr} Awaiting Manager
               </span>
-            </div>
+            </button>
           )}
           {readyToSettle > 0 && (
             <button
@@ -584,7 +609,15 @@ export default function CreditLedgerPanel({ cashierName }) {
       {/* ── Filter tabs ── */}
       <div className="flex gap-1 flex-wrap border-b border-white/5 pb-1">
         {FILTERS.map(f => {
-          const count = f.key === "ALL" ? credits.length : credits.filter(c => c.status === f.key).length;
+          let count = 0;
+          if (f.key === "ALL") {
+            count = credits.length;
+          } else if (f.key === "PendingManagerApproval") {
+            count = credits.filter(c => c.status === "PendingManagerApproval" || c.status === "PendingManager").length;
+          } else {
+            count = credits.filter(c => c.status === f.key).length;
+          }
+          
           return (
             <button
               key={f.key}

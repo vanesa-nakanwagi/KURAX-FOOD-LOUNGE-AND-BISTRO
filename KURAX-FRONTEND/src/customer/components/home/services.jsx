@@ -80,8 +80,9 @@ export default function Services() {
             <div className="h-[1px] w-8 bg-yellow-600" />
           </div>
           
-          <h2 className="text-4xl md:text-6xl font-serif font-bold text-slate-900 dark:text-white mb-6 tracking-tight">
-            Savor Every <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 ">Moment</span>
+          <h2 className="text-3xl md:text-5xl font-serif font-bold text-slate-900 dark:text-white mb-6 tracking-tight">
+            Savor Every <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
+      Moment</span>
           </h2>
           
           <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-lg font-light leading-relaxed">
@@ -121,7 +122,7 @@ export default function Services() {
                     </div>
                   </div>
 
-                  <h3 className="text-sm font-black text-yellow-700 dark:text-white mb-4 uppercase tracking-[0.2em] group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
+                  <h3 className="text-sm  text-yellow-700 dark:text-white mb-4 uppercase tracking-[0.2em] group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
                     {service.title}
                   </h3>
 

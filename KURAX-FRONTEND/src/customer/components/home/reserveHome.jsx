@@ -11,21 +11,21 @@ const Reserve = () => {
     navigate("/reservations"); 
   };
 
-  const features = [
+ const features = [
     {
       icon: DoorClosed,
       title: "Private Dining Rooms",
-      description: "Exclusive spaces for confidential business meetings and intimate corporate gatherings",
+      description: "Exclusive spaces for confidential meetings and intimate gatherings.",
     },
     {
       icon: Users,
       title: "Group Reservations",
-      description: "Accommodate teams from 8 to 40 guests with customized seating and curated menus",
+      description: "Tailored seating for teams of 8 to 40 guests.",
     },
     {
       icon: Briefcase,
       title: "Corporate Catering",
-      description: "Professional catering solutions for conferences, launches, and special corporate events",
+      description: "Professional catering for conferences and special events.",
     },
   ];
 
@@ -63,7 +63,7 @@ const Reserve = () => {
             className="relative flex-1 group"
           >
             {/* Sharp Decorative Gold Frame */}
-            <div className="absolute -inset-3 border border-yellow-600/20 rounded-none -z-10 group-hover:border-yellow-600/40 transition-colors duration-700" />
+            <div className="absolute -inset-3 rounded-none -z-10 group-hover:border-yellow-600/40 transition-colors duration-700" />
             
             {/* Sharp Container */}
             <div className="relative aspect-[4/5] rounded-none overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.4)]">
@@ -99,20 +99,25 @@ const Reserve = () => {
           >
             <motion.div variants={fadeInUp} className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="h-[1px] w-8 bg-yellow-600" />
+              
                 <span className="text-sm font-bold tracking-[0.4em] text-yellow-600 uppercase flex items-center gap-2">
                    Dining & Reservations
                 </span>
               </div>
-              <h2 className="text-4xl md:text-6xl font-serif font-bold leading-[1.1] text-slate-900 dark:text-white">
-                Executive <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800">
-                  Private Dining
-                </span>
-              </h2>
-              <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-lg font-light leading-relaxed">
-                Kurax provides the ideal setting for business professionals seeking a 
-                refined atmosphere for high-stakes meetings and elite celebrations.
+              <div className="flex items-center gap-2 md:gap-3">
+  <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
+<div className="flex items-center gap-2 md:gap-3">
+ 
+  <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
+    Executive{" "}
+    <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
+      Private Dining
+    </span>
+  </h2>
+</div>
+</div>
+              <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-md font-light leading-relaxed">
+              The ideal setting for professionals seeking a refined atmosphere for high-stakes meetings.
               </p>
             </motion.div>
 
@@ -129,7 +134,7 @@ const Reserve = () => {
                     <feature.icon className="w-6 h-6 text-yellow-700 dark:text-yellow-500 group-hover:text-white transition-colors duration-500" />
                   </div>
                   <div className="space-y-1">
-                    <h3 className="text-xl font-bold text-yellow-700 dark:text-white group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
+                    <h3 className="text-md  text-yellow-700 dark:text-white group-hover:text-yellow-600 dark:group-hover:text-yellow-500 transition-colors">
                       {feature.title}
                     </h3>
                     <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-md font-light leading-relaxed">
@@ -144,7 +149,7 @@ const Reserve = () => {
             <motion.div variants={fadeInUp} className="pt-6">
               <button 
                 onClick={goToReserve} 
-                className="relative overflow-hidden group inline-flex items-center gap-4 px-12 py-5 bg-yellow-400 text-black font-black uppercase tracking-[0.2em] text-xs rounded-none shadow-lg hover:bg-yellow-500 transition-all duration-500"
+                className="relative overflow-hidden group inline-flex items-center gap-3 px-6 md:px-12 py-4 bg-yellow-400 text-black uppercase tracking-[0.2em] text-xs sm:text-sm rounded-none shadow-lg hover:bg-yellow-500 transition-all duration-500"
               >
                 <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
                 RESERVE A TABLE

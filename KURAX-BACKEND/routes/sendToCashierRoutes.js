@@ -21,13 +21,130 @@ async function getTableNameFromOrderIds(orderIds) {
   }
 }
 
+// Helper function to create individual order records for split payments
+async function createSplitPaymentOrders(orderIds, tableName, splitPayments, originalOrderId = null) {
+  const createdOrders = [];
+  
+  for (const payment of splitPayments) {
+    const method = payment.method;
+    const amount = payment.amount;
+    const transactionId = payment.transaction_id || null;
+    
+    // Validate Momo transactions
+    if ((method === "Momo-MTN" || method === "Momo-Airtel") && !transactionId) {
+      throw new Error(`Transaction ID required for ${method} payment`);
+    }
+    
+    // Determine status based on payment method
+    let status = (method === "Credit") ? "Pending" : "Paid";
+    let paidAt = (method !== "Credit") ? new Date() : null;
+    
+    // Create individual order record
+    const result = await pool.query(
+      `INSERT INTO orders 
+        (order_ids, table_name, payment_method, total, status, paid_at, transaction_id, created_at)
+       VALUES ($1::jsonb, $2, $3, $4, $5, $6, $7, NOW())
+       RETURNING id`,
+      [
+        JSON.stringify(orderIds),
+        tableName,
+        method,
+        amount,
+        status,
+        paidAt,
+        transactionId
+      ]
+    );
+    
+    createdOrders.push({
+      id: result.rows[0].id,
+      method: method,
+      amount: amount,
+      transaction_id: transactionId
+    });
+    
+    // If this is a credit payment, also create a credit record
+    if (method === "Credit" && payment.credit_info) {
+      await pool.query(
+        `INSERT INTO credits
+           (order_id, table_name, amount, client_name, client_phone, pay_by, waiter_name, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'PendingCashier', NOW())`,
+        [
+          result.rows[0].id,
+          tableName,
+          amount,
+          payment.credit_info.name,
+          payment.credit_info.phone || null,
+          payment.credit_info.pay_by || null,
+          payment.credit_info.waiter_name || null
+        ]
+      );
+    }
+  }
+  
+  return createdOrders;
+}
+
 // POST /api/cashier-ops/send-to-cashier
 router.post("/send-to-cashier", async (req, res) => {
   let {
     order_ids, table_name, label, method, amount,
     is_item = false, item, items, credit_info, requested_by, staff_id,
+    split_payments // NEW: array of split payments
   } = req.body;
 
+  // Handle split payments
+  if (split_payments && Array.isArray(split_payments) && split_payments.length > 0) {
+    try {
+      let formattedOrderIds = [];
+      if (!Array.isArray(order_ids)) {
+        if (typeof order_ids === 'number' || typeof order_ids === 'string') {
+          formattedOrderIds = [parseInt(order_ids)];
+        } else if (typeof order_ids === 'object' && order_ids !== null) {
+          formattedOrderIds = Object.values(order_ids).map(id => parseInt(id));
+        }
+      } else {
+        formattedOrderIds = order_ids.map(id => parseInt(id));
+      }
+
+      if (!table_name && formattedOrderIds && formattedOrderIds.length > 0) {
+        table_name = await getTableNameFromOrderIds(formattedOrderIds);
+      }
+
+      if (!table_name) {
+        table_name = "WALK-IN";
+      }
+
+      // Create individual order records for each payment method
+      const createdOrders = await createSplitPaymentOrders(
+        formattedOrderIds, 
+        table_name, 
+        split_payments,
+        order_ids
+      );
+
+      // Update original order status if it exists
+      if (formattedOrderIds?.length) {
+        await pool.query(
+          `UPDATE orders SET sent_to_cashier = true WHERE id = ANY($1::int[])`,
+          [formattedOrderIds]
+        );
+      }
+
+      res.json({ 
+        success: true, 
+        split: true,
+        created_orders: createdOrders,
+        message: `${createdOrders.length} payment records created`
+      });
+      return;
+    } catch (err) {
+      console.error("split payment failed:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // Original single payment logic
   if (!method || amount === undefined || amount === null) {
     return res.status(400).json({ error: "method and amount are required" });
   }
@@ -91,7 +208,6 @@ router.post("/send-to-cashier", async (req, res) => {
           `SELECT id FROM credits
            WHERE UPPER(table_name) = UPPER($1)
              AND status IN ('PendingCashier', 'PendingManagerApproval')
-             AND shift_cleared = FALSE
            LIMIT 1`,
           [table_name]
         );
@@ -153,89 +269,22 @@ router.post("/send-to-cashier", async (req, res) => {
   }
 });
 
-// GET /api/cashier-ops/cashier-queue
-router.get("/cashier-queue", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT * FROM cashier_queue
-       WHERE status IN ('Pending','PendingManagerApproval')
-         AND shift_cleared = FALSE
-       ORDER BY created_at ASC`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("cashier-queue fetch failed:", err);
-    res.status(500).json({ error: "Failed to fetch queue" });
-  }
-});
-
-// PATCH /api/cashier-ops/cashier-queue/:id/request-approval
-router.patch("/cashier-queue/:id/request-approval", async (req, res) => {
-  const { id } = req.params;
-  const { requested_by } = req.body || {};
-
-  try {
-    const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
-    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
-    const q = qRes.rows[0];
-
-    if (q.method !== "Credit") {
-      return res.status(400).json({ error: "Only Credit queue items need manager approval" });
-    }
-    if (q.status !== "Pending") {
-      return res.status(400).json({ error: `Already in status: ${q.status}` });
-    }
-
-    let tableName = q.table_name;
-    if (!tableName && q.order_ids && q.order_ids.length > 0) {
-      tableName = await getTableNameFromOrderIds(q.order_ids);
-      if (tableName) {
-        await pool.query(
-          `UPDATE cashier_queue SET table_name = $1 WHERE id = $2`,
-          [tableName, id]
-        );
-      }
-    }
-
-    if (!tableName) {
-      return res.status(400).json({ 
-        error: "table_name is required - cannot determine table for this credit request." 
-      });
-    }
-
-    await pool.query(
-      `UPDATE cashier_queue
-       SET status = 'PendingManagerApproval', confirmed_by = $1
-       WHERE id = $2`,
-      [requested_by || "Cashier", id]
-    );
-
-    await pool.query(
-      `UPDATE credits
-       SET status = 'PendingManagerApproval'
-       WHERE UPPER(table_name) = UPPER($1)
-         AND status = 'PendingCashier'
-         AND shift_cleared = FALSE`,
-      [tableName]
-    );
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("request-approval failed:", err);
-    res.status(500).json({ error: "Failed to request approval" });
-  }
-});
-
-// PATCH /api/cashier-ops/cashier-queue/:id/confirm
+// PATCH /api/cashier-ops/cashier-queue/:id/confirm - UPDATED for split payments
 router.patch("/cashier-queue/:id/confirm", async (req, res) => {
   const { id } = req.params;
-  const { confirmed_by, transaction_id } = req.body || {};
+  const { confirmed_by, transaction_id, split_payments } = req.body || {};
 
   try {
     const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
     if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
     const q = qRes.rows[0];
 
+    // Handle split payment confirmation
+    if (split_payments && Array.isArray(split_payments) && split_payments.length > 1) {
+      return await handleSplitPaymentConfirmation(q, split_payments, confirmed_by, res);
+    }
+
+    // Original single payment logic
     if (q.method === "Credit") {
       return res.status(400).json({
         error: "Credit payments require manager approval — use Request Approval instead"
@@ -302,59 +351,22 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
         );
       }
       await updateDailySummary({ amount: q.amount, method: q.method, orderCount: 0 });
-
-      if (q.table_name) {
-        const pendingCheck = await pool.query(
-          `SELECT COUNT(*) AS cnt FROM cashier_queue
-           WHERE table_name = $1 AND status = 'Pending' AND shift_cleared = FALSE`,
-          [q.table_name]
-        );
-        if (parseInt(pendingCheck.rows[0].cnt, 10) === 0) {
-          await pool.query(
-            `UPDATE orders
-             SET status = 'Paid', payment_method = 'Mixed', paid_at = NOW(), sent_to_cashier = false
-             WHERE table_name = $1 AND status NOT IN ('Paid','Credit','Void') AND shift_cleared = FALSE`,
-            [q.table_name]
-          );
-        }
-      }
     } else {
       if (q.order_ids?.length) {
+        // Create individual order records for single payment
         await pool.query(
-          `UPDATE orders
-           SET status = 'Paid', payment_method = $1, paid_at = NOW(),
-               sent_to_cashier = false, transaction_id = $2
-           WHERE id = ANY($3::int[])`,
-          [q.method, transaction_id || null, q.order_ids]
+          `INSERT INTO orders (table_name, payment_method, total, status, paid_at, transaction_id, created_at, original_order_ids)
+           VALUES ($1, $2, $3, 'Paid', NOW(), $4, NOW(), $5::jsonb)
+           RETURNING id`,
+          [q.table_name, q.method, q.amount, transaction_id || null, JSON.stringify(q.order_ids)]
         );
         
-        for (const orderId of q.order_ids) {
-          const orderRes = await pool.query(
-            `SELECT items FROM orders WHERE id = $1`,
-            [orderId]
-          );
-          
-          if (orderRes.rows.length > 0) {
-            let items = orderRes.rows[0].items;
-            if (typeof items === 'string') {
-              items = JSON.parse(items);
-            }
-            
-            if (Array.isArray(items)) {
-              const updatedItems = items.map(item => ({
-                ...item,
-                _rowPaid: true,
-                payment_method: q.method,
-                paid_at: new Date().toISOString()
-              }));
-              
-              await pool.query(
-                `UPDATE orders SET items = $1 WHERE id = $2`,
-                [JSON.stringify(updatedItems), orderId]
-              );
-            }
-          }
-        }
+        // Mark original orders as processed
+        await pool.query(
+          `UPDATE orders SET sent_to_cashier = false, is_archived = true
+           WHERE id = ANY($1::int[])`,
+          [q.order_ids]
+        );
       }
       await updateDailySummary({ amount: q.amount, method: q.method });
     }
@@ -367,6 +379,185 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
   } catch (err) {
     console.error("cashier confirm failed:", err);
     res.status(500).json({ error: "Failed to confirm payment" });
+  }
+});
+
+// Helper function to handle split payment confirmation
+async function handleSplitPaymentConfirmation(queueItem, splitPayments, confirmedBy, res) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    // Mark queue item as confirmed
+    await client.query(
+      `UPDATE cashier_queue
+       SET status = 'Confirmed', confirmed_by = $1, confirmed_at = NOW()
+       WHERE id = $2`,
+      [confirmedBy || "Cashier", queueItem.id]
+    );
+    
+    const createdOrders = [];
+    
+    // Create individual order for each payment method
+    for (const payment of splitPayments) {
+      const method = payment.method;
+      const amount = payment.amount;
+      const transactionId = payment.transaction_id || null;
+      const creditInfo = payment.credit_info || null;
+      
+      // Validate Momo transactions
+      if ((method === "Momo-MTN" || method === "Momo-Airtel") && !transactionId) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Transaction ID required for ${method} payment` });
+      }
+      
+      // Determine order status
+      let status = "Paid";
+      let paidAt = new Date();
+      
+      // If credit, status is different
+      if (method === "Credit") {
+        status = "Pending";
+        paidAt = null;
+      }
+      
+      // Create the order record
+      const orderResult = await client.query(
+        `INSERT INTO orders 
+          (table_name, payment_method, total, status, paid_at, transaction_id, created_at, original_order_ids)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7::jsonb)
+         RETURNING id`,
+        [queueItem.table_name, method, amount, status, paidAt, transactionId, JSON.stringify(queueItem.order_ids)]
+      );
+      
+      const newOrderId = orderResult.rows[0].id;
+      createdOrders.push({ id: newOrderId, method, amount });
+      
+      // If credit, create credit record
+      if (method === "Credit" && creditInfo) {
+        await client.query(
+          `INSERT INTO credits
+             (order_id, table_name, amount, client_name, client_phone, pay_by, waiter_name, status, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'PendingCashier', NOW())`,
+          [
+            newOrderId,
+            queueItem.table_name,
+            amount,
+            creditInfo.name,
+            creditInfo.phone || null,
+            creditInfo.pay_by || null,
+            queueItem.requested_by || null
+          ]
+        );
+      }
+      
+      // Update daily summary for non-credit payments
+      if (method !== "Credit") {
+        await updateDailySummary({ amount: amount, method: method });
+      }
+    }
+    
+    // Mark original orders as processed
+    if (queueItem.order_ids?.length) {
+      await client.query(
+        `UPDATE orders SET sent_to_cashier = false, is_archived = true
+         WHERE id = ANY($1::int[])`,
+        [queueItem.order_ids]
+      );
+    }
+    
+    await client.query('COMMIT');
+    
+    await logActivity(pool, 'SPLIT_PAYMENT',
+      `${queueItem.table_name} — Split payment: ${splitPayments.map(p => `${p.method}: UGX ${p.amount}`).join(', ')} confirmed by ${confirmedBy || 'Cashier'}`,
+      { queue_id: queueItem.id, split_payments: splitPayments }
+    );
+    
+    res.json({ 
+      success: true, 
+      split: true,
+      created_orders: createdOrders,
+      message: `Split payment processed: ${createdOrders.length} transactions`
+    });
+    
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error("Split payment confirmation failed:", err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+}
+
+// GET /api/cashier-ops/cashier-queue
+router.get("/cashier-queue", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM cashier_queue
+       WHERE status IN ('Pending','PendingManagerApproval')
+       ORDER BY created_at ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("cashier-queue fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch queue" });
+  }
+});
+
+// PATCH /api/cashier-ops/cashier-queue/:id/request-approval
+router.patch("/cashier-queue/:id/request-approval", async (req, res) => {
+  const { id } = req.params;
+  const { requested_by } = req.body || {};
+
+  try {
+    const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
+    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
+    const q = qRes.rows[0];
+
+    if (q.method !== "Credit") {
+      return res.status(400).json({ error: "Only Credit queue items need manager approval" });
+    }
+    if (q.status !== "Pending") {
+      return res.status(400).json({ error: `Already in status: ${q.status}` });
+    }
+
+    let tableName = q.table_name;
+    if (!tableName && q.order_ids && q.order_ids.length > 0) {
+      tableName = await getTableNameFromOrderIds(q.order_ids);
+      if (tableName) {
+        await pool.query(
+          `UPDATE cashier_queue SET table_name = $1 WHERE id = $2`,
+          [tableName, id]
+        );
+      }
+    }
+
+    if (!tableName) {
+      return res.status(400).json({ 
+        error: "table_name is required - cannot determine table for this credit request." 
+      });
+    }
+
+    await pool.query(
+      `UPDATE cashier_queue
+       SET status = 'PendingManagerApproval', confirmed_by = $1
+       WHERE id = $2`,
+      [requested_by || "Cashier", id]
+    );
+
+    await pool.query(
+      `UPDATE credits
+       SET status = 'PendingManagerApproval'
+       WHERE UPPER(table_name) = UPPER($1)
+         AND status = 'PendingCashier'`,
+      [tableName]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("request-approval failed:", err);
+    res.status(500).json({ error: "Failed to request approval" });
   }
 });
 
@@ -405,8 +596,7 @@ router.patch("/cashier-queue/:id/reject", async (req, res) => {
           `UPDATE credits
            SET status = 'Rejected', reject_reason = $1
            WHERE UPPER(table_name) = UPPER($2) 
-             AND status IN ('PendingCashier', 'PendingManagerApproval')
-             AND shift_cleared = FALSE`,
+             AND status IN ('PendingCashier', 'PendingManagerApproval')`,
           [reason || "Rejected by cashier", q.table_name]
         );
       } catch (e) {
@@ -431,7 +621,6 @@ router.get("/credit-approvals", async (req, res) => {
     const result = await pool.query(
       `SELECT * FROM cashier_queue
        WHERE status = 'PendingManagerApproval'
-         AND shift_cleared = FALSE
        ORDER BY created_at ASC`
     );
     res.json(result.rows);
@@ -441,7 +630,7 @@ router.get("/credit-approvals", async (req, res) => {
   }
 });
 
-// PATCH /api/cashier-ops/credit-approvals/:id/approve - FIXED (removed updateDailySummary)
+// PATCH /api/cashier-ops/credit-approvals/:id/approve
 router.patch("/credit-approvals/:id/approve", async (req, res) => {
   const { id } = req.params;
   const { approved_by } = req.body || {};
@@ -486,7 +675,6 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
            approved_at = NOW()
        WHERE UPPER(table_name) = UPPER($2)
          AND status IN ('PendingCashier', 'PendingManagerApproval')
-         AND shift_cleared = FALSE
        RETURNING id`,
       [approved_by || "Manager", tableName]
     );
@@ -521,15 +709,6 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
       );
     }
 
-    // ✅ FIXED: REMOVED the updateDailySummary call
-    // Credits are NOT revenue until they are settled (paid back by the customer)
-    // Do NOT add to daily_summary at approval time
-    // await updateDailySummary({ 
-    //   amount: q.amount, 
-    //   method: 'Credit', 
-    //   orderCount: 1 
-    // });
-
     await logActivity(pool, 'CREDIT',
       `Credit approved — ${tableName} · ${q.credit_name || 'Client'} · UGX ${Number(q.amount).toLocaleString()} by ${approved_by || 'Manager'}`,
       { queue_id: id, amount: q.amount, client: q.credit_name }
@@ -542,7 +721,7 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
   }
 });
 
-// GET /api/cashier-ops/cashier-history - EXCLUDES Credit methods
+// GET /api/cashier-ops/cashier-history
 router.get("/cashier-history", async (req, res) => {
   try {
     const result = await pool.query(
@@ -551,7 +730,6 @@ router.get("/cashier-history", async (req, res) => {
        WHERE cq.status IN ('Confirmed', 'Rejected')
          AND cq.method != 'Credit'
          AND cq.created_at::date = CURRENT_DATE
-         AND cq.shift_cleared = FALSE
        ORDER BY cq.confirmed_at DESC NULLS LAST
        LIMIT 500`
     );
@@ -562,7 +740,7 @@ router.get("/cashier-history", async (req, res) => {
   }
 });
 
-// GET /api/cashier-ops/credits - Returns ALL credits WITH settlements
+// GET /api/cashier-ops/credits
 router.get("/credits", async (req, res) => {
   try {
     const creditsResult = await pool.query(
@@ -595,9 +773,6 @@ router.get("/credits", async (req, res) => {
       })
     );
     
-    console.log(`✅ Credits fetched: ${credits.length} records`);
-    console.log(`📊 Credits with settlements: ${credits.filter(c => c.settlements?.length > 0).length}`);
-    
     res.json(credits);
   } catch (err) {
     console.error("credits fetch failed:", err);
@@ -605,7 +780,7 @@ router.get("/credits", async (req, res) => {
   }
 });
 
-// GET /api/staff/credit-settlements - For staff performance
+// GET /api/staff/credit-settlements
 router.get("/staff/credit-settlements", async (req, res) => {
   try {
     const result = await pool.query(
@@ -623,7 +798,6 @@ router.get("/staff/credit-settlements", async (req, res) => {
        ORDER BY cs.created_at DESC`
     );
     
-    console.log(`✅ Credit settlements today: ${result.rows.length}`);
     res.json(result.rows);
   } catch (err) {
     console.error("Staff credit settlements fetch failed:", err);
@@ -631,7 +805,7 @@ router.get("/staff/credit-settlements", async (req, res) => {
   }
 });
 
-// PATCH /api/cashier-ops/credits/:id/settle - FIXED (NO updateDailySummary call)
+// PATCH /api/cashier-ops/credits/:id/settle
 router.patch("/credits/:id/settle", async (req, res) => {
   const { id } = req.params;
   const { settled_by, settle_method, settle_transaction, settle_notes, amount_paid } = req.body || {};
@@ -719,7 +893,7 @@ router.patch("/credits/:id/settle", async (req, res) => {
       }
     }
 
-    // 4. Create cashier_queue record AND link it back to the credit
+    // 4. Create cashier_queue record
     const newQueueRes = await pool.query(
       `INSERT INTO cashier_queue
          (order_ids, table_name, label, method, amount,
@@ -745,17 +919,6 @@ router.patch("/credits/:id/settle", async (req, res) => {
       [newQueueId, id]
     );
 
-    // ✅ CRITICAL: DO NOT call updateDailySummary for credit settlements
-    // Credit settlements are debt collection, not new revenue
-    // They should NOT be added to daily_summary totals
-
-    console.log(`✅ Credit ${id} settled and linked to cashier_queue ${newQueueId}`);
-
-    await logActivity(pool, 'CREDIT_SETTLEMENT',
-      `Credit settled — ${credit.table_name} · ${credit.client_name || 'Client'} · UGX ${paid_amount.toLocaleString()} by ${settled_by || 'Cashier'}`,
-      { credit_id: id, amount: paid_amount, method: settle_method, cashier_queue_id: newQueueId }
-    );
-
     res.json({ 
       success: true, 
       fully_settled: is_full,
@@ -769,7 +932,7 @@ router.patch("/credits/:id/settle", async (req, res) => {
   }
 });
 
-// Debug endpoint to check order items
+// Debug endpoint
 router.get("/debug/order-items/:orderId", async (req, res) => {
   const { orderId } = req.params;
   try {

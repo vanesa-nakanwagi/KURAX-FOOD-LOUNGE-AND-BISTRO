@@ -32,6 +32,14 @@ function getKampalaDate(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+// Check if credits are from current month
+function isCurrentMonthCredit(creditDate) {
+  const now = new Date();
+  const creditDateObj = new Date(creditDate);
+  return creditDateObj.getMonth() === now.getMonth() && 
+         creditDateObj.getFullYear() === now.getFullYear();
+}
+
 // ─── Petty categories ─────────────────────────────────────────────────────────
 const PETTY_CATEGORIES = [
   "General","Charcoal/Fuel","Groceries/Ingredients","Cleaning Supplies",
@@ -211,13 +219,14 @@ export default function OverviewSection({ onViewRegistry }) {
   const [shifts,         setShifts]     = useState([]);
   const [shiftsLoading,  setShiftsLoad] = useState(true);
 
-  // Credits ledger
-  const [creditsLedger,   setCreditsLedger]   = useState([]);
-  const [creditsLoading,  setCreditsLoading]  = useState(true);
-  const [creditsExpanded, setCreditsExpanded] = useState(false);
-  const [creditFilter,    setCreditFilter]    = useState("all");
+  // Credits ledger - filter to current month only
+  const [allCredits,        setAllCredits]        = useState([]);
+  const [creditsLedger,     setCreditsLedger]     = useState([]);
+  const [creditsLoading,    setCreditsLoading]    = useState(true);
+  const [creditsExpanded,   setCreditsExpanded]   = useState(false);
+  const [creditFilter,      setCreditFilter]      = useState("all");
 
-  // Petty cash
+  // Petty cash - resets on day closure
   const [pettyData,       setPettyData]       = useState({ total_out: 0, total_in: 0, net: 0, entries: [] });
   const [pettyLoading,    setPettyLoading]    = useState(true);
   const [pettyExpanded,   setPettyExpanded]   = useState(false);
@@ -238,6 +247,8 @@ export default function OverviewSection({ onViewRegistry }) {
   // Day closure state
   const [dayClosed, setDayClosed] = useState(false);
   const [dayClosureInfo, setDayClosureInfo] = useState(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
 
   // SSE ref
   const sseRef = useRef(null);
@@ -268,6 +279,33 @@ export default function OverviewSection({ onViewRegistry }) {
     return s;
   };
 
+  // ─── Filter credits for current month ───────────────────────────────────────
+  const filterCreditsByCurrentMonth = useCallback((credits) => {
+    const now = new Date();
+    const currentMonthNum = now.getMonth();
+    const currentYearNum = now.getFullYear();
+    
+    return credits.filter(credit => {
+      const creditDate = new Date(credit.created_at);
+      return creditDate.getMonth() === currentMonthNum && creditDate.getFullYear() === currentYearNum;
+    });
+  }, []);
+
+  // ─── Check if month has changed ─────────────────────────────────────────────
+  useEffect(() => {
+    const now = new Date();
+    const currentMonthNum = now.getMonth();
+    const currentYearNum = now.getFullYear();
+    
+    if (currentMonthNum !== currentMonth || currentYearNum !== currentYear) {
+      console.log(`Month changed from ${currentMonth}/${currentYear} to ${currentMonthNum}/${currentYearNum}`);
+      setCurrentMonth(currentMonthNum);
+      setCurrentYear(currentYearNum);
+      // Refresh credits to show only new month's data
+      fetchCredits();
+    }
+  }, [currentMonth, currentYear]);
+
   // ─── Fetchers ───────────────────────────────────────────────────────────────
   const fetchSummary = useCallback(async () => {
     try {
@@ -292,12 +330,16 @@ export default function OverviewSection({ onViewRegistry }) {
       const res = await fetch(`${API_URL}/api/credits`);
       if (res.ok) {
         const data = await res.json();
-        console.log("Credits fetched:", data.length, "records");
-        setCreditsLedger(data);
+        console.log("All credits fetched:", data.length, "records");
+        setAllCredits(data);
+        // Filter to current month only
+        const currentMonthCredits = filterCreditsByCurrentMonth(data);
+        setCreditsLedger(currentMonthCredits);
+        console.log("Current month credits:", currentMonthCredits.length, "records");
       }
     } catch (e) { console.error("Credits fetch failed:", e); }
     finally { setCreditsLoading(false); }
-  }, []);
+  }, [filterCreditsByCurrentMonth]);
 
   const fetchPetty = useCallback(async () => {
     try {
@@ -322,7 +364,6 @@ export default function OverviewSection({ onViewRegistry }) {
     // Clear all local states
     setSummary(null);
     setShifts([]);
-    setCreditsLedger([]);
     setPettyData({ total_out: 0, total_in: 0, net: 0, entries: [] });
     setCreditsExpanded(false);
     setCreditFilter("all");
@@ -331,7 +372,7 @@ export default function OverviewSection({ onViewRegistry }) {
     setShowPettyModal(false);
     setSelectedShift(null);
     
-    // Force refresh all data
+    // Force refresh all data (credits will be filtered to current month automatically)
     await Promise.all([
       fetchSummary(),
       fetchCredits(),
@@ -343,7 +384,7 @@ export default function OverviewSection({ onViewRegistry }) {
     const notification = document.createElement('div');
     notification.innerHTML = `
       <div style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; background: #10B981; color: white; padding: 16px 24px; border-radius: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); animation: slideIn 0.3s ease-out; font-family: system-ui;">
-        ✅ Day has been closed! All totals have been reset for the new day.
+        ✅ Day has been closed! Revenue and petty cash totals have been reset. Credits persist for the month.
       </div>
       <style>
         @keyframes slideIn {
@@ -464,6 +505,11 @@ export default function OverviewSection({ onViewRegistry }) {
 
   // ─── Petty handlers ─────────────────────────────────────────────────────────
   const handlePettyAdd = async () => {
+    if (dayClosed) {
+      alert("Day is closed. Cannot add petty cash entries for a closed day.");
+      return;
+    }
+    
     const amt = Number(pettyAmount);
     if (!amt || amt <= 0 || !pettyDescription.trim()) return;
     setSavingPetty(true);
@@ -494,6 +540,11 @@ export default function OverviewSection({ onViewRegistry }) {
   };
 
   const handlePettyDelete = async (id) => {
+    if (dayClosed) {
+      alert("Day is closed. Cannot delete entries from a closed day.");
+      return;
+    }
+    
     setDeletingPettyId(id);
     try {
       await fetch(`${API_URL}/api/summaries/petty-cash/${id}`, { method: "DELETE" });
@@ -608,7 +659,7 @@ export default function OverviewSection({ onViewRegistry }) {
           <div className="flex items-center justify-center gap-2">
             <CheckCircle2 size={18} className="text-emerald-500" />
             <p className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">
-              ✅ New Day Started - All totals have been reset
+              ✅ Day Closed - Revenue and petty cash have been reset. Credits persist for the month.
             </p>
           </div>
           {dayClosureInfo && (
@@ -619,72 +670,72 @@ export default function OverviewSection({ onViewRegistry }) {
         </div>
       )}
 
-      {/* ── STAT CARDS — 5 cards, real-time via SSE + 5s polling ── */}
+      {/* ── STAT CARDS — Show zeros if day closed ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
 
         <DashboardStatCard
           label="Cash on Hand"
-          value={summaryLoading ? "..." : displayCash}
-          sub={settleCash > 0
+          value={summaryLoading ? "..." : (dayClosed ? 0 : displayCash)}
+          sub={settleCash > 0 && !dayClosed
             ? `${fmtLargeNumber(settleCash)} credit settlements deducted`
-            : "Cash payments only"}
+            : dayClosed ? "Day closed - totals reset" : "Cash payments only"}
           icon={<Banknote size={18} className="text-emerald-500" />}
           color="text-emerald-500"
           isDark={isDark}
           largeValue={true}
-          isLive={true}
+          isLive={!dayClosed}
         />
 
         <DashboardStatCard
           label="Card"
-          value={summaryLoading ? "..." : displayCard}
-          sub={settleCard > 0
+          value={summaryLoading ? "..." : (dayClosed ? 0 : displayCard)}
+          sub={settleCard > 0 && !dayClosed
             ? `${fmtLargeNumber(settleCard)} credit settlements deducted`
-            : "POS card payments only"}
+            : dayClosed ? "Day closed - totals reset" : "POS card payments only"}
           icon={<CreditCard size={18} className="text-blue-500" />}
           color="text-blue-500"
           isDark={isDark}
           largeValue={true}
-          isLive={true}
+          isLive={!dayClosed}
         />
 
         <DashboardStatCard
           label="MTN Momo"
-          value={summaryLoading ? "..." : displayMTN}
-          sub={settleMTN > 0
+          value={summaryLoading ? "..." : (dayClosed ? 0 : displayMTN)}
+          sub={settleMTN > 0 && !dayClosed
             ? `${fmtLargeNumber(settleMTN)} credit settlements deducted`
-            : "MTN mobile money only"}
+            : dayClosed ? "Day closed - totals reset" : "MTN mobile money only"}
           icon={<Smartphone size={18} className="text-yellow-500" />}
           color="text-yellow-500"
           isDark={isDark}
           largeValue={true}
-          isLive={true}
+          isLive={!dayClosed}
         />
 
         <DashboardStatCard
           label="Airtel Money"
-          value={summaryLoading ? "..." : displayAirtel}
-          sub={settleAirtel > 0
+          value={summaryLoading ? "..." : (dayClosed ? 0 : displayAirtel)}
+          sub={settleAirtel > 0 && !dayClosed
             ? `${fmtLargeNumber(settleAirtel)} credit settlements deducted`
-            : "Airtel mobile money only"}
+            : dayClosed ? "Day closed - totals reset" : "Airtel mobile money only"}
           icon={<Smartphone size={18} className="text-red-500" />}
           color="text-red-500"
           isDark={isDark}
           largeValue={true}
-          isLive={true}
+          isLive={!dayClosed}
         />
 
         <DashboardStatCard
           label="Gross Revenue"
-          value={summaryLoading ? "..." : displayGross}
-          sub={settleTotal > 0
+          value={summaryLoading ? "..." : (dayClosed ? 0 : displayGross)}
+          sub={settleTotal > 0 && !dayClosed
             ? `${fmtLargeNumber(settleTotal)} credit settlements collected today`
-            : "Cash + Card + MTN + Airtel"}
+            : dayClosed ? "Day closed - totals reset" : "Cash + Card + MTN + Airtel"}
           icon={<TrendingUp size={18} className="text-emerald-500" />}
           color="text-emerald-500"
           isDark={isDark}
           largeValue={true}
-          isLive={true}
+          isLive={!dayClosed}
         />
       </div>
 
@@ -713,14 +764,18 @@ export default function OverviewSection({ onViewRegistry }) {
             <div className="text-left">
               <p className={`text-[10px] font-black uppercase tracking-widest ${t.subtext}`}>Petty Cash Ledger</p>
               <p className="text-[9px] text-zinc-600 mt-0.5">
-                {pettyEntries.length} entries today ·{" "}
-                <span className="text-rose-400 font-bold">OUT {fmtLargeNumber(pettyOut)}</span>
-                {pettyIn > 0 && <span className="text-emerald-400 font-bold"> · IN {fmtLargeNumber(pettyIn)}</span>}
+                {dayClosed ? "Day closed - totals reset" : `${pettyEntries.length} entries today`}
+                {!dayClosed && (
+                  <>
+                    · <span className="text-rose-400 font-bold">OUT {fmtLargeNumber(pettyOut)}</span>
+                    {pettyIn > 0 && <span className="text-emerald-400 font-bold"> · IN {fmtLargeNumber(pettyIn)}</span>}
+                  </>
+                )}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {pettyOut > 0 && (
+            {!dayClosed && pettyOut > 0 && (
               <span className="px-3 py-1 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-black uppercase">
                 −{fmtLargeNumber(pettyOut)}
               </span>
@@ -731,97 +786,111 @@ export default function OverviewSection({ onViewRegistry }) {
 
         {pettyExpanded && (
           <div className={`border-t px-5 pb-5 pt-4 space-y-4 ${isDark ? "border-white/5" : "border-black/5"}`}>
-            <div className="grid grid-cols-3 gap-3">
-              <div className={`${isDark ? "bg-black/40" : "bg-zinc-50"} rounded-2xl p-4`}>
-                <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Total OUT</p>
-                <p className="text-rose-400 font-black text-base">{fmtLargeNumber(pettyOut)}</p>
-                <p className="text-[9px] text-zinc-600">{pettyEntries.filter(e => e.direction === "OUT").length} entries</p>
-              </div>
-              <div className={`${isDark ? "bg-black/40" : "bg-zinc-50"} rounded-2xl p-4`}>
-                <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Total IN</p>
-                <p className="text-emerald-400 font-black text-base">{fmtLargeNumber(pettyIn)}</p>
-                <p className="text-[9px] text-zinc-600">{pettyEntries.filter(e => e.direction === "IN").length} entries</p>
-              </div>
-              <div className={`rounded-2xl p-4 ${pettyNet >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"}`}>
-                <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Net</p>
-                <p className={`font-black text-base ${pettyNet >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                  {pettyNet >= 0 ? "+" : ""}UGX {Math.abs(pettyNet).toLocaleString()}
+            {dayClosed ? (
+              <div className="py-10 text-center">
+                <CheckCircle2 size={28} className="mx-auto text-emerald-500 mb-3" />
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">
+                  Day Closed - Petty cash has been archived
                 </p>
-                <p className="text-[9px] text-zinc-600">IN − OUT</p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: isDark ? "#18181b" : "#f4f4f5" }}>
-                {[{ k: "all", l: "All" }, { k: "OUT", l: "Expenses" }, { k: "IN", l: "Cash In" }].map(({ k, l }) => (
-                  <button key={k} onClick={() => setPettyFilter(k)}
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all
-                      ${pettyFilter === k ? "bg-yellow-500 text-black shadow" : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-700"}`}>
-                    {l}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setShowPettyModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-yellow-500 text-black rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-yellow-400 transition-all">
-                <PlusCircle size={12} /> Log Entry
-              </button>
-            </div>
-
-            {pettyLoading ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map(i => <div key={i} className={`h-14 rounded-2xl animate-pulse ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`} />)}
-              </div>
-            ) : filteredPetty.length === 0 ? (
-              <div className={`py-10 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-white/5" : "border-zinc-200"}`}>
-                <Wallet size={22} className="mx-auto mb-2 text-zinc-600" />
-                <p className={`text-[9px] font-black uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>No entries today</p>
+                <p className="text-[8px] text-zinc-500 mt-1">
+                  All petty cash entries have been reset for the new day
+                </p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {filteredPetty.map(entry => (
-                  <div key={entry.id}
-                    className={`rounded-2xl p-4 border flex items-center justify-between gap-3 group transition-all
-                      ${entry.direction === "OUT"
-                        ? isDark ? "bg-zinc-900/40 border-white/5" : "bg-zinc-50 border-zinc-200"
-                        : isDark ? "bg-emerald-500/5 border-emerald-500/15" : "bg-emerald-50 border-emerald-200"}`}>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`p-2 rounded-xl shrink-0 ${entry.direction === "OUT"
-                        ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                        : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"}`}>
-                        <Wallet size={13} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className={`text-xs font-black uppercase italic truncate ${isDark ? "text-white" : "text-zinc-900"}`}>
-                            {entry.description}
-                          </p>
-                          <span className={`text-[8px] px-2 py-0.5 rounded-lg font-black uppercase shrink-0
-                            ${isDark ? "bg-white/5 border border-white/5 text-zinc-500" : "bg-zinc-100 border border-zinc-200 text-zinc-500"}`}>
-                            {entry.category}
-                          </span>
-                        </div>
-                        <p className={`text-[9px] mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-                          {entry.logged_by} · {new Date(entry.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <p className={`text-sm font-black italic ${entry.direction === "OUT" ? "text-rose-400" : "text-emerald-400"}`}>
-                        {entry.direction === "OUT" ? "−" : "+"}UGX {Number(entry.amount).toLocaleString()}
-                      </p>
-                      <button
-                        onClick={() => handlePettyDelete(entry.id)}
-                        disabled={deletingPettyId === entry.id}
-                        className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-rose-400 transition-all disabled:opacity-30">
-                        {deletingPettyId === entry.id
-                          ? <RefreshCw size={13} className="animate-spin" />
-                          : <Trash2 size={13} />}
-                      </button>
-                    </div>
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className={`${isDark ? "bg-black/40" : "bg-zinc-50"} rounded-2xl p-4`}>
+                    <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Total OUT</p>
+                    <p className="text-rose-400 font-black text-base">{fmtLargeNumber(pettyOut)}</p>
+                    <p className="text-[9px] text-zinc-600">{pettyEntries.filter(e => e.direction === "OUT").length} entries</p>
                   </div>
-                ))}
-              </div>
+                  <div className={`${isDark ? "bg-black/40" : "bg-zinc-50"} rounded-2xl p-4`}>
+                    <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Total IN</p>
+                    <p className="text-emerald-400 font-black text-base">{fmtLargeNumber(pettyIn)}</p>
+                    <p className="text-[9px] text-zinc-600">{pettyEntries.filter(e => e.direction === "IN").length} entries</p>
+                  </div>
+                  <div className={`rounded-2xl p-4 ${pettyNet >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"}`}>
+                    <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Net</p>
+                    <p className={`font-black text-base ${pettyNet >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {pettyNet >= 0 ? "+" : ""}UGX {Math.abs(pettyNet).toLocaleString()}
+                    </p>
+                    <p className="text-[9px] text-zinc-600">IN − OUT</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: isDark ? "#18181b" : "#f4f4f5" }}>
+                    {[{ k: "all", l: "All" }, { k: "OUT", l: "Expenses" }, { k: "IN", l: "Cash In" }].map(({ k, l }) => (
+                      <button key={k} onClick={() => setPettyFilter(k)}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all
+                          ${pettyFilter === k ? "bg-yellow-500 text-black shadow" : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-700"}`}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setShowPettyModal(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-yellow-500 text-black rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-yellow-400 transition-all">
+                    <PlusCircle size={12} /> Log Entry
+                  </button>
+                </div>
+
+                {pettyLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map(i => <div key={i} className={`h-14 rounded-2xl animate-pulse ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`} />)}
+                  </div>
+                ) : filteredPetty.length === 0 ? (
+                  <div className={`py-10 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-white/5" : "border-zinc-200"}`}>
+                    <Wallet size={22} className="mx-auto mb-2 text-zinc-600" />
+                    <p className={`text-[9px] font-black uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>No entries today</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredPetty.map(entry => (
+                      <div key={entry.id}
+                        className={`rounded-2xl p-4 border flex items-center justify-between gap-3 group transition-all
+                          ${entry.direction === "OUT"
+                            ? isDark ? "bg-zinc-900/40 border-white/5" : "bg-zinc-50 border-zinc-200"
+                            : isDark ? "bg-emerald-500/5 border-emerald-500/15" : "bg-emerald-50 border-emerald-200"}`}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`p-2 rounded-xl shrink-0 ${entry.direction === "OUT"
+                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"}`}>
+                            <Wallet size={13} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className={`text-xs font-black uppercase italic truncate ${isDark ? "text-white" : "text-zinc-900"}`}>
+                                {entry.description}
+                              </p>
+                              <span className={`text-[8px] px-2 py-0.5 rounded-lg font-black uppercase shrink-0
+                                ${isDark ? "bg-white/5 border border-white/5 text-zinc-500" : "bg-zinc-100 border border-zinc-200 text-zinc-500"}`}>
+                                {entry.category}
+                              </span>
+                            </div>
+                            <p className={`text-[9px] mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+                              {entry.logged_by} · {new Date(entry.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <p className={`text-sm font-black italic ${entry.direction === "OUT" ? "text-rose-400" : "text-emerald-400"}`}>
+                            {entry.direction === "OUT" ? "−" : "+"}UGX {Number(entry.amount).toLocaleString()}
+                          </p>
+                          <button
+                            onClick={() => handlePettyDelete(entry.id)}
+                            disabled={deletingPettyId === entry.id}
+                            className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-rose-400 transition-all disabled:opacity-30">
+                            {deletingPettyId === entry.id
+                              ? <RefreshCw size={13} className="animate-spin" />
+                              : <Trash2 size={13} />}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -839,7 +908,7 @@ export default function OverviewSection({ onViewRegistry }) {
             <div className="text-left">
               <p className={`text-[10px] font-black uppercase tracking-widest ${t.subtext}`}>Credits Ledger</p>
               <p className="text-[9px] text-zinc-600 mt-0.5">
-                {creditsLedger.length} total ·{" "}
+                {creditsLedger.length} total this month ·{" "}
                 <span className="text-yellow-400 font-bold">{creditStats.pendingCashier} wait cashier</span>
                 {creditStats.pendingManager > 0 && <span className="text-orange-400 font-bold"> · {creditStats.pendingManager} wait manager</span>}
                 {creditStats.approved       > 0 && <span className="text-purple-400 font-bold"> · {creditStats.approved} approved</span>}
@@ -920,7 +989,7 @@ export default function OverviewSection({ onViewRegistry }) {
               <div className={`py-10 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-white/5" : "border-zinc-200"}`}>
                 <BookOpen size={24} className="mx-auto mb-2 text-zinc-600" />
                 <p className={`text-[9px] font-black uppercase tracking-widest ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-                  No {creditFilter} credits
+                  No credits found for {new Date().toLocaleString('default', { month: 'long' })}
                 </p>
               </div>
             ) : (
@@ -990,7 +1059,7 @@ export default function OverviewSection({ onViewRegistry }) {
       </div>
 
       {/* ── PETTY CASH ADD MODAL ── */}
-      {showPettyModal && (
+      {showPettyModal && !dayClosed && (
         <div className="fixed inset-0 z-[500] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className={`w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl space-y-5 border
             ${isDark ? "bg-[#111] border-white/10" : "bg-white border-zinc-200"}`}>
@@ -1039,12 +1108,12 @@ export default function OverviewSection({ onViewRegistry }) {
               <button onClick={() => setShowPettyModal(false)}
                 className="flex-1 py-4 text-zinc-500 font-black text-[10px] uppercase">Discard</button>
               <button onClick={handlePettyAdd}
-                disabled={savingPetty || !pettyAmount || !pettyDescription.trim()}
+                disabled={savingPetty || !pettyAmount || !pettyDescription.trim() || dayClosed}
                 className={`flex-[2] py-4 rounded-2xl font-black text-xs uppercase transition-all
-                  ${!savingPetty && pettyAmount && pettyDescription.trim()
+                  ${!savingPetty && pettyAmount && pettyDescription.trim() && !dayClosed
                     ? "bg-yellow-500 text-black hover:bg-yellow-400 active:scale-[0.98]"
                     : "bg-zinc-800 text-zinc-600 cursor-not-allowed"}`}>
-                {savingPetty ? "Saving…" : "Post Entry"}
+                {savingPetty ? "Saving…" : dayClosed ? "Day Closed" : "Post Entry"}
               </button>
             </div>
           </div>

@@ -14,17 +14,22 @@ function kampalaDate(d = new Date()) {
   const day = String(kampalaDate.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. DAILY SUMMARY (TODAY) - FIXED: Get data directly from orders
+// 1. DAILY SUMMARY (TODAY) - FIXED: Credit orders EXCLUDED from gross revenue
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/today', async (req, res) => {
   try {
     const today = kampalaDate();
     
-    // Get confirmed payments directly from orders (more reliable)
+    // Get ONLY non-credit, paid orders (exclude ALL credit orders from gross revenue)
     const ordersResult = await pool.query(`
       SELECT
-        COALESCE(SUM(CASE WHEN payment_method != 'Credit' THEN total ELSE 0 END), 0) AS total_gross,
+        COALESCE(SUM(CASE 
+          WHEN payment_method IN ('Cash', 'Card', 'Momo-MTN', 'Momo-Airtel') 
+          THEN total 
+          ELSE 0 
+        END), 0) AS total_gross,
         COALESCE(SUM(CASE WHEN payment_method = 'Cash' THEN total ELSE 0 END), 0) AS total_cash,
         COALESCE(SUM(CASE WHEN payment_method = 'Card' THEN total ELSE 0 END), 0) AS total_card,
         COALESCE(SUM(CASE WHEN payment_method = 'Momo-MTN' THEN total ELSE 0 END), 0) AS total_mtn,
@@ -33,46 +38,74 @@ router.get('/today', async (req, res) => {
         COUNT(*) AS order_count
       FROM orders
       WHERE status IN ('Paid', 'Confirmed', 'Closed', 'Served')
+        AND payment_method IS NOT NULL
+        AND payment_method != 'Credit'
         AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
     `, [today]);
     
-    // Get credit settlements from credits table for today (informational only)
+    // Get credit settlements that were PAID today (actual cash collected from credit orders)
     const creditSettlements = await pool.query(`
       SELECT 
+        COALESCE(SUM(amount_paid), 0) AS total_settled,
         COALESCE(SUM(CASE WHEN settle_method = 'Cash' THEN amount_paid ELSE 0 END), 0) AS settled_cash,
+        COALESCE(SUM(CASE WHEN settle_method = 'Card' THEN amount_paid ELSE 0 END), 0) AS settled_card,
         COALESCE(SUM(CASE WHEN settle_method = 'Momo-MTN' THEN amount_paid ELSE 0 END), 0) AS settled_mtn,
         COALESCE(SUM(CASE WHEN settle_method = 'Momo-Airtel' THEN amount_paid ELSE 0 END), 0) AS settled_airtel,
-        COALESCE(SUM(CASE WHEN settle_method = 'Card' THEN amount_paid ELSE 0 END), 0) AS settled_card,
-        COALESCE(SUM(amount_paid), 0) AS total_settled,
         COUNT(*) AS settlement_count
       FROM credits 
-      WHERE status IN ('FullySettled', 'PartiallySettled')
+      WHERE status IN ('FullySettled')
         AND DATE(paid_at AT TIME ZONE 'Africa/Nairobi') = $1
+    `, [today]);
+    
+    // Get pending credit requests (NOT included in gross revenue)
+    const pendingCredits = await pool.query(`
+      SELECT 
+        COALESCE(SUM(total), 0) AS total_pending,
+        COUNT(*) AS pending_count
+      FROM orders
+      WHERE payment_method = 'Credit'
+        AND status NOT IN ('Paid', 'Closed')
+        AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
     `, [today]);
     
     const orders = ordersResult.rows[0];
     const settlements = creditSettlements.rows[0];
+    const pending = pendingCredits.rows[0];
     
-    console.log("Today's summary from orders:", {
+    // Gross revenue = paid orders + credit settlements collected today
+    const totalGross = Number(orders.total_gross) + Number(settlements.total_settled);
+    const totalCash = Number(orders.total_cash) + Number(settlements.settled_cash);
+    const totalCard = Number(orders.total_card) + Number(settlements.settled_card);
+    const totalMtn = Number(orders.total_mtn) + Number(settlements.settled_mtn);
+    const totalAirtel = Number(orders.total_airtel) + Number(settlements.settled_airtel);
+    
+    console.log("📊 Today's summary breakdown:", {
       date: today,
-      total_gross: orders.total_gross,
-      total_cash: orders.total_cash,
-      total_card: orders.total_card,
-      order_count: orders.order_count
+      paid_orders_gross: orders.total_gross,
+      credit_settlements_today: settlements.total_settled,
+      total_gross: totalGross,
+      pending_credits: pending.total_pending,
+      cash_breakdown: {
+        from_orders: orders.total_cash,
+        from_settlements: settlements.settled_cash,
+        total: totalCash
+      }
     });
     
     res.json({
       summary_date: today,
-      total_gross: Number(orders.total_gross),
-      total_cash: Number(orders.total_cash),
-      total_card: Number(orders.total_card),
-      total_mtn: Number(orders.total_mtn),
-      total_airtel: Number(orders.total_airtel),
+      total_gross: totalGross,
+      total_cash: totalCash,
+      total_card: totalCard,
+      total_mtn: totalMtn,
+      total_airtel: totalAirtel,
       total_credit: Number(orders.total_credit),
       total_mixed: 0,
       order_count: Number(orders.order_count),
       credit_settlements_today: Number(settlements.total_settled),
       credit_settlements_count: Number(settlements.settlement_count),
+      pending_credit_requests_amount: Number(pending.total_pending),
+      pending_credit_requests_count: Number(pending.pending_count),
       credit_settlements_breakdown: {
         cash: Number(settlements.settled_cash),
         card: Number(settlements.settled_card),
@@ -85,8 +118,37 @@ router.get('/today', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. RANGE & MONTHLY (SALES DATA)
+// 2. PENDING CREDITS TOTAL (For Accountant Dashboard)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/pending-credits-total', async (req, res) => {
+  try {
+    const today = kampalaDate();
+    
+    const result = await pool.query(`
+      SELECT 
+        COALESCE(SUM(total), 0) AS total_pending,
+        COUNT(*) AS pending_count
+      FROM orders
+      WHERE payment_method = 'Credit'
+        AND status NOT IN ('Paid', 'Closed')
+        AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
+    `, [today]);
+    
+    res.json({ 
+      total_pending: Number(result.rows[0].total_pending),
+      pending_count: Number(result.rows[0].pending_count),
+      message: "Credit requests pending approval (NOT included in gross revenue)"
+    });
+  } catch (err) {
+    console.error('Pending credits error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. RANGE & MONTHLY (SALES DATA)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/range', async (req, res) => {
   const { from, to } = req.query;
@@ -103,7 +165,7 @@ router.get('/range', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. PETTY CASH MANAGEMENT
+// 4. PETTY CASH MANAGEMENT
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/petty-cash', async (req, res) => {
   const date = req.query.date || kampalaDate();
@@ -182,7 +244,7 @@ router.put('/petty-cash/:id', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. MONTHLY FIXED EXPENSES (ACCOUNTANT SETUP)
+// 5. MONTHLY FIXED EXPENSES (ACCOUNTANT SETUP)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/monthly-expenses', async (req, res) => {
   const month = req.query.month || kampalaDate().substring(0, 7);
@@ -224,43 +286,50 @@ router.delete('/monthly-expenses/:id', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. MONTHLY P&L (DIRECTOR AUDIT VIEW) - FIXED: Credit settlements removed from revenue
+// 6. MONTHLY P&L (DIRECTOR AUDIT VIEW) - FIXED: Credit settlements separated
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/monthly-profit', async (req, res) => {
   const month = req.query.month || kampalaDate().substring(0, 7);
   try {
-    const salesRes = await pool.query(
-      `SELECT 
-         COALESCE(SUM(CASE WHEN method != 'Credit' THEN amount ELSE 0 END), 0) AS total_gross,
-         COALESCE(SUM(CASE WHEN method = 'Cash' THEN amount ELSE 0 END), 0) AS total_cash,
-         COALESCE(SUM(CASE WHEN method = 'Card' THEN amount ELSE 0 END), 0) AS total_card,
-         COALESCE(SUM(CASE WHEN method IN ('Momo-MTN','Momo-Airtel') THEN amount ELSE 0 END), 0) AS total_momo,
-         COUNT(*) AS order_count
-       FROM cashier_queue 
-       WHERE status = 'Confirmed' 
-       AND TO_CHAR((confirmed_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1`,
-      [month]
-    );
+    // Get paid orders (non-credit) for the month
+    const salesRes = await pool.query(`
+      SELECT 
+        COALESCE(SUM(CASE 
+          WHEN payment_method IN ('Cash', 'Card', 'Momo-MTN', 'Momo-Airtel') 
+          THEN total 
+          ELSE 0 
+        END), 0) AS total_gross,
+        COALESCE(SUM(CASE WHEN payment_method = 'Cash' THEN total ELSE 0 END), 0) AS total_cash,
+        COALESCE(SUM(CASE WHEN payment_method = 'Card' THEN total ELSE 0 END), 0) AS total_card,
+        COALESCE(SUM(CASE WHEN payment_method IN ('Momo-MTN', 'Momo-Airtel') THEN total ELSE 0 END), 0) AS total_momo,
+        COUNT(*) AS order_count
+      FROM orders 
+      WHERE status IN ('Paid', 'Confirmed', 'Closed', 'Served')
+        AND payment_method IS NOT NULL
+        AND payment_method != 'Credit'
+        AND TO_CHAR((timestamp AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
+    `, [month]);
     
-    const creditSettlements = await pool.query(
-      `SELECT 
-         COALESCE(SUM(CASE WHEN settle_method = 'Cash' THEN amount_paid ELSE 0 END), 0) AS settled_cash,
-         COALESCE(SUM(CASE WHEN settle_method = 'Momo-MTN' THEN amount_paid ELSE 0 END), 0) AS settled_mtn,
-         COALESCE(SUM(CASE WHEN settle_method = 'Momo-Airtel' THEN amount_paid ELSE 0 END), 0) AS settled_airtel,
-         COALESCE(SUM(CASE WHEN settle_method = 'Card' THEN amount_paid ELSE 0 END), 0) AS settled_card,
-         COALESCE(SUM(amount_paid), 0) AS total_settled,
-         COUNT(*) AS settlement_count
-       FROM credits 
-       WHERE status IN ('FullySettled', 'PartiallySettled')
-         AND TO_CHAR((paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1`,
-      [month]
-    );
+    // Get credit settlements for the month
+    const creditSettlements = await pool.query(`
+      SELECT 
+        COALESCE(SUM(amount_paid), 0) AS total_settled,
+        COALESCE(SUM(CASE WHEN settle_method = 'Cash' THEN amount_paid ELSE 0 END), 0) AS settled_cash,
+        COALESCE(SUM(CASE WHEN settle_method = 'Card' THEN amount_paid ELSE 0 END), 0) AS settled_card,
+        COALESCE(SUM(CASE WHEN settle_method IN ('Momo-MTN', 'Momo-Airtel') THEN amount_paid ELSE 0 END), 0) AS settled_momo,
+        COUNT(*) AS settlement_count
+      FROM credits 
+      WHERE status IN ('FullySettled')
+        AND TO_CHAR((paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
+    `, [month]);
 
+    // Get petty cash expenses
     const pettyRes = await pool.query(
       `SELECT COALESCE(SUM(amount), 0) AS petty_out FROM petty_cash 
        WHERE direction = 'OUT' AND TO_CHAR(entry_date, 'YYYY-MM') = $1`, [month]
     );
     
+    // Get fixed expenses
     const expRes = await pool.query(`SELECT * FROM monthly_expenses WHERE month = $1`, [month]);
 
     const sales = salesRes.rows[0];
@@ -268,24 +337,22 @@ router.get('/monthly-profit', async (req, res) => {
     const pettyOut = Number(pettyRes.rows[0].petty_out);
     const fixedTotal = expRes.rows.reduce((s, r) => s + Number(r.amount), 0);
     
-    const totalRevenue = Number(sales.total_gross);
+    // Total revenue = paid orders + credit settlements collected
+    const totalRevenue = Number(sales.total_gross) + Number(settlements.total_settled);
     const totalCosts = pettyOut + fixedTotal;
     const netProfit = totalRevenue - totalCosts;
 
     res.json({
       month,
       sales: { 
-        ...sales, 
+        from_paid_orders: Number(sales.total_gross),
+        from_credit_settlements: Number(settlements.total_settled),
         total_gross: totalRevenue,
-        cashier_gross: Number(sales.total_gross),
-        credit_settlements_collected: Number(settlements.total_settled),
-        settlement_count: Number(settlements.settlement_count),
-        settlement_breakdown: {
-          cash: Number(settlements.settled_cash),
-          card: Number(settlements.settled_card),
-          mtn: Number(settlements.settled_mtn),
-          airtel: Number(settlements.settled_airtel)
-        }
+        cash: Number(sales.total_cash) + Number(settlements.settled_cash),
+        card: Number(sales.total_card) + Number(settlements.settled_card),
+        mobile_money: Number(sales.total_momo) + Number(settlements.settled_momo),
+        order_count: Number(sales.order_count),
+        settlement_count: Number(settlements.settlement_count)
       },
       costs: { 
         petty_out: pettyOut, 
@@ -301,8 +368,9 @@ router.get('/monthly-profit', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. STAFF MONTHLY INCOME (For Performance Dashboard) - FULLY FIXED
+// 7. STAFF MONTHLY INCOME (For Performance Dashboard) - FULLY FIXED
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/staff-monthly-income', async (req, res) => {
   const { staffId, staffName, month } = req.query;
@@ -348,13 +416,18 @@ router.get('/staff-monthly-income', async (req, res) => {
         transaction_count: Number(queuePayments.rows[0].transaction_count)
       };
       
-      // 2. Get credit settlements - FIXED: Use LEFT JOIN and fallback to waiter_name
-      // First, get the staff's name to use as fallback
+      // 2. Get staff name for fallback
       const staffInfo = await pool.query(`
-        SELECT name FROM staff WHERE id = $1
+        SELECT name, role, daily_order_target, monthly_income_target FROM staff WHERE id = $1
       `, [staffId]);
-      const staffMemberName = staffInfo.rows[0]?.name || '';
       
+      if (staffInfo.rows.length > 0) {
+        staffDetails = staffInfo.rows[0];
+      }
+      
+      const staffMemberName = staffDetails?.name || '';
+      
+      // 3. Get credit settlements
       const creditSettlements = await pool.query(`
         SELECT 
           COALESCE(SUM(c.amount_paid), 0) as total,
@@ -365,13 +438,11 @@ router.get('/staff-monthly-income', async (req, res) => {
           COALESCE(SUM(CASE WHEN c.settle_method = 'Momo-Airtel' THEN c.amount_paid ELSE 0 END), 0) as airtel_amount
         FROM credits c
         LEFT JOIN cashier_queue cq ON c.cashier_queue_id = cq.id
-        WHERE c.status IN ('FullySettled', 'PartiallySettled')
+        WHERE c.status IN ('FullySettled')
           AND TO_CHAR((c.paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
           AND (
-            -- If cashier_queue_id exists, match by staff_id
             (c.cashier_queue_id IS NOT NULL AND cq.staff_id = $1)
             OR
-            -- If cashier_queue_id is NULL, match by waiter_name
             (c.cashier_queue_id IS NULL AND c.waiter_name ILIKE $3)
           )
       `, [staffId, targetMonth, `%${staffMemberName}%`]);
@@ -384,17 +455,6 @@ router.get('/staff-monthly-income', async (req, res) => {
         airtel: Number(creditSettlements.rows[0].airtel_amount),
         settlement_count: Number(creditSettlements.rows[0].settlement_count)
       };
-      
-      // 3. Get staff details
-      const staffDetailsRes = await pool.query(`
-        SELECT id, name, role, daily_order_target, monthly_income_target
-        FROM staff
-        WHERE id = $1
-      `, [staffId]);
-      
-      if (staffDetailsRes.rows.length > 0) {
-        staffDetails = staffDetailsRes.rows[0];
-      }
       
     } else if (staffName) {
       // ─── Using staffName (fallback) ──────────────────────────────────────
@@ -423,7 +483,7 @@ router.get('/staff-monthly-income', async (req, res) => {
         transaction_count: Number(queuePayments.rows[0].transaction_count)
       };
       
-      // 2. Get credit settlements - FIXED: Use waiter_name directly
+      // 2. Get credit settlements
       const creditSettlements = await pool.query(`
         SELECT 
           COALESCE(SUM(amount_paid), 0) as total,
@@ -433,7 +493,7 @@ router.get('/staff-monthly-income', async (req, res) => {
           COALESCE(SUM(CASE WHEN settle_method = 'Momo-MTN' THEN amount_paid ELSE 0 END), 0) as mtn_amount,
           COALESCE(SUM(CASE WHEN settle_method = 'Momo-Airtel' THEN amount_paid ELSE 0 END), 0) as airtel_amount
         FROM credits
-        WHERE status IN ('FullySettled', 'PartiallySettled')
+        WHERE status IN ('FullySettled')
           AND waiter_name ILIKE $1
           AND TO_CHAR((paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
       `, [`%${staffName}%`, targetMonth]);
@@ -490,8 +550,9 @@ router.get('/staff-monthly-income', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. ALL STAFF MONTHLY INCOME (For Manager/Director View) - FULLY FIXED
+// 8. ALL STAFF MONTHLY INCOME (For Manager/Director View) - FULLY FIXED
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/all-staff-monthly-income', async (req, res) => {
   const { month } = req.query;
@@ -518,12 +579,12 @@ router.get('/all-staff-monthly-income', async (req, res) => {
           AND TO_CHAR((confirmed_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
       `, [staff.id, targetMonth]);
       
-      // Get credit settlements - FIXED with proper fallback
+      // Get credit settlements
       const creditSettlements = await pool.query(`
         SELECT COALESCE(SUM(c.amount_paid), 0) as total
         FROM credits c
         LEFT JOIN cashier_queue cq ON c.cashier_queue_id = cq.id
-        WHERE c.status IN ('FullySettled', 'PartiallySettled')
+        WHERE c.status IN ('FullySettled')
           AND TO_CHAR((c.paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
           AND (
             (c.cashier_queue_id IS NOT NULL AND cq.staff_id = $1)
@@ -567,27 +628,36 @@ router.get('/all-staff-monthly-income', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. DOWNLOAD PDF REPORT (DIRECTOR FEATURE)
+// 9. DOWNLOAD PDF REPORT (DIRECTOR FEATURE) - FIXED
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/export-pdf', async (req, res) => {
   const { month } = req.query;
   if (!month) return res.status(400).send("Month is required");
 
   try {
+    // Get paid orders (non-credit)
     const salesData = await pool.query(`
       SELECT 
-        COALESCE(SUM(CASE WHEN method != 'Credit' THEN amount ELSE 0 END), 0) AS total_gross,
-        COALESCE(SUM(CASE WHEN method = 'Cash' THEN amount ELSE 0 END), 0) AS total_cash,
-        COALESCE(SUM(CASE WHEN method = 'Card' THEN amount ELSE 0 END), 0) AS total_card,
-        COALESCE(SUM(CASE WHEN method = 'Momo-MTN' THEN amount ELSE 0 END), 0) AS total_mtn,
-        COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0) AS total_airtel,
+        COALESCE(SUM(CASE 
+          WHEN payment_method IN ('Cash', 'Card', 'Momo-MTN', 'Momo-Airtel') 
+          THEN total 
+          ELSE 0 
+        END), 0) AS total_gross,
+        COALESCE(SUM(CASE WHEN payment_method = 'Cash' THEN total ELSE 0 END), 0) AS total_cash,
+        COALESCE(SUM(CASE WHEN payment_method = 'Card' THEN total ELSE 0 END), 0) AS total_card,
+        COALESCE(SUM(CASE WHEN payment_method = 'Momo-MTN' THEN total ELSE 0 END), 0) AS total_mtn,
+        COALESCE(SUM(CASE WHEN payment_method = 'Momo-Airtel' THEN total ELSE 0 END), 0) AS total_airtel,
         COUNT(*) AS order_count
-      FROM cashier_queue 
-      WHERE status = 'Confirmed' 
-        AND TO_CHAR((confirmed_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
+      FROM orders 
+      WHERE status IN ('Paid', 'Confirmed', 'Closed', 'Served')
+        AND payment_method IS NOT NULL
+        AND payment_method != 'Credit'
+        AND TO_CHAR((timestamp AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
     `, [month]);
 
+    // Get credit settlements
     const creditData = await pool.query(`
       SELECT 
         COALESCE(SUM(amount_paid), 0) AS total_settled,
@@ -597,10 +667,11 @@ router.get('/export-pdf', async (req, res) => {
         COALESCE(SUM(CASE WHEN settle_method = 'Momo-Airtel' THEN amount_paid ELSE 0 END), 0) AS settled_airtel,
         COUNT(*) AS settlement_count
       FROM credits 
-      WHERE status IN ('FullySettled', 'PartiallySettled')
+      WHERE status IN ('FullySettled')
         AND TO_CHAR((paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
     `, [month]);
 
+    // Get expenses
     const pettyData = await pool.query(`
       SELECT COALESCE(SUM(amount), 0) AS petty_out 
       FROM petty_cash 
@@ -617,7 +688,7 @@ router.get('/export-pdf', async (req, res) => {
     const pettyOut = Number(pettyData.rows[0].petty_out);
     const fixedTotal = expenses.rows.reduce((s, r) => s + Number(r.amount), 0);
     
-    const totalRevenue = Number(sales.total_gross);
+    const totalRevenue = Number(sales.total_gross) + Number(credits.total_settled);
     const totalExpenses = pettyOut + fixedTotal;
     const netProfit = totalRevenue - totalExpenses;
 
@@ -630,60 +701,48 @@ router.get('/export-pdf', async (req, res) => {
     doc.fillColor('#444444').fontSize(12).font('Helvetica').text('Monthly Financial Oversight Report', { align: 'center' }).moveDown();
     doc.text(`Report Period: ${month}`, { align: 'center' }).moveDown(2);
 
-    doc.rect(50, 150, 500, 180).fill('#f9f9f9').stroke('#eeeeee');
+    doc.rect(50, 150, 500, 200).fill('#f9f9f9').stroke('#eeeeee');
     doc.fillColor('#000000').fontSize(14).font('Helvetica-Bold').text('Executive Summary', 70, 165);
     
-    doc.fontSize(10).font('Helvetica-Bold').text('Total Revenue (Sales Only):', 70, 195);
+    doc.fontSize(10).font('Helvetica-Bold').text('Total Revenue:', 70, 195);
     doc.fillColor('#EAB308').font('Helvetica-Bold').text(`UGX ${totalRevenue.toLocaleString()}`, 280, 195);
+    doc.fillColor('#000000').font('Helvetica').text(`  • From Paid Orders: UGX ${Number(sales.total_gross).toLocaleString()}`, 80, 215);
+    doc.text(`  • From Credit Settlements: UGX ${Number(credits.total_settled).toLocaleString()}`, 80, 230);
     
-    doc.fillColor('#000000').font('Helvetica').text('Breakdown:', 70, 215);
-    doc.text(`  • Cash Payments: UGX ${Number(sales.total_cash).toLocaleString()}`, 80, 230);
-    doc.text(`  • Card Payments: UGX ${Number(sales.total_card).toLocaleString()}`, 80, 245);
-    doc.text(`  • MTN Mobile Money: UGX ${Number(sales.total_mtn).toLocaleString()}`, 80, 260);
-    doc.text(`  • Airtel Money: UGX ${Number(sales.total_airtel).toLocaleString()}`, 80, 275);
-    
-    doc.fillColor('#000000').font('Helvetica-Bold').text('Total Expenses:', 70, 300);
-    doc.fillColor('#DC2626').text(`UGX ${totalExpenses.toLocaleString()}`, 280, 300);
-    
-    doc.fillColor('#000000').font('Helvetica-Bold').text('Net Profit:', 70, 325);
-    const profitColor = netProfit >= 0 ? '#10B981' : '#DC2626';
-    doc.fillColor(profitColor).text(`UGX ${netProfit.toLocaleString()}`, 280, 325);
+    doc.text('Breakdown of Paid Orders:', 70, 255);
+    doc.text(`  • Cash: UGX ${Number(sales.total_cash).toLocaleString()}`, 80, 270);
+    doc.text(`  • Card: UGX ${Number(sales.total_card).toLocaleString()}`, 80, 285);
+    doc.text(`  • MTN Mobile Money: UGX ${Number(sales.total_mtn).toLocaleString()}`, 80, 300);
+    doc.text(`  • Airtel Money: UGX ${Number(sales.total_airtel).toLocaleString()}`, 80, 315);
     
     if (Number(credits.total_settled) > 0) {
-      doc.moveDown(2);
-      doc.fillColor('#000000').fontSize(12).font('Helvetica-Bold').text('Credit Settlements Collected', { underline: true }).moveDown(0.5);
-      doc.fontSize(10).font('Helvetica');
-      doc.text(`Total Credit Collections: UGX ${Number(credits.total_settled).toLocaleString()}`, 70, doc.y);
-      doc.text(`Number of Settlements: ${Number(credits.settlement_count)}`, 70, doc.y + 15);
-      doc.text(`Breakdown:`, 70, doc.y + 30);
-      if (Number(credits.settled_cash) > 0) doc.text(`  • Cash: UGX ${Number(credits.settled_cash).toLocaleString()}`, 80, doc.y);
-      if (Number(credits.settled_card) > 0) doc.text(`  • Card: UGX ${Number(credits.settled_card).toLocaleString()}`, 80, doc.y);
-      if (Number(credits.settled_mtn) > 0) doc.text(`  • MTN: UGX ${Number(credits.settled_mtn).toLocaleString()}`, 80, doc.y);
-      if (Number(credits.settled_airtel) > 0) doc.text(`  • Airtel: UGX ${Number(credits.settled_airtel).toLocaleString()}`, 80, doc.y);
-      doc.moveDown();
+      doc.text('Credit Settlements Breakdown:', 70, 340);
+      if (Number(credits.settled_cash) > 0) doc.text(`  • Cash: UGX ${Number(credits.settled_cash).toLocaleString()}`, 80, 355);
+      if (Number(credits.settled_card) > 0) doc.text(`  • Card: UGX ${Number(credits.settled_card).toLocaleString()}`, 80, 370);
+      if (Number(credits.settled_mtn) > 0) doc.text(`  • MTN: UGX ${Number(credits.settled_mtn).toLocaleString()}`, 80, 385);
+      if (Number(credits.settled_airtel) > 0) doc.text(`  • Airtel: UGX ${Number(credits.settled_airtel).toLocaleString()}`, 80, 400);
     }
-
-    doc.moveDown(2);
-    doc.fillColor('#000000').fontSize(12).font('Helvetica-Bold').text('Verified Fixed Expenses', { underline: true }).moveDown();
     
-    if (expenses.rows.length > 0) {
-      expenses.rows.forEach((item, index) => {
-        doc.fontSize(10).fillColor('#000000').font('Helvetica-Bold').text(`${index + 1}. ${item.category}:`);
-        doc.fillColor('#666666').font('Helvetica').text(`   Amount: UGX ${Number(item.amount).toLocaleString()}`, 70, doc.y);
-        doc.text(`   Description: ${item.description || 'N/A'}`, 70, doc.y);
-        doc.text(`   Recorded by: ${item.entered_by}`, 70, doc.y);
-        doc.moveDown(0.5);
-      });
+    const newY = Math.max(150 + 200 + 20, doc.y + 20);
+    doc.rect(50, newY, 500, 120).fill('#f9f9f9').stroke('#eeeeee');
+    
+    doc.fillColor('#000000').fontSize(12).font('Helvetica-Bold').text('Expenses & Profit', 70, newY + 15);
+    doc.fontSize(10).font('Helvetica-Bold').text('Total Expenses:', 70, newY + 45);
+    doc.fillColor('#DC2626').text(`UGX ${totalExpenses.toLocaleString()}`, 280, newY + 45);
+    doc.fillColor('#000000').text(`  • Petty Cash: UGX ${pettyOut.toLocaleString()}`, 80, newY + 65);
+    doc.text(`  • Fixed Expenses: UGX ${fixedTotal.toLocaleString()}`, 80, newY + 80);
+    
+    doc.fillColor('#000000').font('Helvetica-Bold').text('Net Profit:', 70, newY + 110);
+    const profitColor = netProfit >= 0 ? '#10B981' : '#DC2626';
+    doc.fillColor(profitColor).font('Helvetica-Bold').text(`UGX ${netProfit.toLocaleString()}`, 280, newY + 110);
+    
+    if (netProfit >= 0) {
+      doc.fillColor('#10B981').text(`✓ Profitable month with ${((netProfit / totalRevenue) * 100).toFixed(1)}% margin`, 70, newY + 135);
     } else {
-      doc.fontSize(10).text("No fixed expenses recorded for this period.");
+      doc.fillColor('#DC2626').text(`⚠ Operating at a loss of ${Math.abs(((netProfit / totalRevenue) * 100)).toFixed(1)}%`, 70, newY + 135);
     }
 
-    if (pettyOut > 0) {
-      doc.moveDown();
-      doc.fillColor('#000000').fontSize(10).font('Helvetica-Bold').text(`Petty Cash Expenses: UGX ${pettyOut.toLocaleString()}`, 70, doc.y);
-    }
-
-    doc.moveDown(3);
+    doc.moveDown(4);
     doc.fillColor('#999999').fontSize(8).font('Helvetica').text(
       `Generated on ${new Date().toLocaleString()} · Kurax Bistro Financial System`,
       { align: 'center' }

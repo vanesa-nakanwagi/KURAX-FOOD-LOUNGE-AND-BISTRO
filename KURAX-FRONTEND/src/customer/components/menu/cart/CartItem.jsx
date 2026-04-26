@@ -8,7 +8,7 @@ export default function CartItem({ item, onIncrease, onDecrease, onRemove }) {
       {/* Item Image */}
       <img
         src={item.image || getImageSrc(item.image_url)}
-        className="w-16 h-16 object-cover rounded-none border border-gray-200 dark:border-gray-700 flex-shrink-0"
+        className="w-16 h-16 object-cover rounded-xl border border-gray-200 dark:border-gray-700 flex-shrink-0"
         alt={item.name}
       />
 

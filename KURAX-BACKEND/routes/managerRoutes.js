@@ -672,6 +672,280 @@ router.get('/credits-summary', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// ─────────────────────────────────────────────────────────────────────────────
+// 16. APPROVE CREDIT REQUEST (Manager Action)
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/credits/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const { approved_by } = req.body;
+  
+  try {
+    // First, get the credit request from cashier_queue
+    const creditRequest = await pool.query(
+      `SELECT * FROM cashier_queue WHERE id = $1 AND method = 'Credit' AND status = 'PendingManagerApproval'`,
+      [id]
+    );
+    
+    if (creditRequest.rows.length === 0) {
+      return res.status(404).json({ error: 'Credit request not found or already processed' });
+    }
+    
+    const request = creditRequest.rows[0];
+    
+    // Start a transaction
+    await pool.query('BEGIN');
+    
+    // Update the cashier_queue status to 'Approved' (NO shift_cleared column)
+    await pool.query(
+      `UPDATE cashier_queue 
+       SET status = 'Approved', 
+           approved_by = $1, 
+           approved_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $2`,
+      [approved_by, id]
+    );
+    
+    // Create a credit record in the credits table
+    const creditResult = await pool.query(
+      `INSERT INTO credits (
+        cashier_queue_id, 
+        table_name, 
+        amount, 
+        client_name, 
+        client_phone,
+        pay_by,
+        waiter_name,
+        status,
+        approved_by,
+        approved_at,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      RETURNING *`,
+      [
+        id,
+        request.table_name,
+        request.amount,
+        request.credit_name,
+        request.credit_phone,
+        request.credit_pay_by,
+        request.requested_by,
+        'Approved',
+        approved_by
+      ]
+    );
+    
+    // Also create an entry in cashier_history for tracking if needed
+    await pool.query(
+      `INSERT INTO cashier_history (
+        cashier_queue_id,
+        table_name,
+        amount,
+        method,
+        status,
+        requested_by,
+        confirmed_by,
+        confirmed_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      ON CONFLICT (cashier_queue_id) DO NOTHING`,
+      [
+        id,
+        request.table_name,
+        request.amount,
+        'Credit',
+        'Approved',
+        request.requested_by,
+        approved_by
+      ]
+    );
+    
+    await pool.query('COMMIT');
+    
+    console.log(`✅ Credit ${id} approved by ${approved_by}`);
+    
+    res.json({
+      success: true,
+      message: 'Credit request approved successfully',
+      credit: creditResult.rows[0]
+    });
+    
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    console.error('Credit approval error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 17. REJECT CREDIT REQUEST (Manager Action)
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/credits/:id/reject', async (req, res) => {
+  const { id } = req.params;
+  const { rejected_by, reason } = req.body;
+  
+  try {
+    const creditRequest = await pool.query(
+      `SELECT * FROM cashier_queue WHERE id = $1 AND method = 'Credit' AND status = 'PendingManagerApproval'`,
+      [id]
+    );
+    
+    if (creditRequest.rows.length === 0) {
+      return res.status(404).json({ error: 'Credit request not found' });
+    }
+    
+    const request = creditRequest.rows[0];
+    
+    await pool.query('BEGIN');
+    
+    // Update the cashier_queue status to 'Rejected'
+    await pool.query(
+      `UPDATE cashier_queue 
+       SET status = 'Rejected', 
+           rejected_by = $1, 
+           reject_reason = $2,
+           rejected_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $3`,
+      [rejected_by, reason || 'Rejected by manager', id]
+    );
+    
+    // Create a rejected credit record
+    await pool.query(
+      `INSERT INTO credits (
+        cashier_queue_id, 
+        table_name, 
+        amount, 
+        client_name, 
+        client_phone,
+        pay_by,
+        waiter_name,
+        status,
+        reject_reason,
+        rejected_by,
+        rejected_at,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+      [
+        id,
+        request.table_name,
+        request.amount,
+        request.credit_name,
+        request.credit_phone,
+        request.credit_pay_by,
+        request.requested_by,
+        'Rejected',
+        reason || 'Rejected by manager',
+        rejected_by
+      ]
+    );
+    
+    await pool.query('COMMIT');
+    
+    console.log(`❌ Credit ${id} rejected by ${rejected_by}`);
+    
+    res.json({
+      success: true,
+      message: 'Credit request rejected'
+    });
+    
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    console.error('Credit rejection error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 18. GET PENDING CREDITS FOR MANAGER
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/credits/pending', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        cq.id,
+        cq.table_name,
+        cq.amount,
+        cq.requested_by AS waiter_name,
+        cq.credit_name AS client_name,
+        cq.credit_phone AS client_phone,
+        cq.credit_pay_by AS pay_by_date,
+        cq.created_at,
+        cq.status,
+        EXTRACT(EPOCH FROM (NOW() - cq.created_at)) / 60 AS waiting_minutes
+      FROM cashier_queue cq
+      WHERE cq.method = 'Credit' 
+        AND cq.status = 'PendingManagerApproval'
+      ORDER BY cq.created_at ASC
+    `);
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get pending credits error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 19. GET CREDIT SUMMARY FOR MANAGER DASHBOARD
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/credits/manager-summary', async (req, res) => {
+  try {
+    const pendingQuery = await pool.query(`
+      SELECT 
+        COUNT(*) AS pending_count,
+        COALESCE(SUM(amount), 0) AS pending_amount
+      FROM cashier_queue
+      WHERE method = 'Credit' 
+        AND status = 'PendingManagerApproval'
+    `);
+    
+    const approvedQuery = await pool.query(`
+      SELECT 
+        COUNT(*) AS approved_count,
+        COALESCE(SUM(amount), 0) AS approved_amount
+      FROM credits
+      WHERE status = 'Approved'
+    `);
+    
+    const settledQuery = await pool.query(`
+      SELECT 
+        COUNT(*) AS settled_count,
+        COALESCE(SUM(amount_paid), 0) AS settled_amount
+      FROM credits
+      WHERE status = 'FullySettled'
+    `);
+    
+    const rejectedQuery = await pool.query(`
+      SELECT 
+        COUNT(*) AS rejected_count,
+        COALESCE(SUM(amount), 0) AS rejected_amount
+      FROM credits
+      WHERE status = 'Rejected'
+    `);
+    
+    res.json({
+      pending: {
+        count: parseInt(pendingQuery.rows[0]?.pending_count || 0),
+        amount: parseFloat(pendingQuery.rows[0]?.pending_amount || 0)
+      },
+      approved: {
+        count: parseInt(approvedQuery.rows[0]?.approved_count || 0),
+        amount: parseFloat(approvedQuery.rows[0]?.approved_amount || 0)
+      },
+      settled: {
+        count: parseInt(settledQuery.rows[0]?.settled_count || 0),
+        amount: parseFloat(settledQuery.rows[0]?.settled_amount || 0)
+      },
+      rejected: {
+        count: parseInt(rejectedQuery.rows[0]?.rejected_count || 0),
+        amount: parseFloat(rejectedQuery.rows[0]?.rejected_amount || 0)
+      }
+    });
+  } catch (err) {
+    console.error('Manager credit summary error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 15. EXPORT TRANSACTION REPORT PDF - FIXED

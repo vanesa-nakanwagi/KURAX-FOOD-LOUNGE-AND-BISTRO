@@ -115,7 +115,7 @@ export default function Home() {
         <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 w-full pt-24 md:pt-32">
           <motion.div style={{ y: yContent }} className="max-w-2xl space-y-6 md:space-y-8">
             <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }}>
-              <h1 className="text-4xl md:text-7xl font-serif font-bold leading-[1.05] text-white">
+              <h1 className="text-4xl md:text-7xl font-serif font-medium leading-[1.05] text-white">
                 Experience <br />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 ">
                   Luxury
@@ -124,16 +124,16 @@ export default function Home() {
               </h1>
             </motion.div>
             
-            <p className="text-zinc-300 text-md md:text-xl font-light max-w-lg leading-relaxed">
+            <p className="text-zinc-300 text-sm md:text-xl font-light max-w-lg leading-relaxed">
               Indulge in a world where fine dining meets the art of relaxation. 
               Kurax is your ultimate sanctuary for gourmet cuisine.
             </p>
             
             <div className="flex flex-wrap gap-5 pt-4">
-              <button onClick={() => navigate("/reservations")} className="px-10 py-5 bg-yellow-600 text-black font-black uppercase tracking-widest rounded-sm hover:bg-yellow-500 transition-colors shadow-lg">
+              <button onClick={() => navigate("/reservations")} className="px-6 md:px-10 py-4 bg-yellow-600 text-black uppercase tracking-widest rounded-sm hover:bg-yellow-500 transition-colors shadow-lg min-w-[140px] text-xs sm:text-sm">
                 Book a Table
               </button>
-              <button onClick={() => navigate("/menus")} className="px-10 py-5 border border-white/40 text-white font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-all rounded-sm">
+              <button onClick={() => navigate("/menus")} className="px-6 md:px-10 py-4 border border-white/40 text-white uppercase tracking-widest hover:bg-white hover:text-black transition-all rounded-sm min-w-[140px] text-xs sm:text-sm">
                 Explore Menu
               </button>
             </div>
@@ -152,9 +152,17 @@ export default function Home() {
           <motion.header variants={fadeInUp} className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6">
             <div className="space-y-2">
               <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">Our Selection</span>
-              <h2 className="text-4xl md:text-6xl font-serif font-bold text-zinc-900">Signature Dishes</h2>
+              <div className="flex items-center gap-2 md:gap-3">
+  <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
+  <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
+    Signature{" "}
+    <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
+      Dishes
+    </span>
+  </h2>
+</div>
             </div>
-            <Link to="/menus" className="text-yellow-600 font-bold uppercase tracking-widest text-sm flex items-center gap-2 group">
+            <Link to="/menus" className="text-yellow-600  uppercase tracking-widest text-sm flex items-center gap-2 group">
               View Menu <ArrowRight size={18} className="group-hover:translate-x-2 transition-transform" />
             </Link>
           </motion.header>
@@ -189,14 +197,20 @@ export default function Home() {
         <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">
           Exclusive Experiences
         </span>
-        <h2 className="text-4xl md:text-6xl font-serif font-bold text-zinc-900">
-          Upcoming Schedule
-        </h2>
+        <div className="flex items-center gap-2 md:gap-3">
+  <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
+  <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
+    Upcoming{" "}
+    <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
+      Schedule
+    </span>
+  </h2>
+</div>
       </div>
       
       <Link 
         to="/events" 
-        className="text-yellow-600 font-bold uppercase tracking-widest text-sm flex items-center gap-2 group"
+        className="text-yellow-600  uppercase tracking-widest text-sm flex items-center gap-2 group"
       >
         VIew Events 
         <ArrowRight size={18} className="group-hover:translate-x-2 transition-transform" />
@@ -271,7 +285,7 @@ function HomeMenuCard({ item, onOrder }) {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
         <div className="absolute top-4 left-4">
-           <div className="bg-yellow-500 text-black text-[8px] font-black px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest">
+           <div className="bg-yellow-500 text-black text-[8px]  px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest">
              <Sparkles size={8} /> New
            </div>
         </div>
@@ -279,7 +293,7 @@ function HomeMenuCard({ item, onOrder }) {
       
       <div className="p-6 space-y-4">
         <div className="space-y-1">
-          <h4 className="text-lg  font-[Outfit] text-yellow-600  tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
+          <h4 className="text-lg  font-[Outfit] text-yellow-700  tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
             {item.name}
           </h4>
           <p className="text-zinc-900 text-[14px] font-light leading-relaxed line-clamp-2 ">
@@ -287,11 +301,11 @@ function HomeMenuCard({ item, onOrder }) {
           </p>
         </div>
 
-        <div className="flex items-center justify-between pt-4 border-t border-zinc-50">
+        <div className="flex items-center justify-between pt-4 border-t border-zinc-200">
           <motion.button 
   whileTap={{ scale: 0.95 }}
   onClick={() => onOrder(item)} 
-  className="group/btn flex items-center gap-1 px-4 py-3 bg-yellow-400 hover:bg-yellow-400 text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all duration-300 shadow-md"
+  className="group/btn flex items-center gap-1 px-4 py-3 bg-yellow-400 hover:bg-yellow-400 text-black text-[10px]  uppercase tracking-[0.2em] rounded-2xl transition-all duration-300 shadow-md"
 >
   <Plus 
     size={14} 

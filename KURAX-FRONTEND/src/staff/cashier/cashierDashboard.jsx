@@ -44,7 +44,6 @@ function methodStyle(method) {
   }
 }
 
-// Format currency in compact form (UGX 70K, UGX 1.2M, etc.)
 function formatCurrencyCompact(n) {
   const num = Number(n || 0);
   if (num >= 1_000_000) return `UGX ${(num / 1_000_000).toFixed(1)}M`;
@@ -52,7 +51,7 @@ function formatCurrencyCompact(n) {
   return `UGX ${num.toLocaleString()}`;
 }
 
-// ─── ENHANCED STAT CARD (Matches Accountant Dashboard) ────────────────────────
+// ─── ENHANCED STAT CARD ────────────────────────────────────────────────────────
 function StatCard({ icon, label, value, color, gradient, note, trend }) {
   const formattedValue = formatCurrencyCompact(value);
   const numericValue = Number(value || 0);
@@ -103,7 +102,7 @@ function StatCard({ icon, label, value, color, gradient, note, trend }) {
   );
 }
 
-// ─── GROSS REVENUE CARD (Matches Accountant Dashboard) ────────────────────────
+// ─── GROSS REVENUE CARD ────────────────────────────────────────────────────────
 function GrossRevenueCard({ grossSales, creditSettledToday }) {
   const combinedTotal = grossSales + creditSettledToday;
   const hasCredits = creditSettledToday > 0;
@@ -215,7 +214,6 @@ export default function CashierDashboard() {
   const [history,            setHistory]            = useState([]);
   const [qLoading,           setQLoading]           = useState(true);
   
-  // FIXED: Track both petty cash OUT (expenses) and IN (replenishment)
   const [pettyCashOutTotal,  setPettyCashOutTotal]  = useState(0);
   const [pettyCashInTotal,   setPettyCashInTotal]   = useState(0);
   const [creditSettledToday, setCreditSettledToday] = useState(0);
@@ -238,7 +236,7 @@ export default function CashierDashboard() {
     return () => clearTimeout(t);
   }, []);
 
-  // ── TODAY TOTALS - Exclude partially settled credits from gross ──
+  // ── TODAY TOTALS ──
   const todayTotals = useMemo(() => {
     const base = { cash: 0, card: 0, momo_mtn: 0, momo_airtel: 0, credit: 0, gross: 0 };
     history.forEach(row => {
@@ -264,25 +262,29 @@ export default function CashierDashboard() {
     return base;
   }, [history, today]);
 
-  // Combined mobile money total
   const totalMobileMoney = todayTotals.momo_mtn + todayTotals.momo_airtel;
-
-  // FIXED: Cash on Counter = Gross Cash - Replenishment (petty cash IN)
-  // Because replenishment moves money FROM main drawer TO petty cash wallet
   const cashOnCounter = Math.max(0, todayTotals.cash - pettyCashInTotal);
-
-  // Net cash after petty expenses (for shift summary)
   const netCashAfterPetty = todayTotals.cash - pettyCashOutTotal;
 
-  const creditNeedsAction = useMemo(
+  // FIXED: Better credit status tracking
+  const creditNeedsForwarding = useMemo(
     () => credits.filter(c => c.status === "PendingCashier").length,
     [credits]
   );
-  const creditPendingMgr = useMemo(
+  
+  const creditPendingManager = useMemo(
     () => credits.filter(c => c.status === "PendingManagerApproval").length,
     [credits]
   );
+  
+  const creditApprovedNotSettled = useMemo(
+    () => credits.filter(c => c.status === "Approved").length,
+    [credits]
+  );
+  
+  const totalCreditsNeedingAction = creditNeedsForwarding + creditPendingManager + creditApprovedNotSettled;
 
+  // ─── FETCH ALL DATA WITH DEBUGGING ──────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     try {
       const [qRes, cRes, hRes, pRes, sRes] = await Promise.all([
@@ -311,14 +313,29 @@ export default function CashierDashboard() {
           is_item:       o.is_item,
         })));
       }
-      if (cRes.ok) setCredits(await cRes.json());
+      
+      if (cRes.ok) {
+        const allCredits = await cRes.json();
+        // Debug logging
+        console.log("📋 Credits from API:", {
+          total: allCredits.length,
+          pendingCashier: allCredits.filter(c => c.status === "PendingCashier").length,
+          pendingManager: allCredits.filter(c => c.status === "PendingManagerApproval").length,
+          approved: allCredits.filter(c => c.status === "Approved").length,
+          settled: allCredits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled").length,
+          all_statuses: [...new Set(allCredits.map(c => c.status))]
+        });
+        setCredits(allCredits);
+      }
+      
       if (hRes.ok) setHistory(await hRes.json());
+      
       if (pRes.ok) {
         const summary = await pRes.json();
-        // FIXED: Track both IN and OUT separately
         setPettyCashInTotal(Number(summary.total_in) || 0);
         setPettyCashOutTotal(Number(summary.total_out) || 0);
       }
+      
       if (sRes.ok) {
         const sData = await sRes.json();
         setCreditSettledToday(Number(sData.credit_settlements_today || 0));
@@ -335,6 +352,26 @@ export default function CashierDashboard() {
     const id = setInterval(fetchAll, 8000);
     return () => clearInterval(id);
   }, [fetchAll]);
+
+  // Monitor credit changes
+  useEffect(() => {
+    if (credits.length > 0) {
+      console.log("💰 Current credits state:", {
+        total: credits.length,
+        pendingCashier: credits.filter(c => c.status === "PendingCashier").length,
+        pendingManager: credits.filter(c => c.status === "PendingManagerApproval").length,
+        approved: credits.filter(c => c.status === "Approved").length,
+        settled: credits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled").length,
+        rejected: credits.filter(c => c.status === "Rejected").length,
+        sample_approved: credits.filter(c => c.status === "Approved").slice(0, 2).map(c => ({
+          id: c.id,
+          table: c.table_name,
+          amount: c.amount,
+          client: c.client_name
+        }))
+      });
+    }
+  }, [credits]);
 
   useEffect(() => {
     const load = async () => {
@@ -357,37 +394,47 @@ export default function CashierDashboard() {
     setRejecting(false);
     setRejectNote("");
   };
-
-  const handleFinalConfirm = async () => {
-    const order = processingOrder;
-    const isMomo = order.method === "Momo-MTN" || order.method === "Momo-Airtel";
-    if (isMomo && !momoTransactionId.trim()) return;
-    setConfirming(true);
-    setAnimatingIds(prev => [...prev, order.id]);
-    try {
-      const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${order.id}/confirm`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          confirmed_by: cashierName,
-          transaction_id: momoTransactionId.trim() || null,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || "Confirm failed");
-        setConfirming(false);
-        setAnimatingIds(prev => prev.filter(id => id !== order.id));
-        return;
-      }
-      await fetchAll();
-    } catch (e) { console.error("Confirm failed:", e); }
-    setTimeout(() => {
-      setAnimatingIds(prev => prev.filter(id => id !== order.id));
-      setProcessingOrder(null);
+const handleFinalConfirm = async () => {
+  const order = processingOrder;
+  const isMomo = order.method === "Momo-MTN" || order.method === "Momo-Airtel";
+  const isSplit = order.split_payments && order.split_payments.length > 0;
+  
+  if (!isSplit && isMomo && !momoTransactionId.trim()) return;
+  
+  setConfirming(true);
+  setAnimatingIds(prev => [...prev, order.id]);
+  try {
+    const payload = {
+      confirmed_by: cashierName,
+      transaction_id: momoTransactionId.trim() || null,
+    };
+    
+    // Add split payments if this is a split payment order
+    if (isSplit) {
+      payload.split_payments = order.split_payments;
+    }
+    
+    const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${order.id}/confirm`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error || "Confirm failed");
       setConfirming(false);
-    }, 500);
-  };
+      setAnimatingIds(prev => prev.filter(id => id !== order.id));
+      return;
+    }
+    await fetchAll();
+  } catch (e) { console.error("Confirm failed:", e); }
+  setTimeout(() => {
+    setAnimatingIds(prev => prev.filter(id => id !== order.id));
+    setProcessingOrder(null);
+    setConfirming(false);
+  }, 500);
+};
 
   const handleForwardCredit = async (order) => {
     setRequestingApproval(true);
@@ -401,13 +448,13 @@ export default function CashierDashboard() {
         await fetchAll();
         setProcessingOrder(null);
         setRequestingApproval(false);
-        alert("Credit request forwarded to manager for approval.");
+        alert("✅ Credit request forwarded to manager for approval.");
         return;
       }
       const error = await res.json();
       if (error.error && error.error.includes("table_name")) {
         alert(
-          "Table information missing for this credit.\n\n" +
+          "❌ Table information missing for this credit.\n\n" +
           "Please ask the waiter to resend the credit request with the correct table information."
         );
       } else {
@@ -508,7 +555,7 @@ export default function CashierDashboard() {
           card: todayTotals.card,
         }}
         deliveryBadge={deliveryBadge}
-        creditBadge={creditNeedsAction + creditPendingMgr}
+        creditBadge={totalCreditsNeedingAction}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -540,25 +587,36 @@ export default function CashierDashboard() {
                 </span>
               </div>
             )}
-            {creditNeedsAction > 0 && (
+            {creditNeedsForwarding > 0 && (
               <button
                 onClick={() => setActiveSection("CREDITS")}
                 className="flex items-center gap-2 px-3 py-2 bg-orange-500/20 border border-orange-500/30 rounded-xl hover:bg-orange-500/30 transition-all animate-pulse"
               >
-                <BookOpen size={13} className="text-orange-400 shrink-0" />
+                <Send size={13} className="text-orange-400 shrink-0" />
                 <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest whitespace-nowrap">
-                  {creditNeedsAction} Credit{creditNeedsAction > 1 ? "s" : ""} Need Action
+                  {creditNeedsForwarding} Need Forwarding
                 </span>
               </button>
             )}
-            {creditPendingMgr > 0 && (
+            {creditPendingManager > 0 && (
               <button
                 onClick={() => setActiveSection("CREDITS")}
                 className="flex items-center gap-2 px-3 py-2 bg-purple-500/20 border border-purple-500/30 rounded-xl hover:bg-purple-500/30 transition-all"
               >
                 <Clock size={13} className="text-purple-400 shrink-0" />
                 <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest whitespace-nowrap">
-                  {creditPendingMgr} Awaiting Mgr
+                  {creditPendingManager} Awaiting Mgr
+                </span>
+              </button>
+            )}
+            {creditApprovedNotSettled > 0 && (
+              <button
+                onClick={() => setActiveSection("CREDITS")}
+                className="flex items-center gap-2 px-3 py-2 bg-emerald-500/20 border border-emerald-500/30 rounded-xl hover:bg-emerald-500/30 transition-all"
+              >
+                <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
+                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest whitespace-nowrap">
+                  {creditApprovedNotSettled} Approved - Settle Now
                 </span>
               </button>
             )}
@@ -600,7 +658,7 @@ export default function CashierDashboard() {
           {activeSection === "PENDING" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-top-4 duration-700">
               
-              {/* 5 Stat Cards in responsive grid - FIXED Cash on Counter */}
+              {/* 5 Stat Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
                 <StatCard
                   icon={<Banknote size={20} className="text-emerald-400" />}
@@ -681,7 +739,7 @@ export default function CashierDashboard() {
                 )}
               </div>
 
-              {(creditNeedsAction > 0 || creditPendingMgr > 0) && (
+              {totalCreditsNeedingAction > 0 && (
                 <button
                   onClick={() => setActiveSection("CREDITS")}
                   className="w-full p-5 bg-purple-500/5 border border-purple-500/20 rounded-[2.5rem] flex items-center gap-4 hover:bg-purple-500/10 transition-all text-left group"
@@ -692,8 +750,9 @@ export default function CashierDashboard() {
                   <div className="flex-1 min-w-0">
                     <p className="font-black text-white uppercase tracking-tighter text-sm">Credit Ledger</p>
                     <p className="text-[10px] text-zinc-500 font-bold mt-0.5 break-words">
-                      {creditNeedsAction > 0 && `${creditNeedsAction} credit${creditNeedsAction > 1 ? "s" : ""} need forwarding to manager · `}
-                      {creditPendingMgr > 0 && `${creditPendingMgr} awaiting manager approval`}
+                      {creditNeedsForwarding > 0 && `${creditNeedsForwarding} need forwarding to manager · `}
+                      {creditPendingManager > 0 && `${creditPendingManager} awaiting manager approval · `}
+                      {creditApprovedNotSettled > 0 && `${creditApprovedNotSettled} approved - ready to settle`}
                     </p>
                   </div>
                   <ArrowRightLeft size={16} className="text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0" />
@@ -727,7 +786,11 @@ export default function CashierDashboard() {
                   Manage on-account orders, approvals and client settlements
                 </p>
               </div>
-              <CreditLedgerPanel cashierName={cashierName} />
+              <CreditLedgerPanel 
+                cashierName={cashierName} 
+                onCreditSettled={fetchAll}
+                refreshTrigger={credits}
+              />
             </div>
           )}
 
@@ -817,7 +880,7 @@ export default function CashierDashboard() {
         <Footer />
       </div>
 
-      {/* Payment Modal - Same styling */}
+      {/* Payment Modal */}
       {processingOrder && (
         <div className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-[#0f0f0f] border border-white/10 rounded-[3rem] p-8 shadow-2xl overflow-y-auto max-h-[90vh]">
@@ -1059,7 +1122,7 @@ export default function CashierDashboard() {
   );
 }
 
-// ─── LIVE ORDER CARD (Updated with compact currency) ──────────────────────────
+// ─── LIVE ORDER CARD ──────────────────────────────────────────────────────────
 function LiveOrderCard({ order, onConfirm, onDelivery }) {
   const isCredit = order.method === "Credit";
   return (
@@ -1165,7 +1228,7 @@ function ForwardedCreditCard({ order }) {
   );
 }
 
-// ─── HISTORY CARD (Updated with compact currency) ─────────────────────────────
+// ─── HISTORY CARD ─────────────────────────────────────────────────────────────
 function HistoryCard({ item }) {
   const { color, icon } = methodStyle(item.method);
   const isPartiallySettled = item.status === "PartiallySettled";

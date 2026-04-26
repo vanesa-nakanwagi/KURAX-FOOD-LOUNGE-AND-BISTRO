@@ -93,6 +93,7 @@ function getIndividualItems(order, creditsData) {
       timestamp: order.timestamp || order.created_at,
       staff_name: order.staff_name,
       order_status: order.status,
+      created_at: order.created_at,
       _raw_item: item,
     };
   });
@@ -150,6 +151,8 @@ export default function PerformanceDashboard({ theme = "light" }) {
   const [fetchError, setFetchError] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [dayClosed, setDayClosed] = useState(false);
+  const [currentDayDate, setCurrentDayDate] = useState(getTodayLocal());
+  const [activeDay, setActiveDay] = useState(null);
 
   const savedUser = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); }
@@ -160,6 +163,22 @@ export default function PerformanceDashboard({ theme = "light" }) {
   const currentStaffName = savedUser?.name || "Staff Member";
   const staffRole = savedUser?.role || "STAFF";
   const staffInitial = (currentStaffName?.split(" ")[0] || "Staff").toUpperCase();
+
+  // ─── FETCH ACTIVE DAY INFO ──────────────────────────────────────────────
+  const fetchActiveDay = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/day-closure/active-day`);
+      if (res.ok) {
+        const data = await res.json();
+        setActiveDay(data);
+        if (data.date) {
+          setCurrentDayDate(data.date);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch active day:", err);
+    }
+  }, []);
 
   const loadTargets = useCallback(async () => {
     if (!currentStaffId) return;
@@ -208,27 +227,59 @@ export default function PerformanceDashboard({ theme = "light" }) {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/orders`);
+      // Fetch only orders from the current active day
+      const url = activeDay?.date 
+        ? `${API_URL}/api/orders?date=${activeDay.date}`
+        : `${API_URL}/api/orders`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      setOrders(await res.json());
+      const allOrders = await res.json();
+      
+      // Filter orders for current staff only
+      const myOrders = allOrders.filter(order => {
+        const matchName = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase();
+        const matchId = Number(order.staff_id) === Number(currentStaffId);
+        return matchName || matchId;
+      });
+      
+      setOrders(myOrders);
       setFetchError(null);
     } catch (err) { setFetchError(err.message); }
-  }, []);
+  }, [currentStaffId, currentStaffName, activeDay]);
 
   const fetchConfirmedQueue = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/orders/cashier-history`);
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      setConfirmedQueue(await res.json());
+      const allQueue = await res.json();
+      
+      // Filter for current staff only and current day
+      const myQueue = allQueue.filter(item => {
+        const matchStaff = String(item.staff_id) === String(currentStaffId) ||
+          item.requested_by?.toLowerCase() === currentStaffName?.toLowerCase();
+        const itemDate = formatOrderDate(item.confirmed_at || item.created_at);
+        return matchStaff && itemDate === currentDayDate;
+      });
+      
+      setConfirmedQueue(myQueue);
     } catch (err) { console.error("Queue fetch failed:", err); }
-  }, []);
+  }, [currentStaffId, currentStaffName, currentDayDate]);
 
   const fetchCredits = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/credits`);
-      if (res.ok) setCredits(await res.json());
+      if (res.ok) {
+        const allCredits = await res.json();
+        // Filter for current staff and current day
+        const myCreditsToday = allCredits.filter(credit => {
+          const matchWaiter = credit.waiter_name?.toLowerCase() === currentStaffName?.toLowerCase();
+          const creditDate = formatOrderDate(credit.created_at);
+          return matchWaiter && creditDate === currentDayDate;
+        });
+        setCredits(myCreditsToday);
+      }
     } catch (err) { console.error("Credits fetch failed:", err); }
-  }, []);
+  }, [currentStaffName, currentDayDate]);
 
   // ─── CHECK DAY CLOSURE STATUS ──────────────────────────────────────────────
   const checkDayClosure = useCallback(async () => {
@@ -239,8 +290,12 @@ export default function PerformanceDashboard({ theme = "light" }) {
         if (data.is_closed && !dayClosed) {
           console.log("Day is closed, resetting dashboard...");
           setDayClosed(true);
-          // Reset all data
           await handleDayClosureReset();
+        } else if (!data.is_closed && dayClosed) {
+          // Day has been reopened
+          setDayClosed(false);
+          await fetchActiveDay();
+          await handleRefreshData();
         }
       }
     } catch (err) {
@@ -257,9 +312,11 @@ export default function PerformanceDashboard({ theme = "light" }) {
     setOrders([]);
     setCredits([]);
     setMonthlyIncomeData(null);
-    setStaffTargets({ daily_order_target: null, monthly_income_target: null });
     
-    // Force refresh all data
+    // Fetch new active day
+    await fetchActiveDay();
+    
+    // Force refresh all data for the new day
     await Promise.all([
       loadTargets(),
       fetchMonthlyIncome(),
@@ -274,7 +331,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
     const notification = document.createElement('div');
     notification.innerHTML = `
       <div style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; background: #10B981; color: white; padding: 16px 24px; border-radius: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); animation: slideIn 0.3s ease-out; font-family: system-ui;">
-        ✅ Day has been closed! All totals have been reset for the new day.
+        ✅ New day started! All totals have been reset.
       </div>
       <style>
         @keyframes slideIn {
@@ -285,7 +342,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
     `;
     document.body.appendChild(notification);
     setTimeout(() => notification.remove(), 5000);
-  }, [loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits]);
+  }, [fetchActiveDay, loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits]);
 
   // ─── DAY CLOSURE EVENT LISTENER ────────────────────────────────────────────
   useEffect(() => {
@@ -308,9 +365,10 @@ export default function PerformanceDashboard({ theme = "light" }) {
     };
   }, [handleDayClosureReset]);
 
-  // Main data fetching effect
+  // Initial load effect
   useEffect(() => {
-    const loadAllData = async () => {
+    const initialize = async () => {
+      await fetchActiveDay();
       await Promise.all([
         loadTargets(),
         fetchMonthlyIncome(),
@@ -320,23 +378,26 @@ export default function PerformanceDashboard({ theme = "light" }) {
       ]);
     };
     
-    loadAllData();
+    initialize();
     
     // Check day closure every 30 seconds
     const closureInterval = setInterval(checkDayClosure, 30000);
     
+    // Refresh data every 30 seconds
     const interval = setInterval(() => {
-      fetchMonthlyIncome();
-      fetchOrders();
-      fetchConfirmedQueue();
-      fetchCredits();
+      if (!dayClosed) {
+        fetchMonthlyIncome();
+        fetchOrders();
+        fetchConfirmedQueue();
+        fetchCredits();
+      }
     }, 30000);
     
     return () => {
       clearInterval(interval);
       clearInterval(closureInterval);
     };
-  }, [loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits, checkDayClosure]);
+  }, [loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits, checkDayClosure, fetchActiveDay, dayClosed]);
 
   const handleRefreshData = async () => {
     setIsLoading(true);
@@ -346,7 +407,8 @@ export default function PerformanceDashboard({ theme = "light" }) {
       fetchMonthlyIncome(),
       fetchOrders(),
       fetchConfirmedQueue(),
-      fetchCredits()
+      fetchCredits(),
+      fetchActiveDay()
     ]);
     setLastRefresh(new Date());
     setIsLoading(false);
@@ -354,38 +416,31 @@ export default function PerformanceDashboard({ theme = "light" }) {
 
   // ─── COMPUTED VALUES ────────────────────────────────────────────────────────
   const dailyStaffItemsCount = useMemo(() => {
-    const todayStr = getTodayLocal();
     if (!orders.length) return 0;
     let count = 0;
     orders.forEach(order => {
-      const orderDate = order.timestamp || order.created_at || order.date;
-      if (!orderDate) return;
-      if (formatOrderDate(orderDate) !== todayStr) return;
-      const matchName = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase();
-      const matchId = Number(order.staff_id) === Number(currentStaffId);
-      if (matchName || matchId) count += getItemCount(order.items);
+      const orderDate = formatOrderDate(order.created_at || order.timestamp);
+      if (orderDate === currentDayDate) {
+        count += getItemCount(order.items);
+      }
     });
     return count;
-  }, [orders, currentStaffId, currentStaffName]);
+  }, [orders, currentDayDate]);
 
   const monthlyRevenue = monthlyIncomeData?.monthly_income || 0;
   const revenueTarget = staffTargets.monthly_income_target || monthlyIncomeData?.monthly_target || 0;
   
   const grossToday = useMemo(() => {
-    const todayStr = getTodayLocal();
     if (!confirmedQueue.length) return 0;
     return confirmedQueue.reduce((sum, row) => {
       if (row.status !== "Confirmed") return sum;
-      if (formatOrderDate(new Date(row.confirmed_at || row.created_at)) !== todayStr) return sum;
-      const isMe = String(row.staff_id) === String(currentStaffId) ||
-        row.requested_by?.toLowerCase() === currentStaffName?.toLowerCase();
-      return isMe ? sum + (Number(row.amount) || 0) : sum;
+      const itemDate = formatOrderDate(row.confirmed_at || row.created_at);
+      if (itemDate !== currentDayDate) return sum;
+      return sum + (Number(row.amount) || 0);
     }, 0);
-  }, [confirmedQueue, currentStaffId, currentStaffName]);
+  }, [confirmedQueue, currentDayDate]);
 
-  const myCredits = useMemo(() => credits.filter(credit =>
-    credit.waiter_name?.toLowerCase() === currentStaffName?.toLowerCase()
-  ), [credits, currentStaffName]);
+  const myCredits = useMemo(() => credits, [credits]);
 
   const creditStats = useMemo(() => {
     const fullySettled = myCredits.filter(c => c.status === "FullySettled");
@@ -416,13 +471,14 @@ export default function PerformanceDashboard({ theme = "light" }) {
     if (!orders.length) return [];
     const allItems = [];
     orders.forEach(order => {
-      const matchName = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase();
-      const matchId = Number(order.staff_id) === Number(currentStaffId);
-      if (matchName || matchId) allItems.push(...getIndividualItems(order, credits));
+      const orderDate = formatOrderDate(order.created_at || order.timestamp);
+      if (orderDate === currentDayDate) {
+        allItems.push(...getIndividualItems(order, credits));
+      }
     });
     allItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     return allItems.slice(0, 20);
-  }, [orders, currentStaffId, currentStaffName, credits]);
+  }, [orders, credits, currentDayDate]);
 
   const creditChartData = useMemo(() => {
     const days = [];
@@ -494,13 +550,20 @@ export default function PerformanceDashboard({ theme = "light" }) {
             </div>
             <div>
               <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tighter text-zinc-900">{currentStaffName}</h1>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className="px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-600 text-[8px] font-black uppercase tracking-wider">{staffRole}</span>
-                <span className="text-[10px] text-zinc-400 uppercase tracking-wider">{today}</span>
+                <span className="text-[10px] text-zinc-400 uppercase tracking-wider">
+                  {activeDay?.date || currentDayDate}
+                </span>
+                {activeDay && (
+                  <span className="text-[8px] text-emerald-500 font-black uppercase tracking-wider">
+                    ✓ Day Active
+                  </span>
+                )}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <span className="text-[8px] text-zinc-400">Last refresh: {lastRefresh.toLocaleTimeString()}</span>
             <button onClick={handleRefreshData} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-zinc-200 text-zinc-600 text-[10px] font-black uppercase tracking-wider hover:bg-zinc-50 transition-all disabled:opacity-50">
               {isLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -521,14 +584,22 @@ export default function PerformanceDashboard({ theme = "light" }) {
           </div>
         )}
 
-        {/* Day Closed Banner */}
-        {dayClosed && (
-          <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-4 text-center">
-            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">
-              ✅ New Day Started - All totals have been reset
-            </p>
+        {/* Day Info Banner */}
+        <div className="rounded-2xl bg-blue-500/10 border border-blue-500/20 p-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Calendar size={16} className="text-blue-500" />
+              <span className="text-[10px] font-black text-blue-600 uppercase tracking-wider">
+                Active Business Day: {activeDay?.date || currentDayDate}
+              </span>
+            </div>
+            {dayClosed && (
+              <span className="text-[9px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg">
+                New day started - totals reset
+              </span>
+            )}
           </div>
-        )}
+        </div>
 
         {/* ── STAT CARDS (4 CARDS) ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -579,7 +650,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
             </div>
           </div>
 
-          {/* 3 · Monthly Target (ACCUMULATES throughout month) */}
+          {/* 3 · Monthly Target */}
           <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 shadow-lg">
             <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-500" />
             <div className="relative z-10">
@@ -609,7 +680,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2.5 rounded-xl bg-white/20"><BookOpen size={18} className="text-white" /></div>
-                <span className="text-[8px] font-black text-white/80 uppercase tracking-wider">Credits</span>
+                <span className="text-[8px] font-black text-white/80 uppercase tracking-wider">Credits Today</span>
               </div>
               <p className="text-[9px] font-black text-white/70 uppercase tracking-wider mb-1">Your Credit Summary</p>
               <div className="space-y-1">
@@ -636,7 +707,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
           </div>
         </div>
 
-        {/* ── CREDIT ACTIVITY LINE CHART (With Outstanding) ── */}
+        {/* ── CREDIT ACTIVITY LINE CHART ── */}
         <div className="rounded-2xl bg-white p-6 shadow-sm border border-zinc-100">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
             <div className="flex items-center gap-3">
@@ -686,14 +757,14 @@ export default function PerformanceDashboard({ theme = "light" }) {
         <div className="rounded-2xl bg-white p-6 shadow-sm border border-zinc-100">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-xl bg-blue-500/10"><Activity size={16} className="text-blue-500" /></div>
-            <h3 className="text-sm font-black uppercase tracking-tighter text-zinc-900">Recent Order Items History</h3>
+            <h3 className="text-sm font-black uppercase tracking-tighter text-zinc-900">Today's Order Items</h3>
             <span className="ml-auto text-[9px] text-zinc-400">Last 20 items</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="border-b border-zinc-200">
                 <tr>
-                  {["Item", "Table", "Qty", "Amount", "Payment Method", "Status", "Date"].map(h => (
+                  {["Item", "Table", "Qty", "Amount", "Payment Method", "Status", "Time"].map(h => (
                     <th key={h} className="pb-3 text-[9px] font-black text-zinc-400 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
@@ -702,7 +773,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
                 {recentOrderItems.length > 0 ? recentOrderItems.map((item, idx) => {
                   const status = getItemPaymentStatus(item);
                   const method = item.payment_method || (item.is_paid ? "Cash" : item.is_credit ? "Credit" : "Pending");
-                  const dateStr = new Date(item.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+                  const timeStr = new Date(item.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
                   return (
                     <tr key={idx} className="border-b border-zinc-100 hover:bg-zinc-50 transition-colors">
                       <td className="py-3 text-[11px] font-bold text-zinc-900 break-words max-w-[150px]">{item.name}</td>
@@ -718,14 +789,14 @@ export default function PerformanceDashboard({ theme = "light" }) {
                           <span className={`text-[9px] font-black uppercase ${status.color}`}>{status.label}</span>
                         </div>
                       </td>
-                      <td className="py-3 text-[9px] text-zinc-400 whitespace-nowrap">{dateStr}</td>
+                      <td className="py-3 text-[9px] text-zinc-400 whitespace-nowrap">{timeStr}</td>
                     </tr>
                   );
                 }) : (
                   <tr>
                     <td colSpan="7" className="py-8 text-center">
-                      <p className="text-[10px] text-zinc-400">No order items found</p>
-                      <p className="text-[8px] text-zinc-300 mt-1">Items you serve will appear here</p>
+                      <p className="text-[10px] text-zinc-400">No order items for today</p>
+                      <p className="text-[8px] text-zinc-300 mt-1">Items you serve on {currentDayDate} will appear here</p>
                     </td>
                   </tr>
                 )}
@@ -785,8 +856,8 @@ export default function PerformanceDashboard({ theme = "light" }) {
               </div>
               <p className="text-[11px] text-zinc-600">
                 {creditStats.total > 0
-                  ? `💳 You have ${creditStats.settled.count} settled totaling ${fmtLargeNumber(creditStats.settled.amount)}, ${creditStats.outstanding.count} outstanding totaling ${fmtLargeNumber(creditStats.outstanding.amount)}, and ${creditStats.rejected.count} rejected totaling ${fmtLargeNumber(creditStats.rejected.amount)}`
-                  : "💳 No credit records found"}
+                  ? `💳 Today: ${creditStats.settled.count} settled (${fmtLargeNumber(creditStats.settled.amount)}), ${creditStats.outstanding.count} outstanding (${fmtLargeNumber(creditStats.outstanding.amount)})`
+                  : "💳 No credit records for today"}
               </p>
             </div>
           </div>

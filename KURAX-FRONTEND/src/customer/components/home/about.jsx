@@ -81,14 +81,14 @@ export default function About() {
     >
       {/* Ambient background orbs */}
       <div
-        className="pointer-events-none absolute -top-32 -left-32 w-[520px] h-[520px] rounded-full opacity-[0.07]"
+        className="pointer-events-none absolute -top-24 -left-24 w-[320px] h-[320px] md:w-[520px] md:h-[520px] rounded-full opacity-[0.07]"
         style={{
           background: "radial-gradient(circle, #d97706, transparent 70%)",
           filter: "blur(80px)",
         }}
       />
       <div
-        className="pointer-events-none absolute bottom-0 right-0 w-[420px] h-[420px] rounded-full opacity-[0.06]"
+        className="pointer-events-none absolute bottom-0 right-0 w-[260px] h-[260px] md:w-[420px] md:h-[420px] rounded-full opacity-[0.06]"
         style={{
           background: "radial-gradient(circle, #b45309, transparent 70%)",
           filter: "blur(100px)",
@@ -177,13 +177,19 @@ export default function About() {
                 }}
               />
 
-              {/* Stats - Naked Layout */}
-              <div className="flex flex-row flex-nowrap items-center gap-8 py-4">
-                <StatItem value="500+" label="Happy Clients" delay={0.5} />
+              {/* Stats - Inline Layout */}
+              <div className="flex flex-row flex-nowrap items-center gap-6 py-4 overflow-x-auto min-w-full">
+                <div className="flex items-center gap-4">
+                  <StatItem value="500+" label="Happy Clients" delay={0.5} />
+                </div>
                 <div className="w-px h-10 bg-white/10" />
-                <StatItem value="15+" label="Signature Dishes" delay={0.65} />
+                <div className="flex items-center gap-4">
+                  <StatItem value="15+" label="Signature Dishes" delay={0.65} />
+                </div>
                 <div className="w-px h-10 bg-white/10" />
-                <StatItem value="4+" label="Years of Excellence" delay={0.8} />
+                <div className="flex items-center gap-4">
+                  <StatItem value="4+" label="Years of Excellence" delay={0.8} />
+                </div>
               </div>
             </div>
           </div>
@@ -200,12 +206,11 @@ export default function About() {
             <div
               className="absolute -inset-[2px] opacity-40 pointer-events-none"
               style={{
-                background: "linear-gradient(135deg, rgba(202,138,4,0.6), transparent 60%, rgba(180,83,9,0.4))",
                 filter: "blur(1px)",
               }}
             />
 
-            <div className="relative overflow-hidden shadow-2xl h-[480px]">
+            <div className="relative overflow-hidden shadow-2xl h-[320px] md:h-[420px] lg:h-[480px]">
               <motion.div
                 style={{ y: imageY }}
                 className="absolute inset-0 w-full h-[110%] -top-[5%]"

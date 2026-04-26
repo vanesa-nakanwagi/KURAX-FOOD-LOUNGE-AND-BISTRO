@@ -108,7 +108,7 @@ export default function CartModal({
                         handleAddToCart(activeDish);
                         setActiveDish(null);
                       }}
-                      className="bg-yellow-500 text-black py-2 font-semibold rounded-none hover:bg-yellow-400 transition"
+                      className="bg-yellow-500 text-black py-2  rounded-xl hover:bg-yellow-400 transition"
                     >
                       Add to Cart
                     </button>

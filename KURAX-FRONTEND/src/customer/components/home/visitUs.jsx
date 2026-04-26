@@ -19,10 +19,10 @@ const InfoCard = ({ icon: Icon, title, content, delay }) => {
         </div>
         
         <div className="flex flex-col">
-          <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-yellow-700 dark:text-yellow-500 mb-2">
+          <h3 className="text-md font-medium  uppercase text-yellow-700 dark:text-yellow-500 mb-2">
             {title}
           </h3>
-          <div className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-md font-light leading-relaxed">
+          <div className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-[16px] font-light">
             {content}
           </div>
         </div>
@@ -76,8 +76,9 @@ export default function ContactPage() {
             <div className="h-[1px] w-8 bg-yellow-600" />
           </div>
           
-          <h1 className="text-5xl md:text-7xl font-serif font-bold text-slate-900 dark:text-white mb-6">
-            Find Us in <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800">Kyanja</span>
+          <h1 className="text-3xl md:text-5xl font-serif font-bold text-slate-900 dark:text-white mb-6">
+            Find Us in <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
+      Kyanja</span>
           </h1>
         </motion.div>
 
@@ -90,9 +91,9 @@ export default function ContactPage() {
             viewport={{ once: true }}
             className="relative group"
           >
-            <div className="absolute -inset-4 border border-yellow-600/20 rounded-none -z-10 group-hover:border-yellow-600/40 transition-colors duration-700" />
+            <div className="absolute -inset-4  rounded-none -z-10 group-hover:border-yellow-600/40 transition-colors duration-700" />
             
-            <div className="relative h-[500px] md:h-[650px] rounded-none overflow-hidden shadow-2xl border border-white/10 bg-zinc-900">
+            <div className="relative h-[320px] md:h-[500px] lg:h-[650px] rounded-none overflow-hidden shadow-2xl bg-zinc-900">
               <iframe
                 src={mapEmbedUrl}
                 width="100%"
@@ -110,7 +111,7 @@ export default function ContactPage() {
                 href={mapEmbedUrl} 
                 target="_blank" 
                 rel="noreferrer"
-                className="absolute bottom-8 right-8 flex items-center gap-3 px-8 py-5 bg-yellow-600 text-black font-black text-xs uppercase tracking-widest rounded-none shadow-xl hover:bg-yellow-500 transition-all"
+                className="absolute bottom-8 right-8 flex items-center gap-3 px-4 py-3 sm:px-6 sm:py-4 bg-yellow-400 text-black font-medium text-[10px] sm:text-xs uppercase tracking-widest rounded-none shadow-xl hover:bg-yellow-500 transition-all"
               >
                 Get Directions <ArrowUpRight size={18} />
               </a>
@@ -123,7 +124,7 @@ export default function ContactPage() {
               icon={MapPin} 
               title="Location" 
               delay={0.2}
-              content={<p className="text-lg">{kuraxLocation.address}, <br /> {kuraxLocation.city}</p>}
+              content={<p className="text-md">{kuraxLocation.address}, <br /> {kuraxLocation.city}</p>}
             />
 
             <InfoCard 
@@ -146,7 +147,7 @@ export default function ContactPage() {
               icon={Clock} 
               title="Opening Hours" 
               delay={0.4}
-              content={<p className="text-lg font-medium">{kuraxLocation.hours}</p>}
+              content={<p className="text-md">{kuraxLocation.hours}</p>}
             />
 
           
