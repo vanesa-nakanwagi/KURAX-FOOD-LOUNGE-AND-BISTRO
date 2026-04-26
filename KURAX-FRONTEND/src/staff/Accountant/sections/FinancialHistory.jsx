@@ -14,18 +14,19 @@ export default function FinancialHistory({
   profitLoad, 
   fetchMonthlyData, 
   API_URL, 
-    isDark = false
-  
+  isDark = false,
+  hasPhysicalCount,
+  setActiveSection
 }) {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${isDark ? 'text-white' : 'text-gray-900'}`}>
             Today's Revenue
           </h2>
           <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue and updates every 15 seconds</p>
-          <p className="text-[9px] text-zinc-500 mt-1"> Credit requests are NOT included in gross until approved and settled</p>
+          <p className={`text-[9px] mt-1 ${isDark ? 'text-zinc-500' : 'text-gray-500'}`}>✅ Credit requests are NOT included in gross until approved and settled</p>
         </div>
         <div className="flex items-center gap-1 text-[8px] text-zinc-600">
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -33,7 +34,8 @@ export default function FinancialHistory({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      {/* Two stat cards per row on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         <StatCard
           icon="cash"
           label="Cash Revenue"
@@ -63,16 +65,36 @@ export default function FinancialHistory({
         />
       </div>
 
+      {/* Physical count warning - positioned below stat cards at the far right */}
+      <div className="flex justify-end">
+        {hasPhysicalCount !== undefined && !hasPhysicalCount && !dayClosed && (
+          <div className="rounded-2xl bg-yellow-50 border border-yellow-200 p-3 text-center max-w-md w-full sm:w-auto">
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <AlertTriangle size={14} className="text-yellow-600" />
+              <span className="text-[9px] font-black text-yellow-700 uppercase tracking-wider">
+                ⚠️ Physical count required!
+              </span>
+              <button 
+                onClick={() => setActiveSection && setActiveSection("PHYSICAL_COUNT")}
+                className="px-3 py-1 bg-yellow-500 text-black rounded-lg text-[8px] font-black shadow-sm hover:bg-yellow-600 transition-all"
+              >
+                Go to Physical Count
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Display pending credits info if any */}
       {!dayClosed && sys.pending_credits > 0 && (
-        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4">
+        <div className={`rounded-2xl border p-4 ${isDark ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-200'}`}>
           <div className="flex items-center gap-3">
             <AlertTriangle size={16} className="text-amber-500" />
             <div>
-              <p className="text-[10px] font-black text-amber-600 uppercase tracking-wider">
+              <p className={`text-[10px] font-black uppercase tracking-wider ${isDark ? 'text-amber-600' : 'text-amber-700'}`}>
                 Pending Credit Requests
               </p>
-              <p className="text-[9px] text-zinc-600">
+              <p className={`text-[9px] ${isDark ? 'text-zinc-600' : 'text-gray-600'}`}>
                 UGX {sys.pending_credits.toLocaleString()} in credit requests waiting for approval. 
                 These will be added to gross revenue when approved AND settled.
               </p>
@@ -86,7 +108,9 @@ export default function FinancialHistory({
           <h2 className={`text-xl font-black uppercase leading-none transition-colors duration-300 ${isDark ? 'text-white' : 'text-gray-900'}`}>
             Monthly Expenses
           </h2>
-          <p className="text-zinc-500 text-[11px] font-medium mt-1 italic uppercase tracking-wider">Fixed Costs & Operational Overheads</p>
+          <p className={`text-[11px] font-medium mt-1 italic uppercase tracking-wider ${isDark ? 'text-zinc-500' : 'text-gray-500'}`}>
+            Fixed Costs & Operational Overheads
+          </p>
         </div>
         <MonthlyCosts
           month={selectedMonth}

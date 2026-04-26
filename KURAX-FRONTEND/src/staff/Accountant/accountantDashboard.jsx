@@ -1195,12 +1195,7 @@ export default function AccountantDashboard() {
               
             </div>
             
-            <button 
-              onClick={() => forceHardRefresh()}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-500 text-black font-black text-[10px] uppercase tracking-wider hover:bg-yellow-400 transition-all"
-            >
-              <RefreshCw size={12} /> Hard Refresh
-            </button>
+           
             
             {/* Start New Day Button */}
             <button 
@@ -1263,74 +1258,6 @@ export default function AccountantDashboard() {
             </div>
           )}
 
-          {/* FINANCIAL HISTORY */}
-{activeSection === "FINANCIAL_HISTORY" && (
-  <div className="space-y-8 animate-in fade-in duration-500">
-    <div className="flex items-center justify-between">
-      <div>
-        <h2 className={`text-2xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Today's Revenue</h2>
-        <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">Live from cashier queue and updates every 15 seconds</p>
-      </div>
-      <div className="flex items-center gap-1 text-[8px] text-gray-600">
-        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="font-black uppercase tracking-wider">Live</span>
-      </div>
-    </div>
-
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-      <StatCard
-        icon="cash"
-        label="Cash Revenue"
-        value={dayClosed ? 0 : sys.cash}
-        color="text-emerald-700"
-        bg="bg-emerald-50"
-        trend={5.2}
-      />
-      <StatCard
-        icon="card"
-        label="Card Payments"
-        value={dayClosed ? 0 : sys.card}
-        color="text-blue-700"
-        bg="bg-blue-50"
-        trend={-2.1}
-      />
-      <StatCard
-        icon="mobile"
-        label="Mobile Money"
-        value={dayClosed ? 0 : totalMobileMoney}
-        color="text-purple-700"
-        bg="bg-purple-50"
-        note="MTN + Airtel"
-        trend={8.3}
-      />
-      <GrossRevenueCard
-        grossSales={dayClosed ? 0 : sys.gross}
-        settledCredits={dayClosed ? 0 : totalSettledToday}
-      />
-    </div>
-
-    <div className="pt-4">
-      <div className="mb-4">
-        <h2 className={`text-xl font-black uppercase leading-none transition-colors duration-300 ${textClass}`}>Monthly Expenses</h2>
-        <p className="text-gray-500 text-[11px] font-medium mt-1 italic uppercase tracking-wider">Fixed Costs & Operational Overheads</p>
-      </div>
-      <MonthlyCosts
-        month={selectedMonth}
-        monthLabel={selectedMonth}
-        fixedItems={profitData?.costs?.fixed_items || []}
-        profitLoad={profitLoad}
-        onRefresh={fetchMonthlyData}
-        API_URL={API_URL}
-        dark={isDark}
-        t={{
-          card: isDark ? "bg-zinc-900/30" : "bg-white/80",
-          divider: isDark ? "border-white/5" : "border-gray-200",
-          subtext: isDark ? "text-zinc-500" : "text-gray-500"
-        }}
-      />
-    </div>
-  </div>
-)}
 
           {/* PHYSICAL COUNT - Shows zeros when day is closed */}
           {activeSection === "PHYSICAL_COUNT" && (

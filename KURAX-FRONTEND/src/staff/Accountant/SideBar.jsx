@@ -2,239 +2,301 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Receipt, Calculator, CheckCircle2, X, LogOut,
-  RotateCcw, BookOpen, BarChart3, Wallet, Sparkles, Menu, AlertTriangle
+  RotateCcw, BookOpen, BarChart3, Wallet, Sparkles, MoreVertical
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
+import { useTheme } from "../../customer/components/context/ThemeContext";
+
+// Desktop menu items (all items)
+const DESKTOP_MENU_ITEMS = [
+  { key: "FINANCIAL_HISTORY", label: "My Collections",    icon: <Receipt size={20}/>     },
+  { key: "PHYSICAL_COUNT",    label: "Physical Finances", icon: <Calculator size={20}/>  },
+  { key: "LIVE_AUDIT",        label: "Live Audit",        icon: <CheckCircle2 size={20}/> },
+  { key: "MONTHLY_COSTS",     label: "Monthly Costs",     icon: <Wallet size={20}/>      },
+  { key: "CREDITS",           label: "Credits",           icon: <BookOpen size={20}/>    },
+  { key: "VIEW_SALES",        label: "View Sales",        icon: <BarChart3 size={20}/>   },
+  { key: "START_NEW_DAY",     label: "Start New Day",     icon: <Sparkles size={20}/>    },
+  { key: "REOPEN_DAY",        label: "Reopen Day",        icon: <RotateCcw size={20}/>   },
+  { key: "END_OF_SHIFT",      label: "End of Shift",      icon: <RotateCcw size={20}/>   },
+];
+
+// Bottom navigation items for mobile (Live Audit and Credits)
+const BOTTOM_NAV_ITEMS = [
+  { key: "LIVE_AUDIT", label: "Live Audit", icon: <CheckCircle2 size={22}/> },
+  { key: "CREDITS",    label: "Credits",    icon: <BookOpen size={22}/> },
+];
+
+// Drawer menu items (all items except bottom nav items)
+const DRAWER_MENU_ITEMS = DESKTOP_MENU_ITEMS.filter(
+  item => !BOTTOM_NAV_ITEMS.some(nav => nav.key === item.key)
+);
 
 export default function SideBar({ 
   activeSection, 
   setActiveSection, 
   isOpen, 
   setIsOpen, 
-  isDark,
+  isDark = false,
   voidCount = 0,
   creditCount = 0
 }) {
   const navigate = useNavigate();
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkScreenSize();
+    window.addEventListener("resize", checkScreenSize);
+    return () => window.removeEventListener("resize", checkScreenSize);
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('kurax_user');
     navigate('/staff/login');
   };
 
-  // Desktop menu items (all items)
-  const desktopMenuItems = [
-    { key: "FINANCIAL_HISTORY", label: "My Collections",    icon: <Receipt size={20}/>     },
-    { key: "PHYSICAL_COUNT",    label: "Physical Finances", icon: <Calculator size={20}/>  },
-    { key: "LIVE_AUDIT",        label: "Live Audit",        icon: <CheckCircle2 size={20}/>, badge: voidCount },
-    { key: "MONTHLY_COSTS",     label: "Monthly Costs",     icon: <Wallet size={20}/>      },
-    { key: "CREDITS",           label: "Credits",           icon: <BookOpen size={20}/>,    badge: creditCount },
-    { key: "VIEW_SALES",        label: "View Sales",        icon: <BarChart3 size={20}/>   },
-    { key: "START_NEW_DAY",     label: "Start New Day",     icon: <Sparkles size={20}/>    },
-    { key: "REOPEN_DAY",        label: "Reopen Day",        icon: <RotateCcw size={20}/>   },
-    { key: "END_OF_SHIFT",      label: "End of Shift",      icon: <RotateCcw size={20}/>   },
-  ];
+  // ========== MOBILE VIEW ==========
+  if (isMobile) {
+    return (
+      <>
+        {/* 3 Vertical Dots / X Button - Changes icon when menu is open */}
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className={`fixed top-4 right-4 z-50 p-1 transition-all font-['Outfit'] ${
+            isDark ? "text-white" : "text-black"
+          }`}
+        >
+          {isOpen ? <X size={24} /> : <MoreVertical size={24} />}
+        </button>
 
-  // Bottom navigation items for mobile (Live Audit and Credits)
-  const bottomNavItems = [
-    { key: "LIVE_AUDIT", label: "Live Audit", icon: <CheckCircle2 size={22}/>, badge: voidCount },
-    { key: "CREDITS",    label: "Credits",    icon: <BookOpen size={22}/>,     badge: creditCount },
-  ];
+        {/* Mobile Drawer - Shows Logo, Text, Menu Items, and Logout */}
+        <div
+          className={`fixed inset-0 z-40 transition-all duration-300 mobile-drawer ${
+            isOpen ? "visible" : "invisible"
+          }`}
+        >
+          <div
+            className={`absolute inset-0 transition-opacity duration-300 ${
+              isOpen ? "opacity-100 bg-black/50" : "opacity-0"
+            }`}
+            onClick={() => setIsOpen(false)}
+          />
 
-  // Drawer menu items (all items except the ones in bottom nav)
-  const drawerMenuItems = desktopMenuItems.filter(
-    item => !bottomNavItems.some(nav => nav.key === item.key)
-  );
-
-  // Dynamic classes based on theme
-  const sidebarBgClass = isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200 shadow-sm";
-  const textClass = isDark ? "text-white" : "text-gray-900";
-  const activeButtonClass = isDark 
-    ? "bg-yellow-500 text-black shadow-lg shadow-yellow-500/10" 
-    : "bg-yellow-500 text-black shadow-lg shadow-yellow-500/20";
-  const inactiveButtonClass = isDark 
-    ? "text-zinc-500 hover:bg-white/5 hover:text-white" 
-    : "text-gray-600 hover:bg-yellow-50 hover:text-yellow-700";
-  const dividerClass = isDark ? "border-white/5" : "border-gray-200";
-  const logoutButtonClass = isDark 
-    ? "text-zinc-600 hover:text-rose-500 bg-red-500/10 border-red-500/20 hover:bg-red-500/20" 
-    : "text-rose-600 bg-rose-50 border-rose-200 hover:bg-rose-100";
-  const mobileDrawerBgClass = isDark ? "bg-black/95" : "bg-white";
-  const mobileButtonClass = (isActive) => {
-    if (isActive) {
-      return "bg-yellow-500 text-black border-yellow-500";
-    }
-    return isDark 
-      ? "bg-zinc-900/50 text-zinc-400 border-white/5" 
-      : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-yellow-50 hover:text-yellow-700";
-  };
-  
-  // Scrollbar styling based on theme
-  const scrollbarClass = isDark 
-    ? "scrollbar-thin scrollbar-track-zinc-800 scrollbar-thumb-zinc-600 hover:scrollbar-thumb-zinc-500"
-    : "scrollbar-thin scrollbar-track-gray-100 scrollbar-thumb-gray-300 hover:scrollbar-thumb-gray-400";
-
-  return (
-    <>
-      {/* ── MOBILE DRAWER ICON (3 lines) ── */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className={`lg:hidden fixed top-4 left-4 z-50 p-2 rounded-xl transition-all ${
-          isDark
-            ? "bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white"
-            : "bg-gray-100/90 backdrop-blur-md border border-gray-200 text-gray-800"
-        }`}
-      >
-        <Menu size={22} />
-      </button>
-
-      {/* ── MOBILE DRAWER ── */}
-      {isOpen && (
-        <div className={`fixed inset-0 z-[150] ${mobileDrawerBgClass} backdrop-blur-xl flex flex-col p-6 lg:hidden animate-in slide-in-from-left duration-300`}>
-          {/* Header - Fixed at top */}
-          <div className="flex justify-between items-center mb-6 flex-shrink-0">
-            <div className="flex items-center gap-3">
-              <img src={logo} alt="Logo" className="w-10 h-10 rounded-full border border-yellow-500/30"/>
-              <div>
-                <h1 className={`text-xs font-black uppercase tracking-tighter ${textClass}`}>KURAX BISTRO</h1>
-                <p className="text-yellow-600 text-[8px] font-bold uppercase">Accountant Panel</p>
+          <div
+            className={`absolute right-0 top-0 h-full w-72 transition-transform duration-300 ${
+              isOpen ? "translate-x-0" : "translate-x-full"
+            } ${
+              isDark
+                ? "bg-zinc-950 border-l border-white/5"
+                : "bg-white border-l border-black/5"
+            }`}
+          >
+            {/* Logo and Header Section - Pushed lower */}
+            <div className={`pt-20 pb-6 px-6 border-b font-['Outfit'] ${isDark ? "border-white/5" : "border-black/5"}`}>
+              <div className="flex items-center gap-3">
+                <img
+                  src={logo}
+                  alt="Logo"
+                  className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20"
+                />
+                <div className="flex flex-col">
+                  <h1 className={`text-[11px] font-black uppercase tracking-tight leading-none ${
+                    isDark ? "text-white" : "text-zinc-900"
+                  }`}>
+                    KURAX FOOD LOUNGE & BISTRO
+                  </h1>
+                  <p className="text-[9px] font-bold text-yellow-500 mt-1 uppercase tracking-widest">
+                    ACCOUNTANT PANEL
+                  </p>
+                </div>
               </div>
             </div>
-            <button onClick={() => setIsOpen(false)} className={`p-3 rounded-full transition-all duration-300 ${isDark ? "bg-zinc-900 text-zinc-400" : "bg-gray-100 text-gray-600"}`}>
-              <X size={20}/>
-            </button>
-          </div>
 
-          {/* Scrollable Menu Section */}
-          <div className={`flex-1 overflow-y-auto py-4 ${scrollbarClass}`}>
-            <div className="space-y-3">
-              {drawerMenuItems.map(item => (
-                <button
-                  key={item.key}
-                  onClick={() => { setActiveSection(item.key); setIsOpen(false); }}
-                  className={`flex items-center gap-4 w-full p-5 rounded-2xl font-black uppercase text-xs tracking-widest border transition-all duration-300 ${mobileButtonClass(activeSection === item.key)}`}
-                >
-                  {item.icon}
-                  {item.label}
-                  {item.badge > 0 && (
-                    <span className="ml-auto bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full">
-                      {item.badge}
+            {/* Menu Items */}
+            <nav className="flex-1 p-4 space-y-3 mt-6 font-['Outfit']">
+              {DRAWER_MENU_ITEMS.map((item) => {
+                // Determine badge for specific items
+                let badge = null;
+                if (item.key === "LIVE_AUDIT" && voidCount > 0) badge = voidCount;
+                if (item.key === "CREDITS" && creditCount > 0) badge = creditCount;
+                
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => {
+                      setActiveSection(item.key);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-4 px-5 py-4 rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border
+                      ${activeSection === item.key
+                        ? "bg-yellow-500 text-black border-yellow-500 shadow-xl shadow-yellow-500/20 scale-[1.02]"
+                        : isDark
+                          ? "text-zinc-500 bg-transparent border-transparent hover:bg-white/5 hover:text-white"
+                          : "text-zinc-600 bg-transparent border-transparent hover:bg-black/5 hover:text-black"
+                      }`}
+                  >
+                    <span className={activeSection === item.key ? "text-black" : "text-yellow-500"}>
+                      {item.icon}
                     </span>
-                  )}
-                </button>
-              ))}
+                    {item.label}
+                    {badge && (
+                      <span className="ml-auto bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full">
+                        {badge > 9 ? "9+" : badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Logout Button */}
+            <div className={`p-4 border-t mt-auto font-['Outfit'] ${isDark ? "border-white/5" : "border-black/5"}`}>
+              <button
+                onClick={handleLogout}
+                className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  isDark
+                    ? "text-rose-500 hover:bg-rose-500/10"
+                    : "text-rose-600 hover:bg-rose-50/50"
+                }`}
+              >
+                <LogOut size={20} />
+                Log Out
+              </button>
             </div>
           </div>
+        </div>
 
-          {/* Footer - Fixed at bottom */}
-          <div className={`flex-shrink-0 pt-6 border-t ${dividerClass}`}>
-            <button 
-              onClick={handleLogout}
-              className={`flex items-center gap-4 w-full p-5 rounded-2xl font-black uppercase text-xs tracking-widest transition-all duration-300
-                ${isDark 
-                  ? "text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20" 
-                  : "text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100"}`}
-            >
-              <LogOut size={20}/> Logout
-            </button>
+        {/* Bottom Navigation Bar - Live Audit and Credits */}
+        <div
+          className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-2 py-3 border-t backdrop-blur-lg font-['Outfit'] ${
+            isDark
+              ? "bg-zinc-950/95 border-white/10"
+              : "bg-white/95 border-black/10"
+          }`}
+        >
+          {BOTTOM_NAV_ITEMS.map((item) => {
+            const isActive = activeSection === item.key;
+            let badge = null;
+            if (item.key === "LIVE_AUDIT" && voidCount > 0) badge = voidCount;
+            if (item.key === "CREDITS" && creditCount > 0) badge = creditCount;
+            
+            return (
+              <button
+                key={item.key}
+                onClick={() => {
+                  setActiveSection(item.key);
+                }}
+                className={`relative flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-xl transition-all flex-1 max-w-[120px] ${
+                  isActive
+                    ? "bg-yellow-500 text-black"
+                    : isDark
+                      ? "hover:bg-white/5 text-zinc-500 hover:text-white"
+                      : "hover:bg-black/5 text-zinc-600 hover:text-black"
+                }`}
+              >
+                <span className={isActive ? "text-black" : "text-yellow-500"}>
+                  {item.icon}
+                </span>
+                <span className={`text-[9px] font-black uppercase tracking-wider ${
+                  isActive ? "text-black" : ""
+                }`}>
+                  {item.label}
+                </span>
+                {badge && (
+                  <span className={`absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-black flex items-center justify-center
+                    ${isActive ? "bg-black text-yellow-500" : "bg-yellow-500 text-black"}`}>
+                    {badge > 9 ? "9+" : badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Bottom padding to prevent content from being hidden */}
+        <div className="pb-24" />
+      </>
+    );
+  }
+
+  // ========== DESKTOP VIEW ==========
+  return (
+    <div
+      className={`w-64 h-full flex flex-col border-r transition-colors duration-300 flex-shrink-0 font-['Outfit'] ${
+        isDark ? "bg-zinc-950 border-white/5" : "bg-white border-black/5"
+      }`}
+    >
+      {/* Logo / header */}
+      <div className={`p-6 border-b font-['Outfit'] ${isDark ? "border-white/5" : "border-black/5"}`}>
+        <div className="flex items-center gap-3">
+          <img
+            src={logo}
+            alt="Logo"
+            className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20"
+          />
+          <div className="flex flex-col">
+            <h1 className={`text-[15px] font-bold uppercase tracking-tight leading-none ${
+              isDark ? "text-white" : "text-zinc-900"
+            }`}>
+              KURAX FOOD LOUNGE & BISTRO
+            </h1>
+            <p className="text-[9px] font-bold text-yellow-900 mt-1 uppercase tracking-widest">
+              ACCOUNTANT PANEL
+            </p>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* ── BOTTOM NAVIGATION BAR (Mobile Only) - Live Audit & Credits ── */}
-      <div className={`lg:hidden fixed bottom-0 left-0 right-0 z-50 flex justify-around items-center px-2 py-3 border-t backdrop-blur-lg ${
-        isDark
-          ? "bg-zinc-950/95 border-white/10"
-          : "bg-white/95 border-gray-200"
-      }`}>
-        {bottomNavItems.map((item) => {
-          const isActive = activeSection === item.key;
+      {/* Nav items */}
+      <nav className="flex-1 p-4 space-y-3 mt-6 font-['Outfit'] overflow-y-auto">
+        {DESKTOP_MENU_ITEMS.map((item) => {
+          // Determine badge for specific items
+          let badge = null;
+          if (item.key === "LIVE_AUDIT" && voidCount > 0) badge = voidCount;
+          if (item.key === "CREDITS" && creditCount > 0) badge = creditCount;
+          
           return (
             <button
               key={item.key}
-              onClick={() => {
-                setActiveSection(item.key);
-              }}
-              className={`flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-xl transition-all flex-1 max-w-[120px] ${
-                isActive
-                  ? "bg-yellow-500 text-black"
+              onClick={() => setActiveSection(item.key)}
+              className={`w-full flex items-center gap-4 px-5 py-4 rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border
+                ${activeSection === item.key
+                  ? "bg-yellow-500 text-black border-yellow-500 shadow-xl shadow-yellow-500/20 scale-[1.02]"
                   : isDark
-                    ? "hover:bg-white/5 text-zinc-500 hover:text-white"
-                    : "hover:bg-gray-100 text-gray-600 hover:text-gray-900"
-              }`}
+                    ? "text-zinc-500 bg-transparent border-transparent hover:bg-white/5 hover:text-white"
+                    : "text-zinc-600 bg-transparent border-transparent hover:bg-black/5 hover:text-black"
+                }`}
             >
-              <span className={isActive ? "text-black" : "text-yellow-500"}>
+              <span className={activeSection === item.key ? "text-black" : "text-yellow-500"}>
                 {item.icon}
               </span>
-              <span className={`text-[9px] font-black uppercase tracking-wider ${
-                isActive ? "text-black" : ""
-              }`}>
-                {item.label}
-              </span>
-              {item.badge > 0 && (
-                <span className={`absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-black flex items-center justify-center
-                  ${isActive ? "bg-black text-yellow-500" : "bg-yellow-500 text-black"}`}>
-                  {item.badge > 9 ? "9+" : item.badge}
+              {item.label}
+              {badge && (
+                <span className="ml-auto bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full">
+                  {badge > 9 ? "9+" : badge}
                 </span>
               )}
             </button>
           );
         })}
+      </nav>
+
+      {/* Logout */}
+      <div className={`p-4 border-t font-['Outfit'] ${isDark ? "border-white/5" : "border-black/5"}`}>
+        <button
+          onClick={handleLogout}
+          className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+            isDark
+              ? "text-rose-500 hover:bg-rose-500/10"
+              : "text-rose-600 hover:bg-rose-50/50"
+          }`}
+        >
+          <LogOut size={20} />
+          Log Out
+        </button>
       </div>
-
-      {/* Bottom padding for mobile to prevent content from being hidden */}
-      <div className="lg:hidden pb-20" />
-
-      {/* ── DESKTOP SIDEBAR ── */}
-      <aside className={`hidden lg:flex flex-col w-72 ${sidebarBgClass} border-r h-screen sticky top-0 transition-all duration-300`}>
-        {/* Logo Section - Fixed at top */}
-        <div className="p-8 flex-shrink-0">
-          <div className="flex items-center gap-3 mb-10">
-            <img src={logo} alt="logo" className="w-10 h-10 rounded-full object-cover border border-yellow-500/30 shadow-sm"/>
-            <div className="flex flex-col">
-              <h1 className={`text-sm font-black uppercase tracking-tighter ${textClass}`}>KURAX FOOD LOUNGE &amp; BISTRO</h1>
-              <p className="text-yellow-600 text-[9px] font-bold uppercase tracking-widest">Accountant Panel</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Scrollable Menu Section */}
-        <div className={`flex-1 overflow-y-auto px-4 pb-4 ${scrollbarClass}`}>
-          <nav className="space-y-2">
-            {desktopMenuItems.map(item => (
-              <button
-                key={item.key}
-                onClick={() => setActiveSection(item.key)}
-                className={`flex items-center gap-4 w-full p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all duration-300
-                  ${activeSection === item.key ? activeButtonClass : inactiveButtonClass}`}
-              >
-                <span className={activeSection === item.key ? "text-black" : ""}>
-                  {item.icon}
-                </span>
-                {item.label}
-                {item.badge > 0 && (
-                  <span className="ml-auto bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Footer Section - Fixed at bottom */}
-        <div className={`flex-shrink-0 p-8 border-t ${dividerClass}`}>
-          <button 
-            onClick={handleLogout}
-            className={`flex items-center gap-3 w-full p-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all duration-300
-              ${isDark 
-                ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20" 
-                : "bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200"}`}
-          >
-            <LogOut size={16}/> Logout
-          </button>
-        </div>
-      </aside>
-    </>
+    </div>
   );
 }

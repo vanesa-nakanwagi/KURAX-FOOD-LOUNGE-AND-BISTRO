@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Menu, RefreshCw, AlertTriangle } from "lucide-react";
+import { Menu, RefreshCw, AlertTriangle, RotateCcw, Sparkles } from "lucide-react";
 import { useData } from "../../customer/components/context/DataContext";
 import SideBar from "./SideBar";
 import Footer from "../../customer/components/common/Foooter";
@@ -84,27 +84,15 @@ export default function AccountantLayout() {
   // ── Day closure state ─────────────────────────────────────────────────────
   const [isFinalizing, setIsFinalizing] = useState(false);
 
-  // ── FETCH LIVE SUMMARY WITH DEBUGGING ──────────────────────────────────────
+  // ── FETCH LIVE SUMMARY ──────────────────────────────────────────────────────
   const fetchLiveSummary = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/accountant/today?t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
-        console.log("🔍 API Response from /api/accountant/today:", data);
-        console.log("📊 Gross Revenue:", data.total_gross);
-        console.log("💰 Cash:", data.total_cash);
-        console.log("💳 Card:", data.total_card);
-        console.log("📱 MTN:", data.total_mtn);
-        console.log("📱 Airtel:", data.total_airtel);
-        console.log("⏳ Pending Credits:", data.pending_credit_requests_amount);
-        console.log("✅ Credit Settlements Today:", data.credit_settlements_today);
         setLiveSummary(data);
-      } else {
-        console.error("Failed to fetch summary:", res.status);
       }
-    } catch (e) { 
-      console.error("live summary error:", e); 
-    }
+    } catch (e) { console.error("live summary error:", e); }
   }, []);
 
   useEffect(() => {
@@ -112,21 +100,6 @@ export default function AccountantLayout() {
     const id = setInterval(fetchLiveSummary, 15000);
     return () => clearInterval(id);
   }, [fetchLiveSummary]);
-
-  // ── LOG LIVESTATE FOR DEBUGGING ────────────────────────────────────────────
-  useEffect(() => {
-    if (liveSummary) {
-      console.log("📊 Current liveSummary state:", {
-        total_gross: liveSummary.total_gross,
-        total_cash: liveSummary.total_cash,
-        total_card: liveSummary.total_card,
-        total_mtn: liveSummary.total_mtn,
-        total_airtel: liveSummary.total_airtel,
-        pending_credits: liveSummary.pending_credit_requests_amount,
-        credit_settlements: liveSummary.credit_settlements_today
-      });
-    }
-  }, [liveSummary]);
 
   const fetchPettyCashToday = useCallback(async () => {
     try {
@@ -169,7 +142,6 @@ export default function AccountantLayout() {
       `• Make all orders from that date visible again\n` +
       `• Reactivate kitchen tickets\n` +
       `• Allow staff to continue working on that day\n\n` +
-      `This is useful if the day was closed by mistake or if you need to make corrections.\n\n` +
       `Are you sure you want to reopen ${date}?`
     );
     if (!confirmed) return;
@@ -457,7 +429,7 @@ export default function AccountantLayout() {
     if (activeSection === "VIEW_SALES") loadSales(salesDate);
   }, [activeSection, salesDate, loadSales]);
 
-  // ── Derived values - UPDATED to handle new backend structure ───────────────
+  // ── Derived values ────────────────────────────────────────────────────────
   const src = liveSummary || todaySummary || {};
   const sys = {
     cash: Number(src.total_cash) || 0,
@@ -617,11 +589,18 @@ export default function AccountantLayout() {
     }
   };
 
-  // Light theme classes (fixed light theme - no toggle)
+  // Light theme classes
   const bgClass = 'bg-gray-50';
   const textClass = 'text-gray-900';
   const cardBgClass = 'bg-white border-gray-200 shadow-sm';
   const headerBgClass = 'bg-white/80 border-gray-200 backdrop-blur-md';
+
+  // Calculate credit count for badge
+  const creditCount = creditsLedger.filter(c => 
+    c.status === "PendingCashier" || 
+    c.status === "PendingManagerApproval" || 
+    c.status === "Approved"
+  ).length;
 
   useEffect(() => {
     const handleDayClosed = () => {
@@ -684,55 +663,20 @@ export default function AccountantLayout() {
       {/* Sidebar - Sticky/fixed so it doesn't scroll */}
       <div className="sticky top-0 h-screen flex-shrink-0">
         <SideBar
-  activeSection={activeSection}
-  setActiveSection={setActiveSection}
-  isOpen={mobileMenuOpen}
-  setIsOpen={setMobileMenuOpen}
-  isDark={false}
-  voidCount={voidRequests.length}
-  creditCount={creditsLedger.filter(c => 
-    c.status === "PendingCashier" || 
-    c.status === "PendingManagerApproval" || 
-    c.status === "Approved"
-  ).length}
-/>
+          activeSection={activeSection}
+          setActiveSection={setActiveSection}
+          isOpen={mobileMenuOpen}
+          setIsOpen={setMobileMenuOpen}
+          isDark={false}
+          voidCount={voidRequests.length}
+          creditCount={creditCount}
+        />
       </div>
 
       {/* Main content area - This scrolls */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto h-screen">
-        <header className={`flex justify-between items-center px-6 py-4 border-b transition-colors duration-300 ${headerBgClass}`}>
-          <div className="flex items-center gap-4">
-            <button onClick={() => setMobileMenuOpen(true)} className="lg:hidden p-2 bg-gray-100 rounded-xl text-yellow-600">
-              <Menu size={20}/>
-            </button>
-            <div>
-              <div className="flex items-center gap-2 mb-0.5">
-                <div className="w-1 h-5 bg-yellow-500 rounded-full"/>
-                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-600">Accountant</h4>
-              </div>
-              <h2 className={`text-xl font-black uppercase italic tracking-tighter transition-colors duration-300 ${textClass}`}>
-                {activeSection.replace(/_/g," ")}
-              </h2>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => forceHardRefresh()}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-500 text-black font-black text-[10px] uppercase tracking-wider hover:bg-yellow-600 transition-all shadow-sm"
-            >
-              <RefreshCw size={12} /> Hard Refresh
-            </button>
-            
-            {voidRequests.length > 0 && (
-              <button onClick={() => setActiveSection("LIVE_AUDIT")}
-                className="flex items-center gap-2 px-3 py-2 bg-rose-500 rounded-xl animate-pulse hover:bg-rose-600 transition-all shadow-sm">
-                <AlertTriangle size={13} className="text-white"/>
-                <span className="text-[10px] font-black text-white uppercase">{voidRequests.length} Void</span>
-              </button>
-            )}
-          </div>
-        </header>
-
+        {/* REMOVED THE ENTIRE HEADER SECTION - No more duplicate buttons */}
+        
         <main className="p-4 md:p-10 space-y-8 flex-1 overflow-y-auto">
           {dayClosed && (
             <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-center animate-in fade-in duration-500">
@@ -744,21 +688,7 @@ export default function AccountantLayout() {
             </div>
           )}
 
-          {!hasPhysicalCount && activeSection !== "PHYSICAL_COUNT" && !dayClosed && (
-            <div className="rounded-2xl bg-yellow-50 border border-yellow-200 p-4 text-center animate-pulse">
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-[10px] font-black text-yellow-700 uppercase tracking-wider">
-                  ⚠️ Physical count required before closing the day!
-                </span>
-                <button 
-                  onClick={() => setActiveSection("PHYSICAL_COUNT")}
-                  className="ml-2 px-3 py-1 bg-yellow-500 text-black rounded-lg text-[9px] font-black shadow-sm hover:bg-yellow-600"
-                >
-                  Go to Physical Count
-                </button>
-              </div>
-            </div>
-          )}
+         
 
           {activeSection === "FINANCIAL_HISTORY" && (
             <FinancialHistory
@@ -772,8 +702,12 @@ export default function AccountantLayout() {
               fetchMonthlyData={fetchMonthlyData}
               API_URL={API_URL}
               isDark={false}
+                hasPhysicalCount={hasPhysicalCount}
+    setActiveSection={setActiveSection}
             />
           )}
+
+          
 
           {activeSection === "PHYSICAL_COUNT" && (
             <PhysicalCount
