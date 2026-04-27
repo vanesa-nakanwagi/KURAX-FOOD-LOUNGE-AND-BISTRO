@@ -1346,7 +1346,7 @@ export default function OrderHistory({ onAddItems }) {
             {currentStaffName[0]}
           </div>
           <div className="min-w-0">
-            <h1 className="text-xs sm:text-sm font-semibold text-yellow-900 uppercase tracking-tight truncate">{currentStaffName.split(" ")[0]}'s Tables</h1>
+            <h1 className="text-[20px] sm:text-sm font-semibold text-yellow-900 uppercase tracking-tight truncate">{currentStaffName.split(" ")[0]}'s Tables</h1>
             <p className="text-[8px] sm:text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{today}</p>
           </div>
         </div>

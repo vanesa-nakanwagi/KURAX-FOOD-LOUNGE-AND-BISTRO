@@ -1,4 +1,3 @@
-
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { Target, TrendingUp, Users, Award } from "lucide-react";
@@ -14,31 +13,38 @@ export default function TargetSettings() {
 
   return (
     <div className={`p-8 min-h-screen font-[Outfit] transition-colors duration-300 ${
-      theme === 'dark' ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'
+      theme === 'dark' ? 'bg-black text-white' : 'bg-gray-50 text-gray-900'
     }`}>
-      <div className="max-w-2xl">
+      <div className="max-w-2xl mx-auto">
         <div className="mb-10">
           <h1 className="text-3xl font-black uppercase tracking-tighter italic flex items-center gap-3">
             <Target className="text-yellow-500" size={32} />
-            Performance Targets
+            <span className="bg-gradient-to-r from-yellow-600 to-yellow-400 bg-clip-text text-transparent">
+              Performance Targets
+            </span>
           </h1>
-          <p className="text-zinc-500 text-sm font-bold uppercase mt-2">
+          <p className="text-gray-500 text-sm font-bold uppercase mt-2 tracking-wider">
             Define the daily order goal for all floor staff
           </p>
         </div>
 
         {/* Main Control Card */}
-        <div className={`p-8 rounded-[2.5rem] border mb-8 transition-all ${
-          theme === 'dark' ? 'bg-zinc-900 border-white/5 shadow-2xl' : 'bg-white border-black/5 shadow-xl'
+        <div className={`p-8 rounded-2xl border mb-8 transition-all shadow-md ${
+          theme === 'dark' ? 'bg-zinc-900 border-white/5' : 'bg-white border-gray-200'
         }`}>
           <div className="flex justify-between items-end mb-8">
             <div>
-              <p className="text-[10px] font-black uppercase text-yellow-500 tracking-widest mb-1">Current Daily Target</p>
-              <h2 className="text-6xl font-black tracking-tighter">
-                {dailyGoal || 20}<span className="text-sm text-zinc-500 ml-2 uppercase">Orders</span>
-              </h2>
+              <p className="text-[10px] font-black uppercase text-yellow-600 tracking-widest mb-1">Current Daily Target</p>
+              <div className="flex items-baseline gap-2">
+                <h2 className="text-6xl font-black tracking-tighter text-gray-900">
+                  {dailyGoal || 20}
+                </h2>
+                <span className="text-sm text-gray-500 ml-2 uppercase font-bold">Orders</span>
+              </div>
             </div>
-            <TrendingUp className="text-emerald-500 mb-2" size={40} />
+            <div className="p-3 rounded-xl bg-yellow-100">
+              <TrendingUp className="text-yellow-600" size={36} />
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -49,30 +55,48 @@ export default function TargetSettings() {
               step="5"
               value={dailyGoal || 20}
               onChange={handleGoalChange}
-              className="w-full h-3 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-yellow-500"
             />
             
-            <div className="flex justify-between text-[10px] font-black uppercase text-zinc-500">
-              <span>Minimum: 5</span>
-              <span>Maximum: 100</span>
+            <div className="flex justify-between text-[10px] font-black uppercase text-gray-500">
+              <span className="bg-yellow-100 px-2 py-1 rounded">Minimum: 5</span>
+              <span className="bg-yellow-100 px-2 py-1 rounded">Maximum: 100</span>
             </div>
           </div>
         </div>
 
         {/* Info Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className={`p-6 rounded-3xl border ${theme === 'dark' ? 'bg-zinc-900/50 border-white/5' : 'bg-white border-black/5'}`}>
-            <Users className="text-blue-500 mb-3" size={24} />
-            <h4 className="text-xs font-black uppercase mb-1">Active Staff</h4>
-            <p className="text-2xl font-black">{staffList.length}</p>
-            <p className="text-[9px] text-zinc-500 font-bold uppercase mt-1">Personnel on floor</p>
+          <div className={`p-6 rounded-2xl border transition-all hover:shadow-md ${
+            theme === 'dark' ? 'bg-zinc-900/50 border-white/5' : 'bg-white border-gray-200'
+          }`}>
+            <div className="p-2 w-fit rounded-xl bg-blue-100 mb-3">
+              <Users className="text-blue-600" size={22} />
+            </div>
+            <h4 className="text-xs font-black uppercase mb-1 text-gray-700">Active Staff</h4>
+            <p className="text-3xl font-black text-gray-900">{staffList.length}</p>
+            <p className="text-[9px] text-gray-500 font-bold uppercase mt-1 tracking-wider">Personnel on floor</p>
           </div>
 
-          <div className={`p-6 rounded-3xl border ${theme === 'dark' ? 'bg-zinc-900/50 border-white/5' : 'bg-white border-black/5'}`}>
-            <Award className="text-orange-500 mb-3" size={24} />
-            <h4 className="text-xs font-black uppercase mb-1">Global Impact</h4>
-            <p className="text-[9px] text-zinc-500 font-bold leading-relaxed uppercase">
+          <div className={`p-6 rounded-2xl border transition-all hover:shadow-md ${
+            theme === 'dark' ? 'bg-zinc-900/50 border-white/5' : 'bg-white border-gray-200'
+          }`}>
+            <div className="p-2 w-fit rounded-xl bg-yellow-100 mb-3">
+              <Award className="text-yellow-600" size={22} />
+            </div>
+            <h4 className="text-xs font-black uppercase mb-1 text-gray-700">Global Impact</h4>
+            <p className="text-[9px] text-gray-600 font-bold leading-relaxed uppercase tracking-wide">
               Updating this value changes the progress bars for all Waiters and Supervisors in real-time.
+            </p>
+          </div>
+        </div>
+
+        {/* Additional Info Card */}
+        <div className="mt-6 p-4 bg-yellow-50 rounded-2xl border border-yellow-200">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+            <p className="text-[9px] font-black text-yellow-700 uppercase tracking-wider">
+              Real-time sync • All staff members will see updated targets immediately
             </p>
           </div>
         </div>

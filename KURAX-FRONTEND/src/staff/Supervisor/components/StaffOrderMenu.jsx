@@ -1,52 +1,44 @@
 import React from "react";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
-import { 
-  Plus, SearchX, UtensilsCrossed, Coffee, Wine, 
-  Sparkles, Lock 
-} from "lucide-react";
+import { Plus, SearchX, UtensilsCrossed, Sparkles } from "lucide-react";
 import { getImageSrc } from "../../../utils/imageHelper";
 
-export default function StaffOrderMenu({ 
-  onAddItem, 
-  items = [], 
-  searchQuery = "", 
-  activeCategory, 
-  setActiveCategory,
-  isGranted = true 
-}) {
+export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = "", activeCategory, setActiveCategory }) {
   const { theme } = useTheme();
   const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
 
   const filteredMenus = items.filter((item) => {
     const query = searchQuery.toLowerCase();
-    const matchesSearch = item.name.toLowerCase().includes(query) ||
-                         (item.category && item.category.toLowerCase().includes(query));
+    const matchesQuery =
+      item.name.toLowerCase().includes(query) ||
+      (item.category && item.category.toLowerCase().includes(query));
     const matchesCategory = item.category === activeCategory;
-    
-    return matchesSearch && matchesCategory;
+    return matchesQuery && matchesCategory;
   });
 
   return (
-    <div className="space-y-10 animate-in fade-in duration-700">
-      
-      {/* 1. PERSISTENT CATEGORY NAV */}
-      <div className={`flex flex-col md:flex-row items-center justify-between border-b pb-1 gap-6 ${
-        theme === 'dark' ? 'border-white/5' : 'border-black/5'
-      }`}>
-        <div className="flex justify-center items-center flex-1">
-          <div className="flex gap-8 md:gap-12 overflow-x-auto no-scrollbar px-4">
+    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500 px-3 sm:px-4 md:px-0">
+
+      {/* 1. CATEGORY NAV — scrollable, starts left-aligned on mobile */}
+      <div className={`border-b ${theme === "dark" ? "border-white/5" : "border-black/5"}`}>
+        <div className="overflow-x-auto no-scrollbar">
+          <div className="flex gap-5 sm:gap-8 md:gap-10 lg:gap-12 min-w-max px-1 md:min-w-0 md:w-full md:justify-center">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`relative pb-5 text-[11px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap
-                  ${activeCategory === cat 
-                    ? "text-yellow-500" 
-                    : theme === 'dark' ? "text-zinc-500 hover:text-white" : "text-zinc-400 hover:text-black"}`}
+                className={`relative pb-2.5 md:pb-3 text-[10px] sm:text-[11px] md:text-[13px] font-bold uppercase tracking-[0.2em] transition-all whitespace-nowrap
+                  ${
+                    activeCategory === cat
+                      ? "text-yellow-500"
+                      : theme === "dark"
+                      ? "text-zinc-400 hover:text-white"
+                      : "text-zinc-500 hover:text-black"
+                  }`}
               >
                 {cat}
                 {activeCategory === cat && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-yellow-500 rounded-full shadow-[0_0_10px_rgba(234,179,8,0.5)]" />
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-yellow-500 rounded-full shadow-[0_0_8px_rgba(234,179,8,0.4)]" />
                 )}
               </button>
             ))}
@@ -54,108 +46,126 @@ export default function StaffOrderMenu({
         </div>
       </div>
 
-      {/* 2. CONDITIONAL CONTENT AREA */}
-      {(!items || items.length === 0) ? (
-        <div className={`py-32 text-center border-2 border-dashed rounded-[3rem] ${
-          theme === 'dark' ? 'border-white/5 bg-zinc-900/20' : 'border-black/5 bg-zinc-50'
-        }`}>
-          <UtensilsCrossed className="mx-auto mb-4 text-zinc-500 opacity-20" size={48} />
-          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em]">
-            Menu Database Offline
+      {/* 2. CONTENT AREA */}
+      {!items || items.length === 0 ? (
+        <div
+          className={`py-16 text-center border-2 border-dashed rounded-2xl ${
+            theme === "dark" ? "border-zinc-800 bg-zinc-900/20" : "border-zinc-200 bg-zinc-50"
+          }`}
+        >
+          <UtensilsCrossed className="mx-auto mb-3 text-zinc-500 opacity-20" size={28} />
+          <p className="text-zinc-500 text-[9px] font-black uppercase tracking-[0.25em]">
+            No Menu Items Available
           </p>
         </div>
       ) : filteredMenus.length === 0 ? (
-        <div className={`py-24 flex flex-col items-center justify-center rounded-[3rem] border border-dashed ${
-          theme === 'dark' ? 'bg-zinc-900/30 border-white/5' : 'bg-zinc-50 border-black/5'
-        }`}>
-          <SearchX size={32} className="text-zinc-500/20 mb-4" />
-          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest italic">
-            No items in {activeCategory} match "{searchQuery}"
+        <div
+          className={`py-16 flex flex-col items-center justify-center rounded-2xl border border-dashed ${
+            theme === "dark" ? "bg-zinc-900/30 border-white/5" : "bg-zinc-50 border-black/5"
+          }`}
+        >
+          <SearchX size={22} className="text-zinc-400 mb-2 opacity-50" />
+          <p className="text-zinc-500 text-[9px] font-black uppercase tracking-wider text-center px-4">
+            No matches in {activeCategory}
           </p>
         </div>
       ) : (
-        /* --- CONSISTENT GRID --- */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 pb-20">
+        /* GRID: 1 col mobile, 2 col tablet, 3 col desktop */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 md:gap-6 lg:gap-8 pb-20">
           {filteredMenus.map((item) => {
-            const isNew = item.created_at && (new Date() - new Date(item.created_at)) / (1000 * 60 * 60) <= 48;
+            const isNew =
+              item.created_at &&
+              (new Date() - new Date(item.created_at)) / (1000 * 60 * 60) <= 48;
 
             return (
-              <div 
-                key={item.id} 
-                className={`group relative rounded-[2.5rem] overflow-hidden flex flex-col h-full transition-all duration-500 border shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl hover:-translate-y-2
-                  ${theme === 'dark' 
-                    ? 'bg-[#0A0A0A] border-zinc-800/40 hover:border-yellow-500/30' 
-                    : 'bg-white border-zinc-100 hover:border-yellow-500/30 shadow-sm'}`}
+              <div
+                key={item.id}
+                className={`group relative rounded-2xl overflow-hidden flex flex-col transition-all duration-300 border shadow-sm hover:shadow-xl active:scale-[0.99] md:hover:-translate-y-1
+                  ${
+                    theme === "dark"
+                      ? "bg-[#0A0A0A] border-zinc-800/40 hover:border-yellow-500/30"
+                      : "bg-white border-zinc-100 hover:border-yellow-500/30"
+                  }`}
               >
-                {/* Image & Station Badges */}
-                <div className="h-52 bg-zinc-50 dark:bg-zinc-900 relative overflow-hidden shrink-0">
-                  <div className="absolute top-4 left-4 right-4 flex justify-between items-start z-10">
-                    <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border backdrop-blur-md shadow-sm ${
-                      item.station === 'Barista' ? 'bg-amber-900/60 text-amber-200 border-amber-500/30' : 
-                      item.station === 'Barman' ? 'bg-blue-900/60 text-blue-200 border-blue-500/30' : 
-                      'bg-emerald-900/60 text-emerald-200 border-emerald-500/30'
-                    }`}>
-                      {item.station === 'Barista' && <Coffee size={10} />}
-                      {item.station === 'Barman' && <Wine size={10} />}
-                      {(item.station === 'Kitchen' || !item.station) && <UtensilsCrossed size={10} />}
-                      {item.station || 'Kitchen'}
+                {/* IMAGE */}
+                <div className="h-40 sm:h-44 md:h-48 relative overflow-hidden shrink-0 bg-zinc-100 dark:bg-zinc-900">
+                  {/* Badges */}
+                  <div className="absolute top-2.5 left-2.5 right-2.5 flex justify-between items-start z-10">
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider backdrop-blur-md border shadow-sm ${
+                        item.station === "Barista"
+                          ? "bg-amber-900/70 text-amber-200 border-amber-500/30"
+                          : item.station === "Barman"
+                          ? "bg-blue-900/70 text-blue-200 border-blue-500/30"
+                          : "bg-emerald-900/70 text-emerald-200 border-emerald-500/30"
+                      }`}
+                    >
+                      {item.station?.substring(0, 7) || "Kitchen"}
                     </span>
-
                     {isNew && (
-                      <div className="bg-yellow-500 text-white text-[8px] font-black px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
+                      <div className="bg-yellow-500 text-black text-[9px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 uppercase tracking-wider border border-white/10 shadow">
                         <Sparkles size={8} /> NEW
                       </div>
                     )}
                   </div>
 
-                  <img 
-                    src={getImageSrc(item.image_url)} 
+                  <img
+                    src={getImageSrc(item.image_url)}
                     alt={item.name}
-                    className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
-                    onError={(e) => { e.target.src = "https://via.placeholder.com/300?text=No+Image"; }}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    onError={(e) => {
+                      e.target.src = "https://via.placeholder.com/300?text=No+Image";
+                    }}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
                 </div>
 
-                {/* Details Section */}
-                <div className="p-6 flex-1 flex flex-col justify-between text-left">
-                  <div className="space-y-2">
-                    <h4 className={`text-lg font-serif font-bold uppercase tracking-tight leading-tight group-hover:text-yellow-600 transition-colors line-clamp-1 ${
-                      theme === 'dark' ? 'text-white' : 'text-zinc-900'
-                    }`}>
+                {/* CONTENT */}
+                <div className="p-3.5 sm:p-4 md:p-5 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h4
+                      className={`text-sm sm:text-base md:text-lg font-[Outfit] uppercase tracking-tight leading-tight line-clamp-1 ${
+                        theme === "dark" ? "text-white" : "text-yellow-900"
+                      }`}
+                    >
                       {item.name}
                     </h4>
-                    <p className={`text-[11px] font-light leading-relaxed line-clamp-2 italic ${
-                      theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'
-                    }`}>
-                      {item.description || `Freshly prepared signature ${item.name}`}
+                    <p
+                      className={`text-[11px] sm:text-[12px] leading-relaxed mt-1.5 line-clamp-2 ${
+                        theme === "dark" ? "text-zinc-400" : "text-zinc-500"
+                      }`}
+                    >
+                      {item.description?.substring(0, 80) ||
+                        `Freshly prepared signature ${item.name}`}
+                      {item.description?.length > 80 && "..."}
                     </p>
                   </div>
 
-                  {/* Interaction Bar (Action Left | Price Right) */}
-                  <div className={`flex items-center justify-between pt-5 mt-4 border-t ${
-                    theme === 'dark' ? 'border-zinc-800/50' : 'border-zinc-50'
-                  }`}>
-                    {isGranted ? (
-                      <button 
-                        onClick={() => onAddItem(item)}
-                        className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-black rounded-xl text-[10px] font-black flex items-center justify-center gap-1.5 transition-all uppercase tracking-[0.2em] shadow-md active:scale-95"
-                      >
-                        <Plus size={12} strokeWidth={4} /> Order
-                      </button>
-                    ) : (
-                      <div className="px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-600 rounded-xl text-[8px] font-black flex items-center justify-center gap-2 border border-black/5 dark:border-white/5 cursor-not-allowed uppercase tracking-widest">
-                        <Lock size={12} /> Restricted
-                      </div>
-                    )}
+                  {/* INTERACTION BAR */}
+                  <div
+                    className={`flex items-center justify-between pt-3 mt-3 border-t ${
+                      theme === "dark" ? "border-zinc-800/50" : "border-zinc-100"
+                    }`}
+                  >
+                    {/* ORDER BUTTON — always shows icon + text */}
+                    <button
+                      onClick={() => onAddItem(item)}
+                      className="flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-black rounded-xl text-[9px] sm:text-[10px] font-medium uppercase tracking-[0.15em] shadow-md active:scale-95 transition-all"
+                    >
+                      <Plus size={11} strokeWidth={3.5} />
+                      Order Now
+                    </button>
 
+                    {/* PRICE */}
                     <div className="text-right">
-                      <span className={`block text-xl font-black tracking-tighter leading-none ${
-                        theme === 'dark' ? 'text-white' : 'text-zinc-900'
-                      }`}>
+                      <span
+                        className={`block text-base sm:text-lg md:text-xl font-semibold tracking-tight leading-none ${
+                          theme === "dark" ? "text-white" : "text-zinc-900"
+                        }`}
+                      >
                         {Number(item.price).toLocaleString()}
                       </span>
-                      <span className="text-[9px] text-yellow-600 font-bold uppercase tracking-widest leading-none">
+                      <span className="text-[8px] sm:text-[9px] text-yellow-600 font-bold uppercase tracking-wider leading-none">
                         UGX
                       </span>
                     </div>

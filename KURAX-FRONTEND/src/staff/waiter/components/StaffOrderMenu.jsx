@@ -150,7 +150,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                     {/* ORDER BUTTON — always shows icon + text */}
                     <button
                       onClick={() => onAddItem(item)}
-                      className="flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-black rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] shadow-md active:scale-95 transition-all"
+                      className="flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-black rounded-xl text-[9px] sm:text-[10px] font-medium uppercase tracking-[0.15em] shadow-md active:scale-95 transition-all"
                     >
                       <Plus size={11} strokeWidth={3.5} />
                       Order Now
