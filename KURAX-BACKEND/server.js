@@ -30,26 +30,35 @@ import creditRoutes, { initCreditTables } from './routes/creditRoutes.js';
 dotenv.config();
 const app = express();
 
-// 1. CORS
+// 1. CORS - Updated for phone access
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:5174',
+  'http://localhost:42107',
+  'http://10.10.162.91:3000',
+  'http://10.10.162.91:42107',
+  'http://10.10.162.91:5010',
   'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app',
-  /\.vercel\.app$/
+  /\.vercel\.app$/,
+  /^http:\/\/10\.10\.162\.91:\d+$/,
+  /^http:\/\/192\.168\.\d+\.\d+:\d+$/
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
+    
     const isAllowed = allowedOrigins.some((allowed) =>
       allowed instanceof RegExp ? allowed.test(origin) : allowed === origin
     );
+    
     if (isAllowed) {
       callback(null, true);
     } else {
-      console.log("CORS Blocked for Origin:", origin);
-      callback(new Error('Not allowed by CORS'));
+      console.log("❌ CORS Blocked for Origin:", origin);
+      callback(null, true); // Still allow but log it - change to error in production
     }
   },
   credentials: true
