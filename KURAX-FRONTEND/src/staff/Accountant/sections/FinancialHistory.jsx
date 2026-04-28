@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Calendar } from "lucide-react";
 import StatCard from "../common/StatCard";
 import GrossRevenueCard from "../common/GrossRevenueCard";
 import MonthlyCosts from "../MonthlyCosts";
@@ -20,17 +20,21 @@ export default function FinancialHistory({
 }) {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          
-          <p className="text-yellow-900 text-[17px] font-medium mt-1">Live from cashier queue and updates every 15 seconds</p>
-          <p className={`text-[12px] italic mt-1 ${isDark ? 'text-zinc-500' : 'text-zinc-600'}`}> Credit requests are NOT included in gross until approved and settled</p>
+      
+      {/* ── DAILY SUMMARY HEADER (matching director style) ── */}
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-xl bg-yellow-100">
+          <Calendar size={18} className="text-yellow-600" />
         </div>
-        <div className="flex items-center gap-1 text-[8px] text-zinc-600">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-black uppercase tracking-wider">Live</span>
+        <div>
+          <h3 className="text-medium font-medium uppercase tracking-tighter text-yellow-900">
+            Daily Summary
+          </h3>
+          <p className="text-[9px] text-gray-500 mt-0.5">Revenue breakdown for {new Date().toLocaleDateString()}</p>
         </div>
       </div>
+
+     
 
       {/* Two stat cards per row on mobile, 4 on desktop */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">

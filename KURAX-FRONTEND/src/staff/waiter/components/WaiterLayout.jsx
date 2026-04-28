@@ -65,7 +65,7 @@ export default function WaiterLayout() {
           <div>
              <h1 className="text-lg font-black uppercase tracking-tighter">
                 {activeTab === 'order' && 'New Order'}
-                {activeTab === 'manage' && 'Order History'}
+                {activeTab === 'performance' && 'Order History'}
                 {activeTab === 'tables' && 'Table Management'}
              </h1>
           </div>
@@ -89,7 +89,7 @@ export default function WaiterLayout() {
              /> 
           )}
 
-          {activeTab === "manage" && (
+          {activeTab === "performance" && (
             // ── FIXED: pass onAddItems so OrderHistory can bridge back to NewOrder ──
             <PerformanceDashboard onAddItems={handleEditTable} />
           )}

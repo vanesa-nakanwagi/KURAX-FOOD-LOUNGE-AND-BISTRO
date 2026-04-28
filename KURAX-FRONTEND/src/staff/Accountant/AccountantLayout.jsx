@@ -696,11 +696,11 @@ export default function AccountantLayout() {
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-1 h-6 bg-yellow-500 rounded-full" />
-                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-600">
+                <h4 className="text-[9px] font-black uppercase tracking-[0.2em] text-yellow-600">
                   Accountant Overview
                 </h4>
               </div>
-              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
+              <h2 className="text-base font-bold text-gray-900 tracking-tight">
                 Welcome back,{" "}
                 <span className="text-yellow-600 capitalize">
                   {firstName}

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
-// --- HELPERS (same as before) ---
+// --- HELPERS ---
 function toLocalDateStr(date) {
   const d = date instanceof Date ? date : new Date(date);
   return [d.getFullYear(), String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0")].join("-");
@@ -166,7 +166,7 @@ export default function LiveTableGrid() {
     });
   }, [orders, today]);
 
-  // Credit breakdown (for CreditsPanel)
+  // Credit breakdown
   const creditBreakdown = useMemo(() => {
     const pendingCashier = creditsLedger.filter(c => c.status === "PendingCashier");
     const pendingManager = creditsLedger.filter(c => c.status === "PendingManagerApproval");
@@ -192,7 +192,6 @@ export default function LiveTableGrid() {
     voided: Math.max(voidedLedger.length, tableGroups.filter(t => t.isAnyVoided).length),
   }), [tableGroups, creditsLedger, voidedLedger]);
 
-  // Filter & sort tables (only used for "all", "active", "delayed", "paid")
   const filteredTables = useMemo(() => {
     let filtered = tableGroups.filter(t => {
       const matchSearch = t.tableName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -234,127 +233,144 @@ export default function LiveTableGrid() {
   };
 
   const FILTERS = [
-    { key: "all", label: "All", icon: <LayoutDashboard size={12} /> },
-    { key: "active", label: "Active", icon: <Clock size={12} /> },
-    { key: "delayed", label: "Delayed", icon: <AlertCircle size={12} />, alert: true },
-    { key: "paid", label: "Paid", icon: <CheckCircle size={12} /> },
-    { key: "credited", label: "Credits", icon: <BookOpen size={12} />, purple: true },
-    { key: "voided", label: "Voided", icon: <Ban size={12} />, red: true },
+    { key: "all", label: "All", icon: <LayoutDashboard size={11} /> },
+    { key: "active", label: "Active", icon: <Clock size={11} /> },
+    { key: "delayed", label: "Delayed", icon: <AlertCircle size={11} />, alert: true },
+    { key: "paid", label: "Paid", icon: <CheckCircle size={11} /> },
+    { key: "credited", label: "Credits", icon: <BookOpen size={11} />, purple: true },
+    { key: "voided", label: "Voided", icon: <Ban size={11} />, red: true },
   ];
 
   const SORT_OPTIONS = [
-    { key: "priority", label: "Priority", icon: <ArrowUpDown size={12} /> },
-    { key: "name", label: "Table", icon: <Utensils size={12} /> },
-    { key: "waiter", label: "Waiter", icon: <User size={12} /> },
-    { key: "time", label: "Time", icon: <Clock size={12} /> },
+    { key: "priority", label: "Priority", icon: <ArrowUpDown size={11} /> },
+    { key: "name", label: "Table", icon: <Utensils size={11} /> },
+    { key: "waiter", label: "Waiter", icon: <User size={11} /> },
+    { key: "time", label: "Time", icon: <Clock size={11} /> },
   ];
 
-  // Determine which content to show
   const showCredits = floorFilter === "credited";
   const showVoided = floorFilter === "voided";
   const showTables = !showCredits && !showVoided;
 
   return (
-    <div className={`min-h-screen p-4 pb-24 font-[Outfit] transition-colors duration-300 ${isDark ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`}>
-      
-      {/* Simple Header */}
-      <div className="mb-5 flex flex-wrap justify-between items-center gap-3">
-        <div>
-          <h1 className="text-xl font-black uppercase tracking-tighter flex items-center gap-2">
-            <div className="w-1 h-5 bg-yellow-500 rounded-full" />
-            Floor Manager
-          </h1>
-          <div className="flex gap-2 text-[10px] font-bold text-gray-500 mt-1">
-            <span>{today}</span>
-            <span>•</span>
-            <span>{counts.active} active</span>
-            {counts.delayed > 0 && <span className="text-red-500">• {counts.delayed} delayed</span>}
+    <div
+      className={`min-h-screen font-[Outfit] transition-colors duration-300 ${isDark ? "bg-black text-white" : "bg-gray-50 text-gray-900"}`}
+      style={{ paddingBottom: "calc(5rem + env(safe-area-inset-bottom))" }}
+    >
+      {/* Sticky header strip */}
+      <div
+        className={`sticky top-0 z-20 px-3 pt-3 pb-2 ${isDark ? "bg-black/95 backdrop-blur-sm" : "bg-gray-50/95 backdrop-blur-sm"}`}
+        style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}
+      >
+        {/* Title row */}
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="min-w-0">
+            <h1 className="text-base sm:text-xl font-black uppercase tracking-tighter flex items-center gap-2 leading-tight">
+              <div className="shrink-0 w-1 h-4 sm:h-5 bg-yellow-500 rounded-full" />
+              <span className="truncate">Floor Manager</span>
+            </h1>
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] font-bold text-gray-500 mt-0.5 ml-3">
+              <span>{today}</span>
+              <span>•</span>
+              <span>{counts.active} active</span>
+              {counts.delayed > 0 && <span className="text-red-500">• {counts.delayed} delayed</span>}
+            </div>
           </div>
+          <button
+            onClick={handleRefresh}
+            className={`shrink-0 p-2 rounded-full border min-w-[36px] min-h-[36px] flex items-center justify-center ${isDark ? "bg-white/10 border-white/20" : "bg-white border-gray-200"}`}
+          >
+            <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+          </button>
         </div>
-        <button onClick={handleRefresh} className="p-2 rounded-full bg-white/10 backdrop-blur border border-white/20">
-          <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
-        </button>
+
+        {/* Filter chips */}
+        <div className="flex overflow-x-auto gap-1.5 pb-1 no-scrollbar -mx-3 px-3">
+          {FILTERS.map(({ key, label, icon, alert, red, purple }) => {
+            const active = floorFilter === key;
+            const count = counts[key];
+            let bg = active
+              ? red ? "bg-red-500 text-white" : purple ? "bg-purple-500 text-white" : "bg-yellow-500 text-black"
+              : isDark ? "bg-gray-800/70 text-gray-300" : "bg-white text-gray-700 border border-gray-200";
+            return (
+              <button
+                key={key}
+                onClick={() => setFloorFilter(key)}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap transition-all shrink-0 min-h-[30px] ${bg} shadow-sm`}
+              >
+                {icon}
+                <span>{label}</span>
+                {count > 0 && (
+                  <span className={`ml-0.5 text-[9px] rounded-full px-1.5 py-px ${active ? "bg-black/20" : isDark ? "bg-white/10" : "bg-gray-100"}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Filters (always visible) */}
-      <div className="flex overflow-x-auto gap-2 pb-2 mb-4 no-scrollbar">
-        {FILTERS.map(({ key, label, icon, alert, red, purple }) => {
-          const active = floorFilter === key;
-          const count = counts[key];
-          let bg = active ? "bg-yellow-500 text-black" : isDark ? "bg-gray-800/50 text-gray-300" : "bg-white text-gray-700";
-          if (active && red) bg = "bg-red-500 text-white";
-          if (active && purple) bg = "bg-purple-500 text-white";
-          return (
-            <button
-              key={key}
-              onClick={() => setFloorFilter(key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap transition-all ${bg} shadow-sm`}
-            >
-              {icon}
-              <span>{label}</span>
-              {count > 0 && <span className="ml-1 text-[9px] bg-white/20 rounded-full px-1.5">{count}</span>}
-            </button>
-          );
-        })}
+      {/* Main content */}
+      <div className="px-3 pt-3">
+        {showCredits && <CreditsPanel credits={creditsLedger} breakdown={creditBreakdown} isDark={isDark} />}
+        {showVoided && <VoidedPanel ledger={voidedLedger} groups={tableGroups.filter(t=>t.isAnyVoided)} isDark={isDark} />}
+        {showTables && (
+          <>
+            {/* Search & Sort */}
+            <div className="flex flex-col gap-2 mb-4">
+              <div className="relative">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search table or waiter…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className={`w-full pl-8 pr-3 py-2 rounded-xl text-[13px] font-medium border outline-none transition-all min-h-[40px]
+                    ${isDark ? "bg-gray-900 border-gray-700 focus:border-yellow-500" : "bg-white border-gray-200 focus:border-yellow-500"}`}
+                />
+              </div>
+              {/* Sort row — scrollable on mobile, wraps on desktop */}
+              <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-3 px-3 pb-0.5">
+                {SORT_OPTIONS.map(({ key, label, icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      if (sortBy === key) setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+                      else { setSortBy(key); setSortOrder("asc"); }
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase whitespace-nowrap shrink-0 min-h-[30px] transition-all
+                      ${sortBy === key ? "bg-yellow-500 text-black" : isDark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`}
+                  >
+                    {icon}
+                    {label}
+                    {sortBy === key && <span className="text-[8px] ml-0.5">{sortOrder === "asc" ? "↑" : "↓"}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Table Grid */}
+            {filteredTables.length === 0 ? (
+              <div className={`py-16 text-center border border-dashed rounded-2xl ${isDark ? "border-gray-700" : "border-gray-300"}`}>
+                <Utensils size={28} className="mx-auto mb-2 opacity-30" />
+                <p className="text-xs font-black uppercase tracking-widest opacity-50">No tables found</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {filteredTables.map(table => (
+                  <TableCard key={table.tableName} table={table} isDark={isDark} creditInfo={creditsByTable[table.tableName]} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
-
-      {/* Conditional content */}
-      {showCredits && <CreditsPanel credits={creditsLedger} breakdown={creditBreakdown} isDark={isDark} />}
-      {showVoided && <VoidedPanel ledger={voidedLedger} groups={tableGroups.filter(t=>t.isAnyVoided)} isDark={isDark} />}
-      {showTables && (
-        <>
-          {/* Search & Sort (only for tables) */}
-          <div className="flex flex-col sm:flex-row gap-2 mb-5">
-            <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search table or waiter..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className={`w-full pl-9 pr-3 py-2 rounded-xl text-[13px] font-medium border outline-none transition-all
-                  ${isDark ? "bg-gray-900 border-gray-700 focus:border-yellow-500" : "bg-white border-gray-200 focus:border-yellow-500"}`}
-              />
-            </div>
-            <div className="flex gap-1 overflow-x-auto">
-              {SORT_OPTIONS.map(({ key, label, icon }) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    if (sortBy === key) setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-                    else { setSortBy(key); setSortOrder("asc"); }
-                  }}
-                  className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[9px] font-black uppercase whitespace-nowrap
-                    ${sortBy === key ? "bg-yellow-500 text-black" : isDark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`}
-                >
-                  {icon}
-                  {label}
-                  {sortBy === key && <span className="text-[8px]">{sortOrder === "asc" ? "↑" : "↓"}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Table Grid */}
-          {filteredTables.length === 0 ? (
-            <div className="py-20 text-center border border-dashed rounded-2xl border-gray-300">
-              <Utensils size={32} className="mx-auto mb-2 opacity-30" />
-              <p className="text-xs font-black uppercase tracking-widest opacity-50">No tables found</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredTables.map(table => (
-                <TableCard key={table.tableName} table={table} isDark={isDark} creditInfo={creditsByTable[table.tableName]} />
-              ))}
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }
 
-// --- Table Card (simplified) ---
+// --- Table Card ---
 function TableCard({ table, isDark, creditInfo }) {
   const { tableName, total, itemCount, status, waiterName, minsElapsed, isDelayed, allPaid, isVoided, isCredited } = table;
 
@@ -363,54 +379,58 @@ function TableCard({ table, isDark, creditInfo }) {
 
   if (isVoided) {
     cardStyle += " opacity-60 grayscale";
-    statusBadge = { text: "Voided", color: "bg-gray-500 text-white", icon: <Ban size={10} /> };
+    statusBadge = { text: "Voided", color: "bg-gray-500 text-white", icon: <Ban size={9} /> };
   } else if (isCredited && creditInfo) {
     const settled = creditInfo.status === "FullySettled" || creditInfo.status === "PartiallySettled";
-    if (settled) statusBadge = { text: "Credit Settled", color: "bg-green-500 text-white", icon: <CheckCircle size={10} /> };
-    else if (creditInfo.status === "Approved") statusBadge = { text: "Credit Approved", color: "bg-purple-500 text-white", icon: <CheckCircle size={10} /> };
-    else statusBadge = { text: "Credit Pending", color: "bg-yellow-500 text-black", icon: <Hourglass size={10} /> };
+    if (settled) statusBadge = { text: "Settled", color: "bg-green-500 text-white", icon: <CheckCircle size={9} /> };
+    else if (creditInfo.status === "Approved") statusBadge = { text: "Approved", color: "bg-purple-500 text-white", icon: <CheckCircle size={9} /> };
+    else statusBadge = { text: "Pending", color: "bg-yellow-500 text-black", icon: <Hourglass size={9} /> };
   } else if (allPaid) {
-    statusBadge = { text: "Paid", color: "bg-green-500 text-white", icon: <CheckCircle size={10} /> };
+    statusBadge = { text: "Paid", color: "bg-green-500 text-white", icon: <CheckCircle size={9} /> };
   } else if (status === "Served") {
-    statusBadge = { text: "Served", color: "bg-blue-500 text-white", icon: <Eye size={10} /> };
+    statusBadge = { text: "Served", color: "bg-blue-500 text-white", icon: <Eye size={9} /> };
   } else if (status === "Ready") {
-    statusBadge = { text: "Ready!", color: "bg-emerald-500 text-black", icon: <ChefHat size={10} /> };
+    statusBadge = { text: "Ready!", color: "bg-emerald-500 text-black", icon: <ChefHat size={9} /> };
   } else if (isDelayed) {
-    statusBadge = { text: `${minsElapsed}m Delayed`, color: "bg-red-500 text-white", icon: <AlertCircle size={10} /> };
+    statusBadge = { text: `${minsElapsed}m`, color: "bg-red-500 text-white", icon: <AlertCircle size={9} /> };
   } else {
-    statusBadge = { text: status || "Active", color: "bg-yellow-500 text-black", icon: <Clock size={10} /> };
+    statusBadge = { text: status || "Active", color: "bg-yellow-500 text-black", icon: <Clock size={9} /> };
   }
 
   return (
-    <div className={`rounded-xl border p-4 shadow-sm transition-all hover:shadow-md ${cardStyle}`}>
-      <div className="flex justify-between items-start gap-2 mb-2">
-        <h3 className={`font-black text-md uppercase truncate ${isCredited ? "text-purple-400" : isVoided ? "text-gray-500" : "text-yellow-500"}`}>
+    <div className={`rounded-xl border p-3 shadow-sm transition-all hover:shadow-md ${cardStyle}`}>
+      {/* Table name + badge */}
+      <div className="flex justify-between items-start gap-1 mb-2">
+        <h3 className={`font-black text-sm uppercase truncate leading-tight ${isCredited ? "text-purple-400" : isVoided ? "text-gray-500" : "text-yellow-500"}`}>
           {tableName}
         </h3>
-        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${statusBadge.color}`}>
+        <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase shrink-0 ${statusBadge.color}`}>
           {statusBadge.icon}
-          <span>{statusBadge.text}</span>
+          <span className="ml-0.5">{statusBadge.text}</span>
         </div>
       </div>
-      <div className="space-y-1 text-[11px]">
-        <div className="flex justify-between">
-          <span className="text-gray-500">Waiter</span>
-          <span className="font-medium">{waiterName}</span>
+
+      {/* Details */}
+      <div className="space-y-1">
+        <div className="flex justify-between text-[11px]">
+          <span className="text-gray-500 truncate mr-1">Waiter</span>
+          <span className="font-medium truncate max-w-[80px] text-right">{waiterName}</span>
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between text-[11px]">
           <span className="text-gray-500">Items</span>
           <span>{itemCount}</span>
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between text-[11px]">
           <span className="text-gray-500">Total</span>
-          <span className={`font-bold ${isCredited ? "text-purple-400" : allPaid ? "text-green-400" : "text-yellow-500"}`}>
+          <span className={`font-bold text-[11px] ${isCredited ? "text-purple-400" : allPaid ? "text-green-400" : "text-yellow-500"}`}>
+            {/* Abbreviate on very small — show full number, let it be */}
             UGX {total.toLocaleString()}
           </span>
         </div>
-        {isCredited && creditInfo && creditInfo.client_name && (
-          <div className="flex justify-between text-[9px] mt-1 pt-1 border-t border-gray-200 dark:border-gray-700">
+        {isCredited && creditInfo?.client_name && (
+          <div className="flex justify-between text-[9px] mt-1 pt-1 border-t border-gray-200/30">
             <span className="text-gray-500">Client</span>
-            <span className="truncate max-w-[120px]">{creditInfo.client_name}</span>
+            <span className="truncate max-w-[90px] text-right">{creditInfo.client_name}</span>
           </div>
         )}
       </div>
@@ -418,16 +438,20 @@ function TableCard({ table, isDark, creditInfo }) {
   );
 }
 
-// ---------- CREDITS PANEL (original style) ----------
+// --- Credits Panel ---
 function CreditsPanel({ credits, breakdown, isDark }) {
   const [activeTab, setActiveTab] = useState("pendingCashier");
   const tabs = [
-    { key: "pendingCashier", label: "Wait for Cashier", icon: <Hourglass size={12} />, count: breakdown.pendingCashier.length, total: breakdown.totalPendingCashier, color: "yellow" },
-    { key: "pendingManager", label: "Wait for Manager", icon: <Clock size={12} />, count: breakdown.pendingManager.length, total: breakdown.totalPendingManager, color: "orange" },
-    { key: "approved", label: "Approved", icon: <CheckCircle size={12} />, count: breakdown.approved.length, total: breakdown.totalApproved, color: "purple" },
-    { key: "settled", label: "Settled", icon: <CheckCircle size={12} />, count: breakdown.settled.length, total: breakdown.totalSettled, color: "green" },
-    { key: "rejected", label: "Rejected", icon: <XCircle size={12} />, count: breakdown.rejected.length, total: breakdown.totalRejected, color: "red" },
+    { key: "pendingCashier", label: "Cashier", fullLabel: "Wait for Cashier", icon: <Hourglass size={11} />, count: breakdown.pendingCashier.length, total: breakdown.totalPendingCashier, color: "yellow" },
+    { key: "pendingManager", label: "Manager", fullLabel: "Wait for Manager", icon: <Clock size={11} />, count: breakdown.pendingManager.length, total: breakdown.totalPendingManager, color: "orange" },
+    { key: "approved", label: "Approved", fullLabel: "Approved", icon: <CheckCircle size={11} />, count: breakdown.approved.length, total: breakdown.totalApproved, color: "purple" },
+    { key: "settled", label: "Settled", fullLabel: "Settled", icon: <CheckCircle size={11} />, count: breakdown.settled.length, total: breakdown.totalSettled, color: "green" },
+    { key: "rejected", label: "Rejected", fullLabel: "Rejected", icon: <XCircle size={11} />, count: breakdown.rejected.length, total: breakdown.totalRejected, color: "red" },
   ];
+
+  const colorMap = { yellow: "text-yellow-500", orange: "text-orange-500", purple: "text-purple-500", green: "text-green-500", red: "text-red-500" };
+  const activeBgMap = { yellow: "bg-yellow-500 text-black", orange: "bg-orange-500 text-white", purple: "bg-purple-500 text-white", green: "bg-green-500 text-white", red: "bg-red-500 text-white" };
+
   const currentList = {
     pendingCashier: breakdown.pendingCashier,
     pendingManager: breakdown.pendingManager,
@@ -435,64 +459,70 @@ function CreditsPanel({ credits, breakdown, isDark }) {
     settled: breakdown.settled,
     rejected: breakdown.rejected,
   }[activeTab];
-  const currentTotal = tabs.find(t => t.key === activeTab)?.total || 0;
 
   if (credits.length === 0) {
     return (
-      <div className={`py-20 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-gray-800" : "border-gray-200"}`}>
-        <BookOpen size={32} className="mx-auto mb-2 opacity-30" />
+      <div className={`py-16 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-gray-800" : "border-gray-200"}`}>
+        <BookOpen size={28} className="mx-auto mb-2 opacity-30" />
         <p className="text-[10px] font-black uppercase">No credits this month</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5">
-      {/* Summary stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+    <div className="space-y-4">
+      {/* Summary stats — 2-col on mobile, 5-col on sm+ */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         {tabs.map(tab => (
-          <div key={tab.key} className={`p-3 rounded-xl border ${isDark ? "bg-gray-800/50 border-gray-700" : "bg-white border-gray-200"} text-center`}>
-            <p className="text-[8px] font-black uppercase text-gray-500">{tab.label.split(' ')[0]}</p>
-            <p className={`text-sm font-black ${tab.color === "yellow" ? "text-yellow-500" : tab.color === "orange" ? "text-orange-500" : tab.color === "purple" ? "text-purple-500" : tab.color === "green" ? "text-green-500" : "text-red-500"}`}>
+          <div
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`p-3 rounded-xl border cursor-pointer transition-all ${isDark ? "bg-gray-800/50 border-gray-700" : "bg-white border-gray-200"} ${activeTab === tab.key ? "ring-2 ring-yellow-500/50" : ""} text-center`}
+          >
+            <p className="text-[8px] font-black uppercase text-gray-500 mb-1 truncate">{tab.label}</p>
+            <p className={`text-xs font-black ${colorMap[tab.color]} leading-tight`}>
               UGX {tab.total.toLocaleString()}
             </p>
-            <p className="text-[9px] text-gray-400">{tab.count} records</p>
+            <p className="text-[9px] text-gray-400 mt-0.5">{tab.count} rec.</p>
           </div>
         ))}
       </div>
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
+      {/* Tab pills — scrollable on mobile */}
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-3 px-3 pb-0.5">
         {tabs.map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase transition-all
-              ${activeTab === tab.key 
-                ? `bg-${tab.color === "yellow" ? "yellow" : tab.color === "orange" ? "orange" : tab.color === "purple" ? "purple" : tab.color === "green" ? "green" : "red"}-500 text-white` 
-                : isDark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[9px] font-black uppercase whitespace-nowrap shrink-0 min-h-[28px] transition-all
+              ${activeTab === tab.key ? activeBgMap[tab.color] : isDark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`}
           >
             {tab.icon}
-            {tab.label}
-            <span className="ml-1 text-[8px] bg-white/20 rounded-full px-1.5">{tab.count}</span>
+            <span className="hidden sm:inline">{tab.fullLabel}</span>
+            <span className="sm:hidden">{tab.label}</span>
+            <span className="ml-1 text-[8px] bg-black/10 rounded-full px-1.5">{tab.count}</span>
           </button>
         ))}
       </div>
 
       {/* List */}
       {currentList.length === 0 ? (
-        <div className="py-12 text-center text-gray-400 text-xs">No items</div>
+        <div className="py-10 text-center text-gray-400 text-xs">No items</div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {currentList.map((credit, idx) => (
-            <div key={idx} className={`p-4 rounded-xl border ${isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
-              <div className="flex justify-between items-start">
-                <span className="font-black text-sm uppercase">{credit.table_name || "Table"}</span>
-                <span className="text-[10px] text-gray-500">{credit.created_at ? new Date(credit.created_at).toLocaleDateString() : ""}</span>
+            <div key={idx} className={`p-3 rounded-xl border ${isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
+              <div className="flex justify-between items-start gap-1">
+                <span className="font-black text-sm uppercase truncate">{credit.table_name || "Table"}</span>
+                <span className="text-[9px] text-gray-500 shrink-0">{credit.created_at ? new Date(credit.created_at).toLocaleDateString() : ""}</span>
               </div>
-              {credit.client_name && <p className="text-[9px] mt-1 flex items-center gap-1"><User size={9} />{credit.client_name}</p>}
-              {credit.client_phone && <p className="text-[8px] text-gray-400">{credit.client_phone}</p>}
-              <p className="text-base font-black mt-2">UGX {Number(credit.amount).toLocaleString()}</p>
+              {credit.client_name && (
+                <p className="text-[9px] mt-1 flex items-center gap-1 text-gray-400 truncate">
+                  <User size={9} className="shrink-0" />{credit.client_name}
+                </p>
+              )}
+              {credit.client_phone && <p className="text-[8px] text-gray-500">{credit.client_phone}</p>}
+              <p className="text-sm font-black mt-2">UGX {Number(credit.amount).toLocaleString()}</p>
             </div>
           ))}
         </div>
@@ -501,44 +531,45 @@ function CreditsPanel({ credits, breakdown, isDark }) {
   );
 }
 
-// ---------- VOIDED PANEL (original style) ----------
+// --- Voided Panel ---
 function VoidedPanel({ ledger, groups, isDark }) {
   const liveTableNames = new Set(groups.map(g => g.tableName));
   const archivedVoids = ledger.filter(r => !liveTableNames.has((r.table_name || "").trim().toUpperCase()));
 
   if (groups.length === 0 && archivedVoids.length === 0) {
     return (
-      <div className="py-20 text-center border-2 border-dashed rounded-2xl">
-        <Ban size={32} className="mx-auto mb-2 opacity-30" />
+      <div className={`py-16 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-gray-700" : "border-gray-200"}`}>
+        <Ban size={28} className="mx-auto mb-2 opacity-30" />
         <p className="text-[10px] font-black uppercase">No voided items today</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Active tables with voided items */}
+    <div className="space-y-5">
       {groups.length > 0 && (
         <div>
           <h2 className="text-sm font-black uppercase mb-3 flex items-center gap-2">
-            <div className="w-1 h-5 bg-red-500 rounded-full" />
+            <div className="w-1 h-4 bg-red-500 rounded-full" />
             Active tables with voids ({groups.length})
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {groups.map(table => <TableCard key={table.tableName} table={table} isDark={isDark} creditInfo={null} />)}
           </div>
         </div>
       )}
-      {/* Archived voids from ledger */}
       {archivedVoids.length > 0 && (
         <div>
-          <h2 className="text-sm font-black uppercase mb-3">Archived voids ({archivedVoids.length})</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <h2 className="text-sm font-black uppercase mb-3 flex items-center gap-2">
+            <div className="w-1 h-4 bg-gray-500 rounded-full" />
+            Archived voids ({archivedVoids.length})
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {archivedVoids.map((v, i) => (
-              <div key={i} className={`p-4 rounded-xl border ${isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
-                <p className="font-black text-sm">{v.table_name || "Table"}</p>
-                <p className="text-red-500 line-through text-xs mt-1">{v.item_name}</p>
-                {v.reason && <p className="text-[9px] text-gray-500 mt-1">Reason: {v.reason}</p>}
+              <div key={i} className={`p-3 rounded-xl border ${isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
+                <p className="font-black text-sm truncate">{v.table_name || "Table"}</p>
+                <p className="text-red-400 line-through text-xs mt-1 truncate">{v.item_name}</p>
+                {v.reason && <p className="text-[9px] text-gray-500 mt-1 leading-tight">Reason: {v.reason}</p>}
                 <p className="text-[8px] text-gray-400 mt-2">{new Date(v.created_at).toLocaleTimeString()}</p>
               </div>
             ))}

@@ -1,10 +1,5 @@
 // ─── ManagerCreditPanel.jsx ───────────────────────────────────────────────────
-// Drop this into your Manager dashboard. Shows all credits pending approval
-// and lets the manager approve or reject each one.
-//
-// Props:
-//   managerName – logged-in manager's name
-//   theme       – "dark" (default) | "light"
+// Manager dashboard credit approvals – fully responsive for mobile & desktop
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -15,7 +10,7 @@ import {
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
-// ─── Individual approval card ─────────────────────────────────────────────────
+// ─── Individual approval card (fully responsive) ─────────────────────────────
 function CreditApprovalCard({ credit, managerName, onAction }) {
   const [expanded,   setExpanded]   = useState(false);
   const [rejecting,  setRejecting]  = useState(false);
@@ -67,86 +62,87 @@ function CreditApprovalCard({ credit, managerName, onAction }) {
   };
 
   return (
-    <div className={`border rounded-[2.5rem] overflow-hidden transition-all duration-300
+    <div className={`border rounded-2xl sm:rounded-[2.5rem] overflow-hidden transition-all duration-300
       ${expanded
         ? "bg-purple-500/5 border-purple-500/30"
         : "bg-zinc-900/30 border-white/5 hover:border-purple-500/20"}`}
     >
-      {/* ── Summary row ── */}
+      {/* ── Summary row (collapsed) ── */}
       <button
-        className="w-full p-6 flex items-center gap-4 text-left"
+        className="w-full p-4 sm:p-6 flex items-center gap-3 sm:gap-4 text-left"
         onClick={() => { setExpanded(e => !e); setRejecting(false); }}
       >
-        <div className="p-4 rounded-2xl bg-black border border-purple-500/20 text-purple-400 shrink-0">
-          <BookOpen size={20} />
+        <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-black border border-purple-500/20 text-purple-400 shrink-0">
+          <BookOpen size={18} className="sm:w-5 sm:h-5" />
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="font-black text-white italic uppercase tracking-tighter text-sm">
+            <span className="font-black text-white italic uppercase tracking-tighter text-sm sm:text-base">
               {credit.table_name}
             </span>
-            <span className="text-[9px] bg-purple-500/10 border border-purple-500/20 text-purple-400 px-2 py-0.5 rounded-lg font-black uppercase tracking-widest animate-pulse">
-              Awaiting Approval
+            <span className="text-[8px] sm:text-[9px] bg-purple-500/10 border border-purple-500/20 text-purple-400 px-2 py-0.5 rounded-lg font-black uppercase tracking-widest animate-pulse">
+              Pending
             </span>
           </div>
-          <p className="text-[10px] text-zinc-500 font-bold uppercase truncate">
+          <p className="text-[9px] sm:text-[10px] text-zinc-500 font-bold uppercase truncate">
             {credit.client_name}
             {credit.client_phone && ` · ${credit.client_phone}`}
-            {` · Forwarded by ${credit.forwarded_by || credit.waiter_name} · ${timeAgo(credit.forwarded_at || credit.created_at)}`}
+            {` · by ${credit.forwarded_by || credit.waiter_name} · ${timeAgo(credit.forwarded_at || credit.created_at)}`}
           </p>
         </div>
 
-        <div className="text-right shrink-0 mr-2">
-          <p className="text-xl font-black text-purple-400 italic tracking-tighter">
+        <div className="text-right shrink-0 mr-1 sm:mr-2">
+          <p className="text-base sm:text-xl font-black text-purple-400 italic tracking-tighter">
             UGX {amount.toLocaleString()}
           </p>
         </div>
 
         <ChevronDown
-          size={16}
+          size={14}
           className={`text-zinc-500 transition-transform duration-200 shrink-0 ${expanded ? "rotate-180" : ""}`}
         />
       </button>
 
       {/* ── Expanded detail ── */}
       {expanded && (
-        <div className="px-6 pb-6 space-y-5 border-t border-purple-500/10">
-          <div className="pt-5 grid grid-cols-2 gap-4">
-            <div className="space-y-3">
+        <div className="px-4 sm:px-6 pb-4 sm:pb-6 space-y-4 sm:space-y-5 border-t border-purple-500/10">
+          {/* Client & Order details – responsive grid */}
+          <div className="pt-4 sm:pt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+            <div className="space-y-2 sm:space-y-3">
               <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Client Details</p>
               <div className="flex items-center gap-2">
-                <User size={12} className="text-purple-400" />
-                <span className="text-sm font-black text-white">{credit.client_name}</span>
+                <User size={12} className="text-purple-400 shrink-0" />
+                <span className="text-sm font-black text-white break-words">{credit.client_name}</span>
               </div>
               {credit.client_phone && (
                 <div className="flex items-center gap-2">
-                  <Phone size={12} className="text-purple-400" />
-                  <span className="text-sm text-zinc-300">{credit.client_phone}</span>
+                  <Phone size={12} className="text-purple-400 shrink-0" />
+                  <span className="text-sm text-zinc-300 break-all">{credit.client_phone}</span>
                 </div>
               )}
               {credit.pay_by && (
                 <div className="flex items-center gap-2">
-                  <Calendar size={12} className="text-purple-400" />
+                  <Calendar size={12} className="text-purple-400 shrink-0" />
                   <span className="text-sm text-zinc-300">Pay by: {credit.pay_by}</span>
                 </div>
               )}
             </div>
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Order Details</p>
-              <div className="bg-black border border-white/5 rounded-2xl p-4 text-center">
-                <p className="text-[9px] text-zinc-600 uppercase font-black tracking-widest mb-1">Credit Amount</p>
-                <p className="text-2xl font-black text-purple-400 italic tracking-tighter">
+              <div className="bg-black border border-white/5 rounded-xl sm:rounded-2xl p-3 sm:p-4 text-center">
+                <p className="text-[8px] sm:text-[9px] text-zinc-600 uppercase font-black tracking-widest mb-1">Credit Amount</p>
+                <p className="text-xl sm:text-2xl font-black text-purple-400 italic tracking-tighter">
                   UGX {amount.toLocaleString()}
                 </p>
               </div>
               {credit.label && (
-                <p className="text-[10px] text-zinc-500">{credit.label}</p>
+                <p className="text-[9px] sm:text-[10px] text-zinc-500 break-words">{credit.label}</p>
               )}
             </div>
           </div>
 
-          {/* Rejection reason input */}
+          {/* Rejection input */}
           {rejecting && (
             <div>
               <p className="text-[9px] font-black text-red-400 uppercase tracking-widest mb-2">
@@ -156,29 +152,30 @@ function CreditApprovalCard({ credit, managerName, onAction }) {
                 value={reason}
                 onChange={e => setReason(e.target.value)}
                 placeholder="Explain why this credit is being rejected…"
-                className="w-full bg-black border border-red-500/30 rounded-2xl p-4 text-white text-sm outline-none focus:border-red-500/50 resize-none h-20"
+                className="w-full bg-black border border-red-500/30 rounded-xl sm:rounded-2xl p-3 sm:p-4 text-white text-sm outline-none focus:border-red-500/50 resize-none h-20"
+                rows={3}
               />
             </div>
           )}
 
-          {/* Action buttons */}
+          {/* Action buttons – stack on mobile, side‑by‑side on desktop */}
           {loading ? (
             <div className="flex items-center justify-center py-4 gap-2">
               <Loader2 size={16} className="animate-spin text-purple-400" />
               <span className="text-purple-400 text-[10px] font-black uppercase tracking-widest">Processing…</span>
             </div>
           ) : rejecting ? (
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => { setRejecting(false); setReason(""); }}
-                className="flex-1 py-4 border border-white/10 text-zinc-400 rounded-2xl font-black uppercase text-[10px] hover:text-white transition-colors"
+                className="order-2 sm:order-1 flex-1 py-3 sm:py-4 border border-white/10 text-zinc-400 rounded-xl sm:rounded-2xl font-black uppercase text-[10px] hover:text-white transition-colors"
               >
                 Back
               </button>
               <button
                 onClick={reject}
                 disabled={!reason.trim()}
-                className={`flex-[2] py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all
+                className={`order-1 sm:order-2 flex-[2] py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all
                   ${reason.trim()
                     ? "bg-red-500 text-white hover:bg-red-400 active:scale-[0.98]"
                     : "bg-zinc-800 text-zinc-600 cursor-not-allowed"}`}
@@ -187,16 +184,16 @@ function CreditApprovalCard({ credit, managerName, onAction }) {
               </button>
             </div>
           ) : (
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => setRejecting(true)}
-                className="flex-1 py-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-2 hover:bg-red-500/20 transition-all"
+                className="order-2 sm:order-1 flex-1 py-3 sm:py-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl sm:rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-2 hover:bg-red-500/20 transition-all"
               >
                 <XCircle size={14} /> Reject
               </button>
               <button
                 onClick={approve}
-                className="flex-[2] py-5 bg-emerald-500 text-black rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-emerald-400 active:scale-[0.98] transition-all shadow-xl shadow-emerald-500/20"
+                className="order-1 sm:order-2 flex-[2] py-3 sm:py-5 bg-emerald-500 text-black rounded-xl sm:rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-emerald-400 active:scale-[0.98] transition-all shadow-xl shadow-emerald-500/20"
               >
                 <CheckCircle size={14} /> Approve Credit
               </button>
@@ -208,7 +205,7 @@ function CreditApprovalCard({ credit, managerName, onAction }) {
   );
 }
 
-// ─── Main panel ───────────────────────────────────────────────────────────────
+// ─── Main panel (responsive) ─────────────────────────────────────────────────
 export default function ManagerCreditPanel({ managerName }) {
   const [credits, setCredits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -229,8 +226,8 @@ export default function ManagerCreditPanel({ managerName }) {
 
   return (
     <div className="space-y-4">
-      {/* Sub-header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500">
             Credits Awaiting Approval
@@ -243,20 +240,21 @@ export default function ManagerCreditPanel({ managerName }) {
         </div>
         <button
           onClick={load}
-          className="p-2 bg-zinc-900 rounded-xl text-zinc-500 hover:text-white transition-colors"
+          className="p-2 bg-zinc-900 rounded-xl text-zinc-500 hover:text-white transition-colors shrink-0"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
       </div>
 
+      {/* Content */}
       {loading ? (
         <div className="space-y-3">
           {[...Array(2)].map((_, i) => (
-            <div key={i} className="h-24 rounded-[2.5rem] bg-zinc-900/30 animate-pulse border border-white/5" />
+            <div key={i} className="h-24 rounded-2xl sm:rounded-[2.5rem] bg-zinc-900/30 animate-pulse border border-white/5" />
           ))}
         </div>
       ) : credits.length === 0 ? (
-        <div className="py-16 text-center border-2 border-dashed border-white/5 rounded-[3rem] bg-zinc-900/10">
+        <div className="py-12 sm:py-16 text-center border-2 border-dashed border-white/5 rounded-3xl sm:rounded-[3rem] bg-zinc-900/10">
           <ShieldCheck size={28} className="mx-auto text-zinc-700 mb-3" />
           <p className="text-zinc-600 font-black uppercase text-[10px] tracking-widest">No pending credits</p>
         </div>

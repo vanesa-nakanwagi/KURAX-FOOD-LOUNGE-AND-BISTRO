@@ -1,431 +1,484 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  ArrowDownRight, BookOpen, User, Phone, Calendar,
+  BookOpen, User, Phone, Calendar,
   RefreshCw, ChevronLeft, ChevronRight, FileText, CheckCircle2,
-  Banknote, CreditCard, Smartphone, Wallet, TrendingUp,
-  ChevronDown, ChevronUp, Search, Filter, Hourglass, Clock, XCircle
+  Hourglass, Clock, XCircle, Search, TrendingUp, TrendingDown
 } from "lucide-react";
-import { useTheme } from "./shared/ThemeContext";
 import { FinanceRow } from "./shared/UIHelpers";
 import API_URL from "../../../config/api";
 
-// ─── UTILS ──────────────────────────────────────────────────────────────────
+// ─── UTILS ───────────────────────────────────────────────────────────────────
 function kampalaMonth(offset = 0) {
   const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Nairobi" }));
   d.setMonth(d.getMonth() + offset);
   return d.toISOString().substring(0, 7);
 }
-
 function monthLabel(ym) {
   const [y, m] = ym.split("-");
   return new Date(Number(y), Number(m) - 1, 1)
     .toLocaleString("en-US", { month: "long", year: "numeric" });
 }
+function fmtUGX(n) {
+  const v = Number(n || 0);
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000)     return `${(v / 1_000).toFixed(0)}K`;
+  return v.toLocaleString();
+}
 
-// ─── CREDIT STATUS BADGE ────────────────────────────────────────────────────
-function CreditStatusBadge({ status }) {
-  const normalizedStatus = String(status || '').toLowerCase();
-  
-  const statusMap = {
-    'pendingcashier': { label: 'Wait for Cashier', icon: <Hourglass size={10} />, color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
-    'pendingmanagerapproval': { label: 'Wait for Manager', icon: <Clock size={10} />, color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
-    'approved': { label: 'Approved', icon: <CheckCircle2 size={10} />, color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
-    'fullysettled': { label: 'Settled', icon: <CheckCircle2 size={10} />, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-    'partiallysettled': { label: 'Partially Settled', icon: <CheckCircle2 size={10} />, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-    'rejected': { label: 'Rejected', icon: <XCircle size={10} />, color: 'bg-red-500/20 text-red-400 border-red-500/30' }
-  };
-  
-  const config = statusMap[normalizedStatus] || { 
-    label: status || 'Unknown', 
-    icon: <BookOpen size={10} />, 
-    color: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30' 
-  };
-  
+// ─── SVG RING ────────────────────────────────────────────────────────────────
+function Ring({ pct = 0, size = 72, stroke = 7, color = "#EAB308", bg = "rgba(0,0,0,0.06)", label, sub }) {
+  const r  = (size - stroke) / 2;
+  const cx = size / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = Math.min(Math.max(pct / 100, 0), 1) * circ;
+
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black uppercase ${config.color}`}>
-      {config.icon} {config.label}
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+          <circle cx={cx} cy={cx} r={r} fill="none" stroke={bg} strokeWidth={stroke} />
+          <circle
+            cx={cx} cy={cx} r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={`${dash} ${circ}`}
+            style={{ transition: "stroke-dasharray 0.6s cubic-bezier(.4,0,.2,1)" }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-black text-gray-800 leading-none" style={{ fontSize: size * 0.18 }}>
+            {Math.round(pct)}%
+          </span>
+        </div>
+      </div>
+      {label && <p className="text-[8px] font-black uppercase tracking-widest text-gray-500 text-center leading-tight max-w-[70px]">{label}</p>}
+      {sub   && <p className="text-[9px] font-bold text-gray-800 text-center leading-none">{sub}</p>}
+    </div>
+  );
+}
+
+// ─── CREDIT STATUS BADGE ─────────────────────────────────────────────────────
+function CreditStatusBadge({ status }) {
+  const s = String(status || "").toLowerCase();
+  const map = {
+    pendingcashier:         { label: "Cashier Queue",    color: "bg-yellow-100 border-yellow-300 text-yellow-700",  icon: <Hourglass size={8}/> },
+    pendingmanagerapproval: { label: "Manager Queue",    color: "bg-orange-100 border-orange-300 text-orange-700",  icon: <Clock size={8}/> },
+    approved:               { label: "Approved",         color: "bg-purple-100 border-purple-300 text-purple-700",  icon: <CheckCircle2 size={8}/> },
+    fullysettled:           { label: "Settled",          color: "bg-emerald-100 border-emerald-300 text-emerald-700", icon: <CheckCircle2 size={8}/> },
+    partiallysettled:       { label: "Part. Settled",    color: "bg-emerald-100 border-emerald-300 text-emerald-700", icon: <CheckCircle2 size={8}/> },
+    rejected:               { label: "Rejected",         color: "bg-red-100 border-red-300 text-red-700",           icon: <XCircle size={8}/> },
+  };
+  const cfg = map[s] || { label: status || "Unknown", color: "bg-gray-100 border-gray-300 text-gray-600", icon: <BookOpen size={8}/> };
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black uppercase ${cfg.color}`}>
+      {cfg.icon} {cfg.label}
     </span>
   );
 }
 
+// ─── SECTION HEADER ──────────────────────────────────────────────────────────
+function SectionHeader({ title, sub, right }) {
+  return (
+    <div className="flex items-start justify-between gap-4 mb-5">
+      <div>
+        <div className="flex items-center gap-2 mb-0.5">
+          <div className="w-1 h-5 rounded-full bg-yellow-500" />
+          <h3 className="text-base font-black uppercase tracking-tight text-gray-900">{title}</h3>
+        </div>
+        {sub && <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-gray-500 ml-3">{sub}</p>}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+// ─── DIVIDER ─────────────────────────────────────────────────────────────────
+function Divider() {
+  return <div className="border-t border-gray-200 my-8" />;
+}
+
+// ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function FinancesSection({ creditsData = [], creditStats = {}, CreditStatusBadge: ExternalBadge }) {
-  const { dark, t } = useTheme();
   const [monthOffset, setMonthOffset] = useState(0);
   const month = kampalaMonth(monthOffset);
-  
-  const [profit, setProfit] = useState(null);
-  const [profitLoad, setProfitLoad] = useState(true);
-  const [isExportingPDF, setIsExportingPDF] = useState(false);
-  
-  // Credits state
-  const [expandedCredits, setExpandedCredits] = useState(false);
-  const [creditFilter, setCreditFilter] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
 
-  // Use the passed badge component or the local one
+  const [profit,      setProfit]      = useState(null);
+  const [profitLoad,  setProfitLoad]  = useState(true);
+  const [exporting,   setExporting]   = useState(false);
+  const [creditFilter, setCreditFilter] = useState("all");
+  const [searchQuery,  setSearchQuery]  = useState("");
+
   const Badge = ExternalBadge || CreditStatusBadge;
 
-  // ─── FETCH PROFIT DATA ─────────────────────────────────────────────────────
+  // ── fetch ──
   const fetchProfit = useCallback(async () => {
     setProfitLoad(true);
     try {
       const res = await fetch(`${API_URL}/api/summaries/monthly-profit?month=${month}`);
       if (res.ok) setProfit(await res.json());
-    } catch (e) { console.error("Profit fetch error:", e); }
+    } catch {}
     finally { setProfitLoad(false); }
   }, [month]);
-
   useEffect(() => { fetchProfit(); }, [fetchProfit]);
 
-  // ─── EXPORT PDF ───────────────────────────────────────────────────────────
+  // ── export pdf ──
   const handleDownloadPDF = async () => {
-    setIsExportingPDF(true);
+    setExporting(true);
     try {
       const res = await fetch(`${API_URL}/api/summaries/export-pdf?month=${month}`);
       if (res.ok) {
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `Kurax_Report_${month}.pdf`;
-        a.click();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href = url; a.download = `Kurax_Report_${month}.pdf`; a.click();
         URL.revokeObjectURL(url);
-      } else { alert("PDF route not configured on backend."); }
-    } catch (e) { alert("Network error during PDF generation."); }
-    finally { setIsExportingPDF(false); }
+      }
+    } catch {}
+    finally { setExporting(false); }
   };
 
-  // ─── CREDIT FILTERING ─────────────────────────────────────────────────────
-  const getNormalizedStatus = (status) => {
-    if (!status) return 'unknown';
-    const s = String(status).toLowerCase();
-    if (s === 'pendingcashier') return 'pendingCashier';
-    if (s === 'pendingmanagerapproval') return 'pendingManager';
-    if (s === 'approved') return 'approved';
-    if (s === 'fullysettled') return 'settled';
-    if (s === 'partiallysettled') return 'settled';
-    if (s === 'rejected') return 'rejected';
-    return s;
+  // ── credit filtering ──
+  const normalize = s => {
+    const v = String(s || "").toLowerCase();
+    if (v === "pendingcashier")         return "pendingCashier";
+    if (v === "pendingmanagerapproval") return "pendingManager";
+    if (v === "fullysettled" || v === "partiallysettled") return "settled";
+    return v;
   };
 
   const filteredCredits = useMemo(() => {
-    let filtered = creditsData || [];
-    
-    if (creditFilter === "pendingCashier") {
-      filtered = filtered.filter(c => getNormalizedStatus(c.status) === 'pendingCashier');
-    } else if (creditFilter === "pendingManager") {
-      filtered = filtered.filter(c => getNormalizedStatus(c.status) === 'pendingManager');
-    } else if (creditFilter === "approved") {
-      filtered = filtered.filter(c => getNormalizedStatus(c.status) === 'approved');
-    } else if (creditFilter === "settled") {
-      filtered = filtered.filter(c => getNormalizedStatus(c.status) === 'settled');
-    } else if (creditFilter === "rejected") {
-      filtered = filtered.filter(c => getNormalizedStatus(c.status) === 'rejected');
-    }
-    
-    if (searchQuery) {
-      filtered = filtered.filter(c => 
-        (c.table_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (c.client_name || "").toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    
-    return filtered;
+    let f = creditsData || [];
+    if (creditFilter !== "all") f = f.filter(c => normalize(c.status) === creditFilter);
+    if (searchQuery)            f = f.filter(c =>
+      (c.table_name  || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.client_name || "").toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    return f;
   }, [creditsData, creditFilter, searchQuery]);
 
-  const costs = profit?.costs || {};
+  // ── derived numbers ──
+  const costs      = profit?.costs || {};
+  const sales      = profit?.sales || {};
   const fixedItems = costs.fixed_items || [];
 
-  // Credit tabs configuration
-  const creditTabs = [
-    { key: "all", label: "All", count: creditsData?.length || 0, color: "zinc" },
-    { key: "pendingCashier", label: "Wait for Cashier", count: creditStats?.pendingCashier || 0, color: "yellow" },
-    { key: "pendingManager", label: "Wait for Manager", count: creditStats?.pendingManager || 0, color: "orange" },
-    { key: "approved", label: "Approved", count: creditStats?.approved || 0, color: "purple" },
-    { key: "settled", label: "Settled", count: creditStats?.settled || 0, color: "green" },
-    { key: "rejected", label: "Rejected", count: creditStats?.rejected || 0, color: "red" },
+  const gross      = Number(sales.total_gross  || 0);
+  const expenses   = Number(costs.total        || 0);
+  const net        = Number(profit?.net_profit  || 0);
+  const marginPct  = Number(profit?.margin_pct  || 0);
+
+  const totalCredits = creditsData?.length || 0;
+  const settledCt    = creditStats?.settled || 0;
+  const settledPct   = totalCredits > 0 ? (settledCt / totalCredits) * 100 : 0;
+
+  const momoAmt = Number(sales.total_momo || 0);
+  const cashAmt = Number(sales.total_cash || 0);
+  const momoPct = gross > 0 ? (momoAmt / gross) * 100 : 0;
+  const cashPct = gross > 0 ? (cashAmt / gross) * 100 : 0;
+
+  const CREDIT_TABS = [
+    { key: "all",           label: "All",            count: totalCredits },
+    { key: "pendingCashier",label: "Cashier Queue",  count: creditStats?.pendingCashier || 0 },
+    { key: "pendingManager",label: "Manager Queue",  count: creditStats?.pendingManager || 0 },
+    { key: "approved",      label: "Approved",       count: creditStats?.approved       || 0 },
+    { key: "settled",       label: "Settled",        count: creditStats?.settled        || 0 },
+    { key: "rejected",      label: "Rejected",       count: creditStats?.rejected       || 0 },
   ];
 
-  const getTabColor = (color, isActive) => {
-    if (!isActive) return dark ? "text-zinc-500 hover:text-zinc-300" : "text-gray-500 hover:text-gray-700";
-    switch(color) {
-      case 'yellow': return 'bg-yellow-500 text-black';
-      case 'orange': return 'bg-orange-500 text-white';
-      case 'purple': return 'bg-purple-500 text-white';
-      case 'green': return 'bg-emerald-500 text-white';
-      case 'red': return 'bg-red-500 text-white';
-      default: return 'bg-yellow-500 text-black';
-    }
-  };
-
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      
-      {/* ── CONTROL BAR ── */}
-      <div className={`flex flex-wrap justify-between items-center ${t.card} border p-5 rounded-[2rem] gap-4`}>
-        <div>
-          <h3 className="text-sm font-black uppercase italic tracking-tighter text-yellow-500">Financial Audit Mode</h3>
-          <p className={`text-[10px] font-bold uppercase ${t.subtext}`}>Monitoring Accountant Submissions</p>
+    <div className="font-[Outfit] space-y-0">
+
+      {/* ══ 1. CONTROL BAR ════════════════════════════════════════════════ */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-6">
+        {/* Month stepper */}
+        <div className="flex items-center gap-1 rounded-xl border border-gray-200 overflow-hidden">
+          <button
+            onClick={() => setMonthOffset(o => o - 1)}
+            className="px-3 py-2.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 transition-all"
+          >
+            <ChevronLeft size={15} />
+          </button>
+          <span className="px-4 text-[11px] font-black uppercase tracking-widest text-gray-800 min-w-[130px] text-center">
+            {monthLabel(month)}
+          </span>
+          <button
+            onClick={() => setMonthOffset(o => Math.min(o + 1, 0))}
+            disabled={monthOffset >= 0}
+            className="px-3 py-2.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 transition-all disabled:opacity-20"
+          >
+            <ChevronRight size={15} />
+          </button>
         </div>
-        
-        <div className="flex items-center gap-3">
-          <div className={`flex items-center rounded-xl p-1 border ${dark ? "bg-black/20 border-white/5" : "bg-gray-100 border-gray-200"}`}>
-            <button onClick={() => setMonthOffset(o => o - 1)} className="p-2 hover:text-yellow-500 transition-colors"><ChevronLeft size={16}/></button>
-            <span className="text-[10px] font-black uppercase px-4 min-w-[120px] text-center">{monthLabel(month)}</span>
-            <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset >= 0} className="p-2 disabled:opacity-20 hover:text-yellow-500 transition-colors"><ChevronRight size={16}/></button>
-          </div>
-          
-          <button 
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchProfit}
+            className="p-2.5 rounded-xl border border-gray-200 text-gray-500 hover:text-yellow-600 hover:border-yellow-300 transition-all"
+          >
+            <RefreshCw size={14} className={profitLoad ? "animate-spin" : ""} />
+          </button>
+          <button
             onClick={handleDownloadPDF}
-            disabled={isExportingPDF}
-            className="flex items-center gap-2 px-5 py-3 bg-white text-black rounded-2xl font-black uppercase italic text-[10px] hover:bg-yellow-500 transition-all active:scale-95 disabled:opacity-50">
-            {isExportingPDF ? <RefreshCw size={14} className="animate-spin" /> : <FileText size={14} />}
-            {isExportingPDF ? "Generating PDF..." : "Download PDF Report"}
+            disabled={exporting}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-yellow-500 text-black font-black uppercase text-[9px] tracking-wider hover:bg-yellow-400 transition-all disabled:opacity-50 shadow-sm shadow-yellow-500/20"
+          >
+            {exporting ? <RefreshCw size={12} className="animate-spin" /> : <FileText size={12} />}
+            {exporting ? "Generating…" : "PDF Report"}
           </button>
         </div>
       </div>
 
-      {/* ── P&L SUMMARY CARDS ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className={`${t.card} border p-6 rounded-[2rem] relative overflow-hidden`}>
-          <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest mb-1">Monthly Net Margin</p>
-          <h4 className={`text-5xl font-black italic ${profit?.margin_pct >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-            {profitLoad ? "..." : `${profit?.margin_pct || 0}%`}
-          </h4>
-          <p className="text-[10px] font-bold text-zinc-400 mt-2 uppercase">UGX {Number(profit?.net_profit || 0).toLocaleString()} Profit</p>
-        </div>
+      {/* ══ 2. P&L OVERVIEW ═══════════════════════════════════════════════ */}
+      <SectionHeader title="Financial Overview" sub={`${monthLabel(month)} · Profit & Loss`} />
 
-        <div className={`${t.card} border p-6 rounded-[2rem] space-y-3`}>
-          <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Revenue Breakdown</p>
-          <FinanceRow label="Gross Sales" value={profit?.sales?.total_gross} color="text-white" bold />
-          <FinanceRow label="Total MoMo" value={profit?.sales?.total_momo} color="text-yellow-500" />
-          <FinanceRow label="Total Cash" value={profit?.sales?.total_cash} color="text-emerald-500" />
+      {profitLoad ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-0">
+          {[1,2,3,4].map(i => (
+            <div key={i} className="h-28 rounded-2xl bg-gray-100 animate-pulse" />
+          ))}
         </div>
+      ) : (
+        <>
+          {/* ── Ring row ── */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Net margin ring */}
+            <div className="col-span-2 md:col-span-1 flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
+              <Ring
+                pct={Math.max(0, marginPct)}
+                size={88}
+                stroke={8}
+                color={marginPct >= 0 ? "#22c55e" : "#ef4444"}
+                label="Net Margin"
+                sub={`UGX ${fmtUGX(net)}`}
+              />
+            </div>
 
-        <div className={`${t.card} border p-6 rounded-[2rem] space-y-3`}>
-          <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Cost Summary</p>
-          <FinanceRow label="Fixed Expenses" value={costs.fixed_total} color="text-rose-400" />
-          <FinanceRow label="Petty Cash Out" value={costs.petty_out} color="text-orange-400" />
-          <div className="pt-2 border-t border-white/5">
-            <FinanceRow label="Total Expenses" value={costs.total} color="text-rose-500" bold />
-          </div>
-        </div>
-      </div>
+            {/* Gross sales ring */}
+            <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
+              <Ring pct={100} size={72} stroke={6} color="#EAB308" label="Gross Sales" sub={`UGX ${fmtUGX(gross)}`} />
+            </div>
 
-      {/* ── CREDITS LEDGER SECTION ── */}
-      <div className={`${t.card} border rounded-[2.5rem] overflow-hidden`}>
-        <div className="px-8 py-6 border-b border-white/5 bg-white/5 flex justify-between items-center flex-wrap gap-4">
-          <div>
-            <h3 className="text-xs font-black uppercase tracking-tighter">Credits Ledger</h3>
-            <p className="text-[9px] text-zinc-500 font-bold uppercase mt-1">Track all credit accounts, approvals, and settlements</p>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20">
-            <BookOpen size={12} className="text-purple-500" />
-            <span className="text-[8px] font-black text-purple-500 uppercase">{creditsData?.length || 0} Total Credits</span>
-          </div>
-        </div>
+            {/* MoMo split ring */}
+            <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
+              <Ring pct={momoPct} size={72} stroke={6} color="#f59e0b" label="MoMo Share" sub={`UGX ${fmtUGX(momoAmt)}`} />
+            </div>
 
-        {/* Credit Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-6 border-b border-white/5">
-          <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
-            <p className="text-[7px] font-black uppercase text-yellow-400">Wait for Cashier</p>
-            <p className="text-xl font-black text-yellow-400">{creditStats?.pendingCashier || 0}</p>
+            {/* Cash split ring */}
+            <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
+              <Ring pct={cashPct} size={72} stroke={6} color="#34d399" label="Cash Share" sub={`UGX ${fmtUGX(cashAmt)}`} />
+            </div>
           </div>
-          <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/20">
-            <p className="text-[7px] font-black uppercase text-orange-400">Wait for Manager</p>
-            <p className="text-xl font-black text-orange-400">{creditStats?.pendingManager || 0}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20">
-            <p className="text-[7px] font-black uppercase text-purple-400">Approved</p>
-            <p className="text-xl font-black text-purple-400">{creditStats?.approved || 0}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-            <p className="text-[7px] font-black uppercase text-emerald-400">Settled</p>
-            <p className="text-xl font-black text-emerald-400">{creditStats?.settled || 0}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
-            <p className="text-[7px] font-black uppercase text-red-400">Rejected</p>
-            <p className="text-xl font-black text-red-400">{creditStats?.rejected || 0}</p>
-          </div>
-        </div>
 
-        {/* Credit Tabs */}
-        <div className="px-6 pt-4">
-          <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-white/5 w-fit">
-            {creditTabs.map(({ key, label, count, color }) => (
-              <button
-                key={key}
-                onClick={() => setCreditFilter(key)}
-                className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all
-                  ${creditFilter === key ? getTabColor(color, true) : (dark ? "text-zinc-500 hover:text-zinc-300" : "text-gray-500 hover:text-gray-700")}`}
-              >
-                {label}
-                {count > 0 && (
-                  <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[8px] font-black ${creditFilter === key ? "bg-white/20" : dark ? "bg-white/10" : "bg-black/5"}`}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Search Bar */}
-        <div className="px-6 pt-4">
-          <div className="relative">
-            <Search size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${dark ? "text-zinc-500" : "text-gray-400"}`} />
-            <input
-              type="text"
-              placeholder="Search by table or client name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full pl-9 pr-4 py-2 rounded-xl text-xs font-bold outline-none border transition-all
-                ${dark ? "bg-zinc-800/50 border-white/10 focus:border-yellow-500/50 text-white placeholder-zinc-600" 
-                      : "bg-gray-100 border-gray-200 focus:border-yellow-500 text-gray-900 placeholder-gray-400"}`}
+          {/* ── KPI strip ── */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-4">
+            <KpiTile label="Total Revenue"  value={`UGX ${Number(gross).toLocaleString()}`}   accent="text-gray-900" />
+            <KpiTile label="Total Expenses" value={`UGX ${Number(expenses).toLocaleString()}`} accent="text-red-600" />
+            <KpiTile
+              label="Net Profit"
+              value={`UGX ${Math.abs(net).toLocaleString()}`}
+              accent={net >= 0 ? "text-emerald-600" : "text-red-600"}
+              icon={net >= 0 ? <TrendingUp size={12}/> : <TrendingDown size={12}/>}
+              className="col-span-2 md:col-span-1"
             />
           </div>
-        </div>
+        </>
+      )}
 
-        {/* Credits List */}
-        <div className="p-6">
-          {filteredCredits.length === 0 ? (
-            <div className="py-12 text-center border-2 border-dashed border-white/5 rounded-[2rem]">
-              <BookOpen size={32} className="mx-auto text-zinc-700 mb-3" />
-              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">No {creditFilter} credits found</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredCredits.map(credit => (
-                <CreditCardItem key={credit.id} credit={credit} Badge={Badge} dark={dark} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Expand/Collapse Button */}
-        {creditsData?.length > 5 && (
-          <div className="px-6 pb-6">
-            <button
-              onClick={() => setExpandedCredits(!expandedCredits)}
-              className={`w-full flex items-center justify-center gap-2 p-3 rounded-xl transition-all
-                ${dark ? "bg-white/5 hover:bg-white/10" : "bg-gray-100 hover:bg-gray-200"}`}
-            >
-              {expandedCredits ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              <span className="text-[9px] font-black uppercase tracking-widest">
-                {expandedCredits ? "Show Less" : `Show All ${creditsData.length} Credits`}
-              </span>
-            </button>
-          </div>
-        )}
+      {/* Increased spacing between Financial Overview and Credits Ledger */}
+      <div className="mt-12 mb-6">
+        <Divider />
       </div>
 
-      {/* ── ACCOUNTANT'S COST LEDGER ── */}
-      <div className={`${t.card} border rounded-[2.5rem] overflow-hidden`}>
-        <div className="px-8 py-6 border-b border-white/5 bg-white/5 flex justify-between items-center">
-          <div>
-            <h3 className="text-xs font-black uppercase tracking-tighter">Verified Monthly Expenses</h3>
-            <p className="text-[9px] text-zinc-500 font-bold uppercase mt-1">Audit trail of costs entered by accounting staff</p>
+      {/* ══ 3. CREDITS LEDGER ════════════════════════════════════════════ */}
+      <SectionHeader
+        title="Credits Ledger"
+        sub={`${totalCredits} total · ${settledCt} settled`}
+        right={
+          <div className="flex items-center gap-5 mt-1">
+            
+            
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-            <CheckCircle2 size={12} className="text-emerald-500" />
-            <span className="text-[8px] font-black text-emerald-500 uppercase">Live Records</span>
-          </div>
-        </div>
+        }
+      />
 
-        <div className="p-6">
-          {profitLoad ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-2xl bg-white/5 animate-pulse" />)}
-            </div>
-          ) : fixedItems.length === 0 ? (
-            <div className="py-12 text-center border-2 border-dashed border-white/5 rounded-[2rem]">
-              <p className="text-[10px] font-black uppercase text-zinc-600 italic">No costs submitted for {monthLabel(month)}</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {fixedItems.map(item => (
-                <div key={item.id} className="flex items-center justify-between p-5 bg-black/40 border border-white/5 rounded-2xl hover:bg-black/60 transition-colors">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-black text-yellow-500 uppercase tracking-widest">{item.category}</p>
-                    <p className="text-xs font-bold text-white mt-0.5 truncate">{item.description || "No description provided"}</p>
-                    <p className="text-[8px] text-zinc-600 mt-2 font-black uppercase">Staff: {item.entered_by || "System"}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-black text-rose-400 italic">UGX {Number(item.amount).toLocaleString()}</p>
-                    <p className="text-[7px] text-zinc-700 uppercase font-black">Verified Cost</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      
+      {/* Filter tabs */}
+      <div className="flex gap-1 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1 mb-3">
+        {CREDIT_TABS.map(({ key, label, count }) => (
+          <button
+            key={key}
+            onClick={() => setCreditFilter(key)}
+            className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider whitespace-nowrap shrink-0 transition-all
+              ${creditFilter === key
+                ? "bg-yellow-500 text-black shadow-sm shadow-yellow-500/20"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-100 border border-gray-200"}`}
+          >
+            {label}
+            {count > 0 && (
+              <span className={`ml-1.5 px-1.5 py-0.5 rounded-md text-[8px] font-black
+                ${creditFilter === key ? "bg-black/20" : "bg-gray-200"}`}>
+                {count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
 
-        {!profitLoad && fixedItems.length > 0 && (
-          <div className="px-8 py-4 bg-zinc-900/50 border-t border-white/5 flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase text-zinc-500">Subtotal for {monthLabel(month)}</span>
-            <span className="text-xl font-black text-rose-500 italic">UGX {Number(costs.fixed_total || 0).toLocaleString()}</span>
-          </div>
-        )}
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search table or client…"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="w-full pl-9 pr-4 py-2.5 rounded-xl text-[12px] font-medium border border-gray-200 outline-none bg-white text-gray-700 placeholder:text-gray-400 focus:border-yellow-500 transition-all"
+        />
+      </div>
+
+      {/* Credits list */}
+      {filteredCredits.length === 0 ? (
+        <div className="py-14 text-center border border-dashed border-gray-300 rounded-2xl">
+          <BookOpen size={24} className="mx-auto text-gray-400 mb-2" />
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">No credits found</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredCredits.map(credit => (
+            <CreditCardItem key={credit.id} credit={credit} Badge={Badge} />
+          ))}
+        </div>
+      )}
+
+      {/* Increased spacing between Credits Ledger and Verified Expenses */}
+      <div className="mt-12 mb-6">
+        <Divider />
+      </div>
+
+      {/* ══ 4. EXPENSE LEDGER ════════════════════════════════════════════ */}
+      <SectionHeader
+        title="Verified Expenses"
+        sub={`${monthLabel(month)} · Accountant submissions`}
+        right={
+          !profitLoad && (
+            <div className="text-right mt-1">
+              <p className="text-[8px] font-black uppercase text-gray-500 tracking-wider">Total</p>
+              <p className="text-lg font-black text-red-600">UGX {fmtUGX(costs.fixed_total)}</p>
+            </div>
+          )
+        }
+      />
+
+      {profitLoad ? (
+        <div className="space-y-2">
+          {[1,2,3].map(i => <div key={i} className="h-16 rounded-xl bg-gray-100 animate-pulse" />)}
+        </div>
+      ) : fixedItems.length === 0 ? (
+        <div className="py-14 text-center border border-dashed border-gray-300 rounded-2xl">
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">No expenses for {monthLabel(month)}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {fixedItems.map(item => (
+            <ExpenseRow key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+
+      {!profitLoad && fixedItems.length > 0 && (
+        <div className="flex justify-between items-center pt-4 mt-2 border-t border-gray-200">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
+            {fixedItems.length} line item{fixedItems.length !== 1 ? "s" : ""} · {monthLabel(month)}
+          </p>
+          <p className="text-lg font-black text-red-600">
+            UGX {Number(costs.fixed_total || 0).toLocaleString()}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── KPI TILE ────────────────────────────────────────────────────────────────
+function KpiTile({ label, value, accent, icon, className = "" }) {
+  return (
+    <div className={`p-4 rounded-2xl border border-gray-200 bg-gray-50 ${className}`}>
+      <p className="text-[8px] font-black uppercase tracking-widest text-gray-500 mb-1">{label}</p>
+      <div className={`flex items-center gap-1.5 font-black text-base ${accent}`}>
+        {icon}
+        {value}
       </div>
     </div>
   );
 }
 
-// ─── CREDIT CARD ITEM COMPONENT ──────────────────────────────────────────────
-function CreditCardItem({ credit, Badge, dark }) {
+// ─── CREDIT CARD ITEM ────────────────────────────────────────────────────────
+function CreditCardItem({ credit, Badge }) {
   const date = credit.created_at || credit.confirmed_at;
-  const dateStr = date ? new Date(date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-  
+  const dateStr = date
+    ? new Date(date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "—";
   const isSettled = credit.status === "FullySettled" || credit.status === "PartiallySettled";
-  const displayAmount = isSettled ? (credit.amount_paid || credit.amount) : credit.amount;
+  const isRejected = credit.status === "Rejected";
+  const amount = isSettled ? (credit.amount_paid || credit.amount) : credit.amount;
+  const amountColor = isSettled ? "text-emerald-600" : isRejected ? "text-red-600" : "text-purple-600";
 
   return (
-    <div className={`p-4 rounded-xl border transition-all hover:shadow-md ${dark ? "bg-zinc-900/40 border-white/10" : "bg-white border-gray-200"}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            <h4 className="font-black text-base uppercase tracking-tighter">{credit.table_name || "Table"}</h4>
-            <Badge status={credit.status} />
-          </div>
-          
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
-            {credit.client_name && (
-              <div className="flex items-center gap-1">
-                <User size={10} className="text-zinc-500" />
-                <span className={dark ? "text-zinc-300" : "text-gray-600"}>{credit.client_name}</span>
-              </div>
-            )}
-            {credit.client_phone && (
-              <div className="flex items-center gap-1">
-                <Phone size={10} className="text-zinc-500" />
-                <span className={dark ? "text-zinc-400" : "text-gray-500"}>{credit.client_phone}</span>
-              </div>
-            )}
-            {credit.pay_by && !isSettled && credit.status !== "Rejected" && (
-              <div className="flex items-center gap-1">
-                <Calendar size={10} className="text-amber-400" />
-                <span className="text-amber-400 font-black">Pay by: {credit.pay_by}</span>
-              </div>
-            )}
-          </div>
-          
-          <p className={`text-[8px] font-bold mt-2 ${dark ? "text-zinc-600" : "text-gray-400"}`}>
-            {credit.approved_by ? `Approved by ${credit.approved_by} · ` : ""}
-            {dateStr}
-          </p>
+    <div className="group flex items-start justify-between gap-3 p-4 rounded-xl border border-gray-200 bg-white hover:bg-yellow-50 transition-all relative overflow-hidden">
+      {/* yellow left accent */}
+      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-0 rounded-r-full bg-yellow-500 transition-all duration-200 group-hover:h-[55%]" />
+
+      <div className="flex-1 min-w-0 pl-1">
+        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+          <h4 className="font-black text-sm uppercase tracking-tight text-gray-900">{credit.table_name || "Table"}</h4>
+          <Badge status={credit.status} />
         </div>
-        
-        <div className="text-right shrink-0">
-          <p className={`text-lg font-black ${isSettled ? "text-emerald-400" : credit.status === "Rejected" ? "text-red-400" : "text-purple-400"}`}>
-            UGX {Number(displayAmount || 0).toLocaleString()}
-          </p>
-          {isSettled && credit.settle_method && (
-            <p className={`text-[8px] font-bold ${dark ? "text-zinc-500" : "text-gray-400"}`}>
-              via {credit.settle_method}
-            </p>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] font-bold text-gray-500">
+          {credit.client_name && (
+            <span className="flex items-center gap-1"><User size={9}/>{credit.client_name}</span>
+          )}
+          {credit.client_phone && (
+            <span className="flex items-center gap-1"><Phone size={9}/>{credit.client_phone}</span>
+          )}
+          {credit.pay_by && !isSettled && !isRejected && (
+            <span className="flex items-center gap-1 text-amber-600"><Calendar size={9}/>Pay by: {credit.pay_by}</span>
           )}
         </div>
+        <p className="text-[7px] font-bold text-gray-400 mt-1.5">
+          {credit.approved_by ? `Approved by ${credit.approved_by} · ` : ""}{dateStr}
+        </p>
+      </div>
+
+      <div className="text-right shrink-0">
+        <p className={`text-sm font-black ${amountColor}`}>UGX {Number(amount || 0).toLocaleString()}</p>
+        {isSettled && credit.settle_method && (
+          <p className="text-[8px] font-bold text-gray-500 mt-0.5">via {credit.settle_method}</p>
+        )}
       </div>
     </div>
   );
 }
+
+// ─── EXPENSE ROW ─────────────────────────────────────────────────────────────
+function ExpenseRow({ item }) {
+  return (
+    <div className="group flex items-start justify-between gap-3 p-4 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-all relative overflow-hidden">
+      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-0 rounded-r-full bg-red-500 transition-all duration-200 group-hover:h-[55%]" />
+      <div className="flex-1 min-w-0 pl-1">
+        <p className="text-[9px] font-black uppercase tracking-widest text-yellow-600 mb-0.5">{item.category}</p>
+        <p className="text-[11px] font-bold text-gray-800 truncate">{item.description || "No description"}</p>
+        <p className="text-[8px] font-bold text-gray-400 mt-1 uppercase tracking-wider">
+          {item.entered_by || "System"}
+        </p>
+      </div>
+      <div className="text-right shrink-0">
+        <p className="text-sm font-black text-red-600">UGX {Number(item.amount).toLocaleString()}</p>
+        <p className="text-[7px] font-bold text-gray-400 mt-0.5 uppercase">Verified</p>
+      </div>
+    </div>
+  );
+}
+
+// expose for parent import
+export { CreditStatusBadge };

@@ -2,28 +2,29 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Receipt, Calculator, CheckCircle2, X, LogOut,
-  RotateCcw, BookOpen, BarChart3, Wallet, Sparkles, MoreVertical
+  RotateCcw, BookOpen, BarChart3, Wallet, Sparkles, Menu
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
+import { useData } from "../../customer/components/context/DataContext";
 
-// Desktop menu items (all items)
+// ✅ Store component FUNCTIONS, not JSX
 const DESKTOP_MENU_ITEMS = [
-  { key: "FINANCIAL_HISTORY", label: "Dashboard",    icon: <Receipt size={20}/>     },
-  { key: "PHYSICAL_COUNT",    label: "Physical Finances", icon: <Calculator size={20}/>  },
-  { key: "LIVE_AUDIT",        label: "Live Audit",        icon: <CheckCircle2 size={20}/> },
-  { key: "MONTHLY_COSTS",     label: "Monthly Costs",     icon: <Wallet size={20}/>      },
-  { key: "CREDITS",           label: "Credits",           icon: <BookOpen size={20}/>    },
-  { key: "VIEW_SALES",        label: "View Sales",        icon: <BarChart3 size={20}/>   },
-  { key: "START_NEW_DAY",     label: "Start New Day",     icon: <Sparkles size={20}/>    },
-  { key: "REOPEN_DAY",        label: "Reopen Day",        icon: <RotateCcw size={20}/>   },
-  { key: "END_OF_SHIFT",      label: "End of Shift",      icon: <RotateCcw size={20}/>   },
+  { key: "FINANCIAL_HISTORY", label: "Dashboard",          icon: Receipt },
+  { key: "PHYSICAL_COUNT",    label: "Physical Finances",  icon: Calculator },
+  { key: "LIVE_AUDIT",        label: "Live Audit",         icon: CheckCircle2 },
+  { key: "MONTHLY_COSTS",     label: "Monthly Costs",      icon: Wallet },
+  { key: "CREDITS",           label: "Credits",            icon: BookOpen },
+  { key: "VIEW_SALES",        label: "View Sales",         icon: BarChart3 },
+  { key: "START_NEW_DAY",     label: "Start New Day",      icon: Sparkles },
+  { key: "REOPEN_DAY",        label: "Reopen Day",         icon: RotateCcw },
+  { key: "END_OF_SHIFT",      label: "End of Shift",       icon: RotateCcw },
 ];
 
-// Bottom navigation items for mobile (Live Audit and Credits)
+// Bottom navigation items for mobile (only Live Audit and Credits)
 const BOTTOM_NAV_ITEMS = [
-  { key: "LIVE_AUDIT", label: "Live Audit", icon: <CheckCircle2 size={22}/> },
-  { key: "CREDITS",    label: "Credits",    icon: <BookOpen size={22}/> },
+  { key: "LIVE_AUDIT", label: "Audit", icon: CheckCircle2 },
+  { key: "CREDITS",    label: "Credits", icon: BookOpen },
 ];
 
 // Drawer menu items (all items except bottom nav items)
@@ -40,13 +41,17 @@ export default function SideBar({
   voidCount = 0,
   creditCount = 0
 }) {
+  const { theme } = useTheme();
+  const { currentUser } = useData();
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
 
+  const dark = isDark || theme === "dark";
+  const fullName = currentUser?.name || "Accountant";
+  const firstName = fullName.split(" ")[0];
+
   useEffect(() => {
-    const checkScreenSize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
+    const checkScreenSize = () => setIsMobile(window.innerWidth < 768);
     checkScreenSize();
     window.addEventListener("resize", checkScreenSize);
     return () => window.removeEventListener("resize", checkScreenSize);
@@ -57,156 +62,134 @@ export default function SideBar({
     navigate('/staff/login');
   };
 
+  // Unified NavButton – receives component function, not JSX
+  const NavButton = ({ item, showLabel = true, onClick, isActive, badge }) => {
+    const Icon = item.icon;
+    return (
+      <button
+        onClick={onClick}
+        className={`
+          w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all
+          ${showLabel ? "justify-start" : "justify-center"}
+          ${isActive
+            ? "bg-yellow-500 text-black shadow-sm shadow-yellow-500/20"
+            : dark
+              ? "text-zinc-500 hover:bg-white/5 hover:text-white"
+              : "text-gray-600 hover:bg-gray-100"
+          }
+        `}
+      >
+        <Icon size={18} className={isActive ? "text-black" : "text-yellow-500"} />
+        {showLabel && <span className="truncate">{item.label}</span>}
+        {badge !== null && badge > 0 && (
+          <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[8px] font-black shrink-0
+            ${isActive ? "bg-black text-yellow-500" : "bg-yellow-500 text-black"}`}>
+            {badge > 9 ? "9+" : badge}
+          </span>
+        )}
+      </button>
+    );
+  };
+
   // ========== MOBILE VIEW ==========
   if (isMobile) {
     return (
       <>
-        {/* 3 Vertical Dots / X Button - Changes icon when menu is open */}
+        {/* Floating menu button */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`fixed top-4 right-4 z-50 p-2 rounded-xl transition-all font-['Outfit'] ${
-            isDark 
-              ? "bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white" 
-              : "bg-white/90 backdrop-blur-md border border-gray-200 text-black shadow-sm"
+          className={`fixed top-4 right-4 z-50 p-2 rounded-xl transition-all ${
+            dark
+              ? "bg-zinc-900/90 backdrop-blur-md border border-white/10 text-white"
+              : "bg-white/90 backdrop-blur-md border border-gray-200 text-gray-700 shadow-sm"
           }`}
         >
-          {isOpen ? <X size={22} /> : <MoreVertical size={22} />}
+          {isOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
 
-        {/* Mobile Drawer - Slides from right */}
-        <div
-          className={`fixed inset-0 z-40 transition-all duration-300 ${
-            isOpen ? "visible" : "invisible"
-          }`}
-        >
-          {/* Backdrop */}
+        {/* Mobile Drawer */}
+        <div className={`fixed inset-0 z-40 transition-all duration-300 ${isOpen ? "visible" : "invisible"}`}>
           <div
-            className={`absolute inset-0 transition-opacity duration-300 ${
-              isOpen ? "opacity-100 bg-black/50" : "opacity-0"
-            }`}
+            className={`absolute inset-0 transition-opacity duration-300 ${isOpen ? "opacity-100 bg-black/70 backdrop-blur-sm" : "opacity-0"}`}
             onClick={() => setIsOpen(false)}
           />
-
-          {/* Drawer Content */}
           <div
-            className={`absolute right-0 top-0 h-full w-80 transition-transform duration-300 ${
-              isOpen ? "translate-x-0" : "translate-x-full"
-            } ${
-              isDark
-                ? "bg-zinc-950 border-l border-white/5"
-                : "bg-white border-l border-gray-200 shadow-xl"
-            }`}
+            className={`absolute right-0 top-0 h-full w-72 transition-transform duration-300 flex flex-col shadow-2xl
+              ${isOpen ? "translate-x-0" : "translate-x-full"}
+              ${dark ? "bg-zinc-950 border-l border-white/5" : "bg-white border-l border-gray-200"}`}
           >
-            {/* Logo and Header Section */}
-            <div className={`pt-12 pb-6 px-6 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
-              <div className="flex items-center gap-3">
-                <img
-                  src={logo}
-                  alt="Logo"
-                  className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20"
-                />
-                <div className="flex flex-col">
-                  <h1 className={`text-[11px] font-black uppercase tracking-tight leading-none ${
-                    isDark ? "text-white" : "text-zinc-900"
-                  }`}>
-                    KURAX FOOD LOUNGE & BISTRO
-                  </h1>
-                  <p className="text-[9px] font-bold text-yellow-500 mt-1 uppercase tracking-widest">
-                    ACCOUNTANT PANEL
-                  </p>
-                </div>
+            {/* Drawer header */}
+            <div className={`flex items-center gap-3 p-5 border-b ${dark ? "border-white/5" : "border-gray-200"}`}>
+              <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30" />
+              <div>
+                <p className={`text-[11px] font-black uppercase tracking-tighter leading-none
+                  ${dark ? "text-white" : "text-gray-900"}`}>KURAX FOOD LOUNGE</p>
+                <p className={`text-[8px] font-bold uppercase tracking-widest mt-0.5
+                  ${dark ? "text-yellow-500" : "text-yellow-600"}`}>ACCOUNTANT PANEL</p>
               </div>
             </div>
 
-            {/* Scrollable Menu Items */}
-            <nav className="flex-1 overflow-y-auto p-4 space-y-2 max-h-[calc(100vh-160px)]">
+           
+
+            {/* Drawer menu items */}
+            <nav className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
               {DRAWER_MENU_ITEMS.map((item) => {
                 let badge = null;
-                if (item.key === "LIVE_AUDIT" && voidCount > 0) badge = voidCount;
-                if (item.key === "CREDITS" && creditCount > 0) badge = creditCount;
-                
+                if (item.key === "LIVE_AUDIT") badge = voidCount;
+                if (item.key === "CREDITS") badge = creditCount;
                 return (
-                  <button
+                  <NavButton
                     key={item.key}
-                    onClick={() => {
-                      setActiveSection(item.key);
-                      setIsOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all
-                      ${activeSection === item.key
-                        ? "bg-yellow-500 text-black"
-                        : isDark
-                          ? "text-zinc-400 hover:bg-white/5 hover:text-white"
-                          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                      }`}
-                  >
-                    <span className={activeSection === item.key ? "text-black" : "text-yellow-500"}>
-                      {item.icon}
-                    </span>
-                    <span className="flex-1 text-left">{item.label}</span>
-                    {badge && (
-                      <span className="bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
-                        {badge > 9 ? "9+" : badge}
-                      </span>
-                    )}
-                  </button>
+                    item={item}
+                    showLabel={true}
+                    isActive={activeSection === item.key}
+                    onClick={() => { setActiveSection(item.key); setIsOpen(false); }}
+                    badge={badge}
+                  />
                 );
               })}
             </nav>
 
-            {/* Logout Button */}
-            <div className={`p-4 border-t mt-auto ${isDark ? "border-white/5" : "border-gray-200"}`}>
+            {/* Logout in drawer */}
+            <div className={`p-4 border-t ${dark ? "border-white/5" : "border-gray-200"}`}>
               <button
                 onClick={handleLogout}
-                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${
-                  isDark
-                    ? "bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                    : "bg-red-50 text-red-600 hover:bg-red-100"
-                }`}
+                className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-gray-500 hover:text-red-600 hover:bg-gray-100 dark:hover:bg-white/5"
               >
-                <LogOut size={16} />
-                Log Out
+                <LogOut size={18} /> Logout
               </button>
             </div>
           </div>
         </div>
 
-        {/* Bottom Navigation Bar */}
+        {/* Bottom Navigation Bar (two items) */}
         <div
-          className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-3 py-2 border-t backdrop-blur-lg ${
-            isDark
-              ? "bg-zinc-950/95 border-white/10"
-              : "bg-white/95 border-gray-200 shadow-lg"
-          }`}
+          className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-3 py-2 border-t backdrop-blur-lg
+            ${dark ? "bg-zinc-950/95 border-white/10" : "bg-white/95 border-gray-200 shadow-lg"}`}
+          style={{ paddingBottom: "env(safe-area-inset-bottom, 6px)" }}
         >
           {BOTTOM_NAV_ITEMS.map((item) => {
             const isActive = activeSection === item.key;
+            const Icon = item.icon;
             let badge = null;
-            if (item.key === "LIVE_AUDIT" && voidCount > 0) badge = voidCount;
-            if (item.key === "CREDITS" && creditCount > 0) badge = creditCount;
-            
+            if (item.key === "LIVE_AUDIT") badge = voidCount;
+            if (item.key === "CREDITS") badge = creditCount;
             return (
               <button
                 key={item.key}
                 onClick={() => setActiveSection(item.key)}
-                className={`relative flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition-all ${
-                  isActive
+                className={`relative flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition-all
+                  ${isActive
                     ? "bg-yellow-500 text-black"
-                    : isDark
+                    : dark
                       ? "text-zinc-500 hover:text-white"
                       : "text-gray-600 hover:text-gray-900"
-                }`}
+                  }`}
               >
-                <span className={isActive ? "text-black" : "text-yellow-500"}>
-                  {item.icon}
-                </span>
-                <span className={`text-[9px] font-black uppercase tracking-wider ${
-                  isActive ? "text-black" : ""
-                }`}>
-                  {item.label}
-                </span>
-                {badge && (
-                  <span className={`absolute -top-1 -right-1 min-w-[18px] h-4 px-1 rounded-full text-[9px] font-black flex items-center justify-center
+                <Icon size={20} className={isActive ? "text-black" : "text-yellow-500"} />
+                <span className="text-[8px] font-black uppercase tracking-wide">{item.label}</span>
+                {badge > 0 && (
+                  <span className={`absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[8px] font-black flex items-center justify-center
                     ${isActive ? "bg-black text-yellow-500" : "bg-yellow-500 text-black"}`}>
                     {badge > 9 ? "9+" : badge}
                   </span>
@@ -216,7 +199,7 @@ export default function SideBar({
           })}
         </div>
 
-        {/* Bottom padding to prevent content from being hidden */}
+        {/* Bottom spacing */}
         <div className="pb-20" />
       </>
     );
@@ -225,76 +208,53 @@ export default function SideBar({
   // ========== DESKTOP VIEW ==========
   return (
     <div
-      className={`w-64 h-full flex flex-col border-r transition-colors duration-300 flex-shrink-0 font-['Outfit'] ${
-        isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200 shadow-sm"
-      }`}
+      className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
+        ${dark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
     >
-      {/* Logo / header */}
-      <div className={`p-6 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
-        <div className="flex items-center gap-3">
-          <img
-            src={logo}
-            alt="Logo"
-            className="w-12 h-12 rounded-full object-cover border-2 border-yellow-500/20"
-          />
-          <div className="flex flex-col">
-            <h1 className={`text-[13px] font-black uppercase tracking-tight leading-tight ${
-              isDark ? "text-white" : "text-zinc-900"
-            }`}>
-              KURAX FOOD LOUNGE & BISTRO
-            </h1>
-            <p className="text-[9px] font-bold text-yellow-600 mt-1 uppercase tracking-widest">
-              ACCOUNTANT PANEL
-            </p>
-          </div>
+      {/* Logo header – unified */}
+      <div className={`flex items-center gap-3 p-5 border-b ${dark ? "border-white/5" : "border-gray-200"}`}>
+        <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30 shrink-0" />
+        <div className="min-w-0">
+          <p className={`text-[11px] font-black uppercase tracking-tighter leading-none truncate
+            ${dark ? "text-white" : "text-gray-900"}`}>
+            KURAX FOOD LOUNGE
+          </p>
+          <p className={`text-[8px] font-bold uppercase tracking-widest mt-0.5
+            ${dark ? "text-yellow-500" : "text-yellow-600"}`}>
+            ACCOUNTANT PANEL
+          </p>
         </div>
       </div>
 
-      {/* Nav items */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+      
+
+      {/* Navigation */}
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {DESKTOP_MENU_ITEMS.map((item) => {
           let badge = null;
-          if (item.key === "LIVE_AUDIT" && voidCount > 0) badge = voidCount;
-          if (item.key === "CREDITS" && creditCount > 0) badge = creditCount;
-          
+          if (item.key === "LIVE_AUDIT") badge = voidCount;
+          if (item.key === "CREDITS") badge = creditCount;
           return (
-            <button
+            <NavButton
               key={item.key}
+              item={item}
+              showLabel={true}
+              isActive={activeSection === item.key}
               onClick={() => setActiveSection(item.key)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all
-                ${activeSection === item.key
-                  ? "bg-yellow-500 text-black shadow-md"
-                  : isDark
-                    ? "text-zinc-400 hover:bg-white/5 hover:text-white"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                }`}
-            >
-              <span className={activeSection === item.key ? "text-black" : "text-yellow-500"}>
-                {item.icon}
-              </span>
-              <span className="flex-1 text-left">{item.label}</span>
-              {badge && (
-                <span className="bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
-                  {badge > 9 ? "9+" : badge}
-                </span>
-              )}
-            </button>
+              badge={badge}
+            />
           );
         })}
       </nav>
 
-      {/* Logout */}
-      <div className={`p-4 border-t ${isDark ? "border-white/5" : "border-gray-200"}`}>
+      {/* Logout – unified */}
+      <div className={`px-3 pb-5 pt-3 border-t ${dark ? "border-white/5" : "border-gray-200"}`}>
         <button
           onClick={handleLogout}
-          className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${
-            isDark
-              ? "bg-red-500/10 text-red-400 hover:bg-red-500/20"
-              : "bg-red-50 text-red-600 hover:bg-red-100"
-          }`}
+          className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all text-gray-500 hover:text-red-600 hover:bg-gray-100 dark:hover:bg-white/5"
         >
-          <LogOut size={16} />
-          Log Out
+          <LogOut size={18} />
+          Logout
         </button>
       </div>
     </div>
