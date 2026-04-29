@@ -78,7 +78,7 @@ export default function ReopenDayModal({ isOpen, onClose, closedDays, loading, o
                 })}
               </select>
               <p className="text-[7px] text-gray-400 mt-2 font-mono">
-                Format: YYYY-MM-DD (e.g., 2026-04-23)
+                Format: YYYY-MM-DD (e.g, 2026-04-23)
               </p>
             </div>
             
@@ -155,7 +155,7 @@ export default function ReopenDayModal({ isOpen, onClose, closedDays, loading, o
             
             <div className="mt-4 p-3 rounded-xl bg-yellow-50 border border-yellow-200">
               <p className="text-[8px] font-black text-yellow-600 uppercase tracking-widest text-center">
-                ⚠️ Reopening will restore all data from that day. Staff can continue working.
+                 Reopening will restore all data from that day. Staff can continue working.
               </p>
             </div>
           </>
