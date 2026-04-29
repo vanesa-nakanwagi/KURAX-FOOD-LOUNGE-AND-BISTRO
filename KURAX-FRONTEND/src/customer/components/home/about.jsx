@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { motion, useScroll, useTransform, useInView } from "framer-motion";
 
-// ─── Local hero images (replace with your actual files in src/assets/images) ───
+// ─── Local hero images ────────────────────────────────────────────────────────
 import img1 from "../../assets/images/kurax1.jpg";
 import img2 from "../../assets/images/kurax2.jpg";
 import img3 from "../../assets/images/kurax3.jpg";
@@ -194,7 +194,7 @@ export default function About() {
             </div>
           </div>
 
-          {/* RIGHT: Image slider using local images */}
+          {/* RIGHT: Image slider – indicator dots removed */}
           <motion.div
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
@@ -203,13 +203,6 @@ export default function About() {
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
           >
-            <div
-              className="absolute -inset-[2px] opacity-40 pointer-events-none"
-              style={{
-                filter: "blur(1px)",
-              }}
-            />
-
             <div className="relative overflow-hidden shadow-2xl h-[320px] md:h-[420px] lg:h-[480px]">
               <motion.div
                 style={{ y: imageY }}
@@ -240,21 +233,6 @@ export default function About() {
                 <p className="text-white text-lg md:text-xl font-serif italic tracking-wide opacity-90">
                   "Experience the essence of Kyanja"
                 </p>
-              </div>
-
-              {/* Indicators */}
-              <div className="absolute top-6 right-6 flex gap-2">
-                {heroImages.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setCurrent(i)}
-                    className="transition-all duration-500 rounded-full h-1.5"
-                    style={{
-                      width: i === current ? "24px" : "6px",
-                      background: i === current ? "#f59e0b" : "rgba(255,255,255,0.3)",
-                    }}
-                  />
-                ))}
               </div>
             </div>
           </motion.div>

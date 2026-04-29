@@ -71,7 +71,6 @@ export default function Events() {
         setIsSearching(true);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } else {
-        // Clear search when query is empty
         setSearchQuery("");
         setIsSearching(false);
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -197,12 +196,10 @@ export default function Events() {
         )}
       </section>
 
-      {/* ── AMBIANCE SECTION (gallery carousel now using kurax1–6) ── */}
+      {/* ── AMBIANCE SECTION (gallery carousel – NO indicator buttons) ── */}
       <section className="relative pt-20 pb-32 px-5 md:px-12 max-w-7xl mx-auto overflow-hidden">
         <div className="flex flex-col lg:flex-row gap-12 lg:gap-16 items-start">
           <div className="w-full lg:w-3/5 relative h-[320px] md:h-[500px] lg:h-[650px] group shadow-[0_0_50px_rgba(0,0,0,0.3)] overflow-hidden rounded-none">
-            <div className="absolute top-8 left-8 z-30 mix-blend-difference overflow-hidden" />
-
             <AnimatePresence mode="wait">
               <motion.img
                 key={activeIndex}
@@ -215,16 +212,8 @@ export default function Events() {
               />
             </AnimatePresence>
 
-            <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/80 to-transparent flex items-center px-6 sm:px-10 justify-between pointer-events-none">
-              <div className="flex gap-3 pointer-events-auto">
-                {galleryImages.map((_, i) => (
-                  <button 
-                    key={i} 
-                    onClick={() => setActiveIndex(i)}
-                    className={`h-[2px] transition-all duration-700 ${i === activeIndex ? 'w-16 bg-yellow-500' : 'w-6 bg-white/20 hover:bg-white/40'}`} 
-                  />
-                ))}
-              </div>
+            {/* Only the label "The Kurax Vibe" remains – no dot indicators */}
+            <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-end px-6 sm:px-10 pointer-events-none">
               <span className="text-[10px] font-black uppercase tracking-[0.4em] text-white/40">The Kurax Vibe</span>
             </div>
           </div>

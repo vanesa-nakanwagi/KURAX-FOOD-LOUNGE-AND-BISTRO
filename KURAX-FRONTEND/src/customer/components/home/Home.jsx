@@ -28,10 +28,10 @@ import hero3 from "../../assets/images/kurax9.png";
 import rice from "../../assets/images/rice.jpg";
 import hero from "../../assets/images/hero.png";
 
-// Delivery image (replace with your actual file)
+// Delivery image
 import deliveryImg from "../../assets/images/delivery.jpg";
 
-// Chef carousel images – REPLACE WITH YOUR THREE ACTUAL FILES
+// Chef carousel images
 import chefImg1 from "../../assets/images/chef.jpg";
 import chefImg2 from "../../assets/images/waiter1.jpg";
 import chefImg3 from "../../assets/images/hero17.jpg";
@@ -48,7 +48,8 @@ const staggerContainer = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { staggerChildren: 0.2 } }
 };
-// ========== DELIVERY SECTION (yellow bar next to main heading) ==========
+
+// ========== DELIVERY SECTION ==========
 function DeliverySection() {
   const navigate = useNavigate();
 
@@ -71,11 +72,8 @@ function DeliverySection() {
           variants={staggerChildrenLocal}
           className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center"
         >
-          {/* Image side - smaller width, sharp edges */}
-          <motion.div
-            variants={fadeInUpLocal}
-            className="relative flex justify-center"
-          >
+          {/* Image side */}
+          <motion.div variants={fadeInUpLocal} className="relative flex justify-center">
             <img
               src={deliveryImg}
               alt="Kurax food delivery"
@@ -86,18 +84,13 @@ function DeliverySection() {
 
           {/* Text side */}
           <motion.div variants={staggerChildrenLocal} className="space-y-4">
-            {/* Badge only - no bar */}
             <motion.div variants={fadeInUpLocal}>
               <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">
                 Fast & Fresh
               </span>
             </motion.div>
 
-            {/* Heading with yellow bar */}
-            <motion.div
-              variants={fadeInUpLocal}
-              className="flex items-center gap-3"
-            >
+            <motion.div variants={fadeInUpLocal} className="flex items-center gap-3">
               <div className="w-1 h-10 md:h-12 bg-yellow-500 rounded-full" />
               <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif leading-[1.1] tracking-tight">
                 Delivery from{' '}
@@ -107,61 +100,44 @@ function DeliverySection() {
               </h2>
             </motion.div>
 
-            <motion.p
-              variants={fadeInUpLocal}
-              className="text-zinc-600 text-base md:text-lg leading-relaxed"
-            >
+            <motion.p variants={fadeInUpLocal} className="text-zinc-600 text-base md:text-lg leading-relaxed">
               Savor your favorite gourmet dishes wherever you are. Our delivery service
               brings the same luxury, quality, and attention to detail straight to your door.
               Fast, reliable, and available daily.
             </motion.p>
 
-            {/* Features */}
-            <motion.div
-              variants={staggerChildrenLocal}
-              className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-2"
-            >
+            <motion.div variants={staggerChildrenLocal} className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-2">
               {[
                 { icon: Truck, label: 'Quick delivery' },
                 { icon: Clock, label: '30‑45 min' },
                 { icon: CreditCard, label: 'Secure payment' }
               ].map((item, idx) => (
-                <motion.div
-                  key={idx}
-                  variants={fadeInUpLocal}
-                  className="flex items-center gap-2 text-zinc-700"
-                >
+                <motion.div key={idx} variants={fadeInUpLocal} className="flex items-center gap-2 text-zinc-700">
                   <item.icon size={18} className="text-yellow-600" />
                   <span className="text-sm font-medium">{item.label}</span>
                 </motion.div>
               ))}
             </motion.div>
 
-          
-
-            {/* --- LUXURY CTA BUTTON --- */}
-                        <motion.div variants={fadeInUp} className="pt-6">
-                          <button 
-                          variants={fadeInUpLocal}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => navigate("/menus")}
-                             
-                            className="relative overflow-hidden group inline-flex items-center gap-3 px-6 md:px-12 py-4 bg-yellow-400 text-black uppercase tracking-[0.2em] text-xs sm:text-sm rounded-none shadow-lg hover:bg-yellow-500 transition-all duration-500"
-                          >
-                            <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-                            Order for Delivery
-                            <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-2" />
-                          </button>
-                        </motion.div>
-
+            <motion.div variants={fadeInUpLocal} className="pt-6">
+              <button 
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => navigate("/menus")}
+                className="relative overflow-hidden group inline-flex items-center gap-3 px-6 md:px-12 py-4 bg-yellow-400 text-black uppercase tracking-[0.2em] text-xs sm:text-sm rounded-none shadow-lg hover:bg-yellow-500 transition-all duration-500"
+              >
+                <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+                Order for Delivery
+                <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-2" />
+              </button>
+            </motion.div>
           </motion.div>
         </motion.div>
       </div>
     </section>
   );
 }
-// ========== CHEF SECTION (yellow bar on heading, vertically centered like Delivery) ==========
+// ========== CHEF SECTION (stabilized height, smooth crossfade, no dots) ==========
 function ChefSection() {
   const [chefIndex, setChefIndex] = useState(0);
   const chefImages = [chefImg1, chefImg2, chefImg3];
@@ -192,20 +168,15 @@ function ChefSection() {
           variants={staggerChildrenLocal}
           className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center"
         >
-          {/* Text side (left on desktop) */}
+          {/* Text side (left) */}
           <motion.div variants={staggerChildrenLocal} className="order-2 lg:order-1 space-y-5">
-            {/* Badge only - no bar */}
             <motion.div variants={fadeInUpLocal}>
               <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">
                 Our Philosophy
               </span>
             </motion.div>
 
-            {/* Heading with yellow bar */}
-            <motion.div
-              variants={fadeInUpLocal}
-              className="flex items-center gap-3"
-            >
+            <motion.div variants={fadeInUpLocal} className="flex items-center gap-3">
               <div className="w-1 h-10 md:h-12 bg-yellow-500 rounded-full" />
               <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif leading-[1.1] tracking-tight">
                 Crafted by{' '}
@@ -215,30 +186,19 @@ function ChefSection() {
               </h2>
             </motion.div>
 
-            <motion.p
-              variants={fadeInUpLocal}
-              className="text-zinc-600 text-base md:text-lg leading-relaxed"
-            >
+            <motion.p variants={fadeInUpLocal} className="text-zinc-600 text-base md:text-lg leading-relaxed">
               Behind every dish is a story of passion, precision, and artistry. Our
               executive chef and team bring years of culinary excellence, using only the
               finest ingredients to create an unforgettable fine‑dining experience.
             </motion.p>
 
-            {/* Signature style badges */}
-            <motion.div
-              variants={staggerChildrenLocal}
-              className="flex flex-wrap gap-3 pt-2"
-            >
+            <motion.div variants={staggerChildrenLocal} className="flex flex-wrap gap-3 pt-2">
               {[
                 { icon: ChefHat, label: 'Master Chef' },
                 { icon: Star, label: 'Premium Ingredients' },
                 { icon: UtensilsCrossed, label: 'Fusion Techniques' }
               ].map((item, idx) => (
-                <motion.div
-                  key={idx}
-                  variants={fadeInUpLocal}
-                  className="flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-zinc-200"
-                >
+                <motion.div key={idx} variants={fadeInUpLocal} className="flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-zinc-200">
                   <item.icon size={16} className="text-yellow-600" />
                   <span className="text-sm font-medium text-zinc-800">{item.label}</span>
                 </motion.div>
@@ -246,12 +206,9 @@ function ChefSection() {
             </motion.div>
           </motion.div>
 
-          {/* Image side (right) - carousel with smaller width & sharp edges */}
-          <motion.div
-            variants={fadeInUpLocal}
-            className="order-1 lg:order-2 relative flex justify-center"
-          >
-            <div className="relative w-full max-w-md">
+          {/* Image side (right) – FIXED HEIGHT to prevent layout shift */}
+          <motion.div variants={fadeInUpLocal} className="order-1 lg:order-2 relative flex justify-center">
+            <div className="relative w-full max-w-md h-96 md:h-[500px]">
               <AnimatePresence mode="wait">
                 <motion.img
                   key={chefIndex}
@@ -260,24 +217,11 @@ function ChefSection() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.8 }}
-                  className="w-full object-cover"
+                  transition={{ duration: 0.8, ease: "easeInOut" }}
+                  className="absolute inset-0 w-full h-full object-cover"
                   style={{ borderRadius: 0 }}
                 />
               </AnimatePresence>
-              {/* Dot navigation */}
-              <div className="absolute -bottom-8 left-0 right-0 flex justify-center gap-2">
-                {chefImages.map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setChefIndex(idx)}
-                    className={`h-2 w-2 rounded-full transition-all ${
-                      idx === chefIndex ? 'bg-yellow-600 w-4' : 'bg-gray-400'
-                    }`}
-                    aria-label={`View chef image ${idx + 1}`}
-                  />
-                ))}
-              </div>
             </div>
           </motion.div>
         </motion.div>
@@ -285,7 +229,6 @@ function ChefSection() {
     </section>
   );
 }
-
 // ========== MAIN HOME COMPONENT ==========
 export default function Home() {
   const [current, setCurrent] = useState(0);
@@ -340,7 +283,7 @@ export default function Home() {
     <main className="bg-white text-black font-['Outfit'] overflow-x-hidden">
       <Navbar />
 
-      {/* --- 🎯 HERO SECTION --- */}
+      {/* Hero Section */}
       <section className="relative h-screen w-full flex items-center bg-black overflow-hidden">
         <div className="absolute inset-0 z-0">
           <AnimatePresence mode="wait">
@@ -363,7 +306,7 @@ export default function Home() {
             <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }}>
               <h1 className="text-4xl md:text-7xl font-serif font-medium leading-[1.05] text-white">
                 Experience <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800 ">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-500 to-yellow-800">
                   Luxury
                 </span> <br />
                 Redefined
@@ -387,7 +330,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* --- 🥗 SIGNATURE DISHES SECTION --- */}
+      {/* Signature Dishes Section */}
       <section id="menus" className="py-24 px-6 bg-white border-b border-zinc-100">
         <motion.div 
           className="max-w-7xl mx-auto"
@@ -425,7 +368,7 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* ---  UPCOMING SCHEDULE / EVENTS SECTION --- */}
+      {/* Upcoming Events Section */}
       <section className="py-24 px-6 bg-[#FCFCFB] relative overflow-hidden">
         <motion.div 
           className="max-w-7xl mx-auto relative z-10"
@@ -482,25 +425,24 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* ========== NEW SECTIONS ========== */}
+      {/* New Sections */}
       <DeliverySection />
       <ChefSection />
-      {/* ================================= */}
-        <Services />
+
+      <Services />
       <About />
-     
       <Reserve />
       <VisitUs />
       <FooterGlobal />
 
-      {/* MODALS */}
+      {/* Modals */}
       <CartModal 
         isCartOpen={isCartOpen} onClose={() => setIsCartOpen(false)} 
         activeDish={activeDish} setActiveDish={setActiveDish} 
         cart={cart} handleAddToCart={handleAddToCart} 
         handleRemoveFromCart={handleRemoveFromCart} handleQuantityChange={handleQuantityChange} 
         totalAmount={totalAmount} checkoutStep={checkoutStep} 
-        setCheckoutStep={setCheckoutStep} customerDetails={customerDetails} setCustomerDetails={setCustomerDetails} 
+        setCheckoutStep={setCheckoutStep} customerDetails={customerDetails} setCustomerDetails={customerDetails} 
       />
       
       {isModalOpen && (
@@ -514,7 +456,7 @@ export default function Home() {
   );
 }
 
-// --- Helper Component for Menu Cards ---
+// Menu Card Helper
 function HomeMenuCard({ item, onOrder }) {
   const imageUrl = item.image_url?.startsWith('http') 
     ? item.image_url 
