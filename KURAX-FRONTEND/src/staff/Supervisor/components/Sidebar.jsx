@@ -123,7 +123,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
                     KURAX LOUNGE FOOD LOUNGE & BISTRO
                   </h1>
                   <p className="text-[9px] font-bold text-yellow-500 mt-1 uppercase tracking-widest">
-                    MANAGEMENT PORTAL
+                    SUPERVISOR PORTAL
                   </p>
                 </div>
               </div>
@@ -234,7 +234,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
               KURAX LOUNGE FOOD LOUNGE & BISTRO
             </h1>
             <p className="text-[9px] font-bold text-yellow-500 mt-1 uppercase tracking-widest italic">
-              Management Portal
+              Supervisor Portal
             </p>
           </div>
         </div>

@@ -3,11 +3,9 @@ import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../Director/components/shared/ThemeContext";
 import { RevenueChart } from "../components/charts";
 import {
-  TrendingUp, Smartphone, Wallet, TrendingDown, CreditCard, Download,
-  BookOpen, CheckCircle2, XCircle, Clock, User, Phone,
+  TrendingUp, BookOpen, CheckCircle2, XCircle, Clock, User, Phone,
   Calendar, ChevronDown, ChevronUp, RefreshCw, ShieldCheck,
-  AlertCircle, Banknote, Users, Sparkles, Zap, ArrowUpRight,
-  CircleDollarSign, Award, Target, Activity, Gem, Hourglass
+  AlertCircle, Sparkles, ArrowUpRight, CircleDollarSign, Zap, Hourglass, BarChart3
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
@@ -20,7 +18,6 @@ function toLocalDateStr(date) {
     String(d.getDate()).padStart(2, "0"),
   ].join("-");
 }
-function fmt(n)  { return `UGX ${Number(n || 0).toLocaleString()}`; }
 function fmtK(n) {
   const v = Number(n || 0);
   if (v >= 1_000_000) return `UGX ${(v / 1_000_000).toFixed(1)}M`;
@@ -28,158 +25,22 @@ function fmtK(n) {
   return `UGX ${v.toLocaleString()}`;
 }
 
-// isSettled — only count as settled if FullySettled or paid is true
 function isSettledCredit(c) {
   return (
     c.status === "FullySettled" ||
-    c.paid === true || c.paid === "t" || c.paid === "true" ||
-    c.settled === true || c.settled === "t" || c.settled === "true"
+    c.paid === true ||
+    c.settled === true
   );
 }
 
-// isApprovedButNotSettled — credits that are approved but not yet paid
 function isApprovedButNotSettled(c) {
   return c.status === "Approved" && !isSettledCredit(c);
 }
 
-// ─── ENHANCED STAT CARD (Matches Accountant Dashboard) ────────────────────────
-function StatCard({ label, value, sub, icon, color, gradient, isDark, trend }) {
-  const formattedValue = typeof value === 'string' ? value : fmtK(value);
-  
-  const trendIcon = trend > 0 ? <TrendingUp size={12} /> : trend < 0 ? <TrendingDown size={12} /> : null;
-  const trendColor = trend > 0 ? "text-emerald-400" : trend < 0 ? "text-red-400" : "text-zinc-500";
-  const trendValue = trend ? `${Math.abs(trend)}%` : "";
-  
-  return (
-    <div className={`group relative overflow-hidden rounded-2xl bg-gradient-to-br ${gradient || 'from-zinc-900/50 to-zinc-900/30'} p-5 border border-white/5 hover:border-yellow-500/30 transition-all duration-300 hover:shadow-xl hover:shadow-yellow-500/10 hover:scale-[1.02]`}>
-      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-yellow-500/10 to-transparent rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
-      <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-white/5 to-transparent rounded-full -ml-12 -mb-12 group-hover:scale-150 transition-transform duration-700" />
-      
-      <div className="relative z-10">
-        <div className={`p-3 w-fit rounded-xl bg-black/40 backdrop-blur-sm border border-white/10 ${color} group-hover:scale-110 transition-all duration-300 group-hover:shadow-lg`}>
-          {icon}
-        </div>
-        
-        <div className="mt-4 mb-2">
-          <div className="flex items-center gap-2">
-            <div className="w-1 h-4 bg-yellow-500/50 rounded-full group-hover:h-5 transition-all duration-300" />
-            <p className="text-[9px] font-black uppercase text-zinc-400 tracking-[0.2em] group-hover:text-yellow-400/80 transition-colors">
-              {label}
-            </p>
-          </div>
-        </div>
-        
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tighter group-hover:tracking-tight transition-all">
-            {formattedValue}
-          </h3>
-          {sub && (
-            <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 uppercase tracking-wider">
-              {sub}
-            </span>
-          )}
-        </div>
-        
-        {trend && (
-          <div className={`flex items-center gap-1 mt-2 ${trendColor}`}>
-            {trendIcon}
-            <span className="text-[9px] font-black">{trendValue}</span>
-            <span className="text-[8px] text-zinc-600 ml-1">vs yesterday</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── GROSS REVENUE CARD (Matches Accountant Dashboard) ────────────────────────
-function GrossRevenueCard({ grossSales, settledCredits, orderCount, isDark }) {
-  const combinedTotal = grossSales + settledCredits;
-  const hasSettledCredits = settledCredits > 0;
-  const formattedGross = fmtK(grossSales);
-  const formattedSettled = fmtK(settledCredits);
-  const formattedCombined = fmtK(combinedTotal);
-  
-  return (
-    <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-yellow-500 via-yellow-600 to-amber-600 p-5 shadow-lg shadow-yellow-500/20 hover:shadow-2xl hover:shadow-yellow-500/30 transition-all duration-300 hover:scale-[1.02]">
-      <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-white/20 to-transparent rounded-full -mr-20 -mt-20 group-hover:scale-150 transition-transform duration-700" />
-      <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-black/20 to-transparent rounded-full -ml-16 -mb-16 group-hover:scale-150 transition-transform duration-700" />
-      
-      <div className="absolute top-4 right-4 flex gap-1 opacity-30">
-        <div className="w-1 h-1 rounded-full bg-white" />
-        <div className="w-1 h-1 rounded-full bg-white" />
-        <div className="w-1 h-1 rounded-full bg-white" />
-      </div>
-      
-      <div className="relative z-10">
-        <div className="flex items-center justify-between mb-3">
-          <div className="p-2.5 w-fit rounded-xl bg-black/30 backdrop-blur-sm text-black group-hover:scale-110 transition-transform duration-300">
-            <CircleDollarSign size={18} />
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Sparkles size={10} className="text-black/60 animate-pulse" />
-            <span className="text-[7px] font-black uppercase tracking-widest bg-black/30 text-black/80 px-2 py-1 rounded-lg whitespace-nowrap backdrop-blur-sm">
-              {orderCount} Orders
-            </span>
-          </div>
-        </div>
-
-        <div className="mb-3">
-          <div className="flex items-center gap-1.5 mb-1">
-            <div className="w-1 h-3 bg-black/30 rounded-full" />
-            <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em]">Gross Revenue</p>
-          </div>
-          <h3 className="text-xl sm:text-2xl font-black text-black italic tracking-tighter leading-tight">
-            {formattedGross}
-          </h3>
-          <p className="text-[7px] font-bold text-black/40 uppercase tracking-wider mt-1">
-            Cash + Card + Mobile Money (Paid Orders Only)
-          </p>
-        </div>
-
-        {hasSettledCredits && (
-          <div className="mt-2 pt-2 border-t border-black/20 space-y-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap group/settled">
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/70 animate-pulse" />
-                <p className="text-[7px] font-black uppercase text-black/60 tracking-wider">
-                  Credits Settled Today
-                </p>
-              </div>
-              <div className="flex items-center gap-1">
-                <ArrowUpRight size={10} className="text-emerald-800" />
-                <p className="text-[10px] font-black text-emerald-900 italic">
-                  + {formattedSettled}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 bg-black/20 backdrop-blur-sm rounded-xl px-3 py-2 group-hover:bg-black/30 transition-all">
-              <div className="flex items-center gap-1.5">
-                <Zap size={10} className="text-black/60" />
-                <p className="text-[7px] font-black uppercase text-black/70 tracking-wider">
-                  Combined Total
-                </p>
-              </div>
-              <p className="text-[11px] font-black text-black italic tracking-tighter">
-                {formattedCombined}
-              </p>
-            </div>
-          </div>
-        )}
-        
-        <div className="absolute -top-10 -right-10 w-20 h-20 bg-gradient-to-br from-white/30 to-transparent rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-      </div>
-    </div>
-  );
-}
-
-// ─── CREDIT APPROVAL CARD (Enhanced) ────────────────────────────────────────
+// ─── CREDIT APPROVAL CARD (improved fonts) ───────────────────────────────────
 function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
   const ageMin = Math.floor((Date.now() - new Date(row.created_at)) / 60000);
   const ageStr = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ago`;
-
-  // Check if client info is missing
   const missingClientInfo = !row.credit_name || !row.credit_phone;
   const missingTableInfo = !row.table_name || row.table_name === "Unknown";
 
@@ -191,7 +52,6 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
       
       <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-yellow-500/5 to-transparent rounded-full -mr-20 -mt-20 group-hover:scale-150 transition-transform duration-700" />
       
-      {/* Strip */}
       <div className={`flex items-center justify-between px-5 py-3 border-b
         ${missingClientInfo || missingTableInfo
           ? isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-100 border-red-200"
@@ -209,10 +69,9 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
       </div>
 
       <div className="p-5 flex flex-col sm:flex-row items-start justify-between gap-4">
-        {/* Left — client info */}
         <div className="flex-1 min-w-0 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`font-black italic uppercase tracking-tight text-base ${isDark ? "text-white" : "text-zinc-900"}`}>
+            <span className={`font-black text-base uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
               {missingTableInfo ? "⚠️ Missing Table" : row.table_name}
             </span>
             <span className="font-black italic text-yellow-500 text-sm">
@@ -227,7 +86,7 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
           <div className="grid grid-cols-1 gap-2">
             <div className={`flex items-center gap-2 p-2 rounded-xl ${!row.credit_name ? "bg-red-500/10 border border-red-500/20" : "bg-white/5"}`}>
               <User size={12} className="text-purple-400 shrink-0"/>
-              <span className={`text-sm font-black ${isDark ? "text-white" : "text-zinc-900"} ${!row.credit_name ? "text-red-400" : ""}`}>
+              <span className={`text-sm font-medium ${isDark ? "text-white" : "text-zinc-900"} ${!row.credit_name ? "text-red-400" : ""}`}>
                 {row.credit_name || "⚠️ Missing - Required!"}
               </span>
             </div>
@@ -240,7 +99,7 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
             {row.credit_pay_by && (
               <div className="flex items-center gap-2 p-2 rounded-xl bg-white/5">
                 <Calendar size={12} className="text-purple-400 shrink-0"/>
-                <span className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
                   Pay by: {row.credit_pay_by}
                 </span>
               </div>
@@ -257,23 +116,20 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
           )}
         </div>
 
-        {/* Right — amount + actions */}
         <div className="flex flex-col items-end gap-3 shrink-0 w-full sm:w-auto">
           <div className="text-right">
             <p className="text-[8px] font-black uppercase text-purple-400 tracking-widest mb-1">Amount</p>
-            <p className="text-2xl font-[900] italic text-purple-400">
-              {fmtK(row.amount)}
-            </p>
+            <p className="text-2xl font-black italic text-purple-400">{fmtK(row.amount)}</p>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
             <button onClick={onReject}
-              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-black text-[10px] uppercase tracking-widest hover:bg-red-500/20 transition-all flex items-center justify-center gap-1.5 hover:scale-105">
+              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-bold text-[10px] uppercase tracking-widest hover:bg-red-500/20 transition-all flex items-center justify-center gap-1.5 hover:scale-105">
               <XCircle size={12}/> Reject
             </button>
             <button 
               onClick={onApprove} 
               disabled={approvingId === row.id || missingClientInfo || missingTableInfo}
-              className={`flex-[2] sm:flex-initial px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 hover:scale-105 disabled:opacity-50
+              className={`flex-[2] sm:flex-initial px-6 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 hover:scale-105 disabled:opacity-50
                 ${(missingClientInfo || missingTableInfo)
                   ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
                   : "bg-emerald-500 text-black hover:bg-emerald-400 active:scale-[0.98]"}`}
@@ -289,8 +145,8 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
   );
 }
 
-// ─── CREDIT LEDGER ROW (Enhanced and Fixed) ───────────────────────────
-function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
+// ─── CREDIT LEDGER ROW ────────────────────────────────────────────────────────
+function CreditLedgerRow({ credit, isDark, onSettle }) {
   const settled = isSettledCredit(credit);
   const approvedButNotSettled = credit.status === "Approved" && !settled;
   
@@ -307,7 +163,7 @@ function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
       <div className="relative z-10 flex items-start justify-between gap-3 flex-wrap">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-2">
-            <span className={`font-black text-sm uppercase italic tracking-tighter ${isDark ? "text-white" : "text-zinc-900"}`}>
+            <span className={`font-black text-base uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
               {credit.table_name || "Table"}
             </span>
             {settled ? (
@@ -359,7 +215,6 @@ function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
             {toLocalDateStr(new Date(credit.created_at))}
           </p>
           
-          {/* Show approval note */}
           {approvedButNotSettled && (
             <p className="text-[8px] text-emerald-500/70 mt-1 flex items-center gap-1">
               <CheckCircle2 size={8} />
@@ -369,28 +224,18 @@ function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
         </div>
         
         <div className="text-right shrink-0">
-          <p className="text-xl font-[900] italic text-purple-400">
-            {fmtK(credit.amount)}
-          </p>
+          <p className="text-lg font-black italic text-purple-400">{fmtK(credit.amount)}</p>
           {settled && credit.amount_paid && Number(credit.amount_paid) !== Number(credit.amount) && (
-            <p className="text-[9px] text-emerald-400 font-bold mt-0.5">
-              Paid: {fmtK(credit.amount_paid)}
-            </p>
+            <p className="text-[9px] text-emerald-400 font-bold mt-0.5">Paid: {fmtK(credit.amount_paid)}</p>
           )}
           
-          {/* Settle button only for approved credits that need settlement */}
           {approvedButNotSettled && (
             <div className="flex gap-2 mt-3 justify-end">
               <button
-                onClick={() => onApprove(credit)}
-                disabled={approvingId === credit.id}
+                onClick={() => onSettle(credit)}
                 className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-black text-[8px] uppercase tracking-widest hover:bg-emerald-500/20 transition-all flex items-center gap-1 hover:scale-105"
               >
-                {approvingId === credit.id ? (
-                  <><RefreshCw size={10} className="animate-spin"/> Processing…</>
-                ) : (
-                  <><CircleDollarSign size={10}/> Record Settlement</>
-                )}
+                <CircleDollarSign size={10}/> Record Settlement
               </button>
             </div>
           )}
@@ -400,112 +245,48 @@ function CreditLedgerRow({ credit, isDark, onApprove, onReject, approvingId }) {
   );
 }
 
-// ─── MAIN ────────────────────────────────────────────────────────────────────
+// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function PerformanceReports() {
-  const { theme }   = useTheme();
-  const { orders = [], monthlyTargets = {}, currentUser } = useData();
+  const { theme } = useTheme();
+  const { currentUser } = useData();
   const isDark = theme === "dark";
-
   const currentStaffName = currentUser?.name || (() => {
     try { return JSON.parse(localStorage.getItem("kurax_user") || "{}").name || "Manager"; }
     catch { return "Manager"; }
   })();
 
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
-
-  // ── Data state ───────────────────────────────────────────────────────────
-  const [daySummary,      setDaySummary]      = useState(null);
-  const [dayLoading,      setDayLoading]      = useState(true);
-  const [monthSummary,    setMonthSummary]    = useState(null);
-  const [monthLoading,    setMonthLoading]    = useState(true);
   const [creditApprovals, setCreditApprovals] = useState([]);
-  const [creditsLedger,   setCreditsLedger]   = useState([]);
-  const [creditsLoading,  setCreditsLoading]  = useState(true);
-  const [approvingId,     setApprovingId]     = useState(null);
-  const [rejectingRow,    setRejectingRow]    = useState(null);
-  const [rejectReason,    setRejectReason]    = useState("");
-  const [ledgerExpanded,  setLedgerExpanded]  = useState(true);
-  const [creditFilter,    setCreditFilter]    = useState("all");
-  const [pendingCredits,  setPendingCredits]  = useState(0);
+  const [creditsLedger, setCreditsLedger] = useState([]);
+  const [creditsLoading, setCreditsLoading] = useState(true);
+  const [approvingId, setApprovingId] = useState(null);
+  const [rejectingRow, setRejectingRow] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [ledgerExpanded, setLedgerExpanded] = useState(true);
+  const [creditFilter, setCreditFilter] = useState("all");
 
-  const currentMonth = selectedDate.substring(0, 7);
-
-  // ✅ FIXED: Changed from /api/summaries/today to /api/accountant/today
-  const fetchDaySummary = useCallback(async () => {
-    setDayLoading(true);
-    try {
-      const today = new Date().toISOString().split("T")[0];
-      // Use accountant endpoint for today's data
-      const url = selectedDate === today
-        ? `${API_URL}/api/accountant/today?t=${Date.now()}`
-        : `${API_URL}/api/summaries/range?from=${selectedDate}&to=${selectedDate}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const d = await res.json();
-        // Handle both array and object responses
-        const summaryData = Array.isArray(d) ? (d[0] || null) : d;
-        setDaySummary(summaryData);
-        if (selectedDate === today && summaryData) {
-          setPendingCredits(Number(summaryData.pending_credit_requests_amount || 0));
-        }
-      } else {
-        console.error("Failed to fetch day summary:", res.status);
-      }
-    } catch (e) { console.error("Day summary:", e); }
-    finally { setDayLoading(false); }
-  }, [selectedDate]);
-
-  const fetchMonthSummary = useCallback(async () => {
-    setMonthLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/api/summaries/monthly?month=${currentMonth}`);
-      if (res.ok) setMonthSummary(await res.json());
-    } catch (e) { console.error("Month summary:", e); }
-    finally { setMonthLoading(false); }
-  }, [currentMonth]);
-
+  // ─── Fetch credits ─────────────────────────────────────────────────────────
   const fetchCredits = useCallback(async () => {
     setCreditsLoading(true);
     try {
-      // Get pending credit approvals from cashier_queue
       const approvalsRes = await fetch(`${API_URL}/api/cashier-ops/credit-approvals`);
-      if (approvalsRes.ok) {
-        const approvals = await approvalsRes.json();
-        setCreditApprovals(approvals);
-      } else {
-        console.error("Failed to fetch approvals:", approvalsRes.status);
-      }
+      if (approvalsRes.ok) setCreditApprovals(await approvalsRes.json());
       
-      // Get all credits from credits table
       const creditsRes = await fetch(`${API_URL}/api/cashier-ops/credits`);
       if (creditsRes.ok) {
         const rows = await creditsRes.json();
         setCreditsLedger(rows.map(r => ({ ...r, paid: isSettledCredit(r) })));
       }
-    } catch (e) { 
-      console.error("Credits fetch error:", e); 
-    }
+    } catch (e) { console.error("Credits fetch error:", e); }
     finally { setCreditsLoading(false); }
   }, []);
 
-  // Initial fetch and polling
   useEffect(() => {
-    fetchDaySummary();
-    fetchMonthSummary();
     fetchCredits();
-    
-    // Poll for new approvals every 10 seconds
-    const credId = setInterval(fetchCredits, 10000);
-    const today  = new Date().toISOString().split("T")[0];
-    
-    if (selectedDate === today) {
-      const sumId = setInterval(fetchDaySummary, 10000);
-      return () => { clearInterval(sumId); clearInterval(credId); };
-    }
-    return () => clearInterval(credId);
-  }, [fetchDaySummary, fetchMonthSummary, fetchCredits, selectedDate]);
+    const id = setInterval(fetchCredits, 10000);
+    return () => clearInterval(id);
+  }, [fetchCredits]);
 
-  // ── Credits derived values - FIXED: Only count FULLY SETTLED credits ────
+  // ─── Derived stats ─────────────────────────────────────────────────────────
   const outstanding = creditsLedger.filter(c => !isSettledCredit(c) && c.status !== "Approved");
   const approvedButNotSettled = creditsLedger.filter(c => c.status === "Approved" && !isSettledCredit(c));
   const settled = creditsLedger.filter(c => isSettledCredit(c));
@@ -519,59 +300,7 @@ export default function PerformanceReports() {
     creditFilter === "approved" ? approvedButNotSettled :
     creditFilter === "settled" ? settled : creditsLedger;
 
-  // ── Credit settlement additions - ONLY SETTLED credits ───────────────────
-  const settledTodayCredits = useMemo(() =>
-    creditsLedger.filter(c => {
-      if (!isSettledCredit(c)) return false;
-      const d = c.paid_at || c.updated_at || c.created_at;
-      return d && toLocalDateStr(new Date(d)) === selectedDate;
-    }),
-  [creditsLedger, selectedDate]);
-
-  const creditSettledByMethod = useMemo(() => {
-    const acc = { cash: 0, card: 0, mtn: 0, airtel: 0, total: 0 };
-    settledTodayCredits.forEach(c => {
-      const amt = Number(c.amount_paid || c.amount || 0);
-      switch (c.settle_method) {
-        case "Cash":        acc.cash   += amt; acc.total += amt; break;
-        case "Card":        acc.card   += amt; acc.total += amt; break;
-        case "Momo-MTN":    acc.mtn    += amt; acc.total += amt; break;
-        case "Momo-Airtel": acc.airtel += amt; acc.total += amt; break;
-        default:            acc.total  += amt; break;
-      }
-    });
-    return acc;
-  }, [settledTodayCredits]);
-
-  // ✅ FIXED: Use data from accountant endpoint
-  const totalGross   = Number(daySummary?.total_gross ?? 0);
-  const totalCash    = Number(daySummary?.total_cash   ?? 0);
-  const totalCard    = Number(daySummary?.total_card   ?? 0);
-  const totalMTN     = Number(daySummary?.total_mtn    ?? 0);
-  const totalAirtel  = Number(daySummary?.total_airtel ?? 0);
-  const orderCount   = Number(daySummary?.order_count  ?? 0);
-  const totalMobileMoney = totalMTN + totalAirtel;
-
-  // ── Monthly target progress ───────────────────────────────────────────────
-  const monthlyRevenue = Number(monthSummary?.totals?.total_gross ?? 0);
-  const monthTarget    = monthlyTargets[currentMonth]?.revenue ?? 6_000_000;
-  const progressPct    = Math.min((monthlyRevenue / monthTarget) * 100, 100).toFixed(1);
-
-  // ── Staff leaderboard ─────────────────────────────────────────────────────
-  const waiterStats = useMemo(() =>
-    orders
-      .filter(o => {
-        const ts = o.timestamp || o.date;
-        return ts && new Date(ts).toISOString().split("T")[0] === selectedDate;
-      })
-      .reduce((acc, o) => {
-        const n = (o.waiter_name || o.waiterName || o.waiter || "Staff").trim();
-        acc[n] = (acc[n] || 0) + Number(o.total || 0);
-        return acc;
-      }, {}),
-  [orders, selectedDate]);
-
-  // ─── Credit approve for pending approvals ─────────────────────────────────
+  // ─── Credit actions ───────────────────────────────────────────────────────
   const handleApprove = async (queueId) => {
     setApprovingId(queueId);
     try {
@@ -580,72 +309,44 @@ export default function PerformanceReports() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approved_by: currentStaffName }),
       });
-      
       if (res.ok) {
         setCreditApprovals(prev => prev.filter(r => r.id !== queueId));
         await fetchCredits();
-        await fetchDaySummary();
         alert("✅ Credit approved successfully!");
-      } else {
-        const error = await res.json();
-        alert(error.error || "Failed to approve credit");
-        await fetchCredits();
-      }
-    } catch (e) { 
-      console.error("Approve error:", e);
-      alert("Network error while approving");
-    }
+      } else alert("Approval failed");
+    } catch (e) { alert("Network error"); }
     setApprovingId(null);
   };
 
-  // ─── Settle approved credit from ledger ────────────────────────────────
   const handleSettleCredit = async (credit) => {
     setApprovingId(credit.id);
-    const amount = credit.amount;
     const method = prompt("Enter payment method (Cash, Card, Momo-MTN, Momo-Airtel):", "Cash");
-    if (!method) {
-      setApprovingId(null);
-      return;
-    }
-    
-    const transactionId = (method === "Momo-MTN" || method === "Momo-Airtel") 
-      ? prompt("Enter transaction ID:") 
-      : null;
-    
+    if (!method) { setApprovingId(null); return; }
+    const transactionId = (method === "Momo-MTN" || method === "Momo-Airtel") ? prompt("Enter transaction ID:") : null;
     if ((method === "Momo-MTN" || method === "Momo-Airtel") && !transactionId) {
-      alert("Transaction ID is required for mobile money payments");
+      alert("Transaction ID required");
       setApprovingId(null);
       return;
     }
-    
     try {
       const res = await fetch(`${API_URL}/api/credits/${credit.id}/settle`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount_paid: amount,
+          amount_paid: credit.amount,
           method: method,
           transaction_id: transactionId,
           settled_by: currentStaffName,
         }),
       });
-      
       if (res.ok) {
         await fetchCredits();
-        await fetchDaySummary();
         alert("✅ Credit settled successfully!");
-      } else {
-        const error = await res.json();
-        alert(error.error || "Failed to settle credit");
-      }
-    } catch (e) { 
-      console.error("Settle error:", e);
-      alert("Network error while settling");
-    }
+      } else alert("Settlement failed");
+    } catch (e) { alert("Network error"); }
     setApprovingId(null);
   };
 
-  // ─── Credit reject ────────────────────────────────────────────────────────
   const handleReject = async () => {
     if (!rejectingRow) return;
     setApprovingId(rejectingRow);
@@ -655,147 +356,53 @@ export default function PerformanceReports() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: rejectReason || "Rejected by manager" }),
       });
-      
       if (res.ok) {
         setCreditApprovals(prev => prev.filter(r => r.id !== rejectingRow));
         await fetchCredits();
-        alert("❌ Credit rejected successfully!");
-      } else {
-        const error = await res.json();
-        alert(error.error || "Failed to reject credit");
-        await fetchCredits();
-      }
-    } catch (e) { 
-      console.error("Reject error:", e);
-      alert("Network error while rejecting");
-    }
+        alert("❌ Credit rejected");
+      } else alert("Rejection failed");
+    } catch (e) { alert("Network error"); }
     setRejectingRow(null);
     setRejectReason("");
     setApprovingId(null);
   };
 
-  // ─── Shared Tailwind shorthands ────────────────────────────────────────────
+  // ─── Theme styles ─────────────────────────────────────────────────────────
   const card  = isDark ? "bg-zinc-900/40 border-white/5" : "bg-white border-black/5 shadow-sm";
   const muted = isDark ? "text-zinc-500" : "text-zinc-400";
 
-  const today = new Date().toISOString().split("T")[0];
-  const isToday = selectedDate === today;
-
   return (
-    <div className="p-4 md:p-8 space-y-6 animate-in fade-in duration-700 pb-32">
+    <div className="p-4 md:p-8 space-y-6 animate-in fade-in duration-700 pb-32 font-sans antialiased">
+    
 
-      {/* ── PAGE HEADER ── */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+       {/* HEADER with Live Indicator */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <div className="w-1 h-6 bg-yellow-500 rounded-full" />
-            <h1 className="text-4xl font-[900] italic uppercase tracking-tighter leading-none">Performance</h1>
+            <p className="text-[20px] font-semibold uppercase tracking-[0.15em] text-yellow-900">Manage Credits</p>
           </div>
-          <p className="text-yellow-500 text-[10px] font-black tracking-widest uppercase italic">
-            Audit Date: {selectedDate}
+          
+          <p className={`text-[13px] font-medium mt-1 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
+             Monitor credit approvals, track settled amounts, and oversee outstanding balances. 
+              Keep your revenue flow transparent and agile.
           </p>
         </div>
-        <input
-          type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-          className={`px-4 py-2 rounded-xl font-black text-[10px] border uppercase transition-all
-            ${isDark ? "bg-zinc-900 border-white/10 text-white hover:border-yellow-500/50" : "bg-white border-black/10 text-zinc-900"}`}
-        />
+       
       </div>
 
-      {/* Pending Credits Warning Banner (only for today) */}
-      {isToday && pendingCredits > 0 && (
-        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 animate-in fade-in duration-500">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-500/20">
-              <Hourglass size={16} className="text-amber-500" />
-            </div>
-            <div className="flex-1">
-              <p className="text-[10px] font-black text-amber-500 uppercase tracking-wider">
-                Pending Credit Requests
-              </p>
-              <p className="text-[9px] text-zinc-500">
-                UGX {pendingCredits.toLocaleString()} in credit requests waiting for approval.
-                These will be added to gross revenue when approved AND settled.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── ENHANCED REVENUE STAT CARDS (5 cards in one row) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-        <StatCard
-          label="Gross Revenue" isDark={isDark} color="text-emerald-500"
-          gradient="from-emerald-900/30 to-emerald-800/10"
-          value={dayLoading ? "…" : totalGross}
-          sub={`${orderCount} orders`}
-          icon={<TrendingUp size={20} className="text-emerald-400"/>}
-          trend={5.2}
-        />
-        <StatCard
-          label="Mobile Money" isDark={isDark} color="text-purple-400"
-          gradient="from-purple-900/30 to-purple-800/10"
-          value={dayLoading ? "…" : totalMobileMoney}
-          sub="MTN + Airtel"
-          icon={<Smartphone size={20} className="text-purple-400"/>}
-          trend={8.3}
-        />
-        <StatCard
-          label="Card / POS" isDark={isDark} color="text-blue-400"
-          gradient="from-blue-900/30 to-blue-800/10"
-          value={dayLoading ? "…" : totalCard}
-          icon={<CreditCard size={20} className="text-blue-400"/>}
-          trend={-2.1}
-        />
-        <StatCard
-          label="Physical Cash" isDark={isDark} color="text-emerald-500"
-          gradient="from-emerald-900/30 to-emerald-800/10"
-          value={dayLoading ? "…" : totalCash}
-          icon={<Wallet size={20} className="text-emerald-400"/>}
-          trend={3.5}
-        />
-        <GrossRevenueCard 
-          grossSales={totalGross}
-          settledCredits={creditSettledByMethod.total}
-          orderCount={orderCount}
-          isDark={isDark}
-        />
-      </div>
-
-      {/* Monthly Target Progress Bar */}
-      <div className={`rounded-2xl p-5 border ${isDark ? "bg-gradient-to-r from-blue-900/30 to-purple-900/30 border-blue-500/20" : "bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200"}`}>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Target size={16} className="text-blue-400" />
-            <p className="text-[9px] font-black uppercase tracking-widest text-blue-400">Monthly Target Progress</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[8px] font-black text-zinc-500">Target: {fmtK(monthTarget)}</span>
-            <span className="text-[10px] font-black text-blue-400">{progressPct}%</span>
-          </div>
-        </div>
-        <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500" style={{ width: `${progressPct}%` }} />
-        </div>
-        <p className="text-[9px] text-zinc-500 mt-2">{fmtK(monthlyRevenue)} collected so far this month</p>
-      </div>
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          CREDITS SECTION WITH ENHANCED UI
-      ══════════════════════════════════════════════════════════════════════ */}
-      <div className={`rounded-[2rem] border overflow-hidden transition-all duration-300 ${card}`}>
-
-        {/* Section header with gradient accent */}
+      {/* ── CREDITS LEDGER SECTION (enhanced) ── */}
+      <div className={`rounded-2xl border overflow-hidden transition-all duration-300 ${card}`}>
         <div className="relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-purple-500/10 to-transparent rounded-full -mr-32 -mt-32" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-purple-500/5 to-transparent rounded-full -mr-32 -mt-32" />
           
           <div className="flex items-center justify-between px-6 py-5 relative z-10">
             <div className="flex items-center gap-3">
-              <div className={`p-2.5 rounded-xl ${isDark ? "bg-purple-500/10" : "bg-purple-100"} group-hover:scale-110 transition-transform`}>
+              <div className={`p-2.5 rounded-xl ${isDark ? "bg-purple-500/10" : "bg-purple-100"} transition-transform`}>
                 <BookOpen size={15} className="text-purple-400"/>
               </div>
               <div>
-                <h3 className={`text-sm font-black uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
+                <h3 className={`text-sm font-bold uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
                   Credits Ledger
                 </h3>
                 <p className={`text-[9px] mt-0.5 flex items-center gap-2 ${muted}`}>
@@ -810,88 +417,52 @@ export default function PerformanceReports() {
                     </span>
                   )}
                   {outstanding.length > 0 && (
-                    <span className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                      {outstanding.length} outstanding
-                    </span>
+                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-400" />{outstanding.length} outstanding</span>
                   )}
                   {settled.length > 0 && (
-                    <span className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      {settled.length} settled
-                    </span>
+                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />{settled.length} settled</span>
                   )}
                 </p>
               </div>
             </div>
-            
-            <div className="flex items-center gap-2 shrink-0">
-              {totalOutstanding > 0 && (
-                <span className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[9px] font-black uppercase animate-pulse">
-                  <AlertCircle size={10}/> {fmtK(totalOutstanding)} unpaid
-                </span>
-              )}
-              <button onClick={fetchCredits}
-                className={`p-2.5 rounded-xl transition-all hover:scale-110 ${isDark ? "bg-white/5 hover:bg-white/10" : "bg-zinc-100 hover:bg-zinc-200"}`}>
-                <RefreshCw size={13} className={creditsLoading ? "animate-spin text-yellow-400" : muted}/>
-              </button>
-            </div>
+            <button onClick={fetchCredits}
+              className={`p-2.5 rounded-xl transition-all hover:scale-110 ${isDark ? "bg-white/5 hover:bg-white/10" : "bg-zinc-100 hover:bg-zinc-200"}`}>
+              <RefreshCw size={13} className={creditsLoading ? "animate-spin text-yellow-400" : muted}/>
+            </button>
           </div>
         </div>
 
-        {/* Summary tiles - Enhanced */}
+        {/* Summary tiles */}
         <div className={`grid grid-cols-4 gap-4 px-6 pb-5 border-t pt-5 ${isDark ? "border-white/5" : "border-black/5"}`}>
-          <div className={`group relative overflow-hidden rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-purple-500/10" : "bg-purple-50 border border-purple-100"}`}>
-            <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-purple-500/10 to-transparent rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-700" />
-            <div className="relative z-10">
-              <p className={`text-[8px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-purple-400"}`}>Outstanding</p>
-              <p className="text-purple-400 font-[900] italic text-xl leading-none">{fmtK(totalOutstanding)}</p>
-              <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-purple-400/60"}`}>
-                {outstanding.length} client{outstanding.length !== 1 ? "s" : ""}
-              </p>
-            </div>
+          <div className={`rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-purple-500/10" : "bg-purple-50 border border-purple-100"}`}>
+            <p className={`text-[8px] font-bold uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-purple-400"}`}>Outstanding</p>
+            <p className="text-purple-400 font-black text-xl leading-none">{fmtK(totalOutstanding)}</p>
+            <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-purple-400/60"}`}>{outstanding.length} client{outstanding.length !== 1 ? "s" : ""}</p>
           </div>
-          <div className={`group relative overflow-hidden rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-emerald-500/10" : "bg-emerald-50 border border-emerald-100"}`}>
-            <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-700" />
-            <div className="relative z-10">
-              <p className={`text-[8px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-emerald-500"}`}>Approved</p>
-              <p className="text-emerald-400 font-[900] italic text-xl leading-none">{fmtK(totalApprovedButNotSettled)}</p>
-              <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-emerald-500/60"}`}>
-                Awaiting settlement
-              </p>
-            </div>
+          <div className={`rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-emerald-500/10" : "bg-emerald-50 border border-emerald-100"}`}>
+            <p className={`text-[8px] font-bold uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-emerald-500"}`}>Approved</p>
+            <p className="text-emerald-400 font-black text-xl leading-none">{fmtK(totalApprovedButNotSettled)}</p>
+            <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-emerald-500/60"}`}>Awaiting settlement</p>
           </div>
-          <div className={`group relative overflow-hidden rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-emerald-500/10" : "bg-emerald-50 border border-emerald-100"}`}>
-            <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-700" />
-            <div className="relative z-10">
-              <p className={`text-[8px] font-black uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-emerald-500"}`}>Settled</p>
-              <p className="text-emerald-400 font-[900] italic text-xl leading-none">{fmtK(totalSettled)}</p>
-              <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-emerald-500/60"}`}>
-                {settled.length} record{settled.length !== 1 ? "s" : ""}
-              </p>
-            </div>
+          <div className={`rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-emerald-500/10" : "bg-emerald-50 border border-emerald-100"}`}>
+            <p className={`text-[8px] font-bold uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-emerald-500"}`}>Settled</p>
+            <p className="text-emerald-400 font-black text-xl leading-none">{fmtK(totalSettled)}</p>
+            <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-emerald-500/60"}`}>{settled.length} record{settled.length !== 1 ? "s" : ""}</p>
           </div>
-          <div className="group relative overflow-hidden rounded-2xl p-4 bg-gradient-to-br from-yellow-500 to-yellow-600 transition-all duration-300 hover:scale-[1.02]">
-            <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-white/20 to-transparent rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-700" />
-            <div className="relative z-10">
-              <p className="text-[8px] font-black uppercase tracking-widest mb-2 text-black/50">All Time</p>
-              <p className="text-black font-[900] italic text-xl leading-none">{fmtK(totalOutstanding + totalApprovedButNotSettled + totalSettled)}</p>
-              <p className="text-[9px] mt-1.5 text-black/50">{creditsLedger.length} entries</p>
-            </div>
+          <div className="rounded-2xl p-4 bg-gradient-to-br from-yellow-500 to-yellow-600 transition-all duration-300 hover:scale-[1.02]">
+            <p className="text-[8px] font-bold uppercase tracking-widest mb-2 text-black/50">All Time</p>
+            <p className="text-black font-black text-xl leading-none">{fmtK(totalOutstanding + totalApprovedButNotSettled + totalSettled)}</p>
+            <p className="text-[9px] mt-1.5 text-black/50">{creditsLedger.length} entries</p>
           </div>
         </div>
 
-        {/* PENDING APPROVALS SECTION - Enhanced */}
+        {/* Pending Approvals */}
         {creditApprovals.length > 0 ? (
           <div className={`px-6 pb-6 border-t pt-5 space-y-3 ${isDark ? "border-white/5" : "border-black/5"}`}>
             <div className="flex items-center gap-2 mb-4">
               <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse shrink-0"/>
-              <p className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">
-                Awaiting Your Approval
-              </p>
-              <span className="ml-auto px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-[9px] font-black">
-                {creditApprovals.length}
-              </span>
+              <p className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">Awaiting Your Approval</p>
+              <span className="ml-auto px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-[9px] font-bold">{creditApprovals.length}</span>
             </div>
             {creditApprovals.map(row => (
               <CreditApprovalCard
@@ -911,88 +482,62 @@ export default function PerformanceReports() {
                 <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-3">
                   <CheckCircle2 size={20} className="text-emerald-500" />
                 </div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">
-                  No pending credit approvals
-                </p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">No pending credit approvals</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Ledger — collapsible with enhanced UI */}
+        {/* Ledger Expandable */}
         <div className={`border-t ${isDark ? "border-white/5" : "border-black/5"}`}>
-          <button
-            onClick={() => setLedgerExpanded(v => !v)}
-            className={`w-full flex items-center justify-between px-6 py-4 transition-all hover:bg-white/5`}>
+          <button onClick={() => setLedgerExpanded(v => !v)}
+            className="w-full flex items-center justify-between px-6 py-4 transition-all hover:bg-white/5">
             <div className="flex items-center gap-2">
               <div className={`p-1.5 rounded-lg ${ledgerExpanded ? "bg-yellow-500/20" : ""}`}>
                 <BookOpen size={12} className={ledgerExpanded ? "text-yellow-400" : muted}/>
               </div>
-              <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>Credit History</p>
+              <p className={`text-[10px] font-bold uppercase tracking-widest ${muted}`}>Credit History</p>
               {creditsLedger.length > 0 && (
-                <span className={`px-2 py-0.5 rounded-full text-[8px] font-black
-                  ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
+                <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
                   {creditsLedger.length}
                 </span>
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {totalOutstanding > 0 && (
-                <span className="sm:hidden text-[9px] font-black text-rose-400">{fmtK(totalOutstanding)} unpaid</span>
-              )}
-              {ledgerExpanded
-                ? <ChevronUp size={14} className={`${muted} transition-transform`}/>
-                : <ChevronDown size={14} className={`${muted} transition-transform`}/>}
+              {totalOutstanding > 0 && <span className="sm:hidden text-[9px] font-bold text-rose-400">{fmtK(totalOutstanding)} unpaid</span>}
+              {ledgerExpanded ? <ChevronUp size={14} className={`${muted}`}/> : <ChevronDown size={14} className={`${muted}`}/>}
             </div>
           </button>
 
           {ledgerExpanded && (
             <div className={`px-6 pb-6 space-y-4 border-t ${isDark ? "border-white/5" : "border-black/5"}`}>
-              {/* Filter tabs - Enhanced */}
               <div className={`flex gap-1 p-1 rounded-xl w-fit mt-4 ${isDark ? "bg-zinc-900" : "bg-zinc-100"}`}>
                 {[
-                  { k: "all",         l: "All", icon: <BookOpen size={10}/> },
+                  { k: "all", l: "All", icon: <BookOpen size={10}/> },
                   { k: "outstanding", l: "Outstanding", icon: <AlertCircle size={10}/> },
-                  { k: "approved",    l: "Approved", icon: <CheckCircle2 size={10}/> },
-                  { k: "settled",     l: "Settled", icon: <CheckCircle2 size={10}/> },
+                  { k: "approved", l: "Approved", icon: <CheckCircle2 size={10}/> },
+                  { k: "settled", l: "Settled", icon: <CheckCircle2 size={10}/> },
                 ].map(({ k, l, icon }) => (
                   <button key={k} onClick={() => setCreditFilter(k)}
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5
                       ${creditFilter === k
                         ? "bg-yellow-500 text-black shadow-lg scale-105"
                         : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-700"}`}>
-                    {icon}
-                    {l}
+                    {icon} {l}
                   </button>
                 ))}
               </div>
 
-              {/* List with Settle buttons for approved credits */}
               {creditsLoading ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className={`h-24 rounded-xl animate-pulse ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`}/>
-                  ))}
-                </div>
+                <div className="space-y-2">{[...Array(3)].map((_,i)=> <div key={i} className={`h-24 rounded-xl animate-pulse ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`}/>)}</div>
               ) : filteredCredits.length === 0 ? (
-                <div className={`py-14 text-center border-2 border-dashed rounded-[2rem] ${isDark ? "border-white/5" : "border-zinc-200"}`}>
+                <div className={`py-14 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-white/5" : "border-zinc-200"}`}>
                   <ShieldCheck size={26} className={`mx-auto mb-3 ${isDark ? "text-zinc-700" : "text-zinc-300"}`}/>
-                  <p className={`text-[9px] font-black uppercase tracking-widest ${muted}`}>
-                    No {creditFilter === "all" ? "" : creditFilter} credits
-                  </p>
+                  <p className={`text-[9px] font-bold uppercase tracking-widest ${muted}`}>No {creditFilter === "all" ? "" : creditFilter} credits</p>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
-                  {filteredCredits.map(c => (
-                    <CreditLedgerRow 
-                      key={c.id} 
-                      credit={c} 
-                      isDark={isDark}
-                      onApprove={handleSettleCredit}
-                      onReject={() => {}}
-                      approvingId={approvingId}
-                    />
-                  ))}
+                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                  {filteredCredits.map(c => <CreditLedgerRow key={c.id} credit={c} isDark={isDark} onSettle={handleSettleCredit} />)}
                 </div>
               )}
             </div>
@@ -1000,84 +545,37 @@ export default function PerformanceReports() {
         </div>
       </div>
 
-      {/* ── 7-DAY REVENUE CHART (Enhanced) ── */}
-      <div className={`rounded-[2rem] border p-6 md:p-8 transition-all duration-300 hover:shadow-xl ${card}`}>
+      {/* ── 7-DAY REVENUE CHART ── */}
+      <div className={`rounded-2xl border p-6 md:p-8 transition-all duration-300 hover:shadow-xl ${card}`}>
         <div className="mb-5">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-1 h-4 bg-yellow-500 rounded-full" />
-            <p className={`text-[10px] font-black uppercase tracking-widest italic ${muted}`}>7-Day Revenue Flow</p>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${muted}`}>7-Day Revenue Flow</p>
           </div>
-          <p className={`text-[8px] font-bold uppercase mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+          <p className={`text-[8px] font-medium uppercase mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
             Cash · Card · MTN · Airtel · Gross
           </p>
         </div>
-        <div className="w-full overflow-hidden">
-          <RevenueChart/>
-        </div>
+        <div className="w-full overflow-hidden"><RevenueChart/></div>
       </div>
 
-      {/* Staff Performance Summary */}
-      {Object.keys(waiterStats).length > 0 && (
-        <div className={`rounded-[2rem] border p-6 ${card}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Users size={14} className="text-yellow-400" />
-            <p className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>Staff Performance</p>
-          </div>
-          <div className="space-y-2">
-            {Object.entries(waiterStats)
-              .sort((a, b) => b[1] - a[1])
-              .map(([name, total], idx) => (
-                <div key={name} className="flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-[10px] font-black ${idx === 0 ? "text-yellow-400" : "text-zinc-500"}`}>
-                      #{idx + 1}
-                    </span>
-                    <span className="text-sm font-black uppercase tracking-tighter">{name}</span>
-                  </div>
-                  <span className="text-sm font-black italic text-emerald-400">{fmtK(total)}</span>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
-
-      {/* ─── REJECT MODAL (Enhanced) ── */}
+      {/* ─── REJECT MODAL (unchanged) ── */}
       {rejectingRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-300">
-          <div className={`w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl border transition-all
-            ${isDark ? "bg-zinc-950 border-white/10" : "bg-white border-black/10"}`}>
+          <div className={`w-full max-w-sm rounded-2xl p-8 shadow-2xl border transition-all ${isDark ? "bg-zinc-950 border-white/10" : "bg-white border-black/10"}`}>
             <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-5">
               <XCircle size={24} className="text-red-400"/>
             </div>
-            <h3 className="text-base font-black uppercase text-red-400 mb-1 text-center tracking-widest">Reject Credit</h3>
-            <p className={`text-[10px] text-center mb-6 uppercase tracking-widest ${muted}`}>
-              Order will return to Served status
-            </p>
-            <textarea
-              value={rejectReason}
-              onChange={e => setRejectReason(e.target.value)}
+            <h3 className="text-base font-bold uppercase text-red-400 mb-1 text-center tracking-widest">Reject Credit</h3>
+            <p className={`text-[10px] text-center mb-6 uppercase tracking-widest ${muted}`}>Order will return to Served status</p>
+            <textarea value={rejectReason} onChange={e=>setRejectReason(e.target.value)}
               placeholder="Reason for rejection (optional)…"
-              className={`w-full border rounded-2xl p-4 text-sm outline-none resize-none h-24 mb-6 transition-all
-                ${isDark
-                  ? "bg-black border-white/5 text-white placeholder-zinc-600 focus:border-red-500/30"
-                  : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-red-300"}`}
-            />
+              className={`w-full border rounded-2xl p-4 text-sm outline-none resize-none h-24 mb-6 ${isDark ? "bg-black border-white/5 text-white placeholder-zinc-600 focus:border-red-500/30" : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-red-300"}`}/>
             <div className="flex gap-3">
-              <button
-                onClick={() => setRejectingRow(null)}
-                className={`flex-1 py-4 font-black text-[10px] uppercase rounded-2xl transition-all hover:scale-105
-                  ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}>
-                Cancel
-              </button>
-              <button
-                onClick={handleReject}
-                disabled={approvingId === rejectingRow}
-                className="flex-[2] py-4 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] hover:scale-105 disabled:opacity-50">
-                {approvingId === rejectingRow ? (
-                  <><RefreshCw size={14} className="animate-spin"/> Processing...</>
-                ) : (
-                  <><XCircle size={14}/> Confirm Reject</>
-                )}
+              <button onClick={()=>setRejectingRow(null)} className="flex-1 py-4 font-bold text-[10px] uppercase rounded-2xl transition-all hover:scale-105 text-zinc-500 hover:text-zinc-300">Cancel</button>
+              <button onClick={handleReject} disabled={approvingId === rejectingRow}
+                className="flex-[2] py-4 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-bold uppercase text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] hover:scale-105 disabled:opacity-50">
+                {approvingId === rejectingRow ? <><RefreshCw size={14} className="animate-spin"/> Processing...</> : <><XCircle size={14}/> Confirm Reject</>}
               </button>
             </div>
           </div>

@@ -21,7 +21,7 @@ import SupervisorRoutes from "./staff/routes/SupervisorRoutes";
 import StaffRoutes from './staff/routes/StaffLoginRoutes';
 import NewOrder  from './staff/waiter/components/NewOrder.jsx';
 
-// ✅ PWA Install Prompt Component
+//  PWA Install Prompt Component
 function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -123,16 +123,16 @@ function PWAInstallPrompt() {
   );
 }
 
-// ✅ Register Service Worker
+//  Register Service Worker
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js')
         .then(registration => {
-          console.log('✅ Service Worker registered:', registration.scope);
+          console.log(' Service Worker registered:', registration.scope);
         })
         .catch(error => {
-          console.error('❌ Service Worker registration failed:', error);
+          console.error(' Service Worker registration failed:', error);
         });
     });
   }
@@ -188,7 +188,7 @@ export default function App() {
         />
       </Routes>
       
-      {/* ✅ PWA Install Prompt - Shows on all pages */}
+      {/*  PWA Install Prompt - Shows on all pages */}
       <PWAInstallPrompt />
     </>
   );

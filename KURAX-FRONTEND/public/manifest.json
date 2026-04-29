@@ -1,6 +1,6 @@
 {
   "name": "Kurax",
-  "short_name": "Kurax POS",
+  "short_name": "Kurax",
   "description": "Kurax Bistro Restaurant Management System",
   "start_url": "/",
   "display": "standalone",

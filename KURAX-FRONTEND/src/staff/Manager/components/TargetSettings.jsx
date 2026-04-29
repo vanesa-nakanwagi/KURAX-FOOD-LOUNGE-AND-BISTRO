@@ -7,7 +7,7 @@ import {
   Calendar, Download, FileText, Lock, CheckCircle2, Loader2,
   Users, Clock, Banknote, CreditCard, Smartphone, Receipt,
   Printer, ChevronDown, ChevronUp, Search, Wallet,
-  Activity, DollarSign, ArrowUpCircle, AlertCircle, RefreshCw
+  Activity, DollarSign, ArrowUpCircle, AlertCircle, RefreshCw, Save
 } from "lucide-react";
 
 // --- HELPERS ---
@@ -31,20 +31,13 @@ function formatOrderId(id) {
   return idStr.length > 6 ? idStr.slice(-6) : idStr;
 }
 
-// CRITICAL FIX: Get Kampala date (EAT UTC+3) without timezone conversion issues
+// Get Kampala date (EAT UTC+3)
 function getKampalaDate(date = new Date()) {
   const d = new Date(date);
-  // Extract local date parts - this uses the browser's local timezone
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-// Alternative: using toLocaleDateString (also works)
-function getKampalaDateAlt(date = new Date()) {
-  return new Date(date.toLocaleString("en-US", { timeZone: "Africa/Nairobi" }))
-    .toISOString().split('T')[0];
 }
 
 export default function TargetSettings() {
@@ -58,14 +51,8 @@ export default function TargetSettings() {
 
   const isDark = theme === 'dark';
   
-  // --- Report State - FIXED: Initialize with today's Kampala date ---
-  const [reportDate, setReportDate] = useState(() => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  });
+  // --- Report State ---
+  const [reportDate, setReportDate] = useState(() => getKampalaDate());
   const [expandedOrders, setExpandedOrders] = useState(false);
   const [reportType, setReportType] = useState("daily");
   const [searchQuery, setSearchQuery] = useState("");
@@ -74,13 +61,19 @@ export default function TargetSettings() {
   const [staffPerformanceData, setStaffPerformanceData] = useState(null);
   const [loadingStaffData, setLoadingStaffData] = useState(false);
 
-  // --- Director's Revenue Target Display ---
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  // --- Target Setting (Manager) ---
+  const [targetMonth, setTargetMonth] = useState(() => {
     const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    return `${year}-${month}`;
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   });
+  const monthLabel = (() => {
+    const [year, month] = targetMonth.split('-');
+    const d = new Date(Number(year), Number(month) - 1, 1);
+    return d.toLocaleString("default", { month: "long", year: "numeric" }).toUpperCase();
+  })();
+  const currentTarget = monthlyTargets?.[targetMonth]?.revenue || 0;
+  const [editTargetValue, setEditTargetValue] = useState('');
+  const [savingTarget, setSavingTarget] = useState(false);
   const [targetProgress, setTargetProgress] = useState({ target: 0, current: 0, percentage: 0, todayRevenue: 0 });
   const [loadingTarget, setLoadingTarget] = useState(true);
   
@@ -106,9 +99,8 @@ export default function TargetSettings() {
   const [loadingCredits, setLoadingCredits] = useState(false);
   const [error, setError] = useState(null);
 
-  // Helper: get week start/end from a date string using Kampala timezone
+  // Helper: get week start/end
   const getWeekRange = (dateStr) => {
-    // Parse the date string as local date (YYYY-MM-DD)
     const [year, month, day] = dateStr.split('-').map(Number);
     const selectedDate = new Date(year, month - 1, day);
     const dayOfWeek = selectedDate.getDay();
@@ -131,12 +123,12 @@ export default function TargetSettings() {
     };
   };
 
-  // Fetch target progress from backend
+  // Fetch target progress (for display)
   const fetchTargetProgress = useCallback(async () => {
     setLoadingTarget(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/api/manager/target-progress?month=${selectedMonth}`);
+      const response = await fetch(`${API_URL}/api/manager/target-progress?month=${targetMonth}`);
       if (response.ok) {
         const data = await response.json();
         setTargetProgress({
@@ -146,17 +138,47 @@ export default function TargetSettings() {
           todayRevenue: data.todayRevenue || 0
         });
       } else {
-        const errorText = await response.text();
-        console.error("Target progress failed:", response.status, errorText);
-        setError(`Failed to load target progress: ${response.status}`);
+        console.error("Target progress failed:", response.status);
       }
     } catch (err) {
       console.error("Failed to fetch target progress:", err);
-      setError(`Network error: ${err.message}`);
     } finally {
       setLoadingTarget(false);
     }
-  }, [selectedMonth]);
+  }, [targetMonth]);
+
+  // Save target (Manager)
+  const saveTarget = async () => {
+    if (!editTargetValue || isNaN(editTargetValue)) {
+      alert("Please enter a valid amount");
+      return;
+    }
+    setSavingTarget(true);
+    try {
+      const res = await fetch(`${API_URL}/api/manager/targets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month_key: targetMonth,
+          revenue_goal: parseFloat(editTargetValue),
+          waiter_quota: 0
+        })
+      });
+      if (res.ok) {
+        alert(`Target for ${monthLabel} set to UGX ${Number(editTargetValue).toLocaleString()}`);
+        setEditTargetValue("");
+        if (refreshData) refreshData();
+        fetchTargetProgress();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to update target");
+      }
+    } catch (err) {
+      alert("Network error: " + err.message);
+    } finally {
+      setSavingTarget(false);
+    }
+  };
 
   // Fetch petty cash
   const fetchPettyCashForDate = useCallback(async (date) => {
@@ -207,7 +229,6 @@ export default function TargetSettings() {
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
-        
         const approvedAmount = Number(data.approved_amount) || 0;
         const pendingAmount = Number(data.pending_amount) || 0;
         const partiallySettledOutstanding = Number(data.partially_settled_outstanding) || 0;
@@ -227,16 +248,8 @@ export default function TargetSettings() {
           rejected_count: data.rejected_count || 0,
           partially_settled_count: data.partially_settled_count || 0
         });
-        
-        console.log("Credits data loaded:", {
-          approved: approvedAmount,
-          pending: pendingAmount,
-          partiallyOutstanding: partiallySettledOutstanding,
-          totalOutstanding: totalOutstanding
-        });
       } else {
-        const errorText = await response.text();
-        console.error("Credits fetch failed:", response.status, errorText);
+        console.error("Credits fetch failed:", response.status);
       }
     } catch (err) {
       console.error("Failed to fetch credits:", err);
@@ -245,11 +258,11 @@ export default function TargetSettings() {
     }
   }, [reportType, reportDate]);
 
-  // Fetch staff performance data
+  // Fetch staff performance
   const fetchStaffPerformance = useCallback(async () => {
     setLoadingStaffData(true);
     try {
-      const response = await fetch(`${API_URL}/api/manager/staff-performance/monthly?month=${selectedMonth}`);
+      const response = await fetch(`${API_URL}/api/manager/staff-performance/monthly?month=${targetMonth}`);
       if (response.ok) {
         const data = await response.json();
         setStaffPerformanceData(data);
@@ -261,9 +274,9 @@ export default function TargetSettings() {
     } finally {
       setLoadingStaffData(false);
     }
-  }, [selectedMonth]);
+  }, [targetMonth]);
 
-  // Re-fetch target and staff when selectedMonth changes
+  // Re-fetch target and staff when targetMonth changes
   useEffect(() => {
     fetchTargetProgress();
     fetchStaffPerformance();
@@ -280,11 +293,10 @@ export default function TargetSettings() {
     if (refreshData) refreshData();
   }, [refreshData]);
 
-  // --- Comprehensive Report Data using orders from context - FIXED DATE HANDLING ---
+  // --- Comprehensive Report Data using orders from context ---
   const reportData = useMemo(() => {
     let filteredOrders = [];
     
-    // Normalize status for comparison (handle mixed casing)
     const isPaidOrder = (order) => {
       const status = (order.status || "").toLowerCase();
       return (
@@ -298,18 +310,11 @@ export default function TargetSettings() {
 
     try {
       if (reportType === "daily") {
-        // CRITICAL FIX: Compare dates using Kampala timezone
         filteredOrders = orders.filter(order => {
           const orderDate = order.timestamp || order.date || order.created_at;
           if (!orderDate) return false;
-          
-          // Convert order date to Kampala date string using local date extraction
           const d = new Date(orderDate);
-          const orderYear = d.getFullYear();
-          const orderMonth = String(d.getMonth() + 1).padStart(2, '0');
-          const orderDay = String(d.getDate()).padStart(2, '0');
-          const orderKampalaDate = `${orderYear}-${orderMonth}-${orderDay}`;
-          
+          const orderKampalaDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
           return orderKampalaDate === reportDate && isPaidOrder(order);
         });
       } else if (reportType === "weekly") {
@@ -317,13 +322,8 @@ export default function TargetSettings() {
         filteredOrders = orders.filter(order => {
           const orderDate = order.timestamp || order.date || order.created_at;
           if (!orderDate) return false;
-          
           const d = new Date(orderDate);
-          const orderYear = d.getFullYear();
-          const orderMonth = String(d.getMonth() + 1).padStart(2, '0');
-          const orderDay = String(d.getDate()).padStart(2, '0');
-          const orderKampalaDate = `${orderYear}-${orderMonth}-${orderDay}`;
-          
+          const orderKampalaDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
           return orderKampalaDate >= start && orderKampalaDate <= end && isPaidOrder(order);
         });
       } else if (reportType === "monthly") {
@@ -331,32 +331,11 @@ export default function TargetSettings() {
         filteredOrders = orders.filter(order => {
           const orderDate = order.timestamp || order.date || order.created_at;
           if (!orderDate) return false;
-          
           const d = new Date(orderDate);
-          const orderYear = d.getFullYear();
-          const orderMonth = String(d.getMonth() + 1).padStart(2, '0');
-          const orderKampalaDate = `${orderYear}-${orderMonth}`;
-          
+          const orderKampalaDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
           return orderKampalaDate === targetMonth && isPaidOrder(order);
         });
       }
-
-      // Debug logging to verify date filtering
-      console.log("=== DATE FILTER DEBUG ===");
-      console.log("Report type:", reportType);
-      console.log("Selected date:", reportDate);
-      console.log("Total orders in DB:", orders.length);
-      console.log("Filtered orders count:", filteredOrders.length);
-      console.log("Sample order dates (local):", orders.slice(0, 5).map(o => {
-        const d = new Date(o.timestamp || o.date || o.created_at);
-        return {
-          id: o.id,
-          original: o.timestamp || o.date || o.created_at,
-          local_date: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
-          status: o.status,
-          total: o.total
-        };
-      }));
 
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -393,12 +372,10 @@ export default function TargetSettings() {
         }
       });
 
-      // Payment method breakdown
       const getSumByMethod = (methodPatterns) => filteredOrders
         .filter(o => methodPatterns.some(p => (o.payment_method || "").toUpperCase().includes(p)))
         .reduce((sum, o) => sum + Number(o.total || 0), 0);
 
-      // Staff performance
       const staffPerformance = filteredOrders.reduce((acc, order) => {
         const staffName = order.staff_name || order.waiter_name || "Unknown";
         if (!acc[staffName]) {
@@ -530,7 +507,7 @@ export default function TargetSettings() {
 
     setIsGeneratingStaffPDF(true);
     try {
-      const url = `${API_URL}/api/manager/export-staff-pdf?month=${selectedMonth}`;
+      const url = `${API_URL}/api/manager/export-staff-pdf?month=${targetMonth}`;
       const res = await fetch(url);
       
       if (res.ok) {
@@ -538,7 +515,7 @@ export default function TargetSettings() {
         const downloadUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = downloadUrl;
-        a.download = `Kurax_Staff_Performance_${selectedMonth}.pdf`;
+        a.download = `Kurax_Staff_Performance_${targetMonth}.pdf`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -599,7 +576,7 @@ export default function TargetSettings() {
               Performance Analytics
             </h1>
             <p className={`text-[10px] font-black uppercase tracking-widest mt-1 ${mutedClass}`}>
-              Revenue Tracking & Detailed Reporting
+              Set Monthly Goals & Track Revenue
             </p>
           </div>
           
@@ -625,14 +602,68 @@ export default function TargetSettings() {
           </div>
         </div>
 
-        {/* TWO COLUMN LAYOUT */}
+        {/* ===== NEW: MONTHLY TARGET SETTING CARD (MANAGER ONLY) ===== */}
+        <div className={`p-6 rounded-2xl border ${cardClass}`}>
+          <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-xl bg-yellow-500/10">
+                <Target size={24} className="text-yellow-500" />
+              </div>
+              <div>
+                <p className={`text-[10px] font-black uppercase tracking-widest ${mutedClass}`}>Monthly Revenue Goal</p>
+                <h2 className="text-xl font-black italic">{monthLabel}</h2>
+                {currentTarget > 0 && (
+                  <p className="text-[9px] text-emerald-500 mt-1">Current: {fmtUGX(currentTarget)}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 flex-wrap items-center">
+              <input
+                type="month"
+                value={targetMonth}
+                onChange={(e) => setTargetMonth(e.target.value)}
+                className={`px-3 py-2 rounded-xl text-xs font-black border outline-none ${isDark ? "bg-zinc-800 border-zinc-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+              />
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={editTargetValue}
+                  onChange={(e) => setEditTargetValue(e.target.value)}
+                  placeholder="Target amount UGX"
+                  className={`px-4 py-3 rounded-xl font-black text-sm w-48 border outline-none ${isDark ? "bg-zinc-800 border-zinc-700 text-white" : "bg-white border-gray-300"}`}
+                />
+                <button
+                  onClick={saveTarget}
+                  disabled={savingTarget}
+                  className="px-6 py-3 bg-yellow-500 text-black rounded-xl font-black uppercase text-[10px] flex items-center gap-2 hover:bg-yellow-400 transition-all disabled:opacity-50"
+                >
+                  {savingTarget ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Set Target
+                </button>
+              </div>
+            </div>
+          </div>
+          {/* Optional progress bar for the selected target month */}
+          {currentTarget > 0 && (
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="flex justify-between text-[9px] font-black uppercase">
+                <span className={mutedClass}>Progress toward target</span>
+                <span className="text-yellow-500">{targetProgress.percentage.toFixed(1)}%</span>
+              </div>
+              <div className="w-full h-2 bg-white/10 rounded-full mt-1 overflow-hidden">
+                <div className="h-full bg-yellow-500 rounded-full transition-all" style={{ width: `${Math.min(targetProgress.percentage, 100)}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* TWO COLUMN LAYOUT - Target Display & Today's Insights */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
-          {/* MONTHLY REVENUE TARGET CARD — Ring Indicator */}
+          {/* MONTHLY REVENUE TARGET CARD (Progress Ring) */}
           <div className={`p-6 rounded-2xl border relative overflow-hidden transition-all duration-300 hover:shadow-xl ${cardClass}`}>
             <Lock className="absolute -right-4 -top-4 text-white/5 w-24 h-24 rotate-12" />
 
-            {/* Header */}
             <div className="flex justify-between items-start mb-6 relative z-10">
               <div>
                 <p className={`text-[10px] font-black uppercase tracking-widest ${mutedClass}`}>Monthly Target</p>
@@ -644,26 +675,13 @@ export default function TargetSettings() {
               </div>
               <div className="flex items-center gap-2">
                 <Calendar size={14} className={mutedClass} />
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className={`px-2 py-1 rounded-lg text-[9px] font-black border outline-none transition-all duration-200
-                    ${isDark ? "bg-zinc-800 border-zinc-700 text-white" : "bg-zinc-100 border-zinc-200 text-zinc-900"}`}
-                />
+                <span className="text-[9px] font-black">{targetMonth}</span>
               </div>
             </div>
 
-            {/* Ring + Stats Row */}
             <div className="flex items-center gap-6 mb-6 relative z-10">
-
-              {/* SVG Ring */}
               <div className="relative flex-shrink-0" style={{ width: 140, height: 140 }}>
-                <svg
-                  width="140" height="140"
-                  viewBox="0 0 140 140"
-                  style={{ transform: "rotate(-90deg)" }}
-                >
+                <svg width="140" height="140" viewBox="0 0 140 140" style={{ transform: "rotate(-90deg)" }}>
                   <defs>
                     <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                       <stop offset="0%" stopColor="#EAB308" />
@@ -671,14 +689,7 @@ export default function TargetSettings() {
                       <stop offset="100%" stopColor={isDark ? "#3f3f46" : "#27272a"} />
                     </linearGradient>
                   </defs>
-                  {/* Track */}
-                  <circle
-                    cx="70" cy="70" r="54"
-                    fill="none"
-                    stroke={isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}
-                    strokeWidth="11"
-                  />
-                  {/* Progress arc */}
+                  <circle cx="70" cy="70" r="54" fill="none" stroke={isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="11" />
                   <circle
                     cx="70" cy="70" r="54"
                     fill="none"
@@ -690,7 +701,6 @@ export default function TargetSettings() {
                     style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.34,1.56,0.64,1)" }}
                   />
                 </svg>
-                {/* Center label */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
                   <span className={`text-2xl font-black italic ${getProgressColor(targetProgress.percentage)}`}>
                     {targetProgress.percentage}%
@@ -699,7 +709,6 @@ export default function TargetSettings() {
                 </div>
               </div>
 
-              {/* Stat stack */}
               <div className="flex-1 flex flex-col gap-2">
                 <div className={`p-3 rounded-xl border-l-2 border-emerald-500 ${isDark ? "bg-white/5" : "bg-black/[0.03]"}`}>
                   <p className={`text-[8px] font-black uppercase tracking-widest ${mutedClass}`}>Current Revenue</p>
@@ -718,7 +727,6 @@ export default function TargetSettings() {
               </div>
             </div>
 
-            {/* Bottom strip */}
             <div className={`flex gap-2 pt-4 border-t relative z-10 ${isDark ? "border-white/10" : "border-black/10"}`}>
               <div className={`flex-1 text-center p-2 rounded-xl ${isDark ? "bg-white/5" : "bg-black/[0.04]"}`}>
                 <p className={`text-[7px] font-black uppercase tracking-widest ${mutedClass}`}>Today</p>
@@ -787,7 +795,7 @@ export default function TargetSettings() {
           </div>
         </div>
 
-        {/* ENHANCED REPORT SECTION */}
+        {/* ENHANCED REPORT SECTION (unchanged) */}
         <div className={`p-6 rounded-2xl border transition-all duration-300 ${cardClass}`}>
           {/* Report Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-6">

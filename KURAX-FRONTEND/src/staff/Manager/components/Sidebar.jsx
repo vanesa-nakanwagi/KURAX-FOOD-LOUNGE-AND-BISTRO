@@ -22,7 +22,7 @@ const NAV_ITEMS = [
   { id: "order",   label: "Take Order",       short: "Order",   icon: ClipboardList },
   { id: "history", label: "Manage Orders",     short: "History", icon: History },
   { id: "manage",  label: "Manage Table",      short: "Table",   icon: Table }, // NEW ITEM - Manage Table
-  { id: "floor",   label: "All Floor",        short: "Floor",   icon: LayoutDashboard },
+  { id: "tables",   label: "All Floor",        short: "Floor",   icon: LayoutDashboard },
   { id: "status",  label: "Order Status",     short: "Status",  icon: Clock },
   { id: "reports", label: "Sales & Credits",  short: "Reports", icon: BarChart3 },
   { id: "target",  label: "Set Target",       short: "Target",  icon: Target },

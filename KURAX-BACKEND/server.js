@@ -37,12 +37,11 @@ const allowedOrigins = [
   'http://localhost:5174',
   'http://localhost:42107',
   'http://10.10.162.91:3000',
-  'http://10.10.162.91:42107',
-  'http://10.10.162.91:5010',
-  'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app',
-  /\.vercel\.app$/,
+  'http://10.137.60.94:41013',          // your current frontend origin
+  /^http:\/\/10\.137\.60\.94:\d+$/,     // allow any port on 10.137.60.94
   /^http:\/\/10\.10\.162\.91:\d+$/,
-  /^http:\/\/192\.168\.\d+\.\d+:\d+$/
+  'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app',
+  /\.vercel\.app$/
 ];
 
 app.use(cors({

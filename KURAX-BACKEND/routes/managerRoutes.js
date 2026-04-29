@@ -398,28 +398,49 @@ router.get('/petty-cash', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 7. SET/UPDATE MONTHLY TARGET
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/targets', async (req, res) => {
   const { month_key, revenue_goal, waiter_quota = 0 } = req.body;
 
-  if (!month_key || !revenue_goal) {
+  if (!month_key || revenue_goal === undefined) {
     return res.status(400).json({ error: "month_key and revenue_goal are required" });
   }
 
   try {
-    const query = `
-      INSERT INTO business_targets (month_key, revenue_goal, waiter_quota)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (month_key) 
-      DO UPDATE SET 
-        revenue_goal = EXCLUDED.revenue_goal,
-        waiter_quota = COALESCE(EXCLUDED.waiter_quota, business_targets.waiter_quota),
-        updated_at = NOW()
-      RETURNING *
-    `;
+    // Check if the updated_at column exists
+    const checkColumn = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'business_targets' AND column_name = 'updated_at'
+    `);
+    const hasUpdatedAt = checkColumn.rows.length > 0;
+
+    let query;
+    if (hasUpdatedAt) {
+      query = `
+        INSERT INTO business_targets (month_key, revenue_goal, waiter_quota, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (month_key) 
+        DO UPDATE SET 
+          revenue_goal = EXCLUDED.revenue_goal,
+          waiter_quota = COALESCE(EXCLUDED.waiter_quota, business_targets.waiter_quota),
+          updated_at = NOW()
+        RETURNING *
+      `;
+    } else {
+      query = `
+        INSERT INTO business_targets (month_key, revenue_goal, waiter_quota)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (month_key) 
+        DO UPDATE SET 
+          revenue_goal = EXCLUDED.revenue_goal,
+          waiter_quota = COALESCE(EXCLUDED.waiter_quota, business_targets.waiter_quota)
+        RETURNING *
+      `;
+    }
+    
     const result = await pool.query(query, [month_key, revenue_goal, waiter_quota]);
     res.json(result.rows[0]);
   } catch (err) {
@@ -427,7 +448,6 @@ router.post('/targets', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. GET ALL TARGETS
 // ─────────────────────────────────────────────────────────────────────────────

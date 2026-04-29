@@ -233,128 +233,89 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
     const paymentMethod = q.method.toLowerCase();
 
     if (q.is_item) {
-      // ✅ INDIVIDUAL ITEM PAYMENT - Update the specific item in the existing order
-      console.log(`🔵 Processing INDIVIDUAL ITEM payment: ${q.amount} via ${paymentMethod}`);
-      
-      if (q.order_ids?.length && q.item) {
-        for (const orderId of q.order_ids) {
-          // Get the current order
-          const orderRes = await pool.query(
-            `SELECT items, table_name, status FROM orders WHERE id = $1`,
+  // ✅ INDIVIDUAL ITEM PAYMENT – Create a NEW order for this paid item
+  console.log(`🔵 Processing INDIVIDUAL ITEM payment: ${q.amount} via ${paymentMethod}`);
+
+  if (q.order_ids?.length && q.item) {
+    for (const orderId of q.order_ids) {
+      // 1. Update the original order's items (mark this specific item as paid)
+      const orderRes = await pool.query(
+        `SELECT items, table_name FROM orders WHERE id = $1`,
+        [orderId]
+      );
+      if (orderRes.rows.length) {
+        let items = orderRes.rows[0].items;
+        if (typeof items === 'string') items = JSON.parse(items);
+        const tableName = orderRes.rows[0].table_name;
+
+        let found = false;
+        const updatedItems = items.map(item => {
+          if (!found && item.name?.trim().toLowerCase() === q.item.name?.trim().toLowerCase() && !item._rowPaid) {
+            found = true;
+            return { ...item, _rowPaid: true, payment_method: paymentMethod, paid_at: new Date().toISOString() };
+          }
+          return item;
+        });
+
+        if (found) {
+          await pool.query(
+            `UPDATE orders SET items = $1, updated_at = NOW() WHERE id = $2`,
+            [JSON.stringify(updatedItems), orderId]
+          );
+          console.log(`✅ Marked item ${q.item.name} as paid in original order #${orderId}`);
+        }
+
+        // 2. ✅ CREATE A BRAND NEW PAID ORDER for this item
+        const newOrder = await pool.query(
+          `INSERT INTO orders 
+             (table_name, payment_method, total, status, paid_at, transaction_id, is_archived, created_at)
+           VALUES ($1, $2, $3, 'Paid', NOW(), $4, false, NOW())
+           RETURNING id`,
+          [tableName, paymentMethod, q.amount, transaction_id || null]
+        );
+        console.log(`✅ Created NEW paid order #${newOrder.rows[0].id} for item ${q.item.name} – UGX ${q.amount} via ${paymentMethod}`);
+
+        // 3. Optionally, if all items in the original order are now paid, you can archive it
+        const allPaid = updatedItems.every(item => item._rowPaid === true || item.status === 'VOIDED');
+        if (allPaid) {
+          await pool.query(
+            `UPDATE orders SET status = 'Completed', is_archived = true WHERE id = $1`,
             [orderId]
           );
-          
-          if (orderRes.rows.length > 0) {
-            let items = orderRes.rows[0].items;
-            if (typeof items === 'string') {
-              items = JSON.parse(items);
-            }
-            
-            const tableName = orderRes.rows[0].table_name;
-            let found = false;
-            
-            // Update the specific item to paid
-            const updatedItems = items.map(item => {
-              const itemName = item.name?.trim().toLowerCase();
-              if (!found && itemName === q.item.name?.trim().toLowerCase() && !item._rowPaid) {
-                found = true;
-                return {
-                  ...item,
-                  _rowPaid: true,
-                  payment_method: paymentMethod,
-                  paid_at: new Date().toISOString()
-                };
-              }
-              return item;
-            });
-            
-            if (found) {
-              await pool.query(
-                `UPDATE orders SET items = $1, updated_at = NOW() WHERE id = $2`,
-                [JSON.stringify(updatedItems), orderId]
-              );
-              console.log(`✅ Updated item ${q.item.name} in order #${orderId} as paid via ${paymentMethod}`);
-            }
-            
-            // Check if ALL items in this order are now paid
-            const allItemsPaid = updatedItems.every(item => item._rowPaid === true || item.status === 'VOIDED');
-            const hasAnyPaidItems = updatedItems.some(item => item._rowPaid === true);
-            
-            if (allItemsPaid) {
-              // Mark the entire order as Paid
-              await pool.query(
-                `UPDATE orders 
-                 SET status = 'Paid', 
-                     payment_method = $1,
-                     paid_at = NOW(),
-                     is_archived = false
-                 WHERE id = $2`,
-                [paymentMethod, orderId]
-              );
-              console.log(`✅ Order #${orderId} fully paid, marked as Paid`);
-            } else if (hasAnyPaidItems) {
-              // Order partially paid - keep as Served
-              await pool.query(
-                `UPDATE orders SET status = 'Served' WHERE id = $1`,
-                [orderId]
-              );
-            }
-          }
         }
       }
-      
-      // Update daily summary for the paid item
-      await updateDailySummary({ amount: q.amount, method: paymentMethod, orderCount: 0 });
-      console.log(`✅ Updated daily summary for item payment: ${q.amount} via ${paymentMethod}`);
-      
-    } else {
-      // ✅ FULL TABLE PAYMENT - Mark ALL orders as Paid
-      console.log(`🔵 Processing FULL TABLE payment: ${q.amount} via ${paymentMethod}`);
-      
-      if (q.order_ids?.length) {
-        for (const orderId of q.order_ids) {
-          // Get current order
-          const orderRes = await pool.query(
-            `SELECT items, table_name FROM orders WHERE id = $1`,
-            [orderId]
-          );
-          
-          if (orderRes.rows.length > 0) {
-            let items = orderRes.rows[0].items;
-            if (typeof items === 'string') {
-              items = JSON.parse(items);
-            }
-            
-            const tableName = orderRes.rows[0].table_name;
-            
-            // Mark ALL items as paid
-            const updatedItems = items.map(item => ({
-              ...item,
-              _rowPaid: true,
-              payment_method: paymentMethod,
-              paid_at: new Date().toISOString()
-            }));
-            
-            await pool.query(
-              `UPDATE orders 
-               SET items = $1,
-                   status = 'Paid', 
-                   payment_method = $2,
-                   paid_at = NOW(),
-                   is_archived = false
-               WHERE id = $3`,
-              [JSON.stringify(updatedItems), paymentMethod, orderId]
-            );
-            
-            console.log(`✅ Order #${orderId} marked as Paid via ${paymentMethod} for UGX ${q.amount}`);
-          }
-        }
-      }
-      
-      // Update daily summary for the full table payment
-      await updateDailySummary({ amount: q.amount, method: paymentMethod });
-      console.log(`✅ Updated daily summary for table payment: ${q.amount} via ${paymentMethod}`);
     }
+  }
+
+  // Update daily summary
+  await updateDailySummary({ amount: q.amount, method: paymentMethod, orderCount: 0 });
+  console.log(`✅ Updated daily summary for item payment: ${q.amount} via ${paymentMethod}`);
+
+    } else {
+  // ✅ FULL TABLE PAYMENT - Create a NEW order for this specific payment
+  console.log(`🔵 Processing FULL TABLE payment: ${q.amount} via ${paymentMethod}`);
+
+  const newOrder = await pool.query(
+    `INSERT INTO orders 
+       (table_name, payment_method, total, status, paid_at, transaction_id, is_archived, created_at)
+     VALUES ($1, $2, $3, 'Paid', NOW(), $4, false, NOW())
+     RETURNING id`,
+    [q.table_name, paymentMethod, q.amount, transaction_id || null]
+  );
+
+  console.log(`✅ Created NEW paid order #${newOrder.rows[0].id} for ${q.table_name}: UGX ${q.amount} via ${paymentMethod}`);
+
+  // Mark original orders as processed (optional, keeps reference)
+  if (q.order_ids?.length) {
+    await pool.query(
+      `UPDATE orders SET sent_to_cashier = true WHERE id = ANY($1::int[])`,
+      [q.order_ids]
+    );
+  }
+
+  await updateDailySummary({ amount: q.amount, method: paymentMethod });
+  console.log(`✅ Updated daily summary: +${q.amount} via ${paymentMethod}`);
+}
 
     await logActivity(pool, 'SALE',
       `${q.table_name || 'Table'} — UGX ${Number(q.amount).toLocaleString()} ${q.method} confirmed by ${confirmed_by || 'Cashier'}`,
