@@ -17,13 +17,11 @@ const DEFAULT_MENU = [
   { id: "targets", label: "Set Staff Targets", icon: Target },
 ];
 
-// Bottom navigation items for mobile
 const BOTTOM_NAV_ITEMS = [
   { id: "status", label: "Status", icon: Clock },
   { id: "targets", label: "Targets", icon: Target },
 ];
 
-// Drawer menu items (all items except bottom nav items)
 const DRAWER_MENU_ITEMS = DEFAULT_MENU.filter(
   item => !BOTTOM_NAV_ITEMS.some(nav => nav.id === item.id)
 );
@@ -61,7 +59,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
     navigate("/staff/login");
   };
 
-  // Unified NavButton – receives component function, not JSX
+  // Unified NavButton – expects item.icon to be a component function
   const NavButton = ({ item, showLabel = true, onClick, isActive }) => {
     const Icon = item.icon;
     return (
@@ -88,7 +86,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
   if (isMobile) {
     return (
       <>
-        {/* Floating menu button */}
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className={`fixed top-4 right-4 z-50 p-2 rounded-xl transition-all ${
@@ -100,7 +97,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
           {isMenuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
 
-        {/* Mobile drawer */}
         <div className={`fixed inset-0 z-40 transition-all duration-300 mobile-drawer ${isMenuOpen ? "visible" : "invisible"}`}>
           <div
             className={`absolute inset-0 transition-opacity duration-300 ${isMenuOpen ? "opacity-100 bg-black/70 backdrop-blur-sm" : "opacity-0"}`}
@@ -111,7 +107,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
               ${isMenuOpen ? "translate-x-0" : "translate-x-full"}
               ${isDark ? "bg-zinc-950 border-l border-white/5" : "bg-white border-l border-gray-200"}`}
           >
-            {/* Drawer header */}
             <div className={`flex items-center gap-3 p-5 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
               <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30" />
               <div>
@@ -122,7 +117,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
               </div>
             </div>
 
-            {/* User pill */}
             <div className={`mx-4 mt-5 mb-2 px-4 py-3 rounded-xl border flex items-center gap-3
               ${isDark ? "bg-zinc-900 border-white/5" : "bg-gray-50 border-gray-200"}`}>
               <div className="w-9 h-9 rounded-lg bg-yellow-500 flex items-center justify-center font-black text-black text-base">
@@ -137,7 +131,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
               </div>
             </div>
 
-            {/* Drawer menu items */}
             <nav className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
               {DRAWER_MENU_ITEMS.map(item => (
                 <NavButton
@@ -150,7 +143,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
               ))}
             </nav>
 
-            {/* Logout in drawer */}
             <div className={`p-4 border-t ${isDark ? "border-white/5" : "border-gray-200"}`}>
               <button
                 onClick={handleLogout}
@@ -162,7 +154,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
           </div>
         </div>
 
-        {/* Bottom navigation bar (only Status and Targets) */}
         <div
           className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-3 py-2 border-t backdrop-blur-lg
             ${isDark ? "bg-zinc-950/95 border-white/10" : "bg-white/95 border-gray-200 shadow-lg"}`}
@@ -189,8 +180,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
             );
           })}
         </div>
-
-        {/* Bottom spacing for content */}
         <div className="pb-20" />
       </>
     );
@@ -202,7 +191,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
       className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
         ${isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
     >
-      {/* Logo header – unified */}
       <div className={`flex items-center gap-3 p-5 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
         <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30 shrink-0" />
         <div className="min-w-0">
@@ -217,7 +205,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
         </div>
       </div>
 
-      {/* User pill */}
       <div className={`mx-3 mt-5 mb-2 px-3 py-2.5 rounded-xl border flex items-center gap-2.5
         ${isDark ? "bg-zinc-900/50 border-white/5" : "bg-gray-50 border-gray-200"}`}>
         <div className="w-7 h-7 rounded-lg bg-yellow-500 flex items-center justify-center font-black text-black text-sm shrink-0">
@@ -233,7 +220,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {items.map(item => (
           <NavButton
@@ -246,7 +232,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
         ))}
       </nav>
 
-      {/* Logout – unified */}
       <div className={`px-3 pb-5 pt-3 border-t ${isDark ? "border-white/5" : "border-gray-200"}`}>
         <button
           onClick={handleLogout}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from "framer-motion";
-import diningImage from '../../assets/images/dining.jpg'; 
+import diningImage from '../../assets/images/amb.jpg'; 
 import { Users, DoorClosed, Briefcase, ArrowRight, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 

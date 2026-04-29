@@ -12,13 +12,13 @@ import BookingModal from "../events/BookingModal.jsx";
 import { getImageSrc } from "../../../utils/imageHelper.js";
 import API_URL from "../../../config/api";
 
-// Static Gallery Assets
-import gallery1 from "../../assets/images/hero1.jpg";
-import gallery2 from "../../assets/images/hero2.jpg";
-import gallery3 from "../../assets/images/hero3.jpg";
-import gallery4 from "../../assets/images/hero4.png";
-import gallery5 from "../../assets/images/occasion.jpeg"; 
-import gallery6 from "../../assets/images/wine.jpg";
+// Static Gallery Assets – using kurax1.jpg through kurax6.jpg
+import gallery1 from "../../assets/images/kurax1.jpg";
+import gallery2 from "../../assets/images/kurax2.jpg";
+import gallery3 from "../../assets/images/kurax3.jpg";
+import gallery4 from "../../assets/images/kurax4.jpg";
+import gallery5 from "../../assets/images/kurax5.jpg";
+import gallery6 from "../../assets/images/kurax6.jpg";
 
 export default function Events() {
   const [showModal, setShowModal] = useState(false);
@@ -119,32 +119,32 @@ export default function Events() {
       <TopSection searchPlaceholder="Search upcoming experiences..." />
 
       {/* ── CONSISTENT HEADER WITH MENU PAGE STYLE ── */}
-<header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 pb-4">
-  <div className="flex flex-row items-center justify-between gap-4 border-b border-zinc-100 dark:border-zinc-900 pb-8 min-w-0">
-    <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
-      <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full flex-shrink-0" />
-      <h2 className="text-lg sm:text-2xl md:text-3xl lg:text-5xl font-serif leading-[0.95] tracking-tighter truncate">
-        {isSearching ? "Search" : "Upcoming"}{" "}
-        <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent whitespace-nowrap">
-          {isSearching ? "Results" : "Events"}
-        </span>
-      </h2>
-    </div>
-    <div className="text-right shrink-0">
-      <p className="hidden sm:block text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-700 leading-tight">
-        {isSearching 
-          ? `Matching "${searchQuery}"` 
-          : "Live & Upcoming"}
-      </p>
-      <p className="text-base sm:text-lg md:text-2xl font-semibold leading-none">
-        {filteredEvents.length}{" "}
-        <span className="text-[8px] sm:text-[10px] font-normal opacity-60">
-          {filteredEvents.length === 1 ? "Event" : "Events"}
-        </span>
-      </p>
-    </div>
-  </div>
-</header>
+      <header className="max-w-7xl mx-auto px-5 md:px-12 pt-8 pb-4">
+        <div className="flex flex-row items-center justify-between gap-4 border-b border-zinc-100 dark:border-zinc-900 pb-8 min-w-0">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+            <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full flex-shrink-0" />
+            <h2 className="text-lg sm:text-2xl md:text-3xl lg:text-5xl font-serif leading-[0.95] tracking-tighter truncate">
+              {isSearching ? "Search" : "Upcoming"}{" "}
+              <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent whitespace-nowrap">
+                {isSearching ? "Results" : "Events"}
+              </span>
+            </h2>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="hidden sm:block text-[8px] md:text-[9px] uppercase tracking-widest text-zinc-700 leading-tight">
+              {isSearching 
+                ? `Matching "${searchQuery}"` 
+                : "Live & Upcoming"}
+            </p>
+            <p className="text-base sm:text-lg md:text-2xl font-semibold leading-none">
+              {filteredEvents.length}{" "}
+              <span className="text-[8px] sm:text-[10px] font-normal opacity-60">
+                {filteredEvents.length === 1 ? "Event" : "Events"}
+              </span>
+            </p>
+          </div>
+        </div>
+      </header>
 
       {/* ── EVENTS GRID ── */}
       <section className="relative pt-0 pb-0 px-5 md:px-12 max-w-7xl mx-auto z-10">
@@ -197,7 +197,7 @@ export default function Events() {
         )}
       </section>
 
-      {/* ── AMBIANCE SECTION ── */}
+      {/* ── AMBIANCE SECTION (gallery carousel now using kurax1–6) ── */}
       <section className="relative pt-20 pb-32 px-5 md:px-12 max-w-7xl mx-auto overflow-hidden">
         <div className="flex flex-col lg:flex-row gap-12 lg:gap-16 items-start">
           <div className="w-full lg:w-3/5 relative h-[320px] md:h-[500px] lg:h-[650px] group shadow-[0_0_50px_rgba(0,0,0,0.3)] overflow-hidden rounded-none">

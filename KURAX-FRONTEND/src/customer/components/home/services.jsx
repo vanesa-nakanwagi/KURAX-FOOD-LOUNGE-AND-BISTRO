@@ -85,7 +85,8 @@ export default function Services() {
       Moment</span>
           </h2>
           
-          <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-lg font-light leading-relaxed">
+          <p className="text-zinc-600 dark:text-zinc-900 max-w-2xl mx-auto text-base md:text-lg font-light leading-relaxed">
+
             Experience exceptional dining, entertainment, and hospitality crafted 
             with precision to provide comfort and culinary excellence.
           </p>
@@ -126,7 +127,7 @@ export default function Services() {
                     {service.title}
                   </h3>
 
-                  <p className="text-zinc-500 dark:text-zinc-900 max-w-2xl mx-auto text-md font-light leading-relaxed">
+                  <p className="text-zinc-600 dark:text-zinc-900 max-w-2xl text-base mx-auto md:text-md font-light leading-relaxed">
                     {service.description}
                   </p>
 

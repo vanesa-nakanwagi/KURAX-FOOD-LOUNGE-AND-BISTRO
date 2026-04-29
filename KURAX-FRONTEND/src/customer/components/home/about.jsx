@@ -1,15 +1,15 @@
 import { useEffect, useState, useRef } from "react";
 import { motion, useScroll, useTransform, useInView } from "framer-motion";
 
-// ─── Mock hero images ────────────────────────────────────────────────────────
-const heroImages = [
-  "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&q=80",
-  "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=900&q=80",
-  "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=900&q=80",
-  "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=900&q=80",
-  "https://images.unsplash.com/photo-1424847651672-bf20a4b0982b?w=900&q=80",
-  "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?w=900&q=80",
-];
+// ─── Local hero images (replace with your actual files in src/assets/images) ───
+import img1 from "../../assets/images/kurax1.jpg";
+import img2 from "../../assets/images/kurax2.jpg";
+import img3 from "../../assets/images/kurax3.jpg";
+import img4 from "../../assets/images/kurax4.jpg";
+import img5 from "../../assets/images/kurax5.jpg";
+import img6 from "../../assets/images/kurax6.jpg";
+
+const heroImages = [img1, img2, img3, img4, img5, img6];
 
 // ─── Stat item ────────────────────────────────────────────────────────────────
 function StatItem({ value, label, delay }) {
@@ -194,7 +194,7 @@ export default function About() {
             </div>
           </div>
 
-          {/* RIGHT: Image slider */}
+          {/* RIGHT: Image slider using local images */}
           <motion.div
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
@@ -238,7 +238,7 @@ export default function About() {
               {/* Caption */}
               <div className="absolute bottom-0 left-0 right-0 p-8 text-center">
                 <p className="text-white text-lg md:text-xl font-serif italic tracking-wide opacity-90">
-                  "Experience the essence of Uganda"
+                  "Experience the essence of Kyanja"
                 </p>
               </div>
 

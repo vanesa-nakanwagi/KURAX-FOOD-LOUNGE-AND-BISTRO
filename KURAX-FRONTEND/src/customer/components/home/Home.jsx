@@ -3,7 +3,8 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import { 
-  Plus, Sparkles, ArrowRight, Star, ChefHat, Calendar 
+  Plus, Sparkles, ArrowRight, Star, ChefHat, Calendar, 
+  Truck, Clock, CreditCard, UtensilsCrossed
 } from "lucide-react";
 
 // Existing Utils & Components
@@ -13,7 +14,7 @@ import API_URL from "../../../config/api";
 import { useCart } from "../context/CartContext.jsx";
 import CartModal from "../menu/cart/CartModal.jsx";
 import BookingModal from "../events/BookingModal.jsx";
-import EventCard from "../events/EventCard.jsx"; // Ensure this is imported
+import EventCard from "../events/EventCard.jsx";
 import FooterGlobal from "../common/footer.jsx";
 import VisitUs from "./visitUs.jsx";
 import About from "./about.jsx";
@@ -21,14 +22,21 @@ import Reserve from "./reserveHome.jsx";
 import Services from "./services.jsx";
 
 // Local Hero Assets
-import hero1 from "../../assets/images/hero4.png";
-import hero12 from "../../assets/images/hero1.jpg";
-import hero3 from "../../assets/images/hero135.jpg";
-
+import hero1 from "../../assets/images/kurax8.jpg";
+import hero12 from "../../assets/images/hero4.png";
+import hero3 from "../../assets/images/kurax9.png";
 import rice from "../../assets/images/rice.jpg";
 import hero from "../../assets/images/hero.png";
 
-const heroImages = [hero1, hero12, hero3, rice, hero];
+// Delivery image (replace with your actual file)
+import deliveryImg from "../../assets/images/delivery.jpg";
+
+// Chef carousel images – REPLACE WITH YOUR THREE ACTUAL FILES
+import chefImg1 from "../../assets/images/chef.jpg";
+import chefImg2 from "../../assets/images/waiter1.jpg";
+import chefImg3 from "../../assets/images/hero17.jpg";
+
+const heroImages = [hero1, hero12, hero3, hero];
 
 // Animation Variants
 const fadeInUp = {
@@ -40,14 +48,252 @@ const staggerContainer = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { staggerChildren: 0.2 } }
 };
+// ========== DELIVERY SECTION (yellow bar next to main heading) ==========
+function DeliverySection() {
+  const navigate = useNavigate();
 
+  const fadeInUpLocal = {
+    hidden: { opacity: 0, y: 40 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.7, ease: 'easeOut' } }
+  };
+  const staggerChildrenLocal = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { staggerChildren: 0.15 } }
+  };
+
+  return (
+    <section className="py-16 px-6 bg-white border-b border-zinc-100">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          variants={staggerChildrenLocal}
+          className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center"
+        >
+          {/* Image side - smaller width, sharp edges */}
+          <motion.div
+            variants={fadeInUpLocal}
+            className="relative flex justify-center"
+          >
+            <img
+              src={deliveryImg}
+              alt="Kurax food delivery"
+              className="w-full max-w-md object-cover transition-transform duration-700 group-hover:scale-105"
+              style={{ borderRadius: 0 }}
+            />
+          </motion.div>
+
+          {/* Text side */}
+          <motion.div variants={staggerChildrenLocal} className="space-y-4">
+            {/* Badge only - no bar */}
+            <motion.div variants={fadeInUpLocal}>
+              <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">
+                Fast & Fresh
+              </span>
+            </motion.div>
+
+            {/* Heading with yellow bar */}
+            <motion.div
+              variants={fadeInUpLocal}
+              className="flex items-center gap-3"
+            >
+              <div className="w-1 h-10 md:h-12 bg-yellow-500 rounded-full" />
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif leading-[1.1] tracking-tight">
+                Delivery from{' '}
+                <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent">
+                  Kurax
+                </span>
+              </h2>
+            </motion.div>
+
+            <motion.p
+              variants={fadeInUpLocal}
+              className="text-zinc-600 text-base md:text-lg leading-relaxed"
+            >
+              Savor your favorite gourmet dishes wherever you are. Our delivery service
+              brings the same luxury, quality, and attention to detail straight to your door.
+              Fast, reliable, and available daily.
+            </motion.p>
+
+            {/* Features */}
+            <motion.div
+              variants={staggerChildrenLocal}
+              className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-2"
+            >
+              {[
+                { icon: Truck, label: 'Quick delivery' },
+                { icon: Clock, label: '30‑45 min' },
+                { icon: CreditCard, label: 'Secure payment' }
+              ].map((item, idx) => (
+                <motion.div
+                  key={idx}
+                  variants={fadeInUpLocal}
+                  className="flex items-center gap-2 text-zinc-700"
+                >
+                  <item.icon size={18} className="text-yellow-600" />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </motion.div>
+              ))}
+            </motion.div>
+
+          
+
+            {/* --- LUXURY CTA BUTTON --- */}
+                        <motion.div variants={fadeInUp} className="pt-6">
+                          <button 
+                          variants={fadeInUpLocal}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => navigate("/menus")}
+                             
+                            className="relative overflow-hidden group inline-flex items-center gap-3 px-6 md:px-12 py-4 bg-yellow-400 text-black uppercase tracking-[0.2em] text-xs sm:text-sm rounded-none shadow-lg hover:bg-yellow-500 transition-all duration-500"
+                          >
+                            <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+                            Order for Delivery
+                            <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-2" />
+                          </button>
+                        </motion.div>
+
+          </motion.div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+// ========== CHEF SECTION (yellow bar on heading, vertically centered like Delivery) ==========
+function ChefSection() {
+  const [chefIndex, setChefIndex] = useState(0);
+  const chefImages = [chefImg1, chefImg2, chefImg3];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setChefIndex((prev) => (prev + 1) % chefImages.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fadeInUpLocal = {
+    hidden: { opacity: 0, y: 40 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.7, ease: 'easeOut' } }
+  };
+  const staggerChildrenLocal = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { staggerChildren: 0.15 } }
+  };
+
+  return (
+    <section className="py-16 px-6 bg-[#FCFCFB] border-b border-zinc-100">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          variants={staggerChildrenLocal}
+          className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center"
+        >
+          {/* Text side (left on desktop) */}
+          <motion.div variants={staggerChildrenLocal} className="order-2 lg:order-1 space-y-5">
+            {/* Badge only - no bar */}
+            <motion.div variants={fadeInUpLocal}>
+              <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">
+                Our Philosophy
+              </span>
+            </motion.div>
+
+            {/* Heading with yellow bar */}
+            <motion.div
+              variants={fadeInUpLocal}
+              className="flex items-center gap-3"
+            >
+              <div className="w-1 h-10 md:h-12 bg-yellow-500 rounded-full" />
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif leading-[1.1] tracking-tight">
+                Crafted by{' '}
+                <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent">
+                  Masters
+                </span>
+              </h2>
+            </motion.div>
+
+            <motion.p
+              variants={fadeInUpLocal}
+              className="text-zinc-600 text-base md:text-lg leading-relaxed"
+            >
+              Behind every dish is a story of passion, precision, and artistry. Our
+              executive chef and team bring years of culinary excellence, using only the
+              finest ingredients to create an unforgettable fine‑dining experience.
+            </motion.p>
+
+            {/* Signature style badges */}
+            <motion.div
+              variants={staggerChildrenLocal}
+              className="flex flex-wrap gap-3 pt-2"
+            >
+              {[
+                { icon: ChefHat, label: 'Master Chef' },
+                { icon: Star, label: 'Premium Ingredients' },
+                { icon: UtensilsCrossed, label: 'Fusion Techniques' }
+              ].map((item, idx) => (
+                <motion.div
+                  key={idx}
+                  variants={fadeInUpLocal}
+                  className="flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-zinc-200"
+                >
+                  <item.icon size={16} className="text-yellow-600" />
+                  <span className="text-sm font-medium text-zinc-800">{item.label}</span>
+                </motion.div>
+              ))}
+            </motion.div>
+          </motion.div>
+
+          {/* Image side (right) - carousel with smaller width & sharp edges */}
+          <motion.div
+            variants={fadeInUpLocal}
+            className="order-1 lg:order-2 relative flex justify-center"
+          >
+            <div className="relative w-full max-w-md">
+              <AnimatePresence mode="wait">
+                <motion.img
+                  key={chefIndex}
+                  src={chefImages[chefIndex]}
+                  alt="Kurax chef"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.8 }}
+                  className="w-full object-cover"
+                  style={{ borderRadius: 0 }}
+                />
+              </AnimatePresence>
+              {/* Dot navigation */}
+              <div className="absolute -bottom-8 left-0 right-0 flex justify-center gap-2">
+                {chefImages.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setChefIndex(idx)}
+                    className={`h-2 w-2 rounded-full transition-all ${
+                      idx === chefIndex ? 'bg-yellow-600 w-4' : 'bg-gray-400'
+                    }`}
+                    aria-label={`View chef image ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+// ========== MAIN HOME COMPONENT ==========
 export default function Home() {
   const [current, setCurrent] = useState(0);
   const [dbMenus, setDbMenus] = useState([]);
-  const [dbEvents, setDbEvents] = useState([]); // New State
+  const [dbEvents, setDbEvents] = useState([]);
   const [loadingMenus, setLoadingMenus] = useState(true);
-  const [loadingEvents, setLoadingEvents] = useState(true); // New State
-  const [isModalOpen, setIsModalOpen] = useState(false); // Modal Logic
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEventTitle, setSelectedEventTitle] = useState("");
   
   const navigate = useNavigate();
@@ -163,7 +409,7 @@ export default function Home() {
               </div>
             </div>
             <Link to="/menus" className="text-yellow-600 uppercase tracking-widest text-[10px] sm:text-sm flex items-center gap-2 group shrink-0">
-              View Menu <ArrowRight size={16} sm:size={18} className="group-hover:translate-x-2 transition-transform" />
+              View Menu <ArrowRight size={16} className="group-hover:translate-x-2 transition-transform" />
             </Link>
           </motion.header>
           
@@ -187,8 +433,6 @@ export default function Home() {
           whileInView="visible"
           viewport={{ once: true, amount: 0.2 }}
         >
-          
-          {/* REFINED HEADER AREA (MIRRORS SIGNATURE DISHES) */}
           <motion.header 
             variants={fadeInUp} 
             className="flex flex-row items-center justify-between mb-16 gap-4"
@@ -213,11 +457,10 @@ export default function Home() {
               className="text-yellow-600 uppercase tracking-widest text-[10px] sm:text-sm flex items-center gap-2 group shrink-0"
             >
               View Events 
-              <ArrowRight size={16} sm:size={18} className="group-hover:translate-x-2 transition-transform" />
+              <ArrowRight size={16} className="group-hover:translate-x-2 transition-transform" />
             </Link>
           </motion.header>
           
-          {/* EVENTS GRID */}
           <motion.div variants={staggerContainer} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
             {loadingEvents ? (
               [1, 2, 3].map(n => (
@@ -239,8 +482,13 @@ export default function Home() {
         </motion.div>
       </section>
 
+      {/* ========== NEW SECTIONS ========== */}
+      <DeliverySection />
+      <ChefSection />
+      {/* ================================= */}
+        <Services />
       <About />
-      <Services />
+     
       <Reserve />
       <VisitUs />
       <FooterGlobal />
@@ -266,6 +514,7 @@ export default function Home() {
   );
 }
 
+// --- Helper Component for Menu Cards ---
 function HomeMenuCard({ item, onOrder }) {
   const imageUrl = item.image_url?.startsWith('http') 
     ? item.image_url 
