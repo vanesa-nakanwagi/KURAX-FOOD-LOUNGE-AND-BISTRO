@@ -18,42 +18,125 @@ export default function Credits({
   const textClass = "text-gray-900";
   const subTextClass = "text-gray-500";
   
+  // Calculate correct totals based on status
+  // Outstanding = ONLY Approved credits (not pending, not partially settled)
+  const approvedCredits = creditsLedger.filter(c => c.status === "Approved");
+  const approvedOutstandingTotal = approvedCredits.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  
+  // Partially settled credits show remaining balance
+  const partiallySettledCredits = creditsLedger.filter(c => c.status === "PartiallySettled");
+  const partiallySettledOutstanding = partiallySettledCredits.reduce((sum, c) => sum + Number(c.balance || (c.amount - (c.amount_paid || 0))), 0);
+  
+  // Total outstanding = Approved credits + remaining balance of partially settled
+  const correctOutstandingTotal = approvedOutstandingTotal + partiallySettledOutstanding;
+  
+  // Pending approvals (waiting for manager) - these should NOT be in outstanding
+  const pendingApprovals = creditsLedger.filter(c => 
+    c.status === "PendingCashier" || 
+    c.status === "PendingManagerApproval" ||
+    c.status === "Pending"
+  );
+  const pendingTotal = pendingApprovals.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  
+  // Settled = Fully settled credits only
+  const settledCredits = creditsLedger.filter(c => 
+    c.status === "FullySettled" || 
+    c.status === "settled" || 
+    c.paid === true
+  );
+  const correctSettledTotal = settledCredits.reduce((sum, c) => sum + Number(c.amount_paid || c.amount || 0), 0);
+  
+  // Rejected credits
+  const rejectedCredits = creditsLedger.filter(c => c.status === "Rejected");
+  const correctRejectedTotal = rejectedCredits.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  
+  // Total credits (all time)
+  const allTimeTotal = creditsLedger.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  
+  const textClassColor = isDark ? "text-white" : "text-gray-900";
+  const subTextClassColor = isDark ? "text-gray-400" : "text-gray-500";
+  const bgCardClass = isDark ? "bg-zinc-900/40 border-white/5" : "bg-white border border-gray-200 shadow-sm";
+  
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
-        <h2 className={`text-2xl font-medium text-yellow-900 uppercase leading-none ${textClass}`}>
+        <h2 className={`text-2xl font-medium text-yellow-900 uppercase leading-none ${textClassColor}`}>
           Credits Ledger
         </h2>
-        <p className="text-zinc-700 text-[13px] font-medium mt-1 italic">All on-account orders - pending, approved, settled, and rejected (Persists for current month)</p>
+        <p className={`${subTextClassColor} text-[13px] font-medium mt-1 italic`}>
+          All on-account orders - pending, approved, settled, and rejected (Persists for current month)
+        </p>
+        {pendingApprovals.length > 0 && (
+          <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
+            <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">
+              ⏳ {pendingApprovals.length} credit{pendingApprovals.length !== 1 ? 's' : ''} waiting for manager approval (UGX {pendingTotal.toLocaleString()})
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] bg-white border border-gray-200 shadow-sm`}>
-          <div className="p-2.5 w-fit bg-purple-100 rounded-xl text-purple-600 mb-3"><BookOpen size={16}/></div>
+        {/* Outstanding Card - Only shows APPROVED credits (not pending) */}
+        <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${bgCardClass}`}>
+          <div className="p-2.5 w-fit bg-purple-100 rounded-xl text-purple-600 mb-3">
+            <BookOpen size={16}/>
+          </div>
           <p className="text-[8px] font-bold uppercase text-yellow-900 tracking-widest mb-1">Outstanding</p>
-          <h3 className="text-xl font-black text-purple-600 ">{formatCurrencyCompact(totalOutstanding)}</h3>
-          <p className={`text-[9px] ${subTextClass} mt-0.5`}>{creditsLedger.filter(c => c.status === "Approved" || c.status === "PartiallySettled").length} pending</p>
+          <h3 className="text-xl font-black text-purple-600">{formatCurrencyCompact(correctOutstandingTotal)}</h3>
+          <p className={`text-[9px] ${subTextClassColor} mt-0.5`}>
+            {approvedCredits.length + partiallySettledCredits.length} credit{(approvedCredits.length + partiallySettledCredits.length) !== 1 ? 's' : ''} pending payment
+          </p>
+          {approvedCredits.length > 0 && (
+            <p className="text-[7px] text-purple-400 mt-1">Approved: {approvedCredits.length}</p>
+          )}
+          {partiallySettledCredits.length > 0 && (
+            <p className="text-[7px] text-orange-400">Partially settled: {partiallySettledCredits.length}</p>
+          )}
         </div>
-        <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] bg-white border border-gray-200 shadow-sm`}>
-          <div className="p-2.5 w-fit bg-emerald-100 rounded-xl text-emerald-600 mb-3"><CheckCircle2 size={16}/></div>
+        
+        {/* Settled Card */}
+        <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${bgCardClass}`}>
+          <div className="p-2.5 w-fit bg-emerald-100 rounded-xl text-emerald-600 mb-3">
+            <CheckCircle2 size={16}/>
+          </div>
           <p className="text-[8px] font-bold uppercase text-yellow-900 tracking-widest mb-1">Settled</p>
-          <h3 className="text-xl font-black text-emerald-600 ">{formatCurrencyCompact(totalSettled)}</h3>
-          <p className={`text-[9px] ${subTextClass} mt-0.5`}>{creditsLedger.filter(c => c.status === "FullySettled" || c.paid === true).length} cleared</p>
+          <h3 className="text-xl font-black text-emerald-600">{formatCurrencyCompact(correctSettledTotal)}</h3>
+          <p className={`text-[9px] ${subTextClassColor} mt-0.5`}>
+            {settledCredits.length} credit{settledCredits.length !== 1 ? 's' : ''} cleared
+          </p>
         </div>
-        <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] bg-white border border-gray-200 shadow-sm`}>
-          <div className="p-2.5 w-fit bg-red-100 rounded-xl text-red-600 mb-3"><XCircle size={16}/></div>
+        
+        {/* Rejected Card */}
+        <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${bgCardClass}`}>
+          <div className="p-2.5 w-fit bg-red-100 rounded-xl text-red-600 mb-3">
+            <XCircle size={16}/>
+          </div>
           <p className="text-[8px] font-bold uppercase text-yellow-900 tracking-widest mb-1">Rejected</p>
-          <h3 className="text-xl font-black text-red-600">{formatCurrencyCompact(totalRejected)}</h3>
-          <p className={`text-[9px] ${subTextClass} mt-0.5`}>{creditsLedger.filter(c => c.status === "Rejected").length} rejected</p>
+          <h3 className="text-xl font-black text-red-600">{formatCurrencyCompact(correctRejectedTotal)}</h3>
+          <p className={`text-[9px] ${subTextClassColor} mt-0.5`}>
+            {rejectedCredits.length} credit{rejectedCredits.length !== 1 ? 's' : ''} rejected
+          </p>
         </div>
+        
+        {/* All Time Credits Card */}
         <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 p-5 rounded-2xl shadow-md">
-          <div className="p-2.5 w-fit bg-black/20 rounded-xl text-black mb-3"><Receipt size={16}/></div>
+          <div className="p-2.5 w-fit bg-black/20 rounded-xl text-black mb-3">
+            <Receipt size={16}/>
+          </div>
           <p className="text-[8px] font-black uppercase text-black/60 tracking-widest mb-1">All Time Credits</p>
-          <h3 className="text-xl font-black text-black ">{formatCurrencyCompact(totalOutstanding + totalSettled + totalRejected)}</h3>
-          <p className="text-[9px] text-black/50 mt-0.5">{creditsLedger.length} total entries (current month)</p>
+          <h3 className="text-xl font-black text-black">{formatCurrencyCompact(allTimeTotal)}</h3>
+          <p className="text-[9px] text-black/50 mt-0.5">
+            {creditsLedger.length} total entries (current month)
+          </p>
+          {pendingApprovals.length > 0 && (
+            <p className="text-[7px] text-black/40 mt-1">
+              {pendingApprovals.length} pending approval
+            </p>
+          )}
         </div>
       </div>
 
+      {/* Filter Tabs */}
       <div className="flex gap-1 p-1 bg-gray-100 rounded-2xl w-fit">
         {[
           { key: "all", label: "All" },
@@ -61,7 +144,9 @@ export default function Credits({
           { key: "settled", label: "Settled" },
           { key: "rejected", label: "Rejected" },
         ].map(({ key, label }) => (
-          <button key={key} onClick={() => setCreditFilter(key)}
+          <button 
+            key={key} 
+            onClick={() => setCreditFilter(key)}
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300
               ${creditFilter === key ? "bg-yellow-500 text-black shadow-md" : "text-yellow-900 hover:text-yellow-900"}`}>
             {label}
@@ -69,6 +154,7 @@ export default function Credits({
         ))}
       </div>
 
+      {/* Credits List */}
       {creditsLoading ? (
         <div className="space-y-3">
           {[...Array(3)].map((_,i) => <div key={i} className="h-24 rounded-2xl bg-gray-100 animate-pulse border border-gray-200"/>)}
@@ -80,7 +166,7 @@ export default function Credits({
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredCredits.map(credit => <AccountantCreditRow key={credit.id} credit={credit} isDark={false} />)}
+          {filteredCredits.map(credit => <AccountantCreditRow key={credit.id} credit={credit} isDark={isDark} />)}
         </div>
       )}
     </div>

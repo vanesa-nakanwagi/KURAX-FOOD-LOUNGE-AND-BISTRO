@@ -1,71 +1,125 @@
 // routes/weeklyRevenueRoutes.js
-// GET /api/overview/weekly-revenue
-
 import express from "express";
 import pool from "../db.js";
 
 const router = express.Router();
+// GET /api/overview/monthly-revenue
+router.get("/monthly-revenue", async (req, res) => {
+  const { month } = req.query;
+  if (!month) {
+    return res.status(400).json({ error: "Month parameter is required (YYYY-MM)" });
+  }
+  
+  console.log(`🔵 Fetching revenue for month: ${month}`);
 
-router.get("/weekly-revenue", async (req, res) => {
+  try {
+    // 1. New sales (cash + card + mobile money) from orders
+    const salesResult = await pool.query(`
+      SELECT 
+        EXTRACT(DAY FROM (created_at AT TIME ZONE 'Africa/Nairobi')) AS day,
+        COALESCE(SUM(CASE WHEN LOWER(payment_method) = 'cash' THEN total ELSE 0 END), 0) AS cash,
+        COALESCE(SUM(CASE WHEN LOWER(payment_method) = 'card' THEN total ELSE 0 END), 0) AS card,
+        COALESCE(SUM(CASE WHEN LOWER(payment_method) IN ('mtn','momo-mtn','airtel','momo-airtel') THEN total ELSE 0 END), 0) AS momo
+      FROM orders
+      WHERE TO_CHAR(created_at AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+        AND payment_confirmed = true
+        AND LOWER(status) IN ('paid', 'closed', 'confirmed', 'served')
+        AND LOWER(payment_method) NOT IN ('credit', '')
+      GROUP BY EXTRACT(DAY FROM (created_at AT TIME ZONE 'Africa/Nairobi'))
+    `, [month]);
+
+    // 2. Credit settlements for the month
+    const creditResult = await pool.query(`
+      SELECT 
+        EXTRACT(DAY FROM (cs.created_at AT TIME ZONE 'Africa/Nairobi')) AS day,
+        COALESCE(SUM(cs.amount_paid), 0) AS credit_settled
+      FROM credit_settlements cs
+      JOIN credits c ON cs.credit_id = c.id
+      WHERE TO_CHAR(cs.created_at AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+        AND c.status IN ('FullySettled', 'PartiallySettled')
+      GROUP BY EXTRACT(DAY FROM (cs.created_at AT TIME ZONE 'Africa/Nairobi'))
+    `, [month]);
+
+    // Create a map of sales per day
+    const salesMap = new Map();
+    salesResult.rows.forEach(row => {
+      salesMap.set(parseInt(row.day), {
+        cash: Number(row.cash),
+        card: Number(row.card),
+        momo: Number(row.momo)
+      });
+    });
+
+    // Create a map of credit settlements per day
+    const creditMap = new Map();
+    creditResult.rows.forEach(row => {
+      creditMap.set(parseInt(row.day), Number(row.credit_settled));
+    });
+
+    // Get the last day of the month
+    const [year, monthNum] = month.split('-');
+    const lastDay = new Date(parseInt(year), parseInt(monthNum), 0).getDate();
+
+    // Build response for all days in the month
+    const response = [];
+    for (let day = 1; day <= lastDay; day++) {
+      const sales = salesMap.get(day) || { cash: 0, card: 0, momo: 0 };
+      const credit = creditMap.get(day) || 0;
+      response.push({
+        date: day,
+        cash: sales.cash,
+        card: sales.card,
+        momo: sales.momo,
+        credit_settled: credit,
+        gross: sales.cash + sales.card + sales.momo
+      });
+    }
+
+    console.log(`✅ Retrieved ${response.length} days for ${month}`);
+    res.json(response);
+  } catch (err) {
+    console.error("Monthly revenue query failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+// GET /api/overview/monthly-revenue
+router.get("/monthly-revenue", async (req, res) => {
+  const { month } = req.query;
+  if (!month) {
+    return res.status(400).json({ error: "Month parameter is required (YYYY-MM)" });
+  }
+  
+  console.log(`🔵 Fetching revenue for month: ${month}`);
+  
   try {
     const result = await pool.query(`
-      SELECT
-        TO_CHAR(DATE(paid_at AT TIME ZONE 'Africa/Kampala'), 'YYYY-MM-DD') AS day,
-        SUM(CASE WHEN LOWER(payment_method) = 'cash'        THEN total ELSE 0 END) AS cash,
-        SUM(CASE WHEN LOWER(payment_method) = 'card'        THEN total ELSE 0 END) AS card,
-        SUM(CASE WHEN LOWER(payment_method) = 'momo-mtn'    THEN total ELSE 0 END) AS momo_mtn,
-        SUM(CASE WHEN LOWER(payment_method) = 'momo-airtel' THEN total ELSE 0 END) AS momo_airtel,
-        SUM(total) AS gross
-      FROM orders
-      WHERE
-        status = 'Paid'
-        AND paid_at IS NOT NULL
-        AND paid_at AT TIME ZONE 'Africa/Kampala' >= CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Kampala' - INTERVAL '6 days'
-      GROUP BY TO_CHAR(DATE(paid_at AT TIME ZONE 'Africa/Kampala'), 'YYYY-MM-DD')
-      ORDER BY day ASC
-    `);
-
-    const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-    // Build 7-day map using local time (Kampala = UTC+3)
-    const dayMap = {};
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-      // Convert to Kampala local date (UTC+3)
-      const kampala = new Date(d.getTime() + 3 * 60 * 60 * 1000);
-      const iso = [
-        kampala.getUTCFullYear(),
-        String(kampala.getUTCMonth() + 1).padStart(2, "0"),
-        String(kampala.getUTCDate()).padStart(2, "0"),
-      ].join("-");
-      dayMap[iso] = {
-        date:        DAY_LABELS[kampala.getUTCDay()],
-        full_date:   iso,
-        cash:        0,
-        card:        0,
-        momo_mtn:    0,
-        momo_airtel: 0,
-        gross:       0,
-      };
-    }
-
-    // Merge DB rows — row.day is already a plain string "YYYY-MM-DD" from TO_CHAR
-    for (const row of result.rows) {
-      const iso = String(row.day);
-      if (dayMap[iso]) {
-        dayMap[iso].cash        = Number(row.cash        || 0);
-        dayMap[iso].card        = Number(row.card        || 0);
-        dayMap[iso].momo_mtn    = Number(row.momo_mtn    || 0);
-        dayMap[iso].momo_airtel = Number(row.momo_airtel || 0);
-        dayMap[iso].gross       = Number(row.gross       || 0);
-      }
-    }
-
-    res.json(Object.values(dayMap));
-
+      SELECT 
+        EXTRACT(DAY FROM summary_date) as day,
+        COALESCE(total_cash, 0) as cash,
+        COALESCE(total_card, 0) as card,
+        COALESCE(total_mtn + total_airtel, 0) as momo,
+        COALESCE(total_settled_credits, 0) as credit_settled,
+        COALESCE(total_gross, 0) as gross
+      FROM daily_summary 
+      WHERE TO_CHAR(summary_date, 'YYYY-MM') = $1
+      ORDER BY summary_date ASC
+    `, [month]);
+    
+    const response = result.rows.map(row => ({
+      date: row.day,
+      cash: Number(row.cash),
+      card: Number(row.card),
+      momo: Number(row.momo),
+      credit_settled: Number(row.credit_settled),
+      gross: Number(row.gross)
+    }));
+    
+    console.log(`✅ Retrieved ${response.length} days for ${month}`);
+    res.json(response);
+    
   } catch (err) {
-    console.error("Weekly revenue query failed:", err);
-    res.status(500).json({ error: "Failed to fetch weekly revenue" });
+    console.error("Monthly revenue query failed:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

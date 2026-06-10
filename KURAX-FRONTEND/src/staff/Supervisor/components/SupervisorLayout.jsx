@@ -15,11 +15,11 @@ import API_URL from "../../../config/api";
 
 // ── MENU CONFIGURATION (Shift Removed) ──────────────────────────────────────
 const SUPERVISOR_MENU = [
-  { id: "order",   label: "TAKE ORDER",         icon: <ClipboardList size={20} /> },
-  { id: "manage", label: "MANAGE ORDER",       icon: <History size={20} /> },
-   { id: "tables",  label: "MANAGE TABLE",       icon: <LayoutGrid size={20} /> },
-  { id: "status",  label: "VIEW ORDER STATUS",   icon: <Clock size={20} /> },
-  { id: "targets", label: "STAFF TARGETS",       icon: <Target size={20} /> },
+  { id: "order",   label: "TAKE ORDER",        icon: ClipboardList },
+  { id: "manage",  label: "MANAGE ORDER",      icon: History },
+  { id: "tables",  label: "MANAGE TABLE",      icon: LayoutGrid },
+  { id: "status",  label: "VIEW ORDER STATUS", icon: Clock },
+  { id: "targets", label: "STAFF TARGETS",     icon: Target },
 ];
 
 export default function SupervisorLayout() {

@@ -45,7 +45,6 @@ router.get('/', async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. STAFF ACTIVATION
-// ─────────────────────────────────────────────────────────────────────────────
 router.post('/activate', async (req, res) => {
   const { name, email, pin, role } = req.body;
 

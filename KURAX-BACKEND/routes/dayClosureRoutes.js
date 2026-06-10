@@ -25,6 +25,7 @@ router.post('/close-day', async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Archive daily summary into day_closings
     const archiveResult = await client.query(`
       INSERT INTO day_closings (
         closing_date, recorded_by, gross, cash, mtn, airtel, card, credit, order_count, 
@@ -56,6 +57,7 @@ router.post('/close-day', async (req, res) => {
         closed_at = NOW()
     `, [closingDate, actor, final_cash || 0, final_card || 0, final_mtn || 0, final_airtel || 0, final_gross || 0, notes || '']);
 
+    // Reset daily summary for this date (zero totals, mark as closed)
     await client.query(`
       INSERT INTO daily_summary (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, total_credit, total_mixed, order_count, day_closed, closed_by, closed_at, created_at, updated_at)
       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, true, $2, NOW(), NOW(), NOW())
@@ -74,18 +76,19 @@ router.post('/close-day', async (req, res) => {
         updated_at = NOW()
     `, [closingDate, actor]);
 
+    // Archive orders: set both day_cleared AND is_archived = true
     const ordersResult = await client.query(`
       UPDATE orders
       SET day_cleared = true,
-          shift_cleared = true,
+          is_archived = true,
           updated_at = NOW()
       WHERE day_cleared = false
         AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') <= $1
       RETURNING id
     `, [closingDate]);
-    
     const clearedOrdersCount = ordersResult.rowCount;
 
+    // Clear kitchen tickets
     const ticketsResult = await client.query(`
       UPDATE kitchen_tickets
       SET cleared_by_kitchen = true,
@@ -96,9 +99,9 @@ router.post('/close-day', async (req, res) => {
         AND ticket_date <= $2
       RETURNING id
     `, [actor, closingDate]);
-    
     const clearedTicketsCount = ticketsResult.rowCount;
 
+    // Clear cashier queue (shift cleared)
     await client.query(`
       UPDATE cashier_queue
       SET shift_cleared = true,
@@ -107,6 +110,7 @@ router.post('/close-day', async (req, res) => {
         AND DATE(created_at AT TIME ZONE 'Africa/Nairobi') <= $1
     `, [closingDate]);
 
+    // Expire pending void requests
     await client.query(`
       UPDATE void_requests
       SET status = 'Expired',
@@ -116,6 +120,7 @@ router.post('/close-day', async (req, res) => {
         AND DATE(created_at AT TIME ZONE 'Africa/Nairobi') <= $2
     `, [actor, closingDate]);
 
+    // Reset all tables to Available
     await client.query(`
       UPDATE tables
       SET status = 'Available',
@@ -162,7 +167,7 @@ router.post('/close-day', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. GET DAY CLOSING HISTORY
+// 2. GET DAY CLOSING HISTORY (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/closing-history', async (req, res) => {
   const { limit = 90, from, to } = req.query;
@@ -204,7 +209,7 @@ router.get('/closing-history', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. GET DAY STATUS
+// 3. GET DAY STATUS (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/day-status', async (req, res) => {
   const date = req.query.date || kampalaDate();
@@ -249,7 +254,7 @@ router.get('/day-status', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. GET CURRENT DAY TOTALS
+// 4. GET CURRENT DAY TOTALS (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/current-day-totals', async (req, res) => {
   const today = kampalaDate();
@@ -294,7 +299,7 @@ router.get('/current-day-totals', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. REOPEN DAY - Restore a previously closed day
+// 5. REOPEN DAY - Restore a previously closed day (also restore is_archived = false)
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/reopen-day', async (req, res) => {
   const { date, reopened_by, reason } = req.body;
@@ -346,9 +351,11 @@ router.post('/reopen-day', async (req, res) => {
         closedDay.order_count
       ]);
       
+      // Restore orders: set day_cleared = false AND is_archived = false
       await client.query(`
         UPDATE orders
         SET day_cleared = false,
+            is_archived = false,
             updated_at = NOW()
         WHERE DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
           AND day_cleared = true
@@ -411,7 +418,7 @@ router.post('/reopen-day', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. GET CLOSED DAYS LIST
+// 6. GET CLOSED DAYS LIST (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/closed-days', async (req, res) => {
   const { limit = 30 } = req.query;
@@ -445,7 +452,7 @@ router.get('/closed-days', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. START BRAND NEW DAY
+// 7. START BRAND NEW DAY (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/start-new-day', async (req, res) => {
   const { date, started_by, notes } = req.body;
@@ -505,6 +512,7 @@ router.post('/start-new-day', async (req, res) => {
       await client.query(`
         UPDATE orders
         SET day_cleared = false,
+            is_archived = false,
             updated_at = NOW()
         WHERE DATE(timestamp AT TIME ZONE 'Africa/Nairobi') = $1
       `, [targetDate]);
@@ -550,7 +558,7 @@ router.post('/start-new-day', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. 24-HOUR AUTO-RESET CHECK
+// 8. 24-HOUR AUTO-RESET CHECK (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/auto-reset', async (req, res) => {
   const today = kampalaDate();

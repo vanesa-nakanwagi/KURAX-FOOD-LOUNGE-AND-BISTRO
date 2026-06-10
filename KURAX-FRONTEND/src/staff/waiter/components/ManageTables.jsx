@@ -25,13 +25,40 @@ function fmtUGX(n) {
 
 function fmtLargeNumber(n) {
   const num = Number(n || 0);
-  if (num >= 1_000_000) {
-    return `UGX ${(num / 1_000_000).toFixed(1)}M`;
-  }
-  if (num >= 1_000) {
-    return `UGX ${(num / 1_000).toFixed(0)}K`;
-  }
+  if (num >= 1_000_000) return `UGX ${(num / 1_000_000).toFixed(1)}M`;
+  if (num >= 1_000) return `UGX ${(num / 1_000).toFixed(0)}K`;
   return `UGX ${num.toLocaleString()}`;
+}
+
+// ─── PENDING PAYMENT PERSISTENCE ─────────────────────────────────────────────
+const PENDING_LS_KEY   = "waiter_pending_payments_v2";
+const PENDING_TTL_MS   = 4 * 60 * 60 * 1000; // 4 hours
+
+function pendingTableKey(tableName) {
+  return `pending_table_${String(tableName).trim().toUpperCase()}`;
+}
+function pendingItemKey(tableName, itemName) {
+  return `pending_item_${String(tableName).trim().toUpperCase()}_${String(itemName).trim()}`;
+}
+
+function loadPendingFromLS() {
+  try {
+    const raw = localStorage.getItem(PENDING_LS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    const now = Date.now();
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([, ts]) => now - ts < PENDING_TTL_MS)
+    );
+  } catch {
+    return {};
+  }
+}
+
+function savePendingToLS(map) {
+  try {
+    localStorage.setItem(PENDING_LS_KEY, JSON.stringify(map));
+  } catch {}
 }
 
 // ─── PAYMENT METHODS ─────────────────────────────────────────────────────────
@@ -47,7 +74,7 @@ const PAY_METHODS = [
   { key: "Credit",      label: "Credit",      icon: <BookOpen size={20}/>,   color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/30" },
 ];
 
-// ─── PAY MODAL (Single Payment) ───────────────────────────────────────────────
+// ─── PAY MODAL ────────────────────────────────────────────────────────────────
 function PayModal({ target, onClose, onSend }) {
   const [method,      setMethod]      = useState(null);
   const [creditName,  setCreditName]  = useState("");
@@ -58,10 +85,9 @@ function PayModal({ target, onClose, onSend }) {
   const isItem   = target?.type === "item";
   const amount   = isItem
     ? Number(target?.item?.price || 0) * Number(target?.item?.quantity || 1)
-    : Number(target?.total || 0);
-  const label    = isItem
-    ? (target?.item?.name || "Item")
-    : `Full Table · ${target?.tableName || ""}`;
+    : Number(target?.payableTotal ?? target?.total ?? 0);
+
+  const label    = isItem ? (target?.item?.name || "Item") : `Full Table · ${target?.tableName || ""}`;
   const isMomo   = method === "Momo-MTN" || method === "Momo-Airtel";
   const isCredit = method === "Credit";
   const canSend  = method && (!isCredit || (creditName.trim() && creditPhone.trim()));
@@ -96,14 +122,10 @@ function PayModal({ target, onClose, onSend }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm px-2 pb-0 sm:pb-4">
       <div className="w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl border border-yellow-200 shadow-xl overflow-hidden max-h-[90vh] overflow-y-auto">
-        {/* Yellow top bar */}
         <div className="h-1 bg-gradient-to-r from-yellow-500 to-yellow-600" />
-        
         <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-4 sm:px-6 pt-4 sm:pt-6 pb-4 border-b border-yellow-100">
           <div className="min-w-0 flex-1">
-            <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">
-              {isItem ? "Item Payment" : "Table Payment"} · {target?.tableName}
-            </p>
+            <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">{isItem ? "Item Payment" : "Table Payment"} · {target?.tableName}</p>
             <h2 className="text-base sm:text-lg font-medium text-yellow-900 uppercase tracking-tight leading-tight truncate">{label}</h2>
             <p className="text-zinc-600 text-xs mt-0.5 font-bold">UGX {amount.toLocaleString()}</p>
           </div>
@@ -111,7 +133,6 @@ function PayModal({ target, onClose, onSend }) {
             <X size={16} className="text-yellow-700" />
           </button>
         </div>
-        
         <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
           <div>
             <p className="text-[10px] font-semibold text-yellow-900 uppercase tracking-widest mb-3">Select Payment Method</p>
@@ -126,7 +147,6 @@ function PayModal({ target, onClose, onSend }) {
               ))}
             </div>
           </div>
-          
           {isMomo && MOMO_CODES[method] && (
             <div className="bg-yellow-50/30 rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-yellow-200 space-y-2">
               <p className="text-[9px] font-black text-yellow-700 uppercase tracking-widest mb-2">Payment Instructions</p>
@@ -140,7 +160,6 @@ function PayModal({ target, onClose, onSend }) {
               </div>
             </div>
           )}
-          
           {isCredit && (
             <div className="space-y-3">
               <p className="text-[10px] font-black text-yellow-700 uppercase tracking-widest">Client Details (Required)</p>
@@ -175,14 +194,10 @@ function PayModal({ target, onClose, onSend }) {
               </div>
             </div>
           )}
-          
           <div className="bg-yellow-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex justify-between items-center border border-yellow-200">
-            <span className="text-[10px] sm:text-[11px] font-semibold text-yellow-700 uppercase tracking-widest">
-              {isItem ? "Item Total" : "Table Total"}
-            </span>
+            <span className="text-[10px] sm:text-[11px] font-semibold text-yellow-700 uppercase tracking-widest">{isItem ? "Item Total" : "Table Total"}</span>
             <span className="font-black text-yellow-900 text-lg sm:text-xl">UGX {amount.toLocaleString()}</span>
           </div>
-          
           <button disabled={!canSend || sending} onClick={handleSend}
             className={`w-full py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-md
               ${canSend && !sending ? "bg-yellow-500 text-black hover:bg-yellow-600 active:scale-[0.98] shadow-yellow-500/30" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}>
@@ -193,6 +208,7 @@ function PayModal({ target, onClose, onSend }) {
     </div>
   );
 }
+
 // ─── VOID MODAL ──────────────────────────────────────────────────────────────
 function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
   const [reason, setReason]   = useState("");
@@ -229,7 +245,6 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
               <X size={14} className="text-gray-500" />
             </button>
           </div>
-          
           <div className="bg-gray-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 mb-4 border border-gray-200">
             <div className="flex justify-between items-center gap-2">
               <span className="text-gray-900 font-black text-xs sm:text-sm truncate">{item?.name}</span>
@@ -237,19 +252,16 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
             </div>
             <p className="text-gray-500 text-[9px] sm:text-[10px] mt-1">UGX {Number(item?.price || 0).toLocaleString()}</p>
           </div>
-          
           <textarea 
             value={reason} 
             onChange={e => setReason(e.target.value)}
             placeholder="Reason for void request…"
             className="w-full bg-white border border-gray-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400/30 resize-none h-16 sm:h-20 mb-4" 
           />
-          
           <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-xl mb-4">
             <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shrink-0" />
             <p className="text-[8px] sm:text-[9px] font-black text-yellow-700 uppercase tracking-widest">Request will be sent to accountant for approval</p>
           </div>
-          
           <div className="grid grid-cols-2 gap-3">
             <button 
               onClick={onClose}
@@ -271,7 +283,7 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
   );
 }
 
-// Helper to get credit status display
+// ─── CREDIT STATUS HELPER (without emojis) ─────────────────────────────────────
 function getCreditStatusDisplay(credit) {
   const status = credit.status;
   const isFullySettled = status === "FullySettled" || credit.paid === true;
@@ -281,28 +293,17 @@ function getCreditStatusDisplay(credit) {
   const isPendingCashier = status === "PendingCashier";
   const isApproved = status === "Approved";
   
-  if (isFullySettled) {
-    return { label: "Settled ✓", color: "text-emerald-500", bg: "bg-emerald-500/10", icon: <CheckCircle2 size={10} /> };
-  }
-  if (isPartiallySettled) {
-    return { label: "Partially Settled", color: "text-yellow-500", bg: "bg-yellow-500/10", icon: <Clock size={10} /> };
-  }
-  if (isRejected) {
-    return { label: "Rejected ✗", color: "text-red-500", bg: "bg-red-500/10", icon: <XCircle size={10} /> };
-  }
-  if (isPendingManager || isPendingCashier) {
-    return { label: "Pending Approval", color: "text-orange-500", bg: "bg-orange-500/10", icon: <Clock size={10} className="animate-pulse" /> };
-  }
-  if (isApproved) {
-    return { label: "Approved", color: "text-purple-500", bg: "bg-purple-500/10", icon: <CheckCircle size={10} /> };
-  }
+  if (isFullySettled) return { label: "Settled", color: "text-emerald-500", bg: "bg-emerald-500/10", icon: <CheckCircle2 size={10} /> };
+  if (isPartiallySettled) return { label: "Partially Settled", color: "text-yellow-500", bg: "bg-yellow-500/10", icon: <Clock size={10} /> };
+  if (isRejected) return { label: "Rejected", color: "text-red-500", bg: "bg-red-500/10", icon: <XCircle size={10} /> };
+  if (isPendingManager || isPendingCashier) return { label: "Pending Approval", color: "text-orange-500", bg: "bg-orange-500/10", icon: <Clock size={10} className="animate-pulse" /> };
+  if (isApproved) return { label: "Approved", color: "text-purple-500", bg: "bg-purple-500/10", icon: <CheckCircle size={10} /> };
   return { label: "Outstanding", color: "text-purple-400", bg: "bg-purple-500/10", icon: <BookOpen size={10} /> };
 }
 
-// ─── CREDITED ITEMS PANEL ────────────────────────────────────────────────────
+// ─── CREDITED ITEMS PANEL ─────────────────────────────────────────────────────
 function CreditedItemsPanel({ creditedItems, theme }) {
   const isDark = theme === "dark";
-  
   const myCredits = creditedItems || [];
   
   const creditStats = useMemo(() => {
@@ -310,17 +311,13 @@ function CreditedItemsPanel({ creditedItems, theme }) {
     const partiallySettled = myCredits.filter(c => c.status === "PartiallySettled");
     const approved = myCredits.filter(c => c.status === "Approved");
     const rejected = myCredits.filter(c => c.status === "Rejected");
-    
     const fullySettledAmount = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
     const partiallySettledPaidAmount = partiallySettled.reduce((s, c) => s + Number(c.amount_paid || 0), 0);
     const settledAmount = fullySettledAmount + partiallySettledPaidAmount;
-    
     const approvedAmount = approved.reduce((s, c) => s + Number(c.amount || 0), 0);
     const partiallySettledRemaining = partiallySettled.reduce((s, c) => s + Number(c.balance || c.amount || 0), 0);
     const outstandingAmount = approvedAmount + partiallySettledRemaining;
-    
     const rejectedAmount = rejected.reduce((s, c) => s + Number(c.amount || 0), 0);
-    
     return {
       settled: { count: settled.length + partiallySettled.length, amount: settledAmount },
       outstanding: { count: approved.length + partiallySettled.length, amount: outstandingAmount },
@@ -348,7 +345,6 @@ function CreditedItemsPanel({ creditedItems, theme }) {
   return (
     <div className="space-y-4 sm:space-y-6 pb-6 sm:pb-8">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-
         {/* Settled Credits */}
         <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
           <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
@@ -385,7 +381,6 @@ function CreditedItemsPanel({ creditedItems, theme }) {
             })}
           </div>
         </div>
-
         {/* Outstanding Credits */}
         <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
           <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
@@ -419,7 +414,6 @@ function CreditedItemsPanel({ creditedItems, theme }) {
             })}
           </div>
         </div>
-
         {/* Rejected Credits */}
         <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
           <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
@@ -453,8 +447,7 @@ function CreditedItemsPanel({ creditedItems, theme }) {
           </div>
         </div>
       </div>
-
-      {/* Pending approvals section */}
+      {/* Pending approvals */}
       {myCredits.filter(c => c.status === "PendingCashier" || c.status === "PendingManagerApproval").length > 0 && (
         <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
           <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
@@ -493,19 +486,13 @@ function CreditedItemsPanel({ creditedItems, theme }) {
 // ─── RECENTLY PAID ITEMS PANEL ────────────────────────────────────────────────
 function RecentlyPaidItemsPanel({ orders, theme }) {
   const isDark = theme === "dark";
-  
   const paidItems = useMemo(() => {
     const items = [];
     orders.forEach(order => {
       let orderItems = order.items || [];
       if (typeof orderItems === 'string') {
-        try {
-          orderItems = JSON.parse(orderItems);
-        } catch {
-          orderItems = [];
-        }
+        try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
       }
-      
       orderItems.forEach(item => {
         if (item._rowPaid === true || item.paid_at) {
           items.push({
@@ -523,7 +510,6 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
         }
       });
     });
-    
     items.sort((a, b) => new Date(b.paid_at) - new Date(a.paid_at));
     return items;
   }, [orders]);
@@ -535,9 +521,7 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
           <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center ${isDark ? "bg-emerald-500/10" : "bg-emerald-50"}`}>
             <CheckCircle2 size={20} className="text-emerald-400" />
           </div>
-          <p className={`text-[10px] sm:text-[11px] font-black uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-            No paid items yet
-          </p>
+          <p className={`text-[10px] sm:text-[11px] font-black uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>No paid items yet</p>
           <p className="text-[8px] sm:text-[9px] text-zinc-400">Items paid by cashier will appear here</p>
         </div>
       </div>
@@ -547,38 +531,21 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
   return (
     <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-zinc-100"}`}>
       <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 flex-wrap">
-        <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-emerald-500/10">
-          <CheckCircle2 size={14} className="text-emerald-500" />
-        </div>
-        <h3 className={`text-xs sm:text-sm font-semibold uppercase tracking-tighter ${isDark ? "text-white" : "text-yellow-900"}`}>
-          Paid Items History
-        </h3>
-        <span className="ml-auto text-[8px] sm:text-[10px] font-medium text-emerald-500 whitespace-nowrap">
-          Total: {paidItems.length} items
-        </span>
+        <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-emerald-500/10"><CheckCircle2 size={14} className="text-emerald-500" /></div>
+        <h3 className={`text-xs sm:text-sm font-semibold uppercase tracking-tighter ${isDark ? "text-white" : "text-yellow-900"}`}>Paid Items History</h3>
+        <span className="ml-auto text-[8px] sm:text-[10px] font-medium text-emerald-500 whitespace-nowrap">Total: {paidItems.length} items</span>
       </div>
-      
       <div className="space-y-2 sm:space-y-3 max-h-96 overflow-y-auto">
         {paidItems.map((item, idx) => {
           const date = new Date(item.paid_at);
-          const dateStr = date.toLocaleDateString("en-GB", { 
-            day: "2-digit", 
-            month: "short", 
-            hour: "2-digit", 
-            minute: "2-digit" 
-          });
-          
+          const dateStr = date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
           return (
             <div key={idx} className={`p-2 sm:p-3 rounded-lg sm:rounded-xl ${isDark ? "bg-zinc-800/50" : "bg-zinc-50"}`}>
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className={`text-[10px] sm:text-[11px] font-medium break-words ${isDark ? "text-white" : "text-yellow-900"}`}>
-                      {item.name}
-                    </p>
-                    <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 text-[6px] sm:text-[7px] font-black uppercase">
-                      Paid
-                    </span>
+                    <p className={`text-[10px] sm:text-[11px] font-medium break-words ${isDark ? "text-white" : "text-yellow-900"}`}>{item.name}</p>
+                    <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 text-[6px] sm:text-[7px] font-black uppercase">Paid</span>
                   </div>
                   <p className={`text-[8px] sm:text-[9px] font-bold uppercase mt-1 ${isDark ? "text-zinc-900" : "text-zinc-600"}`}>
                     Table: {item.table_name || "WALK-IN"} · Order #{String(item.order_id).slice(-6)}
@@ -589,9 +556,7 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-[10px] sm:text-[11px] font-black text-emerald-500 whitespace-nowrap">
-                    {fmtUGX(item.total)}
-                  </p>
+                  <p className="text-[10px] sm:text-[11px] font-black text-emerald-500 whitespace-nowrap">{fmtUGX(item.total)}</p>
                   <p className="text-[7px] sm:text-[8px] text-zinc-500 mt-1">{dateStr}</p>
                 </div>
               </div>
@@ -603,7 +568,7 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
   );
 }
 
-// ─── ORDER CARD ──────────────────────────────────────────────────────────────
+// ─── ORDER CARD (with paid item badge, no emojis) ─────────────────────────────
 function OrderCard({ 
   order, 
   theme, 
@@ -613,104 +578,91 @@ function OrderCard({
   onPayItem,
   onVoidItem,
   onMarkTablePaid,
+  tablePaymentPending,
+  isPaying,
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [isSendingPayment, setIsSendingPayment] = useState(false);
   const navigate = useNavigate();
   const isDark = theme === "dark";
 
   if (!order) return null;
 
-  const isReady         = order.status === "Ready";
-  const isServed        = order.status === "Served";
-  const hasPendingVoid   = (order.items || []).some(item => item.voidRequested === true && item.voidProcessed !== true);
+  const isReady  = order.status === "Ready";
+  const isServed = order.status === "Served";
+
+  const hasPendingVoid    = (order.items || []).some(item => item.voidRequested === true && item.voidProcessed !== true);
   const hasPendingPayment = (order.items || []).some(item => item.paymentRequested === true && !item._rowPaid);
 
   const handleAddMore = () => {
-    navigate('/staff/waiter/menu', { 
-      state: { 
-        tableName: order.tableName, 
-        isAppending: true 
-      } 
-    });
+    navigate('/staff/waiter/menu', { state: { tableName: order.tableName, isAppending: true } });
   };
 
-  const payableItems = (order.items || []).filter(item => {
-    return !item._rowPaid && item.status !== "VOIDED" && !item.voidProcessed && !item.paymentRequested && !item.creditRequested;
-  });
-
-  const allItemsVoided = order.items?.length > 0 && order.items.every(
-    item => item.voidProcessed === true || item.status === "VOIDED"
+  const payableItems = (order.items || []).filter(item =>
+    !item._rowPaid && item.status !== "VOIDED" && !item.voidProcessed && !item.paymentRequested && !item.creditRequested
   );
 
-  const allItemsPaidOrRequested = order.items?.length > 0 && order.items.every(
-    item => item._rowPaid === true || item.paymentRequested === true || item.creditRequested === true || item.status === "VOIDED" || item.voidProcessed === true
-  );
+  const allItemsVoided = order.items?.length > 0 &&
+    order.items.every(item => item.voidProcessed === true || item.status === "VOIDED");
 
-  const nonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
-  const allItemsPaid = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
-  const hasAnyPaidItems = nonVoidedItems.some(item => item._rowPaid === true);
+  const allItemsPaidOrRequested = order.items?.length > 0 &&
+    order.items.every(item =>
+      item._rowPaid === true || item.paymentRequested === true || item.creditRequested === true ||
+      item.status === "VOIDED" || item.voidProcessed === true
+    );
+
+  const nonVoidedItems    = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
+  const allItemsPaid      = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
+  const hasAnyPaidItems   = nonVoidedItems.some(item => item._rowPaid === true);
   const hasAnyCreditItems = nonVoidedItems.some(item => item.creditRequested === true);
-  const hasAnyPendingItems = nonVoidedItems.some(item => !item._rowPaid && !item.paymentRequested && !item.creditRequested);
-  const hasAnyPaymentRequested = nonVoidedItems.some(item => item.paymentRequested === true);
+  const hasAnyPendingItems       = nonVoidedItems.some(item => !item._rowPaid && !item.paymentRequested && !item.creditRequested);
+  const hasAnyPaymentRequested   = nonVoidedItems.some(item => item.paymentRequested === true);
 
-  const hasTablePaymentRequested = order.orderIds?.some(orderId => 
-    localStorage.getItem(`payment_sent_${orderId}`) === 'true'
-  ) || false;
+  const isAwaitingCashier = tablePaymentPending || hasAnyPaymentRequested;
 
-  // Display status pill
+  // ── Display status (no emojis) ──
   let displayStatus = order.status;
-  let displayColor = "text-zinc-400";
-  let displayBg = "bg-zinc-500/10 border-zinc-500/20";
-  let displayDot = "bg-zinc-400";
+  let displayColor  = "text-zinc-400";
+  let displayBg     = "bg-zinc-500/10 border-zinc-500/20";
+  let displayDot    = "bg-zinc-400";
+  let statusIcon    = null;
 
   if (allItemsVoided) {
-    displayStatus = "All Voided";
-    displayColor = "text-red-400";
-    displayBg = "bg-red-500/10 border-red-500/20";
-    displayDot = "bg-red-400";
+    displayStatus = "All Voided"; displayColor = "text-red-400";
+    displayBg = "bg-red-500/10 border-red-500/20"; displayDot = "bg-red-400";
+    statusIcon = <XCircle size={10} />;
   } else if (allItemsPaid) {
-    displayStatus = "Paid ✓";
-    displayColor = "text-emerald-400";
-    displayBg = "bg-emerald-500/10 border-emerald-500/20";
-    displayDot = "bg-emerald-400";
+    displayStatus = "Paid"; displayColor = "text-emerald-400";
+    displayBg = "bg-emerald-500/10 border-emerald-500/20"; displayDot = "bg-emerald-400";
+    statusIcon = <CheckCircle2 size={10} />;
   } else if (hasAnyPaidItems && hasAnyCreditItems) {
-    displayStatus = "Mixed Payment";
-    displayColor = "text-purple-400";
-    displayBg = "bg-purple-500/10 border-purple-500/20";
-    displayDot = "bg-purple-400";
+    displayStatus = "Mixed Payment"; displayColor = "text-purple-400";
+    displayBg = "bg-purple-500/10 border-purple-500/20"; displayDot = "bg-purple-400";
+    statusIcon = <CreditCard size={10} />;
   } else if (hasAnyCreditItems) {
-    displayStatus = "Credit";
-    displayColor = "text-purple-400";
-    displayBg = "bg-purple-500/10 border-purple-500/20";
-    displayDot = "bg-purple-400";
-  } else if (hasAnyPaymentRequested || hasTablePaymentRequested) {
-    displayStatus = "Awaiting Cashier";
-    displayColor = "text-yellow-500";
-    displayBg = "bg-yellow-500/10 border-yellow-500/20";
-    displayDot = "bg-yellow-400 animate-pulse";
+    displayStatus = "Credit"; displayColor = "text-purple-400";
+    displayBg = "bg-purple-500/10 border-purple-500/20"; displayDot = "bg-purple-400";
+    statusIcon = <BookOpen size={10} />;
+  } else if (isAwaitingCashier) {
+    displayStatus = "Awaiting Cashier"; displayColor = "text-yellow-500";
+    displayBg = "bg-yellow-500/10 border-yellow-500/20"; displayDot = "bg-yellow-400 animate-pulse";
+    statusIcon = <Hourglass size={10} className="animate-pulse" />;
   } else if (hasAnyPaidItems) {
-    displayStatus = "Partially Paid";
-    displayColor = "text-blue-400";
-    displayBg = "bg-blue-500/10 border-blue-500/20";
-    displayDot = "bg-blue-400";
+    displayStatus = "Partially Paid"; displayColor = "text-blue-400";
+    displayBg = "bg-blue-500/10 border-blue-500/20"; displayDot = "bg-blue-400";
+    statusIcon = <Banknote size={10} />;
   } else if (hasAnyPendingItems) {
     if (order.status === "Ready") {
-      displayStatus = "🔔 Ready!";
-      displayColor = "text-yellow-900";
-      displayBg = "bg-yellow-400/10 border-yellow-400/30";
-      displayDot = "bg-yellow-400";
+      displayStatus = "Ready"; displayColor = "text-yellow-900";
+      displayBg = "bg-yellow-400/10 border-yellow-400/30"; displayDot = "bg-yellow-400";
+      statusIcon = <Bell size={10} />;
     } else if (order.status === "Served") {
-      displayStatus = "Served";
-      displayColor = "text-blue-400";
-      displayBg = "bg-blue-500/10 border-blue-500/20";
-      displayDot = "bg-blue-400";
-    } else {
-      displayStatus = order.status;
+      displayStatus = "Served"; displayColor = "text-blue-400";
+      displayBg = "bg-blue-500/10 border-blue-500/20"; displayDot = "bg-blue-400";
+      statusIcon = <Utensils size={10} />;
     }
   }
 
-  // If table is fully paid, show simple view
+  // Collapsed view for fully paid tables
   if (allItemsPaid) {
     return (
       <div className={`rounded-xl sm:rounded-2xl border overflow-hidden transition-all duration-300 mb-4
@@ -718,16 +670,13 @@ function OrderCard({
         <div className="px-3 sm:px-4 pt-3 sm:pt-4 pb-2 sm:pb-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>
-                {order.tableName}
-              </span>
+              <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>{order.tableName}</span>
               <p className="text-[9px] sm:text-[10px] font-bold text-zinc-500">
                 {nonVoidedItems.length} items · UGX {(order.total || 0).toLocaleString()}
               </p>
             </div>
-            <div className={`flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg sm:rounded-xl border text-[7px] sm:text-[8px] font-black uppercase bg-emerald-500/10 border-emerald-500/20 text-emerald-400`}>
-              <span className="w-1 h-1 rounded-full bg-emerald-400" />
-              Paid ✓
+            <div className="flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg sm:rounded-xl border text-[7px] sm:text-[8px] font-black uppercase bg-emerald-500/10 border-emerald-500/20 text-emerald-400">
+              <CheckCircle2 size={8} /> Paid
             </div>
           </div>
         </div>
@@ -737,32 +686,28 @@ function OrderCard({
 
   return (
     <div className={`rounded-xl sm:rounded-2xl border overflow-hidden transition-all duration-300 mb-4
-      ${hasPendingVoid ? "border-orange-500/30 shadow-lg shadow-orange-500/5" : ""}
+      ${hasPendingVoid    ? "border-orange-500/30 shadow-lg shadow-orange-500/5" : ""}
       ${hasPendingPayment ? "border-yellow-500/30 shadow-lg shadow-yellow-500/5" : ""}
       ${isDark ? "bg-zinc-900 border-white/5" : "bg-white border-black/5 shadow-sm"}`}>
 
       <div className="px-3 sm:px-4 pt-3 sm:pt-4 pb-2 sm:pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>
-              {order.tableName}
-            </span>
+            <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>{order.tableName}</span>
             <p className="text-[9px] sm:text-[10px] font-bold text-zinc-900">
               {nonVoidedItems.length} items · UGX {(order.total || 0).toLocaleString()}
             </p>
           </div>
           <div className={`flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg sm:rounded-xl border text-[7px] sm:text-[8px] font-black uppercase ${displayBg} ${displayColor}`}>
-            <span className={`w-1 h-1 rounded-full ${displayDot}`} />
-            {displayStatus}
+            {statusIcon}
+            <span className="w-1 h-1 rounded-full hidden sm:inline-block" /> {displayStatus}
           </div>
         </div>
 
         <button onClick={() => setExpanded(!expanded)}
           className={`mt-3 w-full flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase tracking-widest transition-all
             ${isDark ? "bg-white/5 text-zinc-400" : "bg-zinc-50 text-yellow-900"}`}>
-          <Utensils size={10} />
-          {expanded ? "Hide Items" : "View Items"}
-          {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+          <Utensils size={10} /> {expanded ? "Hide Items" : "View Items"} {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
         </button>
       </div>
 
@@ -774,65 +719,63 @@ function OrderCard({
               Click the receipt icon on any item to pay it individually
             </p>
           </div>
-          {nonVoidedItems.map((item, i) => (
-            <div key={i} className={`p-2 sm:p-3 rounded-lg sm:rounded-xl ${isDark ? "bg-white/5" : "bg-zinc-50"}`}>
-              <div className="flex justify-between items-center gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className={`font-semibold text-yellow-900 text-[10px] sm:text-[12px] break-words`}>
-                    {item.name}
-                    {item.voidRequested && !item.voidProcessed && (
-                      <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-orange-400 font-black uppercase">(waiting accountant)</span>
-                    )}
-                    {item.paymentRequested && !item._rowPaid && (
-                      <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-yellow-400 font-black uppercase">(awaiting cashier)</span>
-                    )}
-                    {item.creditRequested && !item._rowPaid && (
-                      <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">(credit pending)</span>
-                    )}
-                    {item._rowPaid && (
-                      <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-emerald-400 font-black uppercase">✓ paid</span>
-                    )}
-                  </p>
-                  <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
-                    ×{item.quantity || 1} · UGX {Number(item.price || 0).toLocaleString()}
-                  </p>
-                </div>
-
-                <div className="flex gap-1 sm:gap-1.5 shrink-0">
-                  {isServed && !item._rowPaid && item.status !== 'VOIDED' && !item.voidProcessed && !item.paymentRequested && !item.creditRequested && !hasTablePaymentRequested && (
-                    <button
-                      onClick={() => onPayItem && onPayItem(item, order)}
-                      className="p-1.5 bg-yellow-500/10 text-yellow-500 rounded-lg hover:bg-yellow-500/20 transition-all"
-                      title="Pay this item individually">
-                      <Receipt size={11} />
-                    </button>
-                  )}
-                  {item.paymentRequested && !item._rowPaid && (
-                    <div className="p-1.5 bg-yellow-500/20 text-yellow-400 rounded-lg flex items-center gap-1">
-                      <Hourglass size={9} />
-                      <span className="text-[6px] sm:text-[8px] font-black hidden sm:inline">Awaiting</span>
+          {nonVoidedItems.map((item, i) => {
+            const isPaid = item._rowPaid === true;
+            const isPendingPayment = item.paymentRequested === true && !isPaid;
+            const isCreditRequested = item.creditRequested === true;
+            const isVoidRequested = item.voidRequested && !item.voidProcessed;
+            return (
+              <div key={i} className={`p-2 sm:p-3 rounded-lg sm:rounded-xl ${isDark ? "bg-white/5" : "bg-zinc-50"}`}>
+                <div className="flex justify-between items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-yellow-900 text-[10px] sm:text-[12px] break-words">
+                        {item.name}
+                        {isPaid && (
+                          <span className="ml-2 inline-flex items-center gap-1 text-[7px] sm:text-[8px] text-emerald-400 font-black uppercase bg-emerald-500/10 px-1.5 py-0.5 rounded-full">
+                            <CheckCircle2 size={8} /> Paid
+                          </span>
+                        )}
+                        {isVoidRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-orange-400 font-black uppercase">(waiting accountant)</span>}
+                        {isPendingPayment && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-yellow-400 font-black uppercase">(awaiting cashier)</span>}
+                        {isCreditRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">(credit pending)</span>}
+                      </p>
+                      <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
+                        ×{item.quantity || 1} · UGX {Number(item.price || 0).toLocaleString()}
+                      </p>
                     </div>
-                  )}
-                  {!item._rowPaid && item.status !== 'VOIDED' && !item.voidProcessed && !item.voidRequested && !item.paymentRequested && !item.creditRequested && !hasTablePaymentRequested && (
-                    <button
-                      onClick={() => onVoidItem && onVoidItem(item, order)}
-                      className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all"
-                      title="Request void for this item">
-                      <AlertTriangle size={11} />
-                    </button>
-                  )}
-                  {item.voidRequested && !item.voidProcessed && (
-                    <div className="p-1.5 bg-orange-500/20 text-orange-400 rounded-lg flex items-center gap-1">
-                      <Hourglass size={9} />
-                      <span className="text-[6px] sm:text-[8px] font-black hidden sm:inline">Wait</span>
-                    </div>
-                  )}
+                  </div>
+                  <div className="flex gap-1 sm:gap-1.5 shrink-0">
+                    {isServed && !isPaid && item.status !== 'VOIDED' && !item.voidProcessed &&
+                     !isPendingPayment && !isCreditRequested && !tablePaymentPending && !isPaying && (
+                      <button onClick={() => onPayItem && onPayItem(item, order)}
+                        className="p-1.5 bg-yellow-500/10 text-yellow-500 rounded-lg hover:bg-yellow-500/20 transition-all" title="Pay this item individually">
+                        <Receipt size={11} />
+                      </button>
+                    )}
+                    {isPendingPayment && (
+                      <div className="p-1.5 bg-yellow-500/20 text-yellow-400 rounded-lg flex items-center gap-1">
+                        <Hourglass size={9} /> <span className="text-[6px] sm:text-[8px] font-black hidden sm:inline">Awaiting</span>
+                      </div>
+                    )}
+                    {!isPaid && item.status !== 'VOIDED' && !item.voidProcessed &&
+                     !item.voidRequested && !isPendingPayment && !isCreditRequested &&
+                     !tablePaymentPending && !isPaying && (
+                      <button onClick={() => onVoidItem && onVoidItem(item, order)}
+                        className="p-1.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all" title="Request void for this item">
+                        <AlertTriangle size={11} />
+                      </button>
+                    )}
+                    {isVoidRequested && (
+                      <div className="p-1.5 bg-orange-500/20 text-orange-400 rounded-lg flex items-center gap-1">
+                        <Hourglass size={9} /> <span className="text-[6px] sm:text-[8px] font-black hidden sm:inline">Wait</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-          
-          {/* Show voided items */}
+            );
+          })}
           {(order.items || []).filter(item => item.status === "VOIDED" || item.voidProcessed).length > 0 && (
             <div className="mt-3 pt-2 border-t border-white/10">
               <p className="text-[7px] sm:text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-2">Voided Items</p>
@@ -840,18 +783,12 @@ function OrderCard({
                 <div key={`voided-${i}`} className="p-2 rounded-lg bg-red-500/5 border border-red-500/20">
                   <div className="flex justify-between items-center gap-2">
                     <div className="min-w-0">
-                      <p className="font-black text-[9px] sm:text-[11px] line-through text-zinc-500 break-words">
-                        {item.name}
-                      </p>
-                      <p className="text-[7px] sm:text-[8px] font-bold text-zinc-500">
-                        ×{item.quantity || 1} · UGX {Number(item.price || 0).toLocaleString()}
-                      </p>
+                      <p className="font-black text-[9px] sm:text-[11px] line-through text-zinc-500 break-words">{item.name}</p>
+                      <p className="text-[7px] sm:text-[8px] font-bold text-zinc-500">×{item.quantity || 1} · UGX {Number(item.price || 0).toLocaleString()}</p>
                     </div>
                     <span className="text-[7px] sm:text-[8px] text-red-400 font-black shrink-0">VOIDED</span>
                   </div>
-                  {item.voidReason && (
-                    <p className="text-[6px] sm:text-[7px] text-zinc-500 mt-1 break-words">Reason: {item.voidReason}</p>
-                  )}
+                  {item.voidReason && <p className="text-[6px] sm:text-[7px] text-zinc-500 mt-1 break-words">Reason: {item.voidReason}</p>}
                 </div>
               ))}
             </div>
@@ -865,51 +802,39 @@ function OrderCard({
             {isReady && !isServed && (
               <button onClick={() => onMarkServed && onMarkServed(order)}
                 className="flex-1 py-1.5 sm:py-2.5 bg-yellow-400 text-black font-black text-[8px] sm:text-[8px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5">
-                 Mark Served
+                Mark Served
               </button>
             )}
-
             <button onClick={handleAddMore}
               className="flex-1 py-1.5 sm:py-2.5 border border-yellow-500/40 text-yellow-600 font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5">
               <Plus size={12} strokeWidth={3} /> Add Items
             </button>
-
-            {isServed && !hasPendingPayment && !hasAnyPaymentRequested && !hasTablePaymentRequested && (
+            {isServed && !hasPendingPayment && !isAwaitingCashier && !isPaying && (
               <button onClick={() => onUnserve && onUnserve(order)}
                 className="py-1.5 sm:py-2.5 px-2.5 sm:px-3.5 border border-black/10 text-zinc-400 font-black text-[8px] sm:text-[10px] rounded-lg sm:rounded-xl">
-                <RotateCcw size={11}/>
+                <RotateCcw size={11} />
               </button>
             )}
           </div>
 
-          {isServed && payableItems.length > 0 && !hasPendingPayment && !hasAnyPaymentRequested && !hasTablePaymentRequested && (
-            <button 
-              onClick={() => onPayTable && onPayTable(order)}
-              disabled={isSendingPayment}
-              className={`w-full py-1.5 sm:py-2.5 font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5 shadow-lg transition-all
-                ${isSendingPayment 
-                  ? "bg-zinc-600 text-zinc-300 cursor-not-allowed" 
-                  : "bg-yellow-500 text-black hover:bg-yellow-400 active:scale-[0.98] shadow-yellow-500/20"}`}>
-              {isSendingPayment ? (
-                <><Hourglass size={11} className="animate-spin" /> Sending...</>
-              ) : (
-                <><Send size={11}/> Pay Full Table</>
-              )}
+          {isServed && payableItems.length > 0 && !hasPendingPayment && !isAwaitingCashier && !isPaying && (
+            <button onClick={() => onPayTable && onPayTable(order)}
+              className="w-full py-1.5 sm:py-2.5 bg-yellow-500 text-black font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5 shadow-lg transition-all hover:bg-yellow-400 active:scale-[0.98] shadow-yellow-500/20">
+              <Send size={11} /> Pay Full Table
             </button>
           )}
-          
-          {/* Show "Sent to Cashier" button after payment is sent */}
-          {isServed && (hasAnyPaymentRequested || hasTablePaymentRequested) && !allItemsPaid && (
+
+          {isServed && isAwaitingCashier && !allItemsPaid && (
             <div className="w-full py-1.5 sm:py-2.5 bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5">
-              <Hourglass size={11} className="animate-pulse" />
-              Sent to Cashier - Awaiting Confirmation
+              <Hourglass size={11} className="animate-pulse" /> Sent to Cashier — Awaiting Confirmation
             </div>
           )}
-          
-          {isServed && allItemsPaidOrRequested && nonVoidedItems.length > 0 && payableItems.length === 0 && !hasPendingPayment && !hasAnyPaymentRequested && !allItemsPaid && (
+
+          {isServed && allItemsPaidOrRequested && nonVoidedItems.length > 0 &&
+           payableItems.length === 0 && !hasPendingPayment && !isAwaitingCashier && !allItemsPaid && (
             <button onClick={() => onMarkTablePaid && onMarkTablePaid(order)}
               className="w-full py-1.5 sm:py-2.5 bg-emerald-500 text-black font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5 shadow-lg shadow-emerald-500/20">
-              <CheckCircle size={11}/> Mark as Paid
+              <CheckCircle size={11} /> Mark as Paid
             </button>
           )}
         </div>
@@ -918,10 +843,9 @@ function OrderCard({
   );
 }
 
-// ─── VOIDED ITEMS PANEL ──────────────────────────────────────────────────────
+// ─── VOIDED ITEMS PANEL ───────────────────────────────────────────────────────
 function VoidedItemsPanel({ voidedItems, theme }) {
   const isDark = theme === "dark";
-  
   if (!voidedItems || voidedItems.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 sm:py-28 gap-3 sm:gap-4">
@@ -936,9 +860,7 @@ function VoidedItemsPanel({ voidedItems, theme }) {
       </div>
     );
   }
-
   const totalVoided = voidedItems.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity || 1)), 0);
-
   return (
     <div className="space-y-3 sm:space-y-4 pb-6 sm:pb-8">
       <div className={`rounded-xl sm:rounded-2xl border p-3 sm:p-4 ${isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"}`}>
@@ -946,7 +868,6 @@ function VoidedItemsPanel({ voidedItems, theme }) {
         <p className="text-lg sm:text-2xl font-black text-red-400">UGX {totalVoided.toLocaleString()}</p>
         <p className={`text-[8px] sm:text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{voidedItems.length} item{voidedItems.length !== 1 ? "s" : ""} voided</p>
       </div>
-      
       <div className="space-y-2">
         <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Voided Items · {voidedItems.length}</p>
         {voidedItems.map((item, idx) => (
@@ -954,23 +875,17 @@ function VoidedItemsPanel({ voidedItems, theme }) {
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                  <span className={`font-black text-xs sm:text-sm uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"} break-words`}>{item.name}</span>
+                  <span className={`font-black text-xs sm:text-sm uppercase tracking-tight break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{item.name}</span>
                   <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[6px] sm:text-[8px] font-black uppercase">
-                    <CheckCircle size={7}/> Voided
+                    <CheckCircle size={7} /> Voided
                   </span>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-1">
                   <span className={`text-[9px] sm:text-[10px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>Table: {item.tableName}</span>
                   <span className={`text-[8px] sm:text-[9px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>· x{item.quantity || 1}</span>
                 </div>
-                {item.voidReason && (
-                  <p className={`text-[8px] sm:text-[9px] font-bold truncate ${isDark ? "text-zinc-600" : "text-zinc-400"} break-words`}>Reason: {item.voidReason}</p>
-                )}
-                {item.voidedAt && (
-                  <p className={`text-[7px] sm:text-[8px] font-bold mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
-                    {new Date(item.voidedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-                  </p>
-                )}
+                {item.voidReason && <p className={`text-[8px] sm:text-[9px] font-bold break-words ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>Reason: {item.voidReason}</p>}
+                {item.voidedAt && <p className={`text-[7px] sm:text-[8px] font-bold mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>{new Date(item.voidedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
               </div>
               <div className="text-right shrink-0">
                 <p className="text-base sm:text-lg font-black text-red-400">UGX {(Number(item.price) * Number(item.quantity || 1)).toLocaleString()}</p>
@@ -983,7 +898,7 @@ function VoidedItemsPanel({ voidedItems, theme }) {
   );
 }
 
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function OrderHistory({ onAddItems }) {
   const { orders = [], currentUser, refreshData } = useData() || {};
   const { theme } = useTheme();
@@ -1002,9 +917,62 @@ export default function OrderHistory({ onAddItems }) {
   const [payTarget,    setPayTarget]    = useState(null);
   const [voidTarget,   setVoidTarget]   = useState(null);
   const [creditsData,  setCreditsData]  = useState([]);
-  const [pendingPayments, setPendingPayments] = useState({});
+  const [isPaying,     setIsPaying]     = useState(false);
 
-  // ─── DATA FILTERING ────────────────────────────────────────────────────────
+  const [pendingPayments, setPendingPayments] = useState(() => loadPendingFromLS());
+
+  useEffect(() => {
+    savePendingToLS(pendingPayments);
+  }, [pendingPayments]);
+
+  const markPending = useCallback((key) => {
+    setPendingPayments(prev => {
+      const next = { ...prev, [key]: Date.now() };
+      savePendingToLS(next);
+      return next;
+    });
+  }, []);
+
+  const clearPending = useCallback((key) => {
+    setPendingPayments(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      savePendingToLS(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!orders || orders.length === 0) return;
+    setPendingPayments(prev => {
+      let changed = false;
+      const next = { ...prev };
+      orders.forEach(order => {
+        const tableName = (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase();
+        if (order.status === "Paid" || order.is_paid || order.isPaid) {
+          const tableKey = pendingTableKey(tableName);
+          if (next[tableKey]) { delete next[tableKey]; changed = true; }
+        }
+        let orderItems = order.items || [];
+        if (typeof orderItems === "string") {
+          try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
+        }
+        orderItems.forEach(item => {
+          if (item._rowPaid === true || item.paid_at) {
+            const itemKey = pendingItemKey(tableName, item.name);
+            if (next[itemKey]) { delete next[itemKey]; changed = true; }
+          }
+        });
+      });
+      if (changed) {
+        savePendingToLS(next);
+        return next;
+      }
+      return prev;
+    });
+  }, [orders]);
+
   const dailyStaffOrders = useMemo(() => {
     if (!currentStaffId && !currentStaffName) return [];
     return (orders || []).filter(o => {
@@ -1020,49 +988,45 @@ export default function OrderHistory({ onAddItems }) {
     });
   }, [orders, currentStaffId, currentStaffName, today]);
 
-  // ─── GROUPING ──────────────────────────────────────────────────────────────
   const groupedTableOrders = useMemo(() => {
     const groups = {};
     dailyStaffOrders.forEach(order => {
-      const key     = (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase();
-      const rowPaid = order.status === "Paid" || order.is_paid || order.isPaid;
-
+      const key      = (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase();
+      const rowPaid  = order.status === "Paid" || order.is_paid || order.isPaid;
       if (!groups[key]) {
         groups[key] = {
-          tableName:  key,
-          displayId:  order.id ? String(order.id).slice(-6) : "000000",
-          total:      0,
-          items:      [],
-          status:     order.status || "Pending",
-          timestamp:  order.timestamp || order.created_at,
-          orderIds:   [],
-          _rows:      [],
+          tableName: key,
+          displayId: order.id ? String(order.id).slice(-6) : "000000",
+          total:     0,
+          items:     [],
+          status:    order.status || "Pending",
+          timestamp: order.timestamp || order.created_at,
+          orderIds:  [],
+          _rows:     [],
         };
       }
       const g = groups[key];
       g.total += Number(order.total) || 0;
       g.orderIds.push(order.id);
       g._rows.push({ id: order.id, paid: rowPaid, total: Number(order.total) || 0 });
-      
       (order.items || []).forEach(item => {
-        g.items.push({ 
-          ...item, 
-          _orderId: order.id, 
-          _rowPaid: rowPaid,
-          voidRequested: item.voidRequested || false,
-          voidProcessed: item.voidProcessed || false,
-          paymentRequested: pendingPayments[`${order.id}_${item.name}`] || item.paymentRequested || false,
-          creditRequested: item.creditRequested || false,
-          voidReason: item.voidReason || null,
-          voidedAt: item.voidedAt || null,
-          tableName: key,
+        g.items.push({
+          ...item,
+          _orderId:         order.id,
+          _rowPaid:         rowPaid,
+          voidRequested:    item.voidRequested    || false,
+          voidProcessed:    item.voidProcessed    || false,
+          paymentRequested: item.paymentRequested ||
+                            !!pendingPayments[pendingItemKey(key, item.name)],
+          creditRequested:  item.creditRequested  || false,
+          voidReason:       item.voidReason       || null,
+          voidedAt:         item.voidedAt         || null,
+          tableName:        key,
         });
       });
-
       const rank = { Paid: 7, Served: 6, Ready: 5, Delayed: 4, Preparing: 3, Pending: 2 };
       if ((rank[order.status] || 0) > (rank[g.status] || 0)) g.status = order.status;
     });
-
     Object.values(groups).forEach(g => {
       g.items = g.items.map((item, idx) => ({ ...item, _itemIndex: idx }));
       g.total = g.items.reduce((sum, item) => {
@@ -1076,54 +1040,40 @@ export default function OrderHistory({ onAddItems }) {
   }, [dailyStaffOrders, pendingPayments]);
 
   const enrichedGroups = useMemo(() =>
-    Object.values(groupedTableOrders).map(group => {
-      const allPaid = group._rows.length > 0 && group._rows.every(r => r.paid);
-      return {
-        ...group,
-        allPaid,
-      };
-    }), [groupedTableOrders]);
+    Object.values(groupedTableOrders).map(group => ({
+      ...group,
+      allPaid: group._rows.length > 0 && group._rows.every(r => r.paid),
+      tablePaymentPending: !!pendingPayments[pendingTableKey(group.tableName)],
+    })),
+    [groupedTableOrders, pendingPayments]
+  );
 
-  // ─── COLLECT VOIDED ITEMS ─────────────────────────────────────────────────
   const voidedItemsList = useMemo(() => {
     const items = [];
     enrichedGroups.forEach(group => {
       (group.items || []).forEach(item => {
         if (item.status === "VOIDED" || item.voidProcessed === true) {
-          items.push({
-            ...item,
-            tableName: group.tableName,
-          });
+          items.push({ ...item, tableName: group.tableName });
         }
       });
     });
     return items;
   }, [enrichedGroups]);
 
-  // ─── FETCH CREDITS ────────────────────────────────────────────────────────
   const fetchCredits = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
-      if (res.ok) {
-        const data = await res.json();
-        setCreditsData(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch credits:", err);
-    }
+      if (res.ok) setCreditsData(await res.json());
+    } catch (err) { console.error("Failed to fetch credits:", err); }
   }, []);
 
-  useEffect(() => {
-    fetchCredits();
-  }, [fetchCredits, refreshData]);
+  useEffect(() => { fetchCredits(); }, [fetchCredits, refreshData]);
 
-  // ─── ACTIONS ───────────────────────────────────────────────────────────────
   const handleMarkServed = useCallback(async (order) => {
     try {
       await Promise.all((order.orderIds || []).map(id =>
         fetch(`${API_URL}/api/orders/${id}/status`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "Served" }),
         })
       ));
@@ -1136,8 +1086,7 @@ export default function OrderHistory({ onAddItems }) {
     try {
       await Promise.all((order.orderIds || []).map(id =>
         fetch(`${API_URL}/api/orders/${id}/status`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "Ready" }),
         })
       ));
@@ -1149,8 +1098,7 @@ export default function OrderHistory({ onAddItems }) {
     try {
       await Promise.all((order.orderIds || []).map(id =>
         fetch(`${API_URL}/api/orders/${id}/pay`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "Paid", payment_method: "Cash" }),
         })
       ));
@@ -1160,150 +1108,109 @@ export default function OrderHistory({ onAddItems }) {
   }, [refreshData, fetchCredits]);
 
   const handleSend = useCallback(async (payload) => {
+    const tableName = String(payload.tableName || "").trim().toUpperCase();
+    const isItemPay = payload.type === "item";
+    const lsKey = isItemPay
+      ? pendingItemKey(tableName, payload.item?.name || "")
+      : pendingTableKey(tableName);
+    markPending(lsKey);
     try {
-      // Validate credit requests
-      if (payload.method === "Credit") {
-        if (!payload.creditInfo?.name || !payload.creditInfo?.phone) {
-          alert("❌ Client name and phone number are required for credit requests!");
-          return;
-        }
+      if (payload.method === "Credit" && (!payload.creditInfo?.name || !payload.creditInfo?.phone)) {
+        alert("❌ Client name and phone number are required for credit requests!");
+        clearPending(lsKey);
+        return;
       }
-      
       const requestBody = {
-        order_ids: payload.orderIds,
-        table_name: payload.tableName,
-        label: payload.label,
-        method: payload.method,
-        amount: payload.amount,
-        is_item: payload.type === "item",
-        item: payload.item,
-        credit_info: payload.creditInfo,
+        order_ids:    payload.orderIds,
+        table_name:   payload.tableName,
+        label:        payload.label,
+        method:       payload.method,
+        amount:       payload.amount,
+        is_item:      isItemPay,
+        item:         payload.item,
+        credit_info:  payload.creditInfo,
         requested_by: currentStaffName,
-        staff_id: currentStaffId,
+        staff_id:     currentStaffId,
       };
-      
       const res = await fetch(`${API_URL}/api/cashier-ops/send-to-cashier`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
       });
-      
       if (res.ok) {
-        if (payload.type === "table") {
-          payload.orderIds.forEach(orderId => {
-            setPendingPayments(prev => ({
-              ...prev,
-              [`${orderId}_table`]: true
-            }));
-          });
-          alert(` Payment request for ${payload.tableName} (${payload.method} of UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
-        } else if (payload.type === "item" && payload.orderId) {
-          setPendingPayments(prev => ({
-            ...prev,
-            [`${payload.orderId}_${payload.item?.name}`]: true
-          }));
-          alert(` Payment request for ${payload.item?.name} (UGX ${payload.amount.toLocaleString()}) has been sent to cashier!`);
-        }
-        
+        alert("✅ Payment request sent to cashier!");
         refreshData?.();
         fetchCredits();
       } else {
-        const error = await res.json();
-        alert(` Failed to send payment: ${error.error || "Unknown error"}`);
+        const error = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          alert("⚠️ A pending request for this table/item already exists. Please wait for the cashier to confirm.");
+        } else {
+          alert(`❌ Failed to send payment: ${error.error || "Unknown error"}`);
+          clearPending(lsKey);
+        }
       }
-    } catch (err) { 
+    } catch (err) {
       console.error("Send failed:", err);
-      alert(` Network error: ${err.message}`);
+      alert(`❌ Network error: ${err.message}`);
+      clearPending(lsKey);
+    } finally {
+      setIsPaying(false);
     }
-  }, [currentStaffName, currentStaffId, refreshData, fetchCredits]);
+  }, [currentStaffName, currentStaffId, refreshData, fetchCredits, markPending, clearPending]);
 
   const handleVoidConfirm = useCallback(async (item, reason) => {
     const orderId = item?._orderId;
-    if (!orderId) {
-      console.error("No Order ID found for void request — item:", item);
-      alert("Error: Could not find order ID for this item");
-      return;
-    }
-    
+    if (!orderId) { alert("Error: Could not find order ID for this item"); return; }
     try {
       const res = await fetch(`${API_URL}/api/orders/void-item`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          order_id: orderId,
-          item_name: item.name,
-          reason: reason,
-          requested_by: currentStaffName,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: orderId, item_name: item.name, reason, requested_by: currentStaffName }),
       });
-      
       if (res.ok) {
         alert(`✅ Void request for "${item.name}" sent to accountant for approval!`);
         refreshData?.();
       } else {
         const errData = await res.json().catch(() => ({}));
-        alert(` Failed to send void request: ${errData.error || "Unknown error"}`);
+        alert(`❌ Failed to send void request: ${errData.error || "Unknown error"}`);
       }
     } catch (err) {
-      console.error("Void request network error:", err);
-      alert(`Network error: ${err.message}`);
+      alert(`❌ Network error: ${err.message}`);
     }
   }, [currentStaffName, refreshData]);
 
-  // ─── FILTERING ─────────────────────────────────────────────────────────────
   const filteredOrders = useMemo(() =>
     enrichedGroups.filter(g => {
       const matchSearch = g.tableName.toLowerCase().includes(searchQuery.toLowerCase());
-      const hasNonVoidedItems = (g.items || []).some(i => i.status !== "VOIDED" && !i.voidProcessed);
-      
-      const allNonVoidedItemsPaid = (g.items || [])
-        .filter(i => i.status !== "VOIDED" && !i.voidProcessed)
-        .every(item => item._rowPaid === true);
-      
-      const hasAnyPaidItems = (g.items || []).some(item => item._rowPaid === true);
-      const hasAnyCreditItems = (g.items || []).some(item => item.creditRequested === true);
-      
-      const hasCreditOrderStatus = g.orderIds?.some(orderId => {
-        const order = orders.find(o => o.id === orderId);
-        return order?.status === "Credit" || order?.payment_method === "Credit";
+      const nonVoided   = (g.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
+      const allPaid     = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
+      const hasAnyPaid  = nonVoided.some(i => i._rowPaid === true);
+      const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
+      const hasCreditOrder = g.orderIds?.some(id => {
+        const o = orders.find(x => x.id === id);
+        return o?.status === "Credit" || o?.payment_method === "Credit";
       }) || false;
-      
-      const isLiveGroup = !hasAnyPaidItems && !hasAnyCreditItems && !hasCreditOrderStatus && hasNonVoidedItems;
-      const isServedGroup = g.status === "Served" && !allNonVoidedItemsPaid && hasNonVoidedItems;
-      
+      const isLive   = !hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0;
+      const isServed = g.status === "Served" && !allPaid && nonVoided.length > 0;
       let matchTab = false;
       switch (activeTab) {
-        case "Live":
-          matchTab = isLiveGroup && hasNonVoidedItems;
-          break;
-        case "Served":
-          matchTab = isServedGroup;
-          break;
-        case "Paid":
-          matchTab = false;
-          break;
-        default:
-          matchTab = false;
+        case "Live":   matchTab = isLive && nonVoided.length > 0; break;
+        case "Served": matchTab = isServed; break;
+        default:       matchTab = false;
       }
       return matchSearch && matchTab;
-    }), [enrichedGroups, searchQuery, activeTab, orders]);
+    }),
+    [enrichedGroups, searchQuery, activeTab, orders]
+  );
 
   const totalPaidItemsCount = useMemo(() => {
     let count = 0;
     orders.forEach(order => {
       let orderItems = order.items || [];
-      if (typeof orderItems === 'string') {
-        try {
-          orderItems = JSON.parse(orderItems);
-        } catch {
-          orderItems = [];
-        }
+      if (typeof orderItems === "string") {
+        try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
       }
-      orderItems.forEach(item => {
-        if (item._rowPaid === true || item.paid_at) {
-          count++;
-        }
-      });
+      orderItems.forEach(item => { if (item._rowPaid === true || item.paid_at) count++; });
     });
     return count;
   }, [orders]);
@@ -1311,34 +1218,24 @@ export default function OrderHistory({ onAddItems }) {
   const counts = useMemo(() => {
     const acc = { Live: 0, Served: 0, Paid: totalPaidItemsCount, Credits: creditsData.length, Voided: voidedItemsList.length };
     enrichedGroups.forEach(g => {
-      const hasNonVoidedItems = (g.items || []).some(i => i.status !== "VOIDED" && !i.voidProcessed);
-      
-      const allNonVoidedItemsPaid = (g.items || [])
-        .filter(i => i.status !== "VOIDED" && !i.voidProcessed)
-        .every(item => item._rowPaid === true);
-      
-      const hasAnyPaidItems = (g.items || []).some(item => item._rowPaid === true);
-      const hasAnyCreditItems = (g.items || []).some(item => item.creditRequested === true);
-      
-      const hasCreditOrderStatus = g.orderIds?.some(orderId => {
-        const order = orders.find(o => o.id === orderId);
-        return order?.status === "Credit" || order?.payment_method === "Credit";
+      const nonVoided  = (g.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
+      const allPaid    = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
+      const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
+      const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
+      const hasCreditOrder = g.orderIds?.some(id => {
+        const o = orders.find(x => x.id === id);
+        return o?.status === "Credit" || o?.payment_method === "Credit";
       }) || false;
-      
-      const isLiveGroup = !hasAnyPaidItems && !hasAnyCreditItems && !hasCreditOrderStatus && hasNonVoidedItems;
-      const isServedGroup = g.status === "Served" && !allNonVoidedItemsPaid && hasNonVoidedItems;
-      
-      if (isLiveGroup && hasNonVoidedItems) acc.Live++;
-      if (isServedGroup) acc.Served++;
+      const isLive   = !hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0;
+      const isServed = g.status === "Served" && !allPaid && nonVoided.length > 0;
+      if (isLive && nonVoided.length > 0) acc.Live++;
+      if (isServed) acc.Served++;
     });
     return acc;
   }, [enrichedGroups, voidedItemsList, creditsData, totalPaidItemsCount, orders]);
 
-  // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div className={`min-h-screen font-[Outfit] pb-20 sm:pb-28 ${theme === "dark" ? "bg-zinc-950 text-white" : "bg-zinc-50 text-zinc-900"}`}>
-
-      {/* Header */}
       <div className={`sticky top-0 z-20 w-full border-b px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between
         ${theme === "dark" ? "bg-zinc-950/80 backdrop-blur-xl border-white/5" : "bg-white/80 backdrop-blur-xl border-black/5"}`}>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -1357,55 +1254,39 @@ export default function OrderHistory({ onAddItems }) {
       </div>
 
       <div className="px-4 sm:px-6 pt-6">
-
-        {/* Navigation & Search */}
         <div className="flex flex-col md:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
           <div className="flex flex-wrap p-1 bg-white/5 rounded-xl sm:rounded-2xl border border-white/5 w-fit gap-1">
             {["Live", "Served", "Paid", "Credits", "Voided"].map(tab => {
               const isActive = activeTab === tab;
-              const count    = counts[tab] || 0;
+              const count = counts[tab] || 0;
               let activeStyles = "bg-yellow-500 text-black shadow-yellow-500/20";
-              if (tab === "Voided") activeStyles = "bg-red-500 text-white shadow-red-500/20";
+              if (tab === "Voided")  activeStyles = "bg-red-500 text-white shadow-red-500/20";
               if (tab === "Credits") activeStyles = "bg-purple-500 text-white shadow-purple-500/20";
-              if (tab === "Paid") activeStyles = "bg-emerald-500 text-white shadow-emerald-500/20";
+              if (tab === "Paid")    activeStyles = "bg-emerald-500 text-white shadow-emerald-500/20";
               const badgeStyles = isActive
                 ? "bg-white/20 text-current"
                 : theme === "dark" ? "bg-white/10 text-zinc-400" : "bg-black/5 text-zinc-500";
               return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
+                <button key={tab} onClick={() => setActiveTab(tab)}
                   className={`px-3 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 sm:gap-2
                     ${isActive ? `${activeStyles} shadow-lg scale-[1.02]` : "text-zinc-500 hover:text-zinc-300"}`}>
                   {tab}
-                  {count > 0 && (
-                    <span className={`px-1 py-0.5 rounded-md text-[7px] sm:text-[9px] font-black leading-none ${badgeStyles}`}>
-                      {count}
-                    </span>
-                  )}
+                  {count > 0 && <span className={`px-1 py-0.5 rounded-md text-[7px] sm:text-[9px] font-black leading-none ${badgeStyles}`}>{count}</span>}
                 </button>
               );
             })}
           </div>
           <div className="relative flex-1">
             <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={14} />
-            <input
-              type="text"
-              placeholder="Search table name..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+            <input type="text" placeholder="Search table name..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl py-2 sm:py-3 pl-9 sm:pl-12 pr-3 sm:pr-4 text-xs sm:text-sm outline-none focus:border-yellow-500/50 transition-all text-white placeholder-zinc-500" />
           </div>
         </div>
 
-        {/* Conditional Rendering Based on Active Tab */}
         {activeTab === "Voided" ? (
           <VoidedItemsPanel voidedItems={voidedItemsList} theme={theme} />
         ) : activeTab === "Credits" ? (
-          <CreditedItemsPanel 
-            creditedItems={creditsData} 
-            theme={theme} 
-          />
+          <CreditedItemsPanel creditedItems={creditsData} theme={theme} />
         ) : activeTab === "Paid" ? (
           <RecentlyPaidItemsPanel orders={orders} theme={theme} />
         ) : (
@@ -1415,31 +1296,54 @@ export default function OrderHistory({ onAddItems }) {
                 key={order.tableName}
                 order={order}
                 theme={theme}
+                tablePaymentPending={order.tablePaymentPending}
+                isPaying={isPaying}
                 onUnserve={handleUnserve}
                 onMarkServed={handleMarkServed}
                 onMarkTablePaid={handleMarkTablePaid}
                 onPayItem={(item, ord) => {
-                  const safeOrdId = item?._orderId ?? null;
+                  if (isPaying) return;
+                  const lsKey = pendingItemKey(ord?.tableName ?? order.tableName, item?.name);
+                  if (pendingPayments[lsKey]) {
+                    alert("⚠️ A payment request for this item is already pending with the cashier.");
+                    return;
+                  }
+                  setIsPaying(true);
                   setPayTarget({
-                    type:      "item",
+                    type:     "item",
                     item,
                     tableName: ord?.tableName ?? order.tableName,
-                    total:     Number(item?.price || 0) * Number(item?.quantity || 1),
-                    orderId:   safeOrdId,
-                    orderIds:  safeOrdId ? [safeOrdId] : [],
+                    total:    Number(item?.price || 0) * Number(item?.quantity || 1),
+                    orderId:  item?._orderId ?? null,
+                    orderIds: item?._orderId ? [item._orderId] : [],
                   });
                 }}
-                onPayTable={(o) => setPayTarget({
-                  type:      "table",
-                  tableName: o.tableName,
-                  total:     o.total,
-                  orderIds:  o.orderIds,
-                  orderId:   null,
-                })}
+                onPayTable={(o) => {
+                  if (isPaying) return;
+                  const lsKey = pendingTableKey(o.tableName);
+                  if (pendingPayments[lsKey]) {
+                    alert("⚠️ A payment request for this table is already pending with the cashier.");
+                    return;
+                  }
+                  setIsPaying(true);
+                  const payableItems = (o.items || []).filter(item =>
+                    !item._rowPaid && !item.creditRequested && item.status !== "VOIDED" &&
+                    !item.voidProcessed && !item.paymentRequested
+                  );
+                  const payableTotal = payableItems.reduce((sum, item) =>
+                    sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
+                  setPayTarget({
+                    type:         "table",
+                    tableName:    o.tableName,
+                    total:        payableTotal,
+                    payableTotal,
+                    orderIds:     o.orderIds,
+                    orderId:      null,
+                  });
+                }}
                 onVoidItem={(item, ord) => setVoidTarget({ item, order: ord })}
               />
             ))}
-
             {filteredOrders.length === 0 && (
               <div className="col-span-full py-20 sm:py-32 text-center opacity-30">
                 <div className="flex justify-center mb-3 sm:mb-4"><Utensils size={36} className="sm:w-12 sm:h-12" /></div>
@@ -1450,15 +1354,13 @@ export default function OrderHistory({ onAddItems }) {
         )}
       </div>
 
-      {/* Modals */}
       {payTarget && (
         <PayModal
           target={payTarget}
-          onClose={() => setPayTarget(null)}
-          onSend={handleSend}
+          onClose={() => { setPayTarget(null); setIsPaying(false); }}
+          onSend={async (payload) => { await handleSend(payload); setPayTarget(null); }}
         />
       )}
-
       {voidTarget && (
         <VoidModal
           item={voidTarget.item}

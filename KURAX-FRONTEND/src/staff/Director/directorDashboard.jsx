@@ -30,8 +30,8 @@ function CreditStatusBadge({ status }) {
     'pendingcashier': { label: 'Wait for Cashier', icon: <Hourglass size={10} />, color: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
     'pendingmanagerapproval': { label: 'Wait for Manager', icon: <Clock size={10} />, color: 'bg-orange-50 text-orange-700 border-orange-200' },
     'approved': { label: 'Approved', icon: <CheckCircle2 size={10} />, color: 'bg-purple-50 text-purple-700 border-purple-200' },
-    'fullysettled': { label: 'Settled', icon: <CheckCircle2 size={10} />, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-    'partiallysettled': { label: 'Partially Settled', icon: <CheckCircle2 size={10} />, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    'fullysettled': { label: 'Fully Settled', icon: <CheckCircle2 size={10} />, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    'partiallysettled': { label: 'Partially Settled', icon: <Clock size={10} />, color: 'bg-amber-50 text-amber-700 border-amber-200' },
     'rejected': { label: 'Rejected', icon: <XCircle size={10} />, color: 'bg-red-50 text-red-700 border-red-200' }
   };
   const config = statusMap[normalizedStatus] || { 
@@ -65,6 +65,7 @@ export default function DirectorDashboard() {
   const [staffModalData,  setStaffModal]     = useState(null);
   const [creditsData,     setCreditsData]    = useState([]);
   const [creditsLoading,  setCreditsLoading] = useState(false);
+  const [creditsError,    setCreditsError]   = useState(null);
 
   const { staffList, setStaffList, orders = [] } = useData();
 
@@ -98,13 +99,26 @@ export default function DirectorDashboard() {
   // ── Fetch credits data ─────────────────────────────────────────────────────
   const fetchCredits = useCallback(async () => {
     setCreditsLoading(true);
+    setCreditsError(null);
     try {
       const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
-      if (res.ok) {
-        const data = await res.json();
-        setCreditsData(data);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
-    } catch (e) { console.error("Credits fetch failed:", e); }
+      const data = await res.json();
+      console.log("📊 Credits API Response:", data);
+      console.log("📊 Credits count:", data.length);
+      
+      // Log each credit's status for debugging
+      data.forEach(credit => {
+        console.log(`Credit ${credit.id}: status="${credit.status}", amount=${credit.amount}, paid=${credit.amount_paid}`);
+      });
+      
+      setCreditsData(data);
+    } catch (e) {
+      console.error("Credits fetch failed:", e);
+      setCreditsError(e.message);
+    }
     setCreditsLoading(false);
   }, []);
 
@@ -114,41 +128,55 @@ export default function DirectorDashboard() {
     return () => clearInterval(interval);
   }, [fetchCredits]);
 
-  // ── Credit statistics ──────────────────────────────────────────────────────
+  // ── Credit statistics ── FIXED ──────────────────────────────────────────────
   const creditStats = useMemo(() => {
+    console.log("Calculating credit stats from", creditsData.length, "credits");
+    
+    // Helper to normalize status
     const getNormalizedStatus = (status) => {
       if (!status) return 'unknown';
       const s = String(status).toLowerCase();
-      if (s === 'pendingcashier') return 'pendingCashier';
-      if (s === 'pendingmanagerapproval') return 'pendingManager';
+      if (s === 'pendingcashier' || s === 'pending') return 'pendingCashier';
+      if (s === 'pendingmanagerapproval' || s === 'pendingmanager') return 'pendingManager';
       if (s === 'approved') return 'approved';
       if (s === 'fullysettled') return 'settled';
-      if (s === 'partiallysettled') return 'settled';
+      if (s === 'partiallysettled') return 'partiallySettled';
       if (s === 'rejected') return 'rejected';
       return s;
     };
     
+    // Filter by status
     const pendingCashier = creditsData.filter(c => getNormalizedStatus(c.status) === 'pendingCashier');
     const pendingManager = creditsData.filter(c => getNormalizedStatus(c.status) === 'pendingManager');
     const approved = creditsData.filter(c => getNormalizedStatus(c.status) === 'approved');
-    const settled = creditsData.filter(c => getNormalizedStatus(c.status) === 'settled' || c.paid === true);
+    const partiallySettled = creditsData.filter(c => getNormalizedStatus(c.status) === 'partiallySettled');
+    const fullySettled = creditsData.filter(c => getNormalizedStatus(c.status) === 'settled');
     const rejected = creditsData.filter(c => getNormalizedStatus(c.status) === 'rejected');
-    const outstanding = creditsData.filter(c => {
-      const status = getNormalizedStatus(c.status);
-      return status === 'pendingCashier' || status === 'pendingManager' || status === 'approved';
-    });
     
-    return {
+    // Calculate amounts
+    const totalOutstanding = approved.reduce((s, c) => s + Number(c.amount || 0), 0) 
+                           + partiallySettled.reduce((s, c) => s + (Number(c.amount || 0) - Number(c.amount_paid || 0)), 0);
+    
+    const totalSettled = fullySettled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0)
+                       + partiallySettled.reduce((s, c) => s + Number(c.amount_paid || 0), 0);
+    
+    const totalRejected = rejected.reduce((s, c) => s + Number(c.amount || 0), 0);
+    
+    const stats = {
       pendingCashier: pendingCashier.length,
       pendingManager: pendingManager.length,
       approved: approved.length,
-      settled: settled.length,
+      partiallySettled: partiallySettled.length,
+      settled: fullySettled.length + partiallySettled.length,
       rejected: rejected.length,
-      totalOutstanding: outstanding.reduce((s, c) => s + Number(c.amount || 0), 0),
-      totalSettled: settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0),
-      totalRejected: rejected.reduce((s, c) => s + Number(c.amount || 0), 0),
+      totalOutstanding: totalOutstanding,
+      totalSettled: totalSettled,
+      totalRejected: totalRejected,
       allCredits: creditsData
     };
+    
+    console.log("📊 Calculated Stats:", stats);
+    return stats;
   }, [creditsData]);
 
   // ── Staff actions ──────────────────────────────────────────────────────────
@@ -205,7 +233,7 @@ export default function DirectorDashboard() {
              onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* ── SIDEBAR (WHITE background, yellow accents, black text) ─────────── */}
+      {/* ── SIDEBAR ─────────────────────────────────────────────────────────── */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 p-5 flex flex-col
         transition-transform duration-300 shadow-lg
@@ -257,7 +285,6 @@ export default function DirectorDashboard() {
               <Menu size={17} />
             </button>
             
-            {/* Welcome Header Section */}
             <div className="hidden md:block">
               <div className="flex items-center gap-3 mb-1">
                 <div className="w-1 h-5 bg-yellow-500 rounded-full" />
@@ -275,7 +302,6 @@ export default function DirectorDashboard() {
           </div>
           
           <div className="flex items-center gap-3 shrink-0">
-            {/* Notification Bell with Credit Count */}
             {(creditStats.pendingCashier > 0 || creditStats.pendingManager > 0) && (
               <div className="relative p-1.5 rounded-full border border-gray-200 hover:bg-gray-100 cursor-pointer">
                 <Bell size={15} className="text-gray-600" />

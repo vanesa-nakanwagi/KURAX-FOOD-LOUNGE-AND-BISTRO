@@ -8,7 +8,7 @@ export default function FinancialHistory({
   dayClosed, 
   sys, 
   totalMobileMoney, 
-  totalSettledToday, 
+  totalSettledToday,  // ← Remove this prop or keep but don't use for GrossRevenueCard
   selectedMonth, 
   profitData, 
   profitLoad, 
@@ -33,8 +33,6 @@ export default function FinancialHistory({
           <p className="text-[9px] text-gray-500 mt-0.5">Revenue breakdown for {new Date().toLocaleDateString()}</p>
         </div>
       </div>
-
-     
 
       {/* Two stat cards per row on mobile, 4 on desktop */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
@@ -62,7 +60,7 @@ export default function FinancialHistory({
         />
         <GrossRevenueCard
           grossSales={dayClosed ? 0 : sys.gross}
-          settledCredits={dayClosed ? 0 : totalSettledToday}
+          settledCredits={dayClosed ? 0 : (sys.credit_settlements || 0)}  // ✅ FIXED: Use sys.credit_settlements
           pendingCredits={dayClosed ? 0 : sys.pending_credits}
         />
       </div>

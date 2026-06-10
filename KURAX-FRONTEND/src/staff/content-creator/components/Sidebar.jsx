@@ -95,7 +95,7 @@ export default function Sidebar() {
                     KURAX FOOD LOUNGE & BISTRO
                   </h1>
                   <p className="text-[9px] font-bold text-yellow-500 mt-1 tracking-widest">
-                    CONTENT CREATOR
+                    CONTENT MANAGER PANEL
                   </p>
                 </div>
               </div>
@@ -184,7 +184,7 @@ export default function Sidebar() {
               KURAX FOOD LOUNGE & BISTRO
             </h1>
             <p className="text-[9px] font-bold text-yellow-600 mt-1 tracking-widest">
-              CONTENT CREATOR
+              CONTENT MANAGER PANEL
             </p>
           </div>
         </div>
@@ -198,7 +198,7 @@ export default function Sidebar() {
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-[12px] font-black tracking-wider transition-all
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-[14px] font-medium tracking-wider transition-all
                 ${
                   isActive
                     ? "bg-yellow-500 text-black shadow-md"

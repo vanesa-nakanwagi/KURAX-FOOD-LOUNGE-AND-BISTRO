@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BookOpen, User, Phone, Calendar,
   RefreshCw, ChevronLeft, ChevronRight, FileText, CheckCircle2,
-  Hourglass, Clock, XCircle, Search, TrendingUp, TrendingDown
+  Hourglass, Clock, XCircle, Search, TrendingUp, TrendingDown, Wallet,
+  Banknote, CreditCard, Smartphone
 } from "lucide-react";
-import { FinanceRow } from "./shared/UIHelpers";
 import API_URL from "../../../config/api";
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
@@ -66,8 +66,8 @@ function CreditStatusBadge({ status }) {
     pendingcashier:         { label: "Cashier Queue",    color: "bg-yellow-100 border-yellow-300 text-yellow-700",  icon: <Hourglass size={8}/> },
     pendingmanagerapproval: { label: "Manager Queue",    color: "bg-orange-100 border-orange-300 text-orange-700",  icon: <Clock size={8}/> },
     approved:               { label: "Approved",         color: "bg-purple-100 border-purple-300 text-purple-700",  icon: <CheckCircle2 size={8}/> },
-    fullysettled:           { label: "Settled",          color: "bg-emerald-100 border-emerald-300 text-emerald-700", icon: <CheckCircle2 size={8}/> },
-    partiallysettled:       { label: "Part. Settled",    color: "bg-emerald-100 border-emerald-300 text-emerald-700", icon: <CheckCircle2 size={8}/> },
+    fullysettled:           { label: "Fully Settled",    color: "bg-emerald-100 border-emerald-300 text-emerald-700", icon: <CheckCircle2 size={8}/> },
+    partiallysettled:       { label: "Partially Settled",color: "bg-amber-100 border-amber-300 text-amber-700", icon: <Clock size={8}/> },
     rejected:               { label: "Rejected",         color: "bg-red-100 border-red-300 text-red-700",           icon: <XCircle size={8}/> },
   };
   const cfg = map[s] || { label: status || "Unknown", color: "bg-gray-100 border-gray-300 text-gray-600", icon: <BookOpen size={8}/> };
@@ -103,6 +103,7 @@ function Divider() {
 export default function FinancesSection({ creditsData = [], creditStats = {}, CreditStatusBadge: ExternalBadge }) {
   const [monthOffset, setMonthOffset] = useState(0);
   const month = kampalaMonth(monthOffset);
+  const [selectedMonthYear, setSelectedMonthYear] = useState(month);
 
   const [profit,      setProfit]      = useState(null);
   const [profitLoad,  setProfitLoad]  = useState(true);
@@ -112,13 +113,58 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
 
   const Badge = ExternalBadge || CreditStatusBadge;
 
-  // ── fetch ──
+  // Use creditStats from props (already calculated in parent)
+  const stats = creditStats;
+  
+  // Filter credits by selected month
+  const filteredByMonthCredits = useMemo(() => {
+    return creditsData.filter(credit => {
+      const creditDate = credit.created_at || credit.confirmed_at;
+      if (!creditDate) return false;
+      const creditMonth = creditDate.substring(0, 7);
+      return creditMonth === selectedMonthYear;
+    });
+  }, [creditsData, selectedMonthYear]);
+
+  // Calculate month-specific stats
+  const monthStats = useMemo(() => {
+    const total = filteredByMonthCredits.length;
+    const settled = filteredByMonthCredits.filter(c => 
+      c.status === "FullySettled" || c.status === "PartiallySettled"
+    ).length;
+    const totalSettled = filteredByMonthCredits.reduce((sum, c) => {
+      if (c.status === "FullySettled" || c.status === "PartiallySettled") {
+        return sum + Number(c.amount_paid || c.amount || 0);
+      }
+      return sum;
+    }, 0);
+    const totalOutstanding = filteredByMonthCredits.reduce((sum, c) => {
+      if (c.status === "Approved") {
+        return sum + Number(c.amount || 0);
+      }
+      if (c.status === "PartiallySettled") {
+        return sum + (Number(c.amount || 0) - Number(c.amount_paid || 0));
+      }
+      return sum;
+    }, 0);
+    
+    return { total, settled, totalSettled, totalOutstanding };
+  }, [filteredByMonthCredits]);
+
+  // Update selected month when month changes
+  useEffect(() => {
+    setSelectedMonthYear(month);
+  }, [month]);
+
+  // ── fetch profit data ──
   const fetchProfit = useCallback(async () => {
     setProfitLoad(true);
     try {
       const res = await fetch(`${API_URL}/api/summaries/monthly-profit?month=${month}`);
       if (res.ok) setProfit(await res.json());
-    } catch {}
+    } catch (err) {
+      console.error("Failed to fetch profit:", err);
+    }
     finally { setProfitLoad(false); }
   }, [month]);
   useEffect(() => { fetchProfit(); }, [fetchProfit]);
@@ -135,55 +181,79 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
         a.href = url; a.download = `Kurax_Report_${month}.pdf`; a.click();
         URL.revokeObjectURL(url);
       }
-    } catch {}
+    } catch (err) {
+      console.error("PDF export failed:", err);
+    }
     finally { setExporting(false); }
   };
 
   // ── credit filtering ──
   const normalize = s => {
     const v = String(s || "").toLowerCase();
-    if (v === "pendingcashier")         return "pendingCashier";
-    if (v === "pendingmanagerapproval") return "pendingManager";
-    if (v === "fullysettled" || v === "partiallysettled") return "settled";
+    if (v === "pendingcashier" || v === "pending") return "pendingCashier";
+    if (v === "pendingmanagerapproval" || v === "pendingmanager") return "pendingManager";
+    if (v === "fullysettled") return "settled";
+    if (v === "partiallysettled") return "settled";
     return v;
   };
 
   const filteredCredits = useMemo(() => {
-    let f = creditsData || [];
-    if (creditFilter !== "all") f = f.filter(c => normalize(c.status) === creditFilter);
-    if (searchQuery)            f = f.filter(c =>
-      (c.table_name  || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.client_name || "").toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    let f = filteredByMonthCredits || [];
+    if (creditFilter !== "all") {
+      const filterKey = creditFilter === "settled" 
+        ? (c) => {
+            const s = (c.status || "").toLowerCase();
+            return s === "fullysettled" || s === "partiallysettled";
+          }
+        : (c) => normalize(c.status) === creditFilter;
+      f = f.filter(filterKey);
+    }
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      f = f.filter(c =>
+        (c.table_name || "").toLowerCase().includes(query) ||
+        (c.client_name || "").toLowerCase().includes(query)
+      );
+    }
     return f;
-  }, [creditsData, creditFilter, searchQuery]);
+  }, [filteredByMonthCredits, creditFilter, searchQuery]);
 
-  // ── derived numbers ──
+  // ─── CORRECT FINANCIAL LOGIC (using monthStats.totalSettled) ───────────────
   const costs      = profit?.costs || {};
   const sales      = profit?.sales || {};
   const fixedItems = costs.fixed_items || [];
 
-  const gross      = Number(sales.total_gross  || 0);
-  const expenses   = Number(costs.total        || 0);
-  const net        = Number(profit?.net_profit  || 0);
-  const marginPct  = Number(profit?.margin_pct  || 0);
+  const rawCash        = Number(sales.cash || sales.total_cash || 0);
+  const rawCard        = Number(sales.card || sales.total_card || 0);
+  const mobileMoney    = Number(sales.mobile_money || 0);
 
-  const totalCredits = creditsData?.length || 0;
-  const settledCt    = creditStats?.settled || 0;
-  const settledPct   = totalCredits > 0 ? (settledCt / totalCredits) * 100 : 0;
+  // Gross Sales = new sales only (cash + card + mobile money)
+  const grossSales = rawCash + rawCard + mobileMoney;
 
-  const momoAmt = Number(sales.total_momo || 0);
-  const cashAmt = Number(sales.total_cash || 0);
-  const momoPct = gross > 0 ? (momoAmt / gross) * 100 : 0;
-  const cashPct = gross > 0 ? (cashAmt / gross) * 100 : 0;
+  // ✅ FIX: Use monthStats.totalSettled instead of sales.from_credit_settlements
+  const creditSettled = monthStats.totalSettled;
+
+  // Total Revenue = Gross Sales + credit settlements (old credit repaid)
+  const totalRevenue = grossSales + creditSettled;
+
+  const expenses   = Number(costs.total || 0);
+  const net        = Number(profit?.net_profit || 0);
+  const marginPct  = grossSales > 0 ? (net / grossSales) * 100 : 0;
+
+  // Percentages for payment method rings (relative to gross sales)
+  const cashPct = grossSales > 0 ? (rawCash / grossSales) * 100 : 0;
+  const cardPct = grossSales > 0 ? (rawCard / grossSales) * 100 : 0;
+  const momoPct = grossSales > 0 ? (mobileMoney / grossSales) * 100 : 0;
+
+  const creditOutstandingAmount = monthStats.totalOutstanding;
 
   const CREDIT_TABS = [
-    { key: "all",           label: "All",            count: totalCredits },
-    { key: "pendingCashier",label: "Cashier Queue",  count: creditStats?.pendingCashier || 0 },
-    { key: "pendingManager",label: "Manager Queue",  count: creditStats?.pendingManager || 0 },
-    { key: "approved",      label: "Approved",       count: creditStats?.approved       || 0 },
-    { key: "settled",       label: "Settled",        count: creditStats?.settled        || 0 },
-    { key: "rejected",      label: "Rejected",       count: creditStats?.rejected       || 0 },
+    { key: "all",           label: "All",            count: monthStats.total },
+    { key: "pendingCashier",label: "Cashier Queue",  count: stats.pendingCashier || 0 },
+    { key: "pendingManager",label: "Manager Queue",  count: stats.pendingManager || 0 },
+    { key: "approved",      label: "Approved",       count: stats.approved || 0 },
+    { key: "settled",       label: "Settled",        count: monthStats.settled },
+    { key: "rejected",      label: "Rejected",       count: stats.rejected || 0 },
   ];
 
   return (
@@ -191,7 +261,6 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
 
       {/* ══ 1. CONTROL BAR ════════════════════════════════════════════════ */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-6">
-        {/* Month stepper */}
         <div className="flex items-center gap-1 rounded-xl border border-gray-200 overflow-hidden">
           <button
             onClick={() => setMonthOffset(o => o - 1)}
@@ -233,17 +302,16 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
       <SectionHeader title="Financial Overview" sub={`${monthLabel(month)} · Profit & Loss`} />
 
       {profitLoad ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-0">
-          {[1,2,3,4].map(i => (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-0">
+          {[1,2,3,4,5].map(i => (
             <div key={i} className="h-28 rounded-2xl bg-gray-100 animate-pulse" />
           ))}
         </div>
       ) : (
         <>
-          {/* ── Ring row ── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {/* Net margin ring */}
-            <div className="col-span-2 md:col-span-1 flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
+          {/* 5 rings: Net Margin, Gross Sales, Cash Share, Card Share, Mobile Money Share */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
               <Ring
                 pct={Math.max(0, marginPct)}
                 size={88}
@@ -254,26 +322,27 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
               />
             </div>
 
-            {/* Gross sales ring */}
             <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
-              <Ring pct={100} size={72} stroke={6} color="#EAB308" label="Gross Sales" sub={`UGX ${fmtUGX(gross)}`} />
+              <Ring pct={100} size={72} stroke={6} color="#EAB308" label="Gross Sales" sub={`UGX ${fmtUGX(grossSales)}`} />
             </div>
 
-            {/* MoMo split ring */}
             <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
-              <Ring pct={momoPct} size={72} stroke={6} color="#f59e0b" label="MoMo Share" sub={`UGX ${fmtUGX(momoAmt)}`} />
+              <Ring pct={cashPct} size={72} stroke={6} color="#34d399" label="Cash Share" sub={`UGX ${fmtUGX(rawCash)}`} />
             </div>
 
-            {/* Cash split ring */}
             <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
-              <Ring pct={cashPct} size={72} stroke={6} color="#34d399" label="Cash Share" sub={`UGX ${fmtUGX(cashAmt)}`} />
+              <Ring pct={cardPct} size={72} stroke={6} color="#3b82f6" label="Card Share" sub={`UGX ${fmtUGX(rawCard)}`} />
+            </div>
+
+            <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
+              <Ring pct={momoPct} size={72} stroke={6} color="#10b981" label="Mobile Money Share" sub={`UGX ${fmtUGX(mobileMoney)}`} />
             </div>
           </div>
 
-          {/* ── KPI strip ── */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-4">
-            <KpiTile label="Total Revenue"  value={`UGX ${Number(gross).toLocaleString()}`}   accent="text-gray-900" />
-            <KpiTile label="Total Expenses" value={`UGX ${Number(expenses).toLocaleString()}`} accent="text-red-600" />
+          {/* KPI Tiles: Total Revenue, Total Expenses, Net Profit */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-6">
+            <KpiTile label="Total Revenue"  value={`UGX ${totalRevenue.toLocaleString()}`}   accent="text-gray-900" />
+            <KpiTile label="Total Expenses" value={`UGX ${expenses.toLocaleString()}`} accent="text-red-600" />
             <KpiTile
               label="Net Profit"
               value={`UGX ${Math.abs(net).toLocaleString()}`}
@@ -285,7 +354,6 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
         </>
       )}
 
-      {/* Increased spacing between Financial Overview and Credits Ledger */}
       <div className="mt-12 mb-6">
         <Divider />
       </div>
@@ -293,16 +361,21 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
       {/* ══ 3. CREDITS LEDGER ════════════════════════════════════════════ */}
       <SectionHeader
         title="Credits Ledger"
-        sub={`${totalCredits} total · ${settledCt} settled`}
+        sub={`${monthStats.total} total · ${monthStats.settled} settled · UGX ${fmtUGX(monthStats.totalSettled)} collected`}
         right={
-          <div className="flex items-center gap-5 mt-1">
-            
-            
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-[8px] font-black uppercase text-gray-500">Settled Amount</p>
+              <p className="text-sm font-black text-emerald-600">UGX {fmtUGX(monthStats.totalSettled)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[8px] font-black uppercase text-gray-500">Outstanding</p>
+              <p className="text-sm font-black text-purple-600">UGX {fmtUGX(monthStats.totalOutstanding)}</p>
+            </div>
           </div>
         }
       />
 
-      
       {/* Filter tabs */}
       <div className="flex gap-1 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1 mb-3">
         {CREDIT_TABS.map(({ key, label, count }) => (
@@ -341,7 +414,7 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
       {filteredCredits.length === 0 ? (
         <div className="py-14 text-center border border-dashed border-gray-300 rounded-2xl">
           <BookOpen size={24} className="mx-auto text-gray-400 mb-2" />
-          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">No credits found</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">No credits found for {monthLabel(month)}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -351,7 +424,6 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
         </div>
       )}
 
-      {/* Increased spacing between Credits Ledger and Verified Expenses */}
       <div className="mt-12 mb-6">
         <Divider />
       </div>
@@ -419,20 +491,43 @@ function CreditCardItem({ credit, Badge }) {
   const dateStr = date
     ? new Date(date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
     : "—";
-  const isSettled = credit.status === "FullySettled" || credit.status === "PartiallySettled";
-  const isRejected = credit.status === "Rejected";
-  const amount = isSettled ? (credit.amount_paid || credit.amount) : credit.amount;
-  const amountColor = isSettled ? "text-emerald-600" : isRejected ? "text-red-600" : "text-purple-600";
+  
+  const status = (credit.status || "").toLowerCase();
+  const isSettled = status === "fullysettled";
+  const isPartiallySettled = status === "partiallysettled";
+  const isRejected = status === "rejected";
+  const isApproved = status === "approved";
+  
+  let displayAmount = credit.amount;
+  let amountColor = "text-purple-600";
+  let statusLabel = "";
+  
+  if (isSettled) {
+    displayAmount = credit.amount_paid || credit.amount;
+    amountColor = "text-emerald-600";
+  } else if (isPartiallySettled) {
+    const remaining = Number(credit.amount || 0) - Number(credit.amount_paid || 0);
+    amountColor = "text-amber-600";
+    statusLabel = ` (${fmtUGX(remaining)} left)`;
+  } else if (isRejected) {
+    amountColor = "text-red-600";
+  } else if (isApproved) {
+    amountColor = "text-purple-600";
+  }
 
   return (
     <div className="group flex items-start justify-between gap-3 p-4 rounded-xl border border-gray-200 bg-white hover:bg-yellow-50 transition-all relative overflow-hidden">
-      {/* yellow left accent */}
       <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-0 rounded-r-full bg-yellow-500 transition-all duration-200 group-hover:h-[55%]" />
 
       <div className="flex-1 min-w-0 pl-1">
         <div className="flex items-center gap-2 flex-wrap mb-1.5">
           <h4 className="font-black text-sm uppercase tracking-tight text-gray-900">{credit.table_name || "Table"}</h4>
           <Badge status={credit.status} />
+          {isPartiallySettled && (
+            <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
+              Partially Paid
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] font-bold text-gray-500">
           {credit.client_name && (
@@ -451,7 +546,14 @@ function CreditCardItem({ credit, Badge }) {
       </div>
 
       <div className="text-right shrink-0">
-        <p className={`text-sm font-black ${amountColor}`}>UGX {Number(amount || 0).toLocaleString()}</p>
+        <p className={`text-sm font-black ${amountColor}`}>
+          UGX {Number(displayAmount || 0).toLocaleString()}{statusLabel}
+        </p>
+        {isPartiallySettled && credit.amount_paid > 0 && (
+          <p className="text-[8px] font-bold text-emerald-600 mt-0.5">
+            Paid: UGX {Number(credit.amount_paid).toLocaleString()}
+          </p>
+        )}
         {isSettled && credit.settle_method && (
           <p className="text-[8px] font-bold text-gray-500 mt-0.5">via {credit.settle_method}</p>
         )}
@@ -480,5 +582,4 @@ function ExpenseRow({ item }) {
   );
 }
 
-// expose for parent import
 export { CreditStatusBadge };

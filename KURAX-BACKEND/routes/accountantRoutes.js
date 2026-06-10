@@ -733,4 +733,75 @@ router.patch("/credits/:id/settle", async (req, res) => {
   }
 });
 
+// Add this to your accountant.js route file
+
+// GET /api/overview/weekly-revenue - FIXED to return proper data structure
+router.get('/weekly-revenue', async (req, res) => {
+  try {
+    const today = kampalaDate();
+    
+    // Get last 7 days
+    const last7Days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = kampalaDate(d);
+      last7Days.push(dateStr);
+    }
+    
+    const result = await pool.query(`
+      SELECT 
+        summary_date,
+        total_cash,
+        total_card,
+        total_mtn,
+        total_airtel,
+        total_settled_credits,
+        total_gross
+      FROM daily_summary 
+      WHERE summary_date >= $1
+      ORDER BY summary_date ASC
+    `, [last7Days[0]]);
+    
+    // Create a map of existing data
+    const dataMap = new Map();
+    result.rows.forEach(row => {
+      dataMap.set(row.summary_date, {
+        date: row.summary_date,
+        total_cash: Number(row.total_cash) || 0,
+        total_card: Number(row.total_card) || 0,
+        total_mtn: Number(row.total_mtn) || 0,
+        total_airtel: Number(row.total_airtel) || 0,
+        total_settled_credits: Number(row.total_settled_credits) || 0,
+        total_gross: Number(row.total_gross) || 0
+      });
+    });
+    
+    // Format the response with all 7 days
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const response = last7Days.map((date, index) => {
+      const data = dataMap.get(date) || {};
+      const dayOfWeek = new Date(date).getDay();
+      
+      return {
+        date: days[dayOfWeek],
+        fullDate: date,
+        total_cash: data.total_cash || 0,
+        total_card: data.total_card || 0,
+        total_mtn: data.total_mtn || 0,
+        total_airtel: data.total_airtel || 0,
+        total_settled_credits: data.total_settled_credits || 0,
+        total_gross: data.total_gross || 0
+      };
+    });
+    
+    console.log("📊 Weekly Revenue Response:", response);
+    res.json(response);
+    
+  } catch (err) {
+    console.error('Weekly revenue error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

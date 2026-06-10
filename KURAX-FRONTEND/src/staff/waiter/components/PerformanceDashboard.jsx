@@ -9,6 +9,7 @@ import {
   CheckCircle, XCircle, Clock as ClockIcon, Sparkles, Crown, Star,
   Coffee, Sunset, Moon, Sun, Zap, Heart, Smile, ThumbsUp
 } from "lucide-react";
+import { useData } from "../../../customer/components/context/DataContext"; // adjust path if needed
 import API_URL from "../../../config/api";
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -106,8 +107,7 @@ function getItemPaymentStatus(item) {
   return { label: "Pending", color: "text-zinc-400", bg: "bg-zinc-500/10", icon: <Clock size={10} /> };
 }
 
-// ─── DAILY MOTIVATIONAL MESSAGES ──────────────────────────────────────────────
-// Messages organized by date hash for consistency
+// ─── DAILY MOTIVATIONAL MESSAGES (unchanged) ──────────────────────────────────
 const MOTIVATIONAL_MESSAGES = [
   { icon: <Sparkles size={14} />, text: "Every plate tells a story. Make yours unforgettable!" },
   { icon: <Crown size={14} />, text: "Excellence is not a skill. It's an attitude." },
@@ -124,24 +124,19 @@ const MOTIVATIONAL_MESSAGES = [
   { icon: <Sunset size={14} />, text: "Close the day knowing you made a difference." },
 ];
 
-// Function to get daily motivation based on date (consistent for same date across years)
 function getDailyMotivation() {
   const today = new Date();
   const dateStr = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
-  
-  // Create a deterministic hash from the date string
   let hash = 0;
   for (let i = 0; i < dateStr.length; i++) {
     hash = ((hash << 5) - hash) + dateStr.charCodeAt(i);
     hash = hash & hash;
   }
-  
-  // Use the hash to pick a message (consistent for the same date)
   const messageIndex = Math.abs(hash) % MOTIVATIONAL_MESSAGES.length;
   return MOTIVATIONAL_MESSAGES[messageIndex];
 }
 
-// ─── TOOLTIP ──────────────────────────────────────────────────────────────────
+// ─── TOOLTIP (unchanged) ──────────────────────────────────────────────────────
 const CreditChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
@@ -157,7 +152,7 @@ const CreditChartTooltip = ({ active, payload, label }) => {
   );
 };
 
-// ─── STAT CARD ────────────────────────────────────────────────────────────────
+// ─── STAT CARD (unchanged) ─────────────────────────────────────────────────────
 function StatCard({ icon, iconBg, iconColor, badge, label, value, sub, progress, progressColor, accent, children }) {
   const isGradient = !!accent;
   return (
@@ -172,23 +167,13 @@ function StatCard({ icon, iconBg, iconColor, badge, label, value, sub, progress,
           <div className={`p-2 rounded-xl ${isGradient ? "bg-white/20" : iconBg}`}>
             <span className={isGradient ? "text-white" : iconColor}>{icon}</span>
           </div>
-          {badge && (
-            <span className={`text-[8px] font-bold uppercase tracking-wider ${isGradient ? "text-white/70" : "text-zinc-400"}`}>
-              {badge}
-            </span>
-          )}
+          {badge && <span className={`text-[8px] font-bold uppercase tracking-wider ${isGradient ? "text-white/70" : "text-zinc-400"}`}>{badge}</span>}
         </div>
-        <p className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${isGradient ? "text-white/70" : "text-zinc-400"}`}>
-          {label}
-        </p>
+        <p className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${isGradient ? "text-white/70" : "text-zinc-400"}`}>{label}</p>
         {children || (
           <>
-            <p className={`text-xl sm:text-2xl font-black leading-tight break-all ${isGradient ? "text-white" : "text-zinc-900"}`}>
-              {value}
-            </p>
-            {sub && (
-              <p className={`text-[10px] mt-0.5 ${isGradient ? "text-white/60" : "text-zinc-400"}`}>{sub}</p>
-            )}
+            <p className={`text-xl sm:text-2xl font-black leading-tight break-all ${isGradient ? "text-white" : "text-zinc-900"}`}>{value}</p>
+            {sub && <p className={`text-[10px] mt-0.5 ${isGradient ? "text-white/60" : "text-zinc-400"}`}>{sub}</p>}
           </>
         )}
         {progress !== undefined && (
@@ -198,10 +183,7 @@ function StatCard({ icon, iconBg, iconColor, badge, label, value, sub, progress,
               <span className={isGradient ? "text-white" : progressColor}>{Math.round(progress)}%</span>
             </div>
             <div className={`w-full h-1.5 rounded-full overflow-hidden ${isGradient ? "bg-white/20" : "bg-zinc-100"}`}>
-              <div
-                className={`h-full rounded-full transition-all duration-1000 ease-out ${isGradient ? "bg-white" : getProgressBarColor(progress)}`}
-                style={{ width: `${progress}%` }}
-              />
+              <div className={`h-full rounded-full transition-all duration-1000 ease-out ${isGradient ? "bg-white" : getProgressBarColor(progress)}`} style={{ width: `${progress}%` }} />
             </div>
           </div>
         )}
@@ -210,19 +192,14 @@ function StatCard({ icon, iconBg, iconColor, badge, label, value, sub, progress,
   );
 }
 
-function getProgressColor(p) {
-  return p >= 75 ? "text-emerald-500" : p >= 50 ? "text-yellow-500" : p >= 25 ? "text-orange-500" : "text-red-500";
-}
-function getProgressBarColor(p) {
-  return p >= 75 ? "bg-emerald-500" : p >= 50 ? "bg-yellow-500" : p >= 25 ? "bg-orange-500" : "bg-red-500";
-}
+function getProgressColor(p) { return p >= 75 ? "text-emerald-500" : p >= 50 ? "text-yellow-500" : p >= 25 ? "text-orange-500" : "text-red-500"; }
+function getProgressBarColor(p) { return p >= 75 ? "bg-emerald-500" : p >= 50 ? "bg-yellow-500" : p >= 25 ? "bg-orange-500" : "bg-red-500"; }
 
-// ─── MOBILE ORDER ROW ─────────────────────────────────────────────────────────
+// ─── MOBILE ORDER ROW (unchanged) ─────────────────────────────────────────────
 function MobileOrderRow({ item }) {
   const status = getItemPaymentStatus(item);
   const method = item.payment_method || (item.is_paid ? "Cash" : item.is_credit ? "Credit" : "Pending");
   const timeStr = new Date(item.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-
   return (
     <div className="py-3 border-b border-zinc-100 last:border-0">
       <div className="flex items-start justify-between gap-2">
@@ -242,47 +219,60 @@ function MobileOrderRow({ item }) {
   );
 }
 
-// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
+// ─── MAIN COMPONENT (using DataContext) ───────────────────────────────────────
 export default function PerformanceDashboard({ theme = "light" }) {
+  // Use context for orders, day closure, and refresh
+  const { orders: allOrders, dayClosed, globalResetKey, refreshData, currentUser } = useData();
+  
+  // Local state for data that still comes from separate APIs (targets, credits, etc.)
   const [staffTargets, setStaffTargets] = useState({ daily_order_target: null, monthly_income_target: null });
   const [confirmedQueue, setConfirmedQueue] = useState([]);
-  const [orders, setOrders] = useState([]);
   const [credits, setCredits] = useState([]);
   const [monthlyIncomeData, setMonthlyIncomeData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [dayClosed, setDayClosed] = useState(false);
   const [currentDayDate, setCurrentDayDate] = useState(getTodayLocal());
   const [activeDay, setActiveDay] = useState(null);
   const [dailyMotivation, setDailyMotivation] = useState(null);
 
-  // Load daily motivation when component mounts
-  useEffect(() => {
-    setDailyMotivation(getDailyMotivation());
-  }, []);
-
+  // Get current staff details from context or localStorage
   const savedUser = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); }
     catch { return {}; }
   }, []);
-
   const currentStaffId = savedUser?.id;
   const currentStaffName = savedUser?.name || "Staff Member";
   const staffRole = savedUser?.role || "STAFF";
   const staffInitial = (currentStaffName?.split(" ")[0] || "S")[0].toUpperCase();
 
-  const fetchActiveDay = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/day-closure/active-day`);
-      if (res.ok) {
-        const data = await res.json();
-        setActiveDay(data);
-        if (data.date) setCurrentDayDate(data.date);
-      }
-    } catch (err) { console.error("Failed to fetch active day:", err); }
+  // Load daily motivation on mount
+  useEffect(() => {
+    setDailyMotivation(getDailyMotivation());
   }, []);
 
+  // ─── Helper to filter orders for this staff and current day ──────────────
+  const staffOrders = useMemo(() => {
+    if (!allOrders) return [];
+    const today = currentDayDate;
+    return allOrders.filter(order => {
+      const orderDate = formatOrderDate(order.timestamp || order.created_at);
+      const matchStaff = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase() ||
+                         Number(order.staff_id) === Number(currentStaffId);
+      return matchStaff && orderDate === today;
+    });
+  }, [allOrders, currentDayDate, currentStaffName, currentStaffId]);
+
+  // ─── Compute daily items count from staffOrders (using order.items) ──────
+  const dailyStaffItemsCount = useMemo(() => {
+    let count = 0;
+    staffOrders.forEach(order => {
+      count += getItemCount(order.items);
+    });
+    return count;
+  }, [staffOrders]);
+
+  // ─── Fetch targets, credits, monthly income (still direct API calls) ─────
   const loadTargets = useCallback(async () => {
     if (!currentStaffId) return;
     try {
@@ -308,21 +298,6 @@ export default function PerformanceDashboard({ theme = "light" }) {
       }
     } catch (err) { console.error("Failed to fetch monthly income:", err); }
   }, [currentStaffId, currentStaffName]);
-
-  const fetchOrders = useCallback(async () => {
-    try {
-      const url = activeDay?.date ? `${API_URL}/api/orders?date=${activeDay.date}` : `${API_URL}/api/orders`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const allOrders = await res.json();
-      setOrders(allOrders.filter(order => {
-        const matchName = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase();
-        const matchId = Number(order.staff_id) === Number(currentStaffId);
-        return matchName || matchId;
-      }));
-      setFetchError(null);
-    } catch (err) { setFetchError(err.message); }
-  }, [currentStaffId, currentStaffName, activeDay]);
 
   const fetchConfirmedQueue = useCallback(async () => {
     try {
@@ -352,57 +327,53 @@ export default function PerformanceDashboard({ theme = "light" }) {
     } catch (err) { console.error("Credits fetch failed:", err); }
   }, [currentStaffName, currentDayDate]);
 
-  const checkDayClosure = useCallback(async () => {
+  const fetchActiveDay = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/day-closure/day-status`);
+      const res = await fetch(`${API_URL}/api/day-closure/active-day`);
       if (res.ok) {
         const data = await res.json();
-        if (data.is_closed && !dayClosed) {
-          setDayClosed(true);
-          setConfirmedQueue([]); setOrders([]); setCredits([]); setMonthlyIncomeData(null);
-          await fetchActiveDay();
-          await Promise.all([loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits()]);
-          setLastRefresh(new Date());
-        } else if (!data.is_closed && dayClosed) {
-          setDayClosed(false);
-          await fetchActiveDay();
-          await handleRefreshData();
-        }
+        setActiveDay(data);
+        if (data.date) setCurrentDayDate(data.date);
       }
-    } catch (err) { console.error("Check day closure error:", err); }
-  }, [dayClosed, fetchActiveDay, loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits]);
-
-  useEffect(() => {
-    const initialize = async () => {
-      await fetchActiveDay();
-      await Promise.all([loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits()]);
-    };
-    initialize();
-    const closureInterval = setInterval(checkDayClosure, 30000);
-    const interval = setInterval(() => {
-      if (!dayClosed) { fetchMonthlyIncome(); fetchOrders(); fetchConfirmedQueue(); fetchCredits(); }
-    }, 30000);
-    return () => { clearInterval(interval); clearInterval(closureInterval); };
+    } catch (err) { console.error("Failed to fetch active day:", err); }
   }, []);
 
+  // ─── Combined refresh (now also refreshes context) ───────────────────────
   const handleRefreshData = async () => {
     setIsLoading(true);
     setFetchError(null);
-    await Promise.all([loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits(), fetchActiveDay()]);
+    await Promise.all([
+      refreshData(),           // refresh context (orders, summary, etc.)
+      loadTargets(),
+      fetchMonthlyIncome(),
+      fetchConfirmedQueue(),
+      fetchCredits(),
+      fetchActiveDay()
+    ]);
     setLastRefresh(new Date());
     setIsLoading(false);
   };
 
-  // ─── COMPUTED ──────────────────────────────────────────────────────────────
-  const dailyStaffItemsCount = useMemo(() => {
-    let count = 0;
-    orders.forEach(order => {
-      if (formatOrderDate(order.created_at || order.timestamp) === currentDayDate)
-        count += getItemCount(order.items);
-    });
-    return count;
-  }, [orders, currentDayDate]);
+  // ─── Effect to reload after day closure (using globalResetKey) ───────────
+  useEffect(() => {
+    if (globalResetKey > 0) {
+      // Day closed or reset happened – reload all data
+      handleRefreshData();
+    }
+  }, [globalResetKey]);
 
+  // ─── Initial load ────────────────────────────────────────────────────────
+  useEffect(() => {
+    handleRefreshData();
+    const interval = setInterval(() => {
+      if (!dayClosed) {
+        handleRefreshData();
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ─── Compute derived values (unchanged from original) ────────────────────
   const monthlyRevenue = monthlyIncomeData?.monthly_income || 0;
   const revenueTarget = staffTargets.monthly_income_target || monthlyIncomeData?.monthly_target || 0;
 
@@ -428,12 +399,11 @@ export default function PerformanceDashboard({ theme = "light" }) {
 
   const recentOrderItems = useMemo(() => {
     const allItems = [];
-    orders.forEach(order => {
-      if (formatOrderDate(order.created_at || order.timestamp) === currentDayDate)
-        allItems.push(...getIndividualItems(order, credits));
+    staffOrders.forEach(order => {
+      allItems.push(...getIndividualItems(order, credits));
     });
     return allItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20);
-  }, [orders, credits, currentDayDate]);
+  }, [staffOrders, credits]);
 
   const creditChartData = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -459,44 +429,25 @@ export default function PerformanceDashboard({ theme = "light" }) {
   const orderProgress = orderTarget > 0 ? Math.min((dailyStaffItemsCount / orderTarget) * 100, 100) : 0;
   const revenueProgress = revenueTarget > 0 ? Math.min((monthlyRevenue / revenueTarget) * 100, 100) : 0;
   const currentMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
-
-  // Get today's date for display
-  const todayDisplay = new Date().toLocaleDateString("en-GB", { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
-  });
+  const todayDisplay = new Date().toLocaleDateString("en-GB", { year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
     <div className="min-h-screen bg-zinc-50 font-[Outfit]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-4 sm:space-y-6">
-
-        {/* ── HEADER with Captivating Text on Left and Waiter Name on Right ── */}
+        {/* ── HEADER (unchanged) ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          {/* Left side - Captivating motivational text */}
           <div className="flex items-center gap-3 min-w-0">
-            
             <div className="min-w-0">
-              <p className="text-[10px] sm:text-[19px] text-yellow-900 font-medium uppercase tracking-wider">
-                ✨ Today's Motivation ✨
-              </p>
-              <p className="text-xs sm:text-sm font-medium text-zinc-700 leading-tight mt-0.5">
-                {dailyMotivation?.text || "You're amazing! Keep serving with excellence!"}
-              </p>
-              <p className="text-[8px] text-zinc-400 mt-1 hidden sm:block">
-                {todayDisplay}
-              </p>
+              <p className="text-[10px] sm:text-[19px] text-yellow-900 font-medium uppercase tracking-wider">✨ Today's Motivation ✨</p>
+              <p className="text-xs sm:text-sm font-medium text-zinc-700 leading-tight mt-0.5">{dailyMotivation?.text || "You're amazing! Keep serving with excellence!"}</p>
+              <p className="text-[8px] text-zinc-400 mt-1 hidden sm:block">{todayDisplay}</p>
             </div>
           </div>
-
-          {/* Right side - Waiter profile */}
           <div className="flex items-center justify-end gap-3 sm:gap-4 flex-shrink-0">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-black text-zinc-900">{currentStaffName}</p>
               <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                <span className="px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-700 text-[8px] font-bold uppercase tracking-wider">
-                  {staffRole}
-                </span>
+                <span className="px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-700 text-[8px] font-bold uppercase tracking-wider">{staffRole}</span>
                 <span className="text-[8px] text-emerald-500 font-bold">✓ Active</span>
               </div>
             </div>
@@ -508,26 +459,10 @@ export default function PerformanceDashboard({ theme = "light" }) {
             </div>
           </div>
         </div>
-
-        {/* Mobile date display */}
-        <div className="sm:hidden">
-          <p className="text-[8px] text-zinc-400 mt-0.5 text-center">
-            {todayDisplay}
-          </p>
-        </div>
-
-        {/* Mobile waiter info */}
+        <div className="sm:hidden"><p className="text-[8px] text-zinc-400 mt-0.5 text-center">{todayDisplay}</p></div>
         <div className="sm:hidden flex items-center justify-between">
-          <div>
-            <p className="text-[9px] text-zinc-400 uppercase tracking-wider">Logged in as</p>
-            <p className="text-sm font-black text-zinc-900">{currentStaffName}</p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-700 text-[8px] font-bold uppercase tracking-wider">
-              {staffRole}
-            </span>
-            <span className="text-[8px] text-emerald-500 font-bold">Active</span>
-          </div>
+          <div><p className="text-[9px] text-zinc-400 uppercase tracking-wider">Logged in as</p><p className="text-sm font-black text-zinc-900">{currentStaffName}</p></div>
+          <div className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-700 text-[8px] font-bold uppercase tracking-wider">{staffRole}</span><span className="text-[8px] text-emerald-500 font-bold">Active</span></div>
         </div>
 
         {/* ── ERROR ── */}
@@ -541,8 +476,6 @@ export default function PerformanceDashboard({ theme = "light" }) {
 
         {/* ── STAT CARDS ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-
-          {/* Items Sold */}
           <StatCard
             icon={<ClipboardList size={16} />}
             iconBg="bg-orange-500/10" iconColor="text-orange-500"
@@ -552,8 +485,6 @@ export default function PerformanceDashboard({ theme = "light" }) {
             progress={orderProgress}
             progressColor={getProgressColor(orderProgress)}
           />
-
-          {/* Revenue Today */}
           <StatCard
             icon={<TrendingUp size={16} />}
             iconBg="bg-yellow-500/10" iconColor="text-yellow-500"
@@ -561,8 +492,6 @@ export default function PerformanceDashboard({ theme = "light" }) {
             value={fmtLargeNumber(grossToday)}
             sub={revenueTarget > 0 ? `${Math.round((grossToday / revenueTarget) * 100)}% of monthly` : ""}
           />
-
-          {/* Monthly Target */}
           <StatCard
             icon={<Target size={16} />}
             badge={currentMonth}
@@ -570,13 +499,9 @@ export default function PerformanceDashboard({ theme = "light" }) {
             accent="bg-gradient-to-br from-emerald-500 to-emerald-600"
             progress={revenueProgress}
           >
-            <p className="text-lg sm:text-xl font-black text-white leading-tight break-all">
-              {fmtLargeNumber(monthlyRevenue)}
-            </p>
+            <p className="text-lg sm:text-xl font-black text-white leading-tight break-all">{fmtLargeNumber(monthlyRevenue)}</p>
             <p className="text-[9px] text-white/60 mt-0.5">/ {fmtLargeNumber(revenueTarget)}</p>
           </StatCard>
-
-          {/* Credits */}
           <StatCard
             icon={<BookOpen size={16} />}
             badge="Today"
@@ -584,11 +509,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
             accent="bg-gradient-to-br from-purple-500 to-purple-600"
           >
             <div className="space-y-1 mt-1">
-              {[
-                { k: "Settled", v: creditStats.settled.amount },
-                { k: "Outstanding", v: creditStats.outstanding.amount },
-                { k: "Rejected", v: creditStats.rejected.amount },
-              ].map(({ k, v }) => (
+              {[ { k: "Settled", v: creditStats.settled.amount }, { k: "Outstanding", v: creditStats.outstanding.amount }, { k: "Rejected", v: creditStats.rejected.amount } ].map(({ k, v }) => (
                 <div key={k} className="flex items-center justify-between gap-1">
                   <span className="text-[9px] text-white/60">{k}</span>
                   <span className="text-[10px] font-black text-white">{fmtLargeNumber(v)}</span>
@@ -606,20 +527,12 @@ export default function PerformanceDashboard({ theme = "light" }) {
         <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
             <div className="flex items-center gap-2">
-              <div className="p-2 rounded-xl bg-indigo-500/10">
-                <TrendingUp size={15} className="text-indigo-500" />
-              </div>
-              <div>
-                <h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Credit Activity</h3>
-                <p className="text-[9px] text-zinc-400">Last 7 days</p>
-              </div>
+              <div className="p-2 rounded-xl bg-indigo-500/10"><TrendingUp size={15} className="text-indigo-500" /></div>
+              <div><h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Credit Activity</h3><p className="text-[9px] text-zinc-400">Last 7 days</p></div>
             </div>
             <div className="flex flex-wrap gap-3 text-[9px] font-bold uppercase tracking-wider">
               {[["Settled","#10b981"],["Approved","#3b82f6"],["Rejected","#ef4444"],["Outstanding","#f97316"]].map(([name, color]) => (
-                <span key={name} className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
-                  {name}
-                </span>
+                <span key={name} className="flex items-center gap-1"><span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />{name}</span>
               ))}
             </div>
           </div>
@@ -637,33 +550,18 @@ export default function PerformanceDashboard({ theme = "light" }) {
           </ResponsiveContainer>
         </div>
 
-        {/* ── ORDER ITEMS ── */}
+        {/* ── ORDER ITEMS (now uses staffOrders) ── */}
         <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <div className="p-2 rounded-xl bg-blue-500/10"><Activity size={15} className="text-blue-500" /></div>
             <h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Today's Orders</h3>
             <span className="ml-auto text-[9px] text-zinc-900">Last 20</span>
           </div>
-
-          {/* Desktop table */}
           <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-left" style={{ tableLayout: "fixed" }}>
-              <colgroup>
-                <col style={{ width: "28%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "7%" }} />
-                <col style={{ width: "16%" }} />
-                <col style={{ width: "14%" }} />
-                <col style={{ width: "14%" }} />
-                <col style={{ width: "9%" }} />
-              </colgroup>
+              <colgroup><col style={{ width: "28%" }} /><col style={{ width: "12%" }} /><col style={{ width: "7%" }} /><col style={{ width: "16%" }} /><col style={{ width: "14%" }} /><col style={{ width: "14%" }} /><col style={{ width: "9%" }} /></colgroup>
               <thead className="border-b border-zinc-100">
-                <tr>
-                  {["Item", "Table", "Qty", "Amount", "Method", "Status", "Time"].map(h => (
-                    <th key={h} className="pb-3 text-[9px] font-bold text-zinc-400 uppercase tracking-wider pr-2">{h}</th>
-                  ))}
-                </tr>
-              </thead>
+                <tr>{["Item", "Table", "Qty", "Amount", "Method", "Status", "Time"].map(h => <th key={h} className="pb-3 text-[9px] font-bold text-zinc-400 uppercase tracking-wider pr-2">{h}</th>)}</tr></thead>
               <tbody>
                 {recentOrderItems.length > 0 ? recentOrderItems.map((item, idx) => {
                   const status = getItemPaymentStatus(item);
@@ -675,83 +573,34 @@ export default function PerformanceDashboard({ theme = "light" }) {
                       <td className="py-2.5 text-[10px] text-zinc-500 truncate pr-2">{item.table_name || "Walk-in"}</td>
                       <td className="py-2.5 text-[10px] text-zinc-500 pr-2">×{item.quantity}</td>
                       <td className="py-2.5 text-[10px] font-medium text-emerald-500 truncate pr-2">{fmtUGX(item.total)}</td>
-                      <td className="py-2.5 pr-2">
-                        <span className={`text-[9px] font-bold uppercase ${method === "Credit" ? "text-purple-500" : method === "Cash" ? "text-emerald-500" : "text-zinc-400"}`}>
-                          {method}
-                        </span>
-                      </td>
-                      <td className="py-2.5 pr-2">
-                        <span className={`text-[9px] font-bold uppercase ${status.color}`}>{status.label}</span>
-                      </td>
+                      <td className="py-2.5 pr-2"><span className={`text-[9px] font-bold uppercase ${method === "Credit" ? "text-purple-500" : method === "Cash" ? "text-emerald-500" : "text-zinc-400"}`}>{method}</span></td>
+                      <td className="py-2.5 pr-2"><span className={`text-[9px] font-bold uppercase ${status.color}`}>{status.label}</span></td>
                       <td className="py-2.5 text-[9px] text-zinc-400">{timeStr}</td>
                     </tr>
                   );
                 }) : (
-                  <tr>
-                    <td colSpan="7" className="py-10 text-center text-[10px] text-zinc-400">
-                      No order items for today
-                    </td>
-                  </tr>
+                  <tr><td colSpan="7" className="py-10 text-center text-[10px] text-zinc-400">No order items for today</td></tr>
                 )}
               </tbody>
             </table>
           </div>
-
-          {/* Mobile list */}
           <div className="sm:hidden">
-            {recentOrderItems.length > 0
-              ? recentOrderItems.map((item, idx) => <MobileOrderRow key={idx} item={item} />)
-              : <p className="py-8 text-center text-[11px] text-zinc-400">No order items for today</p>
-            }
+            {recentOrderItems.length > 0 ? recentOrderItems.map((item, idx) => <MobileOrderRow key={idx} item={item} />) : <p className="py-8 text-center text-[11px] text-zinc-400">No order items for today</p>}
           </div>
         </div>
 
-        {/* ── PERFORMANCE INSIGHTS ── */}
+        {/* ── PERFORMANCE INSIGHTS (unchanged) ── */}
         <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-2 rounded-xl bg-purple-500/10"><Award size={15} className="text-purple-500" /></div>
-            <h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Performance Insights</h3>
-          </div>
+          <div className="flex items-center gap-2 mb-4"><div className="p-2 rounded-xl bg-purple-500/10"><Award size={15} className="text-purple-500" /></div><h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Performance Insights</h3></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
-              {
-                icon: <Target size={13} className="text-yellow-500" />,
-                label: "Daily Target", color: "text-yellow-600", bg: "bg-yellow-50",
-                text: dailyStaffItemsCount >= orderTarget && orderTarget > 0
-                  ? "🎉 Daily item target achieved!"
-                  : orderTarget > 0
-                    ? `📋 ${orderTarget - dailyStaffItemsCount} more item${orderTarget - dailyStaffItemsCount !== 1 ? "s" : ""} to reach today's target`
-                    : "📋 No daily target set",
-              },
-              {
-                icon: <TrendingUp size={13} className="text-emerald-500" />,
-                label: "Monthly Revenue", color: "text-emerald-600", bg: "bg-emerald-50",
-                text: monthlyRevenue >= revenueTarget && revenueTarget > 0
-                  ? "🏆 Monthly revenue target exceeded!"
-                  : revenueTarget > 0
-                    ? `💰 ${Math.round(revenueProgress)}% of monthly target reached`
-                    : "💰 No monthly target set",
-              },
-              {
-                icon: <Calendar size={13} className="text-blue-500" />,
-                label: "Daily Average Needed", color: "text-blue-600", bg: "bg-blue-50",
-                text: revenueTarget > 0
-                  ? `Aim for ${fmtUGX(Math.ceil(revenueTarget / 30))} per day`
-                  : "Set a monthly target to see daily recommendations",
-              },
-              {
-                icon: <BookOpen size={13} className="text-purple-500" />,
-                label: "Credit Summary", color: "text-purple-600", bg: "bg-purple-50",
-                text: creditStats.total > 0
-                  ? `💳 ${creditStats.settled.count} settled · ${creditStats.outstanding.count} outstanding`
-                  : "💳 No credit records for today",
-              },
+              { icon: <Target size={13} className="text-yellow-500" />, label: "Daily Target", color: "text-yellow-600", bg: "bg-yellow-50", text: dailyStaffItemsCount >= orderTarget && orderTarget > 0 ? "🎉 Daily item target achieved!" : orderTarget > 0 ? `📋 ${orderTarget - dailyStaffItemsCount} more item${orderTarget - dailyStaffItemsCount !== 1 ? "s" : ""} to reach today's target` : "📋 No daily target set" },
+              { icon: <TrendingUp size={13} className="text-emerald-500" />, label: "Monthly Revenue", color: "text-emerald-600", bg: "bg-emerald-50", text: monthlyRevenue >= revenueTarget && revenueTarget > 0 ? "🏆 Monthly revenue target exceeded!" : revenueTarget > 0 ? `💰 ${Math.round(revenueProgress)}% of monthly target reached` : "💰 No monthly target set" },
+              { icon: <Calendar size={13} className="text-blue-500" />, label: "Daily Average Needed", color: "text-blue-600", bg: "bg-blue-50", text: revenueTarget > 0 ? `Aim for ${fmtUGX(Math.ceil(revenueTarget / 30))} per day` : "Set a monthly target to see daily recommendations" },
+              { icon: <BookOpen size={13} className="text-purple-500" />, label: "Credit Summary", color: "text-purple-600", bg: "bg-purple-50", text: creditStats.total > 0 ? `💳 ${creditStats.settled.count} settled · ${creditStats.outstanding.count} outstanding` : "💳 No credit records for today" },
             ].map(({ icon, label, color, bg, text }) => (
               <div key={label} className={`p-3 sm:p-4 rounded-xl ${bg}`}>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  {icon}
-                  <span className={`text-[9px] font-bold uppercase tracking-wider ${color}`}>{label}</span>
-                </div>
+                <div className="flex items-center gap-1.5 mb-1.5">{icon}<span className={`text-[9px] font-bold uppercase tracking-wider ${color}`}>{label}</span></div>
                 <p className="text-[11px] text-zinc-600 leading-relaxed">{text}</p>
               </div>
             ))}
@@ -764,16 +613,11 @@ export default function PerformanceDashboard({ theme = "light" }) {
             <div className="flex items-center justify-center gap-2">
               <Award size={18} className="text-black" />
               <span className="text-[11px] font-black text-black uppercase tracking-wider">
-                {orderProgress >= 100 && revenueProgress >= 100
-                  ? "🏆 Double Achievement! Both targets crushed!"
-                  : orderProgress >= 100
-                    ? "🎯 Daily target achieved!"
-                    : "🎯 Monthly revenue target achieved!"}
+                {orderProgress >= 100 && revenueProgress >= 100 ? "🏆 Double Achievement! Both targets crushed!" : orderProgress >= 100 ? "🎯 Daily target achieved!" : "🎯 Monthly revenue target achieved!"}
               </span>
             </div>
           </div>
         )}
-
       </div>
     </div>
   );

@@ -266,15 +266,9 @@ export default function BarmanDisplay() {
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalDrinks: 0, barmen: [] });
   const [assigningItem, setAssigningItem] = useState(null);
 
-  // ── Ticket map: orderId → barman_tickets.id ───────────────────────────────
   const ticketMapRef = useRef({});
-
-  // ── Seen order IDs — plain number[] so useMemo re-runs when it changes ────
   const [seenOrderIds, setSeenOrderIds] = useState([]);
 
-  // ── On mount: load today's barman tickets ────────────────────────────────
-  // Fills ticketMapRef AND seeds seenOrderIds so completed cards survive
-  // a full page refresh.
   useEffect(() => {
     (async () => {
       try {
@@ -294,15 +288,10 @@ export default function BarmanDisplay() {
     })();
   }, []);
 
-  // ── Filter helpers ────────────────────────────────────────────────────────
-  const isBarmanItem = item =>
-    item.station?.toLowerCase() === "barman" ||
-    item.station?.toLowerCase() === "bar"    ||
-    item.category?.toLowerCase()?.includes("bar")      ||
-    item.category?.toLowerCase()?.includes("cocktail") ||
-    item.category?.toLowerCase()?.includes("drink");
+  // ✅ FIXED: only barman station, no category fallbacks
+  const isBarmanItem = (item) =>
+    item.station?.toLowerCase() === "barman";
 
-  // ── Filter to barman-relevant orders ─────────────────────────────────────
   const filteredOrders = useMemo(() => {
     const active    = ["Pending", "Preparing", "Ready"];
     const completed = ["Served", "Paid", "Closed", "Credit", "Mixed"];
@@ -313,12 +302,8 @@ export default function BarmanDisplay() {
         if (order.clearedByBarman) return false;
         if (!(order.items || []).some(isBarmanItem)) return false;
 
-        // Always show orders currently active at the bar
         if (active.includes(order.status)) return true;
-
-        // Keep showing completed orders the barman already worked on today
         if (completed.includes(order.status) && seenSet.has(Number(order.id))) return true;
-
         return false;
       })
       .filter(order => {
@@ -339,9 +324,8 @@ export default function BarmanDisplay() {
         if (aP !== bP) return aP - bP;
         return new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at);
       });
-  }, [orders, searchQuery, seenOrderIds]); // seenOrderIds in deps — critical
+  }, [orders, searchQuery, seenOrderIds]);
 
-  // ── Auto-upsert: every new bar order gets a ticket row in the DB ──────────
   const upsertedRef = useRef(new Set());
   useEffect(() => {
     filteredOrders.forEach(async order => {
@@ -362,7 +346,6 @@ export default function BarmanDisplay() {
         if (res.ok) {
           const ticket = await res.json();
           ticketMapRef.current[order.id] = ticket.id;
-          // Add to seenOrderIds so this order stays visible after Served/Paid
           setSeenOrderIds(prev =>
             prev.includes(Number(order.id)) ? prev : [...prev, Number(order.id)]
           );
@@ -371,7 +354,6 @@ export default function BarmanDisplay() {
     });
   }, [filteredOrders]);
 
-  // ── Audio ─────────────────────────────────────────────────────────────────
   const prevLen = useRef(orders.length);
   const playChime = () => {
     new Audio("https://assets.mixkit.co/active_storage/sfx/1062/1062-preview.mp3")
@@ -386,7 +368,6 @@ export default function BarmanDisplay() {
     prevLen.current = orders.length;
   }, [orders, audioEnabled]);
 
-  // ── Update status — both orders API and barman_tickets ────────────────────
   const updateStatus = useCallback(async (orderId, ticketId, newStatus) => {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     try {
@@ -407,7 +388,6 @@ export default function BarmanDisplay() {
     }
   }, [setOrders, refreshData]);
 
-  // ── Assign mixologist ─────────────────────────────────────────────────────
   const handleAssignBarman = useCallback(async (nameInput) => {
     if (!nameInput || !assigningItem) return;
     const { orderId, ticketId, itemIdx, itemName } = assigningItem;
@@ -428,13 +408,11 @@ export default function BarmanDisplay() {
         i === itemIdx ? { ...item, assignedTo: nameInput, assignedAt } : item
       );
 
-      // Update main orders table
       await fetch(`${API_URL}/api/orders/${orderId}/assign-chef`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items: updatedItems, item_name: itemName, assigned_to: nameInput, assigned_at: assignedAt, assigned_by: barmanName }),
       });
 
-      // Update barman ticket (logs to barman_assignments)
       const tId = ticketId || ticketMapRef.current[orderId];
       if (tId) {
         await fetch(`${API_URL}/api/barman/tickets/${tId}/assign-barman`, {
@@ -445,7 +423,6 @@ export default function BarmanDisplay() {
     } catch (err) { console.error("Assign barman failed:", err); }
   }, [assigningItem, orders, setOrders, barmanName]);
 
-  // ── End Shift ─────────────────────────────────────────────────────────────
   const handleShiftReset = async () => {
     let barmen = [];
     try {
@@ -483,7 +460,6 @@ export default function BarmanDisplay() {
   return (
     <div className="h-screen bg-zinc-950 p-3 md:p-5 overflow-hidden flex flex-col font-[Outfit] relative text-white">
 
-      {/* ── AUDIO GATE ── */}
       {!audioEnabled && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center">
           <div className="space-y-6">
@@ -509,7 +485,6 @@ export default function BarmanDisplay() {
         <ShiftSummaryModal stats={shiftStats} onConfirm={confirmEndShift} onClose={() => setShowSummary(false)}/>
       )}
 
-      {/* ── HEADER ── */}
       <header className="flex flex-col lg:flex-row justify-between items-center mb-4 bg-zinc-900 p-4 lg:px-6 rounded-[2rem] border border-white/5 shadow-2xl gap-3 shrink-0">
         <div className="flex items-center gap-4 w-full lg:w-auto">
           <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-lg border-b-4 border-blue-800 shrink-0">
@@ -521,7 +496,6 @@ export default function BarmanDisplay() {
           </div>
         </div>
 
-        {/* Live stats */}
         <div className="flex items-center gap-2 flex-wrap justify-center">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-800 border border-white/5 text-[10px] font-black uppercase">
             <span className="w-2 h-2 rounded-full bg-zinc-400"/>
@@ -537,7 +511,6 @@ export default function BarmanDisplay() {
           </div>
         </div>
 
-        {/* Search + controls */}
         <div className="flex items-center gap-2 w-full lg:w-auto">
           <div className="relative flex-1 lg:w-56">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={14}/>
@@ -556,7 +529,6 @@ export default function BarmanDisplay() {
         </div>
       </header>
 
-      {/* ── ORDERS GRID ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pb-16 custom-scrollbar flex-1">
         {filteredOrders.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center py-32 opacity-20">

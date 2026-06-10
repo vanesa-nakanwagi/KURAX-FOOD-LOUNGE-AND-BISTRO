@@ -566,30 +566,27 @@ router.patch('/:id/status', async (req, res) => {
 router.patch('/:id/pay', async (req, res) => {
   const { id } = req.params;
   const { status = 'Paid', payment_method } = req.body;
-
+ 
   if (!payment_method) {
     return res.status(400).json({ error: 'payment_method is required' });
   }
-
+ 
   try {
-    // Get current order to check if it's already paid
     const currentOrder = await pool.query(
-      `SELECT status, payment_method, total, table_name FROM orders WHERE id = $1`,
+      `SELECT status, payment_method, total, table_name, items FROM orders WHERE id = $1`,
       [id]
     );
-    
+ 
     if (currentOrder.rows.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    
+ 
     const order = currentOrder.rows[0];
-    
-    // Prevent double payment
+ 
     if (order.status === 'Paid') {
       return res.status(400).json({ error: 'Order is already paid' });
     }
-    
-    // Update order to paid
+ 
     const result = await pool.query(
       `UPDATE orders 
        SET status = $1, 
@@ -601,32 +598,64 @@ router.patch('/:id/pay', async (req, res) => {
        RETURNING *`,
       [status, payment_method, id]
     );
-
+ 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
     }
-
+ 
     const updatedOrder = result.rows[0];
-    
+ 
     let items = updatedOrder.items;
     if (typeof items === 'string') {
-      items = JSON.parse(items);
+      try { items = JSON.parse(items); } catch { items = []; }
     }
-
-    // Mark individual items as paid
-    const updatedItems = items.map(item => ({
-      ...item,
-      _rowPaid: true,
-      payment_method: payment_method,
-      paid_at: new Date().toISOString()
-    }));
-    
+    if (!Array.isArray(items)) items = [];
+ 
+    // ─── FIX: Only stamp _rowPaid and payment_method on items that are
+    //         actually being paid right now. Specifically:
+    //
+    //         - SKIP items that are already marked as credit
+    //           (creditRequested: true or payment_method includes CREDIT).
+    //           These items have a separate approval flow and must NOT
+    //           receive the cash/momo payment_method stamp. If they do,
+    //           the frontend's isCreditItem check breaks because it reads
+    //           item.payment_method — and "CASH" overwrites "CREDIT".
+    //
+    //         - SKIP items that are already voided. They should not be
+    //           re-stamped with any payment data.
+    //
+    //         - SKIP items already paid (_rowPaid: true) to avoid
+    //           overwriting their original payment method in split-pay flows.
+    //
+    //         The old code did `items.map(item => ({ ...item, _rowPaid: true,
+    //         payment_method: payment_method }))` which stamped ALL items
+    //         unconditionally — this was the root cause of the bug.
+    const updatedItems = items.map(item => {
+      const isVoided  = item.voidProcessed === true || item.status === 'VOIDED';
+      const isCredit  = item.creditRequested === true ||
+                        (item.payment_method || '').toUpperCase().includes('CREDIT');
+      const alreadyPaid = item._rowPaid === true;
+ 
+      // Leave credit, voided, and already-paid items completely untouched
+      if (isVoided || isCredit || alreadyPaid) {
+        return item;
+      }
+ 
+      // Only stamp cash/momo/card items that are currently unpaid
+      return {
+        ...item,
+        _rowPaid: true,
+        payment_method: payment_method,
+        paid_at: new Date().toISOString(),
+      };
+    });
+ 
     await pool.query(
       `UPDATE orders SET items = $1 WHERE id = $2`,
       [JSON.stringify(updatedItems), id]
     );
-
-    // Update table status if this table has no more pending orders
+ 
+    // Update table status if no more pending orders
     if (updatedOrder.table_name && updatedOrder.table_name !== 'WALK-IN') {
       try {
         const pendingCheck = await pool.query(
@@ -649,11 +678,18 @@ router.patch('/:id/pay', async (req, res) => {
         console.warn('Table release check failed:', err.message);
       }
     }
-
-    // ✅ ONLY HERE do we update daily summary (affects revenue)
-    await updateDailySummary({ amount: updatedOrder.total, method: payment_method });
-    
-    // Record in cashier_queue
+ 
+    // Only update daily summary for the non-credit portion being paid now
+    const paidNow = updatedItems
+      .filter(item => {
+        const isCredit = item.creditRequested === true ||
+                         (item.payment_method || '').toUpperCase().includes('CREDIT');
+        return item._rowPaid === true && !isCredit;
+      })
+      .reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1), 0);
+ 
+    await updateDailySummary({ amount: paidNow, method: payment_method });
+ 
     try {
       await pool.query(
         `INSERT INTO cashier_queue 
@@ -664,21 +700,21 @@ router.patch('/:id/pay', async (req, res) => {
           updatedOrder.table_name || 'WALK-IN',
           `Order #${updatedOrder.id}`,
           payment_method,
-          Number(updatedOrder.total),
+          paidNow,
         ]
       );
     } catch (err) {
       console.warn('Failed to record in cashier_queue:', err.message);
     }
-    
+ 
     await logActivity(pool, {
       type: 'PAYMENT_CONFIRMED',
       actor: 'Cashier',
       role: 'CASHIER',
-      message: `Order #${id} (${updatedOrder.table_name}) paid via ${payment_method} - UGX ${Number(updatedOrder.total).toLocaleString()}`,
-      meta: { order_id: id, amount: updatedOrder.total, method: payment_method }
+      message: `Order #${id} (${updatedOrder.table_name}) paid via ${payment_method} - UGX ${paidNow.toLocaleString()}`,
+      meta: { order_id: id, amount: paidNow, method: payment_method }
     });
-    
+ 
     res.json({
       ...updatedOrder,
       items: updatedItems
@@ -688,6 +724,7 @@ router.patch('/:id/pay', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+ 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/orders/void-requests/:id/approve - Accountant approves void

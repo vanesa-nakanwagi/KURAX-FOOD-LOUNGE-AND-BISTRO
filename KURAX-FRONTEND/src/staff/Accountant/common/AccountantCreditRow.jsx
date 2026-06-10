@@ -7,10 +7,10 @@ export default function AccountantCreditRow({ credit }) {
   const statusConfig = {
     pendingCashier: { label: "Wait for Cashier", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20", icon: <Hourglass size={12}/> },
     pendingManager: { label: "Wait for Manager", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20", icon: <Clock size={12}/> },
-    approved:       { label: "Approved",         color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: <CheckCircle2 size={12}/> },
+    approved:       { label: "Outstanding",         color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: <CheckCircle2 size={12}/> },
     settled:        { label: "Settled",          color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", icon: <CheckCircle2 size={12}/> },
     rejected:       { label: "Rejected",         color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20",       icon: <XCircle size={12}/> },
-    outstanding:    { label: "Outstanding",      color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: <BookOpen size={12}/> },
+    outstanding:    { label: "Pending Approval Request - Manager",      color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: <BookOpen size={12}/> },
   };
   const config = statusConfig[status] || statusConfig.outstanding;
   const isSettled = status === "settled";

@@ -63,30 +63,8 @@ export default function Dashboard() {
   // States
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedItem, setSelectedItem] = useState(null);
-  const [dailyVisits, setDailyVisits] = useState(0);
 
-  // Logout handler
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('kurax_user');
-    navigate('/staff/login');
-  };
-
-  // Fetch live stats
-  useEffect(() => {
-    const fetchLiveStats = async () => {
-      try {
-        const response = await axios.get("http://localhost:5010/api/visits/today");
-        setDailyVisits(response.data.totalVisits || 0);
-      } catch (err) {
-        console.error("Dashboard Stats Error:", err);
-      }
-    };
-
-    fetchLiveStats();
-    const interval = setInterval(fetchLiveStats, 60000); 
-    return () => clearInterval(interval);
-  }, []);
+ 
 
   // Activity logic
   const allActivity = [...(menus || []), ...(events || [])].sort((a, b) => {
@@ -99,30 +77,21 @@ export default function Dashboard() {
     item.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Dynamic stats configuration
+  // Dynamic stats configuration – removed Daily Views, no trend property
   const stats = [
     { 
       title: "Total Menus", 
       value: (menus || []).length, 
-      trend: "up", 
       icon: "Utensils" 
     },
     { 
       title: "Total Events", 
       value: (events || []).length, 
-      trend: "up", 
       icon: "Calendar" 
-    },
-    { 
-      title: "Daily Views", 
-      value: dailyVisits.toLocaleString(), 
-      trend: "up", 
-      icon: "Eye" 
     },
     { 
       title: "Total Bookings", 
       value: (orders || []).length, 
-      trend: "up", 
       icon: "Heart" 
     }
   ];
@@ -155,18 +124,11 @@ export default function Dashboard() {
                 </span>
               </h2>
             </div>
-            {/* Optional logout button (already in sidebar) but adding for symmetry */}
-            <button 
-              onClick={handleLogout}
-              className="p-3 bg-white border border-gray-200 rounded-2xl text-gray-500 hover:text-red-600 hover:border-red-200 transition-all shadow-sm"
-              title="Logout"
-            >
-              <Power size={20} />
-            </button>
+           
           </div>
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-12">
+          {/* Stats Grid - 3 cards, no trend */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-12">
             {stats.map((stat, index) => <StatsCard key={index} {...stat} />)}
           </div>
 
@@ -220,7 +182,7 @@ export default function Dashboard() {
                       </span>
                       <span className="w-1 h-1 bg-gray-300 rounded-full" />
                       <span className="flex items-center gap-1">
-                        📅 {new Date(item.created_at || Date.now()).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        {new Date(item.created_at || Date.now()).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                       </span>
                     </div>
                   </div>

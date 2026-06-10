@@ -12,9 +12,20 @@ function kampalaDate() {
   return `${year}-${month}-${day}`;
 }
 
+// ─── 0. TEST ROUTE ──────────────────────────────────────────────────────────
+router.get('/test', (req, res) => {
+  console.log('🔵 TEST endpoint called');
+  res.json({ 
+    status: 'ok', 
+    message: 'Accountant routes are working!',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // ─── 1. SIMPLE ORDER SUMMARY (used by older endpoints) ───────────────────────
 router.get('/summary', async (req, res) => {
   const date = req.query.date || kampalaDate();
+  console.log(`🔵 /summary endpoint called for date: ${date}`);
   try {
     const result = await pool.query(
       `SELECT
@@ -25,106 +36,103 @@ router.get('/summary', async (req, res) => {
        WHERE (timestamp AT TIME ZONE 'Africa/Nairobi')::date = $1`,
       [date]
     );
+    console.log(`✅ /summary result:`, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('Overview Summary Error:', err.message);
+    console.error('❌ Overview Summary Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── 2. TODAY'S STAT-CARD SUMMARY - FIXED (no double timezone conversion) ───
+// ─── 2. TODAY'S STAT-CARD SUMMARY ───────────────────────────────────────────
 router.get('/today', async (req, res) => {
   const today = kampalaDate();
+  console.log(`🔵 /today endpoint called for date: ${today}`);
+  
   try {
     // Ensure today's row exists
-    await pool.query(
-      `INSERT INTO daily_summary (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, total_credit, total_mixed, order_count, day_closed, created_at, updated_at)
-       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
-       ON CONFLICT (summary_date) DO NOTHING`,
+    const insertResult = await pool.query(
+      `INSERT INTO daily_summary 
+        (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, 
+         total_credit, total_mixed, order_count, total_settled_credits, day_closed, created_at, updated_at)
+       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
+       ON CONFLICT (summary_date) DO NOTHING
+       RETURNING *`,
       [today]
     );
+    
+    if (insertResult.rows.length > 0) {
+      console.log(`✅ Created new daily_summary row for ${today}`);
+    } else {
+      console.log(`📋 daily_summary row already exists for ${today}`);
+    }
 
-    // FIXED: No double timezone conversion - timestamp is already in EAT
+    // Get the daily summary from database
     const summaryRes = await pool.query(
       `SELECT
-         COALESCE(total_gross,  0) AS total_gross,
-         COALESCE(total_cash,   0) AS total_cash,
-         COALESCE(total_card,   0) AS total_card,
-         COALESCE(total_mtn,    0) AS total_mtn,
+         COALESCE(total_gross, 0) AS total_gross,
+         COALESCE(total_cash, 0) AS total_cash,
+         COALESCE(total_card, 0) AS total_card,
+         COALESCE(total_mtn, 0) AS total_mtn,
          COALESCE(total_airtel, 0) AS total_airtel,
-         COALESCE(order_count,  0) AS order_count
+         COALESCE(order_count, 0) AS order_count,
+         COALESCE(total_settled_credits, 0) AS total_settled_credits
        FROM daily_summary
        WHERE summary_date = $1`,
       [today]
     );
 
-    // ── Credit settlements collected today ──────────────────────────────────
-    // FIXED: No double timezone conversion
-    const settleGrandRes = await pool.query(
-      `SELECT COALESCE(SUM(cs.amount_paid), 0) AS total
-       FROM credit_settlements cs
-       WHERE DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') = $1`,
-      [today]
-    );
+    const daily = summaryRes.rows[0] || {};
 
-    // ── Credit settlements breakdown by payment method ──────────────────────
-    const settleBreakdownRes = await pool.query(
-      `SELECT
-         COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'cash' THEN cs.amount_paid ELSE 0 END), 0) AS cash,
-         COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'card' THEN cs.amount_paid ELSE 0 END), 0) AS card,
-         COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'momo-mtn' THEN cs.amount_paid ELSE 0 END), 0) AS mtn,
-         COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'momo-airtel' THEN cs.amount_paid ELSE 0 END), 0) AS airtel
-       FROM credit_settlements cs
-       WHERE DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') = $1`,
-      [today]
-    );
-
-    const daily      = summaryRes.rows[0] || {};
-    const grandTotal = settleGrandRes.rows[0] || {};
-    const breakdown  = settleBreakdownRes.rows[0] || {};
-
-    console.log(`Summary for ${today}:`, {
+    console.log(`📊 Database values for ${today}:`, {
       total_cash: daily.total_cash,
       total_card: daily.total_card,
-      total_gross: daily.total_gross
+      total_mtn: daily.total_mtn,
+      total_airtel: daily.total_airtel,
+      total_gross: daily.total_gross,
+      total_settled_credits: daily.total_settled_credits,
+      order_count: daily.order_count
     });
 
-    res.json({
-      total_gross:  Number(daily.total_gross  || 0),
-      total_cash:   Number(daily.total_cash   || 0),
-      total_card:   Number(daily.total_card   || 0),
-      total_mtn:    Number(daily.total_mtn    || 0),
-      total_airtel: Number(daily.total_airtel || 0),
-      order_count:  Number(daily.order_count  || 0),
-      credit_settlements_today: Number(grandTotal.total || 0),
-      credit_settlements_breakdown: {
-        cash:   Number(breakdown.cash   || 0),
-        card:   Number(breakdown.card   || 0),
-        mtn:    Number(breakdown.mtn    || 0),
-        airtel: Number(breakdown.airtel || 0),
-      },
-    });
+    // Return the database values directly - DO NOT add anything
+    const response = {
+      total_gross: Number(daily.total_gross) || 0,
+      total_cash: Number(daily.total_cash) || 0,
+      total_card: Number(daily.total_card) || 0,
+      total_mtn: Number(daily.total_mtn) || 0,
+      total_airtel: Number(daily.total_airtel) || 0,
+      order_count: Number(daily.order_count) || 0,
+      total_settled_credits: Number(daily.total_settled_credits) || 0,
+    };
+    
+    console.log(`✅ /today response:`, response);
+    res.json(response);
+    
   } catch (err) {
-    console.error('Today Summary Error:', err.message);
+    console.error('❌ Today Summary Error:', err.message);
+    console.error('❌ Error stack:', err.stack);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── 2a. CREATE TODAY'S SUMMARY IF NOT EXISTS ────────────────────────────────
-// Call this when a payment is confirmed to ensure today's row exists
 router.post('/ensure-today', async (req, res) => {
   const today = kampalaDate();
+  console.log(`🔵 /ensure-today called for ${today}`);
   try {
     const result = await pool.query(
-      `INSERT INTO daily_summary (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, total_credit, total_mixed, order_count, day_closed, created_at, updated_at)
-       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
+      `INSERT INTO daily_summary 
+        (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, 
+         total_credit, total_mixed, order_count, total_settled_credits, day_closed, created_at, updated_at)
+       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
        ON CONFLICT (summary_date) DO NOTHING
        RETURNING *`,
       [today]
     );
+    console.log(`✅ ensure-today: ${result.rows.length > 0 ? 'Created new row' : 'Row already exists'}`);
     res.json({ success: true, created: result.rows.length > 0 });
   } catch (err) {
-    console.error('Ensure today summary error:', err.message);
+    console.error('❌ Ensure today summary error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -133,6 +141,7 @@ router.post('/ensure-today', async (req, res) => {
 router.get('/credit-summary-monthly', async (req, res) => {
   const { month } = req.query;
   const targetMonth = month || new Date().toISOString().slice(0, 7);
+  console.log(`🔵 /credit-summary-monthly called for month: ${targetMonth}`);
 
   try {
     const creditsRes = await pool.query(
@@ -171,6 +180,13 @@ router.get('/credit-summary-monthly', async (req, res) => {
       }
     });
 
+    console.log(`✅ Monthly credit summary for ${targetMonth}:`, {
+      total_credits: credits.length,
+      total_settled: totalSettled,
+      total_outstanding: totalOutstanding,
+      total_rejected: totalRejected
+    });
+
     res.json({
       month:             targetMonth,
       total_credits:     credits.length,
@@ -181,7 +197,7 @@ router.get('/credit-summary-monthly', async (req, res) => {
       credits,
     });
   } catch (err) {
-    console.error('Monthly Credit Summary Error:', err.message);
+    console.error('❌ Monthly Credit Summary Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -189,20 +205,23 @@ router.get('/credit-summary-monthly', async (req, res) => {
 // ─── 4. ACTIVITY LOGS — initial page load ────────────────────────────────────
 router.get('/logs', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+  console.log(`🔵 /logs called, limit: ${limit}`);
   try {
     const result = await pool.query(
       `SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT $1`,
       [limit]
     );
+    console.log(`✅ Retrieved ${result.rows.length} activity logs`);
     res.json(result.rows);
   } catch (err) {
-    console.error('Overview Logs Error:', err.message);
+    console.error('❌ Overview Logs Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── 5. SSE — REAL-TIME ACTIVITY STREAM ──────────────────────────────────────
 router.get('/stream', (req, res) => {
+  console.log('🔵 SSE stream connection established');
   res.setHeader('Content-Type',      'text/event-stream');
   res.setHeader('Cache-Control',     'no-cache');
   res.setHeader('Connection',        'keep-alive');
@@ -219,6 +238,7 @@ router.get('/stream', (req, res) => {
   }, 25_000);
 
   req.on('close', () => {
+    console.log('🔴 SSE stream closed');
     clearInterval(heartbeat);
     removeSSEClient(res);
   });
@@ -226,6 +246,7 @@ router.get('/stream', (req, res) => {
 
 // ─── 6. WEEKLY REVENUE — for RevenueChart ────────────────────────────────────
 router.get('/weekly-revenue', async (req, res) => {
+  console.log('🔵 /weekly-revenue called');
   try {
     const result = await pool.query(`
       WITH day_series AS (
@@ -281,9 +302,10 @@ router.get('/weekly-revenue', async (req, res) => {
       LEFT JOIN expenses e  ON e.day  = ds.day
       ORDER BY ds.day ASC
     `);
+    console.log(`✅ Retrieved ${result.rows.length} weekly revenue records`);
     res.json(result.rows);
   } catch (err) {
-    console.error('Weekly Revenue Error:', err.message);
+    console.error('❌ Weekly Revenue Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -291,6 +313,7 @@ router.get('/weekly-revenue', async (req, res) => {
 // ─── 7. SHIFT LIQUIDATIONS ────────────────────────────────────────────────────
 router.get('/shifts', async (req, res) => {
   const date = req.query.date || kampalaDate();
+  console.log(`🔵 /shifts called for date: ${date}`);
   try {
     const result = await pool.query(
       `SELECT
@@ -304,9 +327,10 @@ router.get('/shifts', async (req, res) => {
        ORDER BY created_at ASC`,
       [date]
     );
+    console.log(`✅ Retrieved ${result.rows.length} shifts for ${date}`);
     res.json(result.rows);
   } catch (err) {
-    console.error('Overview Shifts Error:', err.message);
+    console.error('❌ Overview Shifts Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -314,6 +338,7 @@ router.get('/shifts', async (req, res) => {
 // ─── 8. PETTY CASH — GET today's entries ─────────────────────────────────────
 router.get('/petty-cash', async (req, res) => {
   const today = kampalaDate();
+  console.log(`🔵 /petty-cash GET called for ${today}`);
   try {
     const result = await pool.query(
       `SELECT *
@@ -327,6 +352,7 @@ router.get('/petty-cash', async (req, res) => {
     const total_out = entries.filter(e => e.direction === 'OUT').reduce((s, e) => s + Number(e.amount), 0);
     const total_in  = entries.filter(e => e.direction === 'IN' ).reduce((s, e) => s + Number(e.amount), 0);
 
+    console.log(`✅ Petty cash: IN=${total_in}, OUT=${total_out}, Net=${total_in - total_out}`);
     res.json({
       total_out,
       total_in,
@@ -334,7 +360,7 @@ router.get('/petty-cash', async (req, res) => {
       entries,
     });
   } catch (err) {
-    console.error('Petty Cash GET Error:', err.message);
+    console.error('❌ Petty Cash GET Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -342,6 +368,7 @@ router.get('/petty-cash', async (req, res) => {
 // ─── 9. PETTY CASH — POST new entry ──────────────────────────────────────────
 router.post('/petty-cash', async (req, res) => {
   const { amount, direction, category, description, logged_by } = req.body;
+  console.log(`🔵 /petty-cash POST: ${direction} UGX ${amount} - ${description}`);
 
   if (!amount || !direction || !description) {
     return res.status(400).json({ error: 'amount, direction, and description are required' });
@@ -358,9 +385,10 @@ router.post('/petty-cash', async (req, res) => {
        RETURNING *`,
       [Number(amount), direction, category || 'General', description.trim(), logged_by || 'Director', today]
     );
+    console.log(`✅ Petty cash entry created: ID ${result.rows[0].id}`);
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error('Petty Cash POST Error:', err.message);
+    console.error('❌ Petty Cash POST Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -368,11 +396,13 @@ router.post('/petty-cash', async (req, res) => {
 // ─── 10. PETTY CASH — DELETE entry ───────────────────────────────────────────
 router.delete('/petty-cash/:id', async (req, res) => {
   const { id } = req.params;
+  console.log(`🔵 /petty-cash DELETE id: ${id}`);
   try {
     await pool.query('DELETE FROM petty_cash WHERE id = $1', [id]);
+    console.log(`✅ Petty cash entry ${id} deleted`);
     res.json({ success: true });
   } catch (err) {
-    console.error('Petty Cash DELETE Error:', err.message);
+    console.error('❌ Petty Cash DELETE Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -380,6 +410,7 @@ router.delete('/petty-cash/:id', async (req, res) => {
 // ─── 11. DIRECTOR DAILY SUMMARY (combined endpoint) ──────────────────────────
 router.get('/director/daily-summary', async (req, res) => {
   const today = kampalaDate();
+  console.log(`🔵 /director/daily-summary called for ${today}`);
   try {
     const dailyRes = await pool.query(
       `SELECT
@@ -388,7 +419,8 @@ router.get('/director/daily-summary', async (req, res) => {
          COALESCE(total_card,   0) AS total_card,
          COALESCE(total_mtn,    0) AS total_mtn,
          COALESCE(total_airtel, 0) AS total_airtel,
-         COALESCE(order_count,  0) AS order_count
+         COALESCE(order_count,  0) AS order_count,
+         COALESCE(total_settled_credits, 0) AS total_settled_credits
        FROM daily_summary
        WHERE summary_date = $1`,
       [today]
@@ -432,14 +464,17 @@ router.get('/director/daily-summary', async (req, res) => {
       }
     });
 
+    console.log(`✅ Director summary: Gross=${dailyRes.rows[0]?.total_gross}, Credits Settled=${dailyRes.rows[0]?.total_settled_credits}`);
+
     res.json({
       daily: {
-        gross:                    Number(dailyRes.rows[0]?.total_gross  || 0),
-        cash:                     Number(dailyRes.rows[0]?.total_cash   || 0),
-        card:                     Number(dailyRes.rows[0]?.total_card   || 0),
-        mtn:                      Number(dailyRes.rows[0]?.total_mtn    || 0),
+        gross:                    Number(dailyRes.rows[0]?.total_gross || 0),
+        cash:                     Number(dailyRes.rows[0]?.total_cash || 0),
+        card:                     Number(dailyRes.rows[0]?.total_card || 0),
+        mtn:                      Number(dailyRes.rows[0]?.total_mtn || 0),
         airtel:                   Number(dailyRes.rows[0]?.total_airtel || 0),
-        orders:                   Number(dailyRes.rows[0]?.order_count  || 0),
+        orders:                   Number(dailyRes.rows[0]?.order_count || 0),
+        total_settled_credits:    Number(dailyRes.rows[0]?.total_settled_credits || 0),
         credit_settlements_today: Number(settleRes.rows[0]?.total_settled || 0),
       },
       monthly_credits: {
@@ -450,7 +485,7 @@ router.get('/director/daily-summary', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Director Daily Summary Error:', err.message);
+    console.error('❌ Director Daily Summary Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

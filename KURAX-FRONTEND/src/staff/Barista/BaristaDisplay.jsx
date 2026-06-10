@@ -270,13 +270,9 @@ export default function BaristaDisplay() {
   const ticketMapRef = useRef({});
 
   // ── Seen order IDs — stored as plain number[] so React diffs it correctly ───
-  // A Set in state looks like the same reference to useMemo even after mutation.
-  // A plain array triggers proper re-renders and can safely go in deps.
   const [seenOrderIds, setSeenOrderIds] = useState([]);
 
   // ── On mount: load today's barista tickets from DB ────────────────────────
-  // Fills ticketMapRef (orderId → ticketId) AND populates seenOrderIds so
-  // completed cards (Served / Paid) survive a full page refresh.
   useEffect(() => {
     (async () => {
       try {
@@ -296,12 +292,9 @@ export default function BaristaDisplay() {
     })();
   }, []);
 
-  // ── Filter helpers ────────────────────────────────────────────────────────
-  const isBaristaItem = item =>
-    item.station?.toLowerCase() === "barista" ||
-    item.station?.toLowerCase() === "coffee"  ||
-    item.category?.toLowerCase()?.includes("coffee") ||
-    item.category?.toLowerCase()?.includes("barista");
+  // ── Filter helpers — FIXED: ONLY station === 'barista' ─────────────────────
+  const isBaristaItem = (item) =>
+    item.station?.toLowerCase() === "barista";
 
   const filteredOrders = useMemo(() => {
     const active    = ["Pending", "Preparing", "Ready"];
@@ -339,7 +332,7 @@ export default function BaristaDisplay() {
         if (aP !== bP) return aP - bP;
         return new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at);
       });
-  }, [orders, searchQuery, seenOrderIds]); // ← seenOrderIds NOW in deps
+  }, [orders, searchQuery, seenOrderIds]);
 
   // ── Auto-upsert: every new barista order gets a ticket row in the DB ──────
   const upsertedRef = useRef(new Set());
@@ -452,7 +445,6 @@ export default function BaristaDisplay() {
       const res = await fetch(`${API_URL}/api/barista/tickets/summary?date=${kampalaDateStr()}`);
       if (res.ok) { const d = await res.json(); baristas = d.baristas || []; }
     } catch {}
-    // Count ALL orders seen this session (active + completed)
     const cupCount = filteredOrders.reduce((s, o) => s + o.items.length, 0);
     setShiftStats({ totalOrders: filteredOrders.length, totalBrewed: cupCount, baristas });
     setShowSummary(true);
@@ -474,7 +466,7 @@ export default function BaristaDisplay() {
 
     setShowSummary(false);
     upsertedRef.current.clear();
-    setSeenOrderIds([]); // reset so next shift starts with a blank feed
+    setSeenOrderIds([]);
   };
 
   const pendingCount   = filteredOrders.filter(o => o.status === "Pending").length;

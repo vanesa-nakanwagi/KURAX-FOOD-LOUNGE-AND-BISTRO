@@ -1,5 +1,5 @@
 import React from "react";
-import { Calculator, TrendingUp, CheckCircle2, Save, Zap } from "lucide-react";
+import { Calculator, TrendingUp, CheckCircle2, Save, Zap, CreditCard } from "lucide-react";
 import PhysInput from "../common/PhysInput";
 import VarianceRow from "../common/VarianceRow";
 import { fmt } from "../utils/helpers";
@@ -17,9 +17,6 @@ export default function PhysicalCount({
   setPhysCard,
   physNotes,
   setPhysNotes,
-  physSaving,
-  physSaved,
-  savePhysicalCount,
   pettyCashIn,
   sys,
   adjustedPhysCash,
@@ -30,17 +27,25 @@ export default function PhysicalCount({
   varTotal,
   isDark = false,
   cardBgClass = "bg-white border border-gray-200 shadow-sm",
-  textClass = "text-gray-900"
+  textClass = "text-gray-900",
+  // Credit summary props
+  creditSettledToday,
+  setCreditSettledToday,
+  creditOutstandingToday,
+  setCreditOutstandingToday,
+  // Combined save
+  savingAll,
+  savedAll,
+  saveAllData,
 }) {
   const subTextClass = "text-gray-500";
   
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
-
       {dayClosed && (
         <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-center">
-          <p className="text-[10px] font-black text-emerald-700">✅ Day is closed - Physical count has been archived and reset to zero</p>
+          <p className="text-[10px] font-black text-emerald-700">✅ Day is closed – Physical count and credit summary have been archived and reset to zero</p>
         </div>
       )}
 
@@ -59,6 +64,7 @@ export default function PhysicalCount({
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* PHYSICAL CASH ENTRY */}
         <div className={`p-8 rounded-2xl transition-all duration-300 ${cardBgClass}`}>
           <h3 className="text-[10px] font-black uppercase text-yellow-600 tracking-widest flex items-center gap-2 mb-5">
             <Calculator size={13}/> Physical Cash Entry
@@ -78,75 +84,128 @@ export default function PhysicalCount({
                   disabled={dayClosed}
                   className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-gray-700 text-sm outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200 resize-none h-16 transition-all disabled:opacity-50 disabled:bg-gray-100"/>
               </div>
-              <button onClick={savePhysicalCount} disabled={physSaving || dayClosed}
-                className={`w-full py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all duration-300
-                  ${physSaved ? "bg-emerald-600 text-white" : "bg-yellow-500 text-black hover:bg-yellow-600"}
-                  ${(physSaving || dayClosed) ? "opacity-60 cursor-not-allowed" : ""}`}>
-                {physSaving ? "Saving…" : dayClosed ? <><CheckCircle2 size={14}/> Day Closed</> : physSaved ? <><CheckCircle2 size={14}/> Saved!</> : <><Save size={14}/> Save Count</>}
-              </button>
             </>
           )}
         </div>
 
+        {/* CREDIT SETTLEMENTS & OUTSTANDING */}
         <div className={`p-8 rounded-2xl transition-all duration-300 ${cardBgClass}`}>
           <h3 className="text-[10px] font-black uppercase text-yellow-600 tracking-widest flex items-center gap-2 mb-5">
-            <TrendingUp size={13}/> Variance Analysis
+            <CreditCard size={13}/> Credit Summary for Today
           </h3>
-          {dayClosed ? (
-            <div className="text-center py-12">
-              <CheckCircle2 size={48} className="mx-auto text-emerald-600 mb-4" />
-              <p className="text-[11px] font-black text-emerald-700">All variances have been reset to zero</p>
-              <p className={`text-[9px] ${subTextClass} mt-2`}>Day has been closed and archived</p>
+          <div className="space-y-4">
+            <div>
+              <label className={`text-[9px] font-black uppercase tracking-widest mb-2 block ${subTextClass}`}>
+                Credit Settlements Collected Today (UGX)
+              </label>
+              <input
+                type="number"
+                value={creditSettledToday}
+                onChange={e => setCreditSettledToday(Number(e.target.value))}
+                disabled={dayClosed}
+                className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-gray-700 font-black text-lg outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200 transition-all disabled:opacity-50 disabled:bg-gray-100"
+                placeholder="0"
+              />
+              <p className="text-[8px] text-gray-500 mt-1">Amount received from credit customers today</p>
             </div>
-          ) : (
-            <>
-              <div className="space-y-1">
-                <VarianceRow
-                  label={pettyCashIn > 0 ? `Cash (adj. −UGX ${fmt(pettyCashIn)} replenishment)` : "System Cash"}
-                  system={sys.cash}
-                  physical={adjustedPhysCash}
-                  variance={varCash}
-                />
-                <VarianceRow label="System MTN" system={sys.mtn} physical={physMomoMTN} variance={varMTN}/>
-                <VarianceRow label="System Airtel" system={sys.airtel} physical={physMomoAirtel} variance={varAirtel}/>
-                <VarianceRow label="System Card" system={sys.card} physical={physCard} variance={varCard}/>
-              </div>
-
-              <div className={`mt-4 p-6 rounded-2xl border transition-all duration-300
-                ${varTotal === 0 ? "bg-emerald-50 border-emerald-200"
-                  : varTotal > 0 ? "bg-blue-50 border-blue-200"
-                  : "bg-rose-50 border-rose-200"}`}>
-                <p className={`text-[9px] font-black uppercase mb-1 ${subTextClass}`}>Total Variance</p>
-                <h4 className={`text-2xl font-black italic
-                  ${varTotal === 0 ? "text-emerald-700" : varTotal > 0 ? "text-blue-700" : "text-rose-700"}`}>
-                  {varTotal >= 0 ? "+" : ""}UGX {fmt(varTotal)}
-                </h4>
-                <p className={`text-[9px] mt-1 uppercase font-bold ${subTextClass}`}>
-                  {varTotal === 0 ? "Perfect match" : varTotal > 0 ? "Surplus on counter" : "Shortage detected"}
-                </p>
-              </div>
-
-              <div className="pt-4 border-t border-gray-200 space-y-2">
-                <p className={`text-[9px] font-black uppercase tracking-widest ${subTextClass}`}>System Totals (reference)</p>
-                <div className="grid grid-cols-2 gap-2 text-[10px]">
-                  {[["Cash","emerald",sys.cash],["MTN","yellow",sys.mtn],["Airtel","red",sys.airtel],["Card","blue",sys.card]].map(([lbl,col,val]) => (
-                    <div key={lbl} className="bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors border border-gray-100">
-                      <p className={`text-gray-500 uppercase font-bold mb-0.5`}>{lbl}</p>
-                      <p className={`text-${col}-700 font-black`}>UGX {fmt(val)}</p>
-                    </div>
-                  ))}
-                </div>
-                {pettyCashIn > 0 && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
-                    <p className="text-[8px] font-black uppercase text-yellow-700 tracking-widest">Replenishment netted from cash</p>
-                    <p className="text-yellow-700 font-black text-sm mt-0.5">−UGX {fmt(pettyCashIn)}</p>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+            <div>
+              <label className={`text-[9px] font-black uppercase tracking-widest mb-2 block ${subTextClass}`}>
+                Outstanding Credit Balance (Remaining)
+              </label>
+              <input
+                type="number"
+                value={creditOutstandingToday}
+                onChange={e => setCreditOutstandingToday(Number(e.target.value))}
+                disabled={dayClosed}
+                className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-gray-700 font-black text-lg outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200 transition-all disabled:opacity-50 disabled:bg-gray-100"
+                placeholder="0"
+              />
+              <p className="text-[8px] text-gray-500 mt-1">Total credit still owed after today's payments</p>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* VARIANCE ANALYSIS (unchanged) */}
+      <div className={`p-8 rounded-2xl transition-all duration-300 ${cardBgClass}`}>
+        <h3 className="text-[10px] font-black uppercase text-yellow-600 tracking-widest flex items-center gap-2 mb-5">
+          <TrendingUp size={13}/> Variance Analysis
+        </h3>
+        {dayClosed ? (
+          <div className="text-center py-12">
+            <CheckCircle2 size={48} className="mx-auto text-emerald-600 mb-4" />
+            <p className="text-[11px] font-black text-emerald-700">All variances have been reset to zero</p>
+            <p className={`text-[9px] ${subTextClass} mt-2`}>Day has been closed and archived</p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1">
+              <VarianceRow
+                label={pettyCashIn > 0 ? `Cash (adj. −UGX ${fmt(pettyCashIn)} replenishment)` : "System Cash"}
+                system={sys.cash}
+                physical={adjustedPhysCash}
+                variance={varCash}
+              />
+              <VarianceRow label="System MTN" system={sys.mtn} physical={physMomoMTN} variance={varMTN}/>
+              <VarianceRow label="System Airtel" system={sys.airtel} physical={physMomoAirtel} variance={varAirtel}/>
+              <VarianceRow label="System Card" system={sys.card} physical={physCard} variance={varCard}/>
+            </div>
+
+            <div className={`mt-4 p-6 rounded-2xl border transition-all duration-300
+              ${varTotal === 0 ? "bg-emerald-50 border-emerald-200"
+                : varTotal > 0 ? "bg-blue-50 border-blue-200"
+                : "bg-rose-50 border-rose-200"}`}>
+              <p className={`text-[9px] font-black uppercase mb-1 ${subTextClass}`}>Total Variance</p>
+              <h4 className={`text-2xl font-black italic
+                ${varTotal === 0 ? "text-emerald-700" : varTotal > 0 ? "text-blue-700" : "text-rose-700"}`}>
+                {varTotal >= 0 ? "+" : ""}UGX {fmt(varTotal)}
+              </h4>
+              <p className={`text-[9px] mt-1 uppercase font-bold ${subTextClass}`}>
+                {varTotal === 0 ? "Perfect match" : varTotal > 0 ? "Surplus on counter" : "Shortage detected"}
+              </p>
+            </div>
+
+            <div className="pt-4 border-t border-gray-200 space-y-2">
+              <p className={`text-[9px] font-black uppercase tracking-widest ${subTextClass}`}>System Totals (reference)</p>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                {[["Cash","emerald",sys.cash],["MTN","yellow",sys.mtn],["Airtel","red",sys.airtel],["Card","blue",sys.card]].map(([lbl,col,val]) => (
+                  <div key={lbl} className="bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors border border-gray-100">
+                    <p className={`text-gray-500 uppercase font-bold mb-0.5`}>{lbl}</p>
+                    <p className={`text-${col}-700 font-black`}>UGX {fmt(val)}</p>
+                  </div>
+                ))}
+              </div>
+              {pettyCashIn > 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
+                  <p className="text-[8px] font-black uppercase text-yellow-700 tracking-widest">Replenishment netted from cash</p>
+                  <p className="text-yellow-700 font-black text-sm mt-0.5">−UGX {fmt(pettyCashIn)}</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* SINGLE SAVE BUTTON */}
+      {!dayClosed && (
+        <div className="flex justify-end">
+          <button
+            onClick={saveAllData}
+            disabled={savingAll}
+            className={`px-8 py-4 rounded-2xl font-black uppercase text-sm flex items-center justify-center gap-3 transition-all duration-300 shadow-lg
+              ${savedAll ? "bg-emerald-600 text-white" : "bg-yellow-500 text-black hover:bg-yellow-600"}
+              ${savingAll ? "opacity-60 cursor-not-allowed" : "hover:scale-[1.02]"}`}
+          >
+            {savingAll ? (
+              <><div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" /> Saving All Data…</>
+            ) : savedAll ? (
+              <><CheckCircle2 size={18} /> Saved!</>
+            ) : (
+              <><Save size={18} /> Save Physical Count & Credit Summary</>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

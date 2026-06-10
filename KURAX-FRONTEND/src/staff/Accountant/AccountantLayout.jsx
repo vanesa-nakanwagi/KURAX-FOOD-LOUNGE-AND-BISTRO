@@ -445,16 +445,16 @@ export default function AccountantLayout() {
 
   // ── Derived values ────────────────────────────────────────────────────────
   const src = liveSummary || todaySummary || {};
-  const sys = {
-    cash: Number(src.total_cash) || 0,
-    card: Number(src.total_card) || 0,
-    mtn: Number(src.total_mtn) || 0,
-    airtel: Number(src.total_airtel) || 0,
-    gross: Number(src.total_gross) || 0,
-    orders: Number(src.order_count) || 0,
-    pending_credits: Number(src.pending_credit_requests_amount) || 0,
-    credit_settlements: Number(src.credit_settlements_today) || 0,
-  };
+ const sys = {
+  cash: Number(src.total_cash) || 0,
+  card: Number(src.total_card) || 0,
+  mtn: Number(src.total_mtn) || 0,
+  airtel: Number(src.total_airtel) || 0,
+  gross: Number(src.total_gross) || 0,
+  orders: Number(src.order_count) || 0,
+  pending_credits: Number(src.total_credit) || 0,  // Credits issued but not paid
+  credit_settlements: Number(src.total_settled_credits) || 0,  
+};
 
   const totalMobileMoney = sys.mtn + sys.airtel;
   const pettyCashIn = Number(pettyCashToday.total_in) || 0;

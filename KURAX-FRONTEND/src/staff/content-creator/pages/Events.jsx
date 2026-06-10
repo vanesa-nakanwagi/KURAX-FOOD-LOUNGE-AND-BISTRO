@@ -11,6 +11,7 @@ export default function Events() {
   const [editingEvent, setEditingEvent] = useState(null)
   const [tagInput, setTagInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)   // 👈 Track which event is being deleted
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
 
   const [formData, setFormData] = useState({
@@ -134,6 +135,8 @@ export default function Events() {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this event? This will also remove the image from the server.')) return;
+    
+    setDeletingId(id);   // 👈 Show spinner on this specific delete button
     try {
       const response = await fetch(`${API_URL}/api/events/${id}`, { method: 'DELETE' });
       if (response.ok) {
@@ -145,6 +148,8 @@ export default function Events() {
     } catch (err) {
       console.error("Delete failed:", err);
       showToast("Network error during deletion.", "error");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -318,8 +323,16 @@ export default function Events() {
                     <button onClick={() => handleEdit(event)} className="flex-1 flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 py-2.5 rounded-xl font-bold text-gray-700 active:scale-95 transition">
                       <Edit2 className="w-3.5 h-3.5" /> Edit
                     </button>
-                    <button onClick={() => handleDelete(event.id)} className="px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl active:scale-95 transition">
-                      <Trash2 className="w-3.5 h-3.5" />
+                    <button 
+                      onClick={() => handleDelete(event.id)} 
+                      disabled={deletingId === event.id}
+                      className="px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      {deletingId === event.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   </div>
                 </div>

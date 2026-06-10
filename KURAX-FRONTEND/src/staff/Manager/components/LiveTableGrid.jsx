@@ -4,7 +4,8 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 import {
   Search, LayoutDashboard, AlertCircle, Clock, CheckCircle,
   Banknote, RefreshCw, Eye, XCircle, Ban, BookOpen, User,
-  ChefHat, Utensils, ArrowUpDown, Hourglass
+  ChefHat, Utensils, ArrowUpDown, Hourglass, CreditCard,
+  Smartphone, Wallet, Coffee, Pizza, Beef, Soup, Crown
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
@@ -39,9 +40,15 @@ function isTableGroupVoided(group) {
 function isTableGroupAnyVoided(group) {
   return group._rawOrders.some(isRowAnyVoided);
 }
-function isTableGroupCredited(group) {
-  return !isTableGroupVoided(group) &&
-    group._rawOrders.some(o => o.status === "Credit" || o.payment_method === "Credit");
+
+// Determine if a table should be listed under "Credits" tab (any pending/approved/partial credit)
+function isTableGroupCredited(group, creditsByTable) {
+  if (isTableGroupVoided(group)) return false;
+  const tableKey = group.tableName;
+  const creditEntry = creditsByTable[tableKey];
+  if (!creditEntry) return false;
+  // Show under Credits tab if the credit is not fully settled
+  return creditEntry.status !== "FullySettled";
 }
 
 export default function LiveTableGrid() {
@@ -119,7 +126,7 @@ export default function LiveTableGrid() {
     return () => clearTimeout(t);
   }, []);
 
-  // Group orders by table
+  // ─── Calculate table groups with correct payment status ───────────
   const tableGroups = useMemo(() => {
     const todayOrders = (orders || []).filter(o => {
       const ts = o.timestamp || o.created_at;
@@ -128,10 +135,96 @@ export default function LiveTableGrid() {
                       o.shift_cleared === true || o.shift_cleared === "t" || o.shift_cleared === "true";
       return !cleared;
     });
+
     const groups = {};
     todayOrders.forEach(order => {
       const key = (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase();
-      const rowPaid = order.status === "Paid" || order.status === "Credit" || order.status === "Mixed" || order.is_paid || order.isPaid;
+
+      let items = order.items || [];
+      if (typeof items === "string") {
+        try { items = JSON.parse(items); } catch { items = []; }
+      }
+
+      let confirmedTotal = 0;
+      let hasUnpaidItems = false;
+      let hasPendingCredit = false;      // credit item not yet fully settled
+      let hasPaidNonCreditItems = false;
+      let allItemsPaid = true;
+      let cashTotal = 0;
+      let mtnTotal = 0;
+      let airtelTotal = 0;
+      let cardTotal = 0;
+      let creditTotal = 0;
+      let paidItems = [];
+      let unpaidItems = [];
+
+      // Get credit entry for this table if it exists
+      const creditEntry = creditsByTable[key];
+
+      items.forEach(item => {
+        const isCreditItem =
+          item.creditRequested === true ||
+          (item.payment_method || "").toUpperCase().includes("CREDIT");
+        
+        // A credit item is considered "paid" only if the credit is fully settled
+        const isCreditFullySettled = isCreditItem && creditEntry?.status === "FullySettled";
+        const isCreditPartiallySettled = isCreditItem && creditEntry?.status === "PartiallySettled";
+        
+        const isItemPaid = (!isCreditItem || isCreditFullySettled) && (
+          item._rowPaid === true ||
+          item.payment_confirmed === true ||
+          item.status === "Paid"
+        );
+
+        const itemTotal = (Number(item.price) || 0) * (Number(item.quantity) || 1);
+
+        if (isItemPaid) {
+          confirmedTotal += itemTotal;
+          const orderLevelMethod = (order.payment_method || "").toUpperCase();
+          const fallbackMethod = orderLevelMethod === "CREDIT" ? "CASH" : (orderLevelMethod || "CASH");
+          const itemPaymentMethod = (item.payment_method || fallbackMethod).toUpperCase();
+
+          paidItems.push({ ...item, total: itemTotal, paymentMethod: itemPaymentMethod });
+          hasPaidNonCreditItems = true;
+
+          if (itemPaymentMethod.includes("CASH")) cashTotal += itemTotal;
+          else if (itemPaymentMethod.includes("MTN")) mtnTotal += itemTotal;
+          else if (itemPaymentMethod.includes("AIRTEL")) airtelTotal += itemTotal;
+          else if (itemPaymentMethod.includes("CARD")) cardTotal += itemTotal;
+
+        } else if (isCreditItem && !isCreditFullySettled) {
+          allItemsPaid = false;
+          hasUnpaidItems = true;
+          
+          // Calculate remaining balance if partially settled
+          let remainingAmount = itemTotal;
+          if (isCreditPartiallySettled) {
+            remainingAmount = Number(creditEntry.balance || itemTotal);
+          }
+          
+          creditTotal += remainingAmount;
+          unpaidItems.push({ 
+            ...item, 
+            total: remainingAmount, 
+            originalTotal: itemTotal,
+            paymentMethod: "CREDIT",
+            isPartiallySettled: isCreditPartiallySettled,
+            amountPaid: creditEntry?.amount_paid || 0
+          });
+
+          // If credit is not fully settled and not partially settled, it's pending
+          if (!isCreditPartiallySettled && creditEntry?.status !== "FullySettled") {
+            hasPendingCredit = true;
+          }
+        } else {
+          // Regular unpaid item (not credit, not yet confirmed)
+          hasUnpaidItems = true;
+          allItemsPaid = false;
+          const itemPaymentMethod = (item.payment_method || "CASH").toUpperCase();
+          unpaidItems.push({ ...item, total: itemTotal, paymentMethod: itemPaymentMethod });
+        }
+      });
+
       if (!groups[key]) {
         groups[key] = {
           tableName: key,
@@ -143,52 +236,150 @@ export default function LiveTableGrid() {
           _rows: [],
           _rawOrders: [],
           orderIds: [],
+          hasUnpaidItems: false,
+          hasPendingCredit: false,
+          hasPaidNonCreditItems: false,
+          cashTotal: 0,
+          mtnTotal: 0,
+          airtelTotal: 0,
+          cardTotal: 0,
+          creditTotal: 0,
+          paidItems: [],
+          unpaidItems: [],
         };
       }
+
       const g = groups[key];
-      g.total += Number(order.total) || 0;
-      g.itemCount += (order.items || []).length;
+      g.total += confirmedTotal;
+      g.itemCount += items.length;
       g.orderIds.push(order.id);
-      g._rows.push({ paid: rowPaid });
+
+      g._rows.push({
+        paid: allItemsPaid,
+        hasPendingCredit: hasPendingCredit,
+        hasPaidNonCreditItems: hasPaidNonCreditItems
+      });
+
       g._rawOrders.push(order);
+      g.hasUnpaidItems = g.hasUnpaidItems || hasUnpaidItems;
+      g.hasPendingCredit = g.hasPendingCredit || hasPendingCredit;
+      g.hasPaidNonCreditItems = g.hasPaidNonCreditItems || hasPaidNonCreditItems;
+      g.cashTotal += cashTotal;
+      g.mtnTotal += mtnTotal;
+      g.airtelTotal += airtelTotal;
+      g.cardTotal += cardTotal;
+      g.creditTotal += creditTotal;
+      g.paidItems = [...g.paidItems, ...paidItems];
+      g.unpaidItems = [...g.unpaidItems, ...unpaidItems];
+
       if (order.staff_name || order.waiterName) g.waiterName = order.staff_name || order.waiterName;
-      const rank = { Served: 6, Paid: 7, Mixed: 7, Credit: 7, Ready: 4, Delayed: 3, Preparing: 2, Pending: 1 };
-      if ((rank[order.status] || 0) > (rank[g.status] || 0)) g.status = order.status;
+
+      // Status determination – use credit entry for more accurate badge
+      const tableCreditEntry = creditsByTable[key];
+      let orderStatus = order.status;
+
+      if (tableCreditEntry) {
+        const creditStatus = tableCreditEntry.status;
+        if (creditStatus === "FullySettled") {
+          orderStatus = "Fully Paid";
+        } else if (creditStatus === "PartiallySettled") {
+          orderStatus = "Partially Settled";
+        } else if (creditStatus === "Approved") {
+          orderStatus = "Approved";
+        } else if (creditStatus === "PendingCashier" || creditStatus === "PendingManagerApproval") {
+          orderStatus = "Awaiting Approval";
+        }
+      } else {
+        if (hasPendingCredit && hasPaidNonCreditItems) {
+          orderStatus = "Partially Paid";
+        } else if (hasPendingCredit && !hasPaidNonCreditItems) {
+          orderStatus = "Awaiting Approval";
+        } else if (hasUnpaidItems && !allItemsPaid && !hasPendingCredit) {
+          orderStatus = "Partially Paid";
+        } else if (allItemsPaid && confirmedTotal > 0) {
+          orderStatus = "Fully Paid";
+        }
+      }
+
+      const rank = {
+        "Awaiting Approval": 1,
+        "Partially Paid": 2,
+        "Approved": 3,
+        "Partially Settled": 4,
+        "Pending": 5,
+        "Preparing": 6,
+        "Delayed": 7,
+        "Ready": 8,
+        "Served": 9,
+        "Fully Paid": 10
+      };
+
+      if ((rank[orderStatus] || 0) > (rank[g.status] || 0)) g.status = orderStatus;
     });
+
     return Object.values(groups).map(g => {
-      const allPaid = g._rows.length > 0 && g._rows.every(r => r.paid);
+      const creditEntry = creditsByTable[g.tableName];
+      const hasFullySettledCredit = creditEntry?.status === "FullySettled";
+      
+      const allPaid = g._rows.length > 0 &&
+        g._rows.every(r => r.paid === true) &&
+        !g.hasPendingCredit &&
+        (!hasFullySettledCredit || g._rows.every(r => r.paid === true));
+
       const minsElapsed = Math.floor((Date.now() - new Date(g.timestamp)) / 60000);
       const isVoided = isTableGroupVoided(g);
       const isAnyVoided = isTableGroupAnyVoided(g);
-      const isCredited = isTableGroupCredited(g);
-      const isDelayed = !isAnyVoided && !isCredited && !allPaid && minsElapsed >= 30 && ["Pending","Preparing","Ready","Delayed"].includes(g.status);
+
+      const isCredited = !isTableGroupVoided(g) &&
+        g._rawOrders.some(o => o.status === "Credit" || o.payment_method === "Credit") &&
+        !!creditEntry &&
+        creditEntry.status !== "FullySettled";
+      
+      const isDelayed = !isAnyVoided && !isCredited && !allPaid && minsElapsed >= 30 &&
+                       ["Pending","Preparing","Ready","Delayed","Partially Paid","Awaiting Approval","Approved","Partially Settled"].includes(g.status);
+
       return { ...g, allPaid, minsElapsed, isDelayed, isVoided, isAnyVoided, isCredited };
     });
-  }, [orders, today]);
+  }, [orders, today, creditsByTable]);
 
-  // Credit breakdown
+  // Credit breakdown with partial payments
   const creditBreakdown = useMemo(() => {
     const pendingCashier = creditsLedger.filter(c => c.status === "PendingCashier");
     const pendingManager = creditsLedger.filter(c => c.status === "PendingManagerApproval");
     const approved = creditsLedger.filter(c => c.status === "Approved");
-    const settled = creditsLedger.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled");
+    const settled = creditsLedger.filter(c => c.status === "FullySettled");
+    const partiallySettled = creditsLedger.filter(c => c.status === "PartiallySettled");
     const rejected = creditsLedger.filter(c => c.status === "Rejected");
+    
     return {
-      pendingCashier, pendingManager, approved, settled, rejected,
+      pendingCashier, pendingManager, approved, settled, partiallySettled, rejected,
       totalPendingCashier: pendingCashier.reduce((s,c)=>s+Number(c.amount||0),0),
       totalPendingManager: pendingManager.reduce((s,c)=>s+Number(c.amount||0),0),
       totalApproved: approved.reduce((s,c)=>s+Number(c.amount||0),0),
       totalSettled: settled.reduce((s,c)=>s+Number(c.amount_paid||c.amount||0),0),
+      totalPartiallySettled: partiallySettled.reduce((s,c)=>s+Number(c.amount_paid||0),0),
+      totalRemainingPartiallySettled: partiallySettled.reduce((s,c)=>s+Number(c.balance||0),0),
       totalRejected: rejected.reduce((s,c)=>s+Number(c.amount||0),0),
     };
   }, [creditsLedger]);
 
   const counts = useMemo(() => ({
     all: tableGroups.length,
-    active: tableGroups.filter(t => !t.isVoided && !t.isCredited && !t.allPaid && ["Pending","Preparing","Ready","Delayed"].includes(t.status)).length,
+    active: tableGroups.filter(t =>
+      !t.isVoided &&
+      !t.isCredited &&
+      !t.allPaid &&
+      !t.hasPendingCredit &&
+      ["Pending","Preparing","Ready","Delayed","Partially Paid"].includes(t.status)
+    ).length,
     delayed: tableGroups.filter(t => t.isDelayed).length,
-    paid: tableGroups.filter(t => !t.isVoided && !t.isCredited && (t.allPaid || ["Paid","Mixed","Served"].includes(t.status))).length,
-    credited: creditsLedger.length,
+    paid: tableGroups.filter(t =>
+      !t.isVoided &&
+      !t.isCredited &&
+      t.allPaid &&
+      !t.hasPendingCredit
+    ).length,
+    credited: creditsLedger.filter(c => c.status !== "FullySettled").length,
     voided: Math.max(voidedLedger.length, tableGroups.filter(t => t.isAnyVoided).length),
   }), [tableGroups, creditsLedger, voidedLedger]);
 
@@ -198,9 +389,9 @@ export default function LiveTableGrid() {
                           t.waiterName.toLowerCase().includes(searchQuery.toLowerCase());
       const matchFilter =
         floorFilter === "all" ? true :
-        floorFilter === "active" ? !t.isVoided && !t.isCredited && !t.allPaid && ["Pending","Preparing","Ready","Delayed"].includes(t.status) :
+        floorFilter === "active" ? !t.isVoided && !t.isCredited && !t.allPaid && !t.hasPendingCredit && ["Pending","Preparing","Ready","Delayed","Partially Paid"].includes(t.status) :
         floorFilter === "delayed" ? t.isDelayed :
-        floorFilter === "paid" ? !t.isVoided && !t.isCredited && (t.allPaid || ["Paid","Mixed","Served"].includes(t.status)) :
+        floorFilter === "paid" ? !t.isVoided && !t.isCredited && t.allPaid && !t.hasPendingCredit :
         false;
       return matchSearch && matchFilter;
     });
@@ -210,6 +401,7 @@ export default function LiveTableGrid() {
         case "priority":
           if (a.isVoided !== b.isVoided) cmp = a.isVoided ? 1 : -1;
           else if (a.isCredited !== b.isCredited) cmp = a.isCredited ? 1 : -1;
+          else if (a.hasPendingCredit !== b.hasPendingCredit) cmp = a.hasPendingCredit ? 1 : -1;
           else if (a.isDelayed !== b.isDelayed) cmp = a.isDelayed ? -1 : 1;
           else if (a.status === "Ready" && b.status !== "Ready") cmp = -1;
           else if (b.status === "Ready" && a.status !== "Ready") cmp = 1;
@@ -330,7 +522,7 @@ export default function LiveTableGrid() {
                     ${isDark ? "bg-gray-900 border-gray-700 focus:border-yellow-500" : "bg-white border-gray-200 focus:border-yellow-500"}`}
                 />
               </div>
-              {/* Sort row — scrollable on mobile, wraps on desktop */}
+              {/* Sort row */}
               <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-3 px-3 pb-0.5">
                 {SORT_OPTIONS.map(({ key, label, icon }) => (
                   <button
@@ -357,7 +549,7 @@ export default function LiveTableGrid() {
                 <p className="text-xs font-black uppercase tracking-widest opacity-50">No tables found</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredTables.map(table => (
                   <TableCard key={table.tableName} table={table} isDark={isDark} creditInfo={creditsByTable[table.tableName]} />
                 ))}
@@ -370,23 +562,39 @@ export default function LiveTableGrid() {
   );
 }
 
-// --- Table Card ---
+// --- Enhanced Table Card with proper credit status handling ---
 function TableCard({ table, isDark, creditInfo }) {
-  const { tableName, total, itemCount, status, waiterName, minsElapsed, isDelayed, allPaid, isVoided, isCredited } = table;
+  const {
+    tableName, total, itemCount, status, waiterName, minsElapsed,
+    isDelayed, allPaid, isVoided, isCredited,
+    cashTotal, mtnTotal, airtelTotal, cardTotal, creditTotal,
+    paidItems, unpaidItems, hasUnpaidItems, hasPendingCredit, hasPaidNonCreditItems
+  } = table;
 
   let cardStyle = isDark ? "bg-gray-900/70 border-gray-800" : "bg-white border-gray-200";
   let statusBadge = { text: "", color: "", icon: null };
 
-  if (isVoided) {
+  // Use creditInfo if present (most accurate)
+  if (creditInfo) {
+    const creditStatus = creditInfo.status;
+    if (creditStatus === "FullySettled") {
+      statusBadge = { text: "Fully Paid", color: "bg-green-500 text-white", icon: <CheckCircle size={9} /> };
+    } else if (creditStatus === "PartiallySettled") {
+      statusBadge = { text: "Partially Settled", color: "bg-orange-500 text-white", icon: <Clock size={9} /> };
+    } else if (creditStatus === "Approved") {
+      statusBadge = { text: "Approved", color: "bg-purple-500 text-white", icon: <CheckCircle size={9} /> };
+    } else if (creditStatus === "PendingCashier" || creditStatus === "PendingManagerApproval") {
+      statusBadge = { text: "Awaiting Approval", color: "bg-yellow-500 text-black", icon: <Hourglass size={9} /> };
+    } else if (creditStatus === "Rejected") {
+      statusBadge = { text: "Rejected", color: "bg-red-500 text-white", icon: <XCircle size={9} /> };
+    }
+  } else if (isVoided) {
     cardStyle += " opacity-60 grayscale";
     statusBadge = { text: "Voided", color: "bg-gray-500 text-white", icon: <Ban size={9} /> };
-  } else if (isCredited && creditInfo) {
-    const settled = creditInfo.status === "FullySettled" || creditInfo.status === "PartiallySettled";
-    if (settled) statusBadge = { text: "Settled", color: "bg-green-500 text-white", icon: <CheckCircle size={9} /> };
-    else if (creditInfo.status === "Approved") statusBadge = { text: "Approved", color: "bg-purple-500 text-white", icon: <CheckCircle size={9} /> };
-    else statusBadge = { text: "Pending", color: "bg-yellow-500 text-black", icon: <Hourglass size={9} /> };
   } else if (allPaid) {
-    statusBadge = { text: "Paid", color: "bg-green-500 text-white", icon: <CheckCircle size={9} /> };
+    statusBadge = { text: "Fully Paid", color: "bg-green-500 text-white", icon: <CheckCircle size={9} /> };
+  } else if (hasUnpaidItems && total > 0 && !hasPendingCredit) {
+    statusBadge = { text: "Partially Paid", color: "bg-orange-500 text-white", icon: <Clock size={9} /> };
   } else if (status === "Served") {
     statusBadge = { text: "Served", color: "bg-blue-500 text-white", icon: <Eye size={9} /> };
   } else if (status === "Ready") {
@@ -397,55 +605,245 @@ function TableCard({ table, isDark, creditInfo }) {
     statusBadge = { text: status || "Active", color: "bg-yellow-500 text-black", icon: <Clock size={9} /> };
   }
 
+  const getPaymentIcon = (method) => {
+    if (method.includes('CASH')) return <Banknote size={12} />;
+    if (method.includes('MTN')) return <Smartphone size={12} />;
+    if (method.includes('AIRTEL')) return <Smartphone size={12} />;
+    if (method.includes('CARD')) return <CreditCard size={12} />;
+    if (method.includes('CREDIT')) return <Wallet size={12} />;
+    return <Banknote size={12} />;
+  };
+
+  const getCategoryIcon = (category) => {
+    const cat = (category || "").toLowerCase();
+    if (cat.includes('pizza')) return <Pizza size={12} />;
+    if (cat.includes('beef') || cat.includes('meat')) return <Beef size={12} />;
+    if (cat.includes('soup')) return <Soup size={12} />;
+    if (cat.includes('coffee') || cat.includes('tea')) return <Coffee size={12} />;
+    return <Utensils size={12} />;
+  };
+
   return (
-    <div className={`rounded-xl border p-3 shadow-sm transition-all hover:shadow-md ${cardStyle}`}>
-      {/* Table name + badge */}
-      <div className="flex justify-between items-start gap-1 mb-2">
-        <h3 className={`font-black text-sm uppercase truncate leading-tight ${isCredited ? "text-purple-400" : isVoided ? "text-gray-500" : "text-yellow-500"}`}>
-          {tableName}
-        </h3>
-        <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase shrink-0 ${statusBadge.color}`}>
+    <div className={`rounded-xl border p-4 shadow-sm transition-all hover:shadow-md ${cardStyle}`}>
+      {/* Header */}
+      <div className="flex justify-between items-start gap-2 mb-3 pb-2 border-b border-gray-200/20">
+        <div className="flex items-center gap-2">
+          <Crown size={16} className="text-yellow-500" />
+          <h3 className={`font-black text-base uppercase truncate ${isCredited ? "text-purple-400" : isVoided ? "text-gray-500" : "text-yellow-500"}`}>
+            {tableName}
+          </h3>
+        </div>
+        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase shrink-0 ${statusBadge.color}`}>
           {statusBadge.icon}
           <span className="ml-0.5">{statusBadge.text}</span>
         </div>
       </div>
 
-      {/* Details */}
-      <div className="space-y-1">
-        <div className="flex justify-between text-[11px]">
-          <span className="text-gray-500 truncate mr-1">Waiter</span>
-          <span className="font-medium truncate max-w-[80px] text-right">{waiterName}</span>
+      {/* Waiter info */}
+      <div className="flex items-center justify-between mb-3 text-[11px]">
+        <div className="flex items-center gap-1 text-gray-500">
+          <User size={12} />
+          <span>Waiter:</span>
         </div>
-        <div className="flex justify-between text-[11px]">
-          <span className="text-gray-500">Items</span>
-          <span>{itemCount}</span>
-        </div>
-        <div className="flex justify-between text-[11px]">
-          <span className="text-gray-500">Total</span>
-          <span className={`font-bold text-[11px] ${isCredited ? "text-purple-400" : allPaid ? "text-green-400" : "text-yellow-500"}`}>
-            {/* Abbreviate on very small — show full number, let it be */}
-            UGX {total.toLocaleString()}
-          </span>
-        </div>
-        {isCredited && creditInfo?.client_name && (
-          <div className="flex justify-between text-[9px] mt-1 pt-1 border-t border-gray-200/30">
-            <span className="text-gray-500">Client</span>
-            <span className="truncate max-w-[90px] text-right">{creditInfo.client_name}</span>
-          </div>
-        )}
+        <span className="font-medium truncate max-w-[150px] text-right">{waiterName}</span>
       </div>
+
+      {/* Payment Summary */}
+      <div className="mb-3 p-2 rounded-lg bg-gray-100/10">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-bold uppercase text-gray-500">Payment Summary</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-500">Items: {itemCount}</span>
+            <span className="text-[10px] text-gray-500">|</span>
+            <span className="text-[10px] text-gray-500">Paid: <span className="font-bold text-yellow-500">UGX {total.toLocaleString()}</span></span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 text-[9px]">
+          {cashTotal > 0 && (
+            <div className="flex items-center gap-1 text-green-600">
+              <Banknote size={10} /> Cash: UGX {cashTotal.toLocaleString()}
+            </div>
+          )}
+          {mtnTotal > 0 && (
+            <div className="flex items-center gap-1 text-blue-600">
+              <Smartphone size={10} /> MTN: UGX {mtnTotal.toLocaleString()}
+            </div>
+          )}
+          {airtelTotal > 0 && (
+            <div className="flex items-center gap-1 text-red-600">
+              <Smartphone size={10} /> Airtel: UGX {airtelTotal.toLocaleString()}
+            </div>
+          )}
+          {cardTotal > 0 && (
+            <div className="flex items-center gap-1 text-purple-600">
+              <CreditCard size={10} /> Card: UGX {cardTotal.toLocaleString()}
+            </div>
+          )}
+          {creditTotal > 0 && (
+            <div className="flex items-center gap-1 text-orange-600">
+              <Wallet size={10} /> Credit: UGX {creditTotal.toLocaleString()}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Paid Items */}
+      {paidItems.length > 0 && (
+        <div className="mb-3">
+          <div className="flex items-center gap-1 mb-1.5">
+            <CheckCircle size={10} className="text-green-500" />
+            <span className="text-[9px] font-bold uppercase text-green-500">Paid Items ({paidItems.length})</span>
+          </div>
+          <div className="space-y-1.5 max-h-[150px] overflow-y-auto">
+            {paidItems.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between text-[10px] p-1.5 rounded bg-green-500/5">
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  {getCategoryIcon(item.category)}
+                  <span className="truncate font-medium">{item.name}</span>
+                  {item.quantity > 1 && <span className="text-gray-500">×{item.quantity}</span>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {getPaymentIcon(item.paymentMethod || 'CASH')}
+                  <span className="font-bold text-green-600">UGX {item.total.toLocaleString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Unpaid / Pending Items */}
+      {unpaidItems.length > 0 && (
+        <div className="mb-3">
+          <div className="flex items-center gap-1 mb-1.5">
+            <Clock size={10} className="text-orange-500" />
+            <span className="text-[9px] font-bold uppercase text-orange-500">Pending ({unpaidItems.length})</span>
+          </div>
+          <div className="space-y-1.5 max-h-[150px] overflow-y-auto">
+            {unpaidItems.map((item, idx) => {
+              const isCreditItem = (item.paymentMethod || '').includes('CREDIT');
+              const isPartiallySettled = item.isPartiallySettled;
+              
+              return (
+                <div key={idx} className={`flex flex-col p-1.5 rounded ${isCreditItem ? 'bg-purple-500/5' : 'bg-orange-500/5'}`}>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      {getCategoryIcon(item.category)}
+                      <span className="truncate font-medium">{item.name}</span>
+                      {item.quantity > 1 && <span className="text-gray-500">×{item.quantity}</span>}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {getPaymentIcon(item.paymentMethod || 'CASH')}
+                      <span className={`font-bold ${isCreditItem ? 'text-purple-600' : 'text-orange-600'}`}>
+                        UGX {item.total.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Show partial payment info for credit items */}
+                  {isCreditItem && isPartiallySettled && (
+                    <div className="mt-1 pl-4">
+                      <div className="flex justify-between text-[8px] text-gray-500">
+                        <span>Paid: UGX {item.amountPaid?.toLocaleString()}</span>
+                        <span>Remaining: UGX {item.total.toLocaleString()}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
+                        <div 
+                          className="bg-green-500 h-1 rounded-full" 
+                          style={{ width: `${(item.amountPaid / (item.amountPaid + item.total)) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {isCreditItem && !isPartiallySettled && creditInfo?.status === "Approved" && (
+                    <span className="text-[8px] text-purple-500 ml-4 mt-0.5">(Approved – awaiting settlement)</span>
+                  )}
+                  {isCreditItem && !isPartiallySettled && creditInfo?.status === "PendingCashier" && (
+                    <span className="text-[8px] text-yellow-500 ml-4 mt-0.5">(Awaiting cashier → manager approval)</span>
+                  )}
+                  {isCreditItem && !isPartiallySettled && creditInfo?.status === "PendingManagerApproval" && (
+                    <span className="text-[8px] text-orange-500 ml-4 mt-0.5">(Awaiting manager approval)</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Credit client info with partial payment details */}
+      {creditInfo && creditInfo.status !== "FullySettled" && (
+        <div className="mt-3 pt-2 border-t border-gray-200/30">
+          <div className="flex justify-between text-[9px]">
+            <span className="text-gray-500 flex items-center gap-1">
+              <User size={8} /> Client:
+            </span>
+            <span className="truncate max-w-[120px] text-right">{creditInfo.client_name}</span>
+          </div>
+          
+          {/* Credit payment breakdown */}
+          <div className="mt-2 space-y-1">
+            <div className="flex justify-between text-[9px]">
+              <span className="text-gray-500">Total Credit:</span>
+              <span className="font-bold">UGX {Number(creditInfo.amount).toLocaleString()}</span>
+            </div>
+            
+            {Number(creditInfo.amount_paid) > 0 && (
+              <>
+                <div className="flex justify-between text-[9px]">
+                  <span className="text-gray-500">Amount Paid:</span>
+                  <span className="text-green-500 font-bold">UGX {Number(creditInfo.amount_paid).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-[9px]">
+                  <span className="text-gray-500">Remaining Balance:</span>
+                  <span className="text-orange-500 font-bold">UGX {Number(creditInfo.balance).toLocaleString()}</span>
+                </div>
+                
+                {/* Progress bar for partial payments */}
+                {creditInfo.status === "PartiallySettled" && (
+                  <div className="mt-2">
+                    <div className="flex justify-between text-[8px] mb-1">
+                      <span className="text-gray-500">Settlement Progress</span>
+                      <span className="text-gray-500">{Math.round((Number(creditInfo.amount_paid) / Number(creditInfo.amount)) * 100)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5">
+                      <div 
+                        className="bg-green-500 h-1.5 rounded-full transition-all" 
+                        style={{ width: `${(Number(creditInfo.amount_paid) / Number(creditInfo.amount)) * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-[8px] text-center mt-1 text-gray-500">
+                      UGX {Number(creditInfo.balance).toLocaleString()} remaining to be paid
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          
+          {creditInfo.pay_by && (
+            <div className="flex justify-between text-[8px] mt-2">
+              <span className="text-gray-500">Pay by:</span>
+              <span className="text-amber-600 font-bold">{creditInfo.pay_by}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// --- Credits Panel ---
+// --- Credits Panel with Partial Payment Support ---
 function CreditsPanel({ credits, breakdown, isDark }) {
   const [activeTab, setActiveTab] = useState("pendingCashier");
   const tabs = [
     { key: "pendingCashier", label: "Cashier", fullLabel: "Wait for Cashier", icon: <Hourglass size={11} />, count: breakdown.pendingCashier.length, total: breakdown.totalPendingCashier, color: "yellow" },
     { key: "pendingManager", label: "Manager", fullLabel: "Wait for Manager", icon: <Clock size={11} />, count: breakdown.pendingManager.length, total: breakdown.totalPendingManager, color: "orange" },
     { key: "approved", label: "Approved", fullLabel: "Approved", icon: <CheckCircle size={11} />, count: breakdown.approved.length, total: breakdown.totalApproved, color: "purple" },
-    { key: "settled", label: "Settled", fullLabel: "Settled", icon: <CheckCircle size={11} />, count: breakdown.settled.length, total: breakdown.totalSettled, color: "green" },
+    { key: "partiallySettled", label: "Partial", fullLabel: "Partially Settled", icon: <Clock size={11} />, count: breakdown.partiallySettled.length, total: breakdown.totalRemainingPartiallySettled, color: "orange" },
+    { key: "settled", label: "Settled", fullLabel: "Fully Settled", icon: <CheckCircle size={11} />, count: breakdown.settled.length, total: breakdown.totalSettled, color: "green" },
     { key: "rejected", label: "Rejected", fullLabel: "Rejected", icon: <XCircle size={11} />, count: breakdown.rejected.length, total: breakdown.totalRejected, color: "red" },
   ];
 
@@ -456,6 +854,7 @@ function CreditsPanel({ credits, breakdown, isDark }) {
     pendingCashier: breakdown.pendingCashier,
     pendingManager: breakdown.pendingManager,
     approved: breakdown.approved,
+    partiallySettled: breakdown.partiallySettled,
     settled: breakdown.settled,
     rejected: breakdown.rejected,
   }[activeTab];
@@ -471,8 +870,7 @@ function CreditsPanel({ credits, breakdown, isDark }) {
 
   return (
     <div className="space-y-4">
-      {/* Summary stats — 2-col on mobile, 5-col on sm+ */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {tabs.map(tab => (
           <div
             key={tab.key}
@@ -488,7 +886,6 @@ function CreditsPanel({ credits, breakdown, isDark }) {
         ))}
       </div>
 
-      {/* Tab pills — scrollable on mobile */}
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-3 px-3 pb-0.5">
         {tabs.map(tab => (
           <button
@@ -505,26 +902,76 @@ function CreditsPanel({ credits, breakdown, isDark }) {
         ))}
       </div>
 
-      {/* List */}
       {currentList.length === 0 ? (
         <div className="py-10 text-center text-gray-400 text-xs">No items</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {currentList.map((credit, idx) => (
-            <div key={idx} className={`p-3 rounded-xl border ${isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
-              <div className="flex justify-between items-start gap-1">
-                <span className="font-black text-sm uppercase truncate">{credit.table_name || "Table"}</span>
-                <span className="text-[9px] text-gray-500 shrink-0">{credit.created_at ? new Date(credit.created_at).toLocaleDateString() : ""}</span>
+          {currentList.map((credit, idx) => {
+            const isPartial = credit.status === "PartiallySettled";
+            const remainingBalance = Number(credit.balance || 0);
+            const amountPaid = Number(credit.amount_paid || 0);
+            const totalAmount = Number(credit.amount || 0);
+            const percentPaid = totalAmount > 0 ? (amountPaid / totalAmount) * 100 : 0;
+            
+            return (
+              <div key={idx} className={`p-3 rounded-xl border ${isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
+                <div className="flex justify-between items-start gap-1">
+                  <span className="font-black text-sm uppercase truncate">{credit.table_name || "Table"}</span>
+                  <span className="text-[9px] text-gray-500 shrink-0">
+                    {credit.created_at ? new Date(credit.created_at).toLocaleDateString() : ""}
+                  </span>
+                </div>
+                
+                {credit.client_name && (
+                  <p className="text-[9px] mt-1 flex items-center gap-1 text-gray-400 truncate">
+                    <User size={9} className="shrink-0" />{credit.client_name}
+                  </p>
+                )}
+                
+                {credit.client_phone && (
+                  <p className="text-[8px] text-gray-500">{credit.client_phone}</p>
+                )}
+                
+                {/* Show detailed payment info for partially settled credits */}
+                {isPartial && (
+                  <div className="mt-2">
+                    <div className="flex justify-between text-[8px] mb-1">
+                      <span className="text-gray-500">Paid:</span>
+                      <span className="text-green-500 font-bold">UGX {amountPaid.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-[8px] mb-1">
+                      <span className="text-gray-500">Remaining:</span>
+                      <span className="text-orange-500 font-bold">UGX {remainingBalance.toLocaleString()}</span>
+                    </div>
+                    
+                    {/* Progress bar */}
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                      <div 
+                        className="bg-green-500 h-1.5 rounded-full transition-all" 
+                        style={{ width: `${percentPaid}%` }}
+                      />
+                    </div>
+                    <p className="text-[8px] text-gray-500 mt-1 text-center">
+                      {Math.round(percentPaid)}% settled
+                    </p>
+                    
+                    {/* Show original total if partial */}
+                    <p className="text-[8px] text-gray-400 mt-1 text-center">
+                      Original: UGX {totalAmount.toLocaleString()}
+                    </p>
+                  </div>
+                )}
+                
+                {!isPartial && (
+                  <p className="text-sm font-black mt-2">UGX {totalAmount.toLocaleString()}</p>
+                )}
+                
+                {credit.pay_by && (
+                  <p className="text-[8px] text-amber-600 font-bold mt-1">Pay by: {credit.pay_by}</p>
+                )}
               </div>
-              {credit.client_name && (
-                <p className="text-[9px] mt-1 flex items-center gap-1 text-gray-400 truncate">
-                  <User size={9} className="shrink-0" />{credit.client_name}
-                </p>
-              )}
-              {credit.client_phone && <p className="text-[8px] text-gray-500">{credit.client_phone}</p>}
-              <p className="text-sm font-black mt-2">UGX {Number(credit.amount).toLocaleString()}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -553,7 +1000,7 @@ function VoidedPanel({ ledger, groups, isDark }) {
             <div className="w-1 h-4 bg-red-500 rounded-full" />
             Active tables with voids ({groups.length})
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {groups.map(table => <TableCard key={table.tableName} table={table} isDark={isDark} creditInfo={null} />)}
           </div>
         </div>

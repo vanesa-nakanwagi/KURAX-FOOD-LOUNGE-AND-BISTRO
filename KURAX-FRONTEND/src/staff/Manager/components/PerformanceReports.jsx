@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../Director/components/shared/ThemeContext";
 import { RevenueChart } from "../components/charts";
 import {
-  TrendingUp, BookOpen, CheckCircle2, XCircle, Clock, User, Phone,
-  Calendar, ChevronDown, ChevronUp, RefreshCw, ShieldCheck,
-  AlertCircle, Sparkles, ArrowUpRight, CircleDollarSign, Zap, Hourglass, BarChart3
+  BookOpen, CheckCircle2, XCircle, User, Phone,
+  Calendar, RefreshCw, ShieldCheck,
+  AlertCircle, Clock, ChevronLeft, ChevronRight
 } from "lucide-react";
 import API_URL from "../../../config/api";
 
@@ -18,6 +18,19 @@ function toLocalDateStr(date) {
     String(d.getDate()).padStart(2, "0"),
   ].join("-");
 }
+
+function getCurrentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonthDisplay(monthStr) {
+  if (!monthStr) return "";
+  const [year, month] = monthStr.split("-");
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${monthNames[parseInt(month) - 1]} ${year}`;
+}
+
 function fmtK(n) {
   const v = Number(n || 0);
   if (v >= 1_000_000) return `UGX ${(v / 1_000_000).toFixed(1)}M`;
@@ -25,46 +38,64 @@ function fmtK(n) {
   return `UGX ${v.toLocaleString()}`;
 }
 
-function isSettledCredit(c) {
-  return (
-    c.status === "FullySettled" ||
-    c.paid === true ||
-    c.settled === true
-  );
+// ─── STATUS PREDICATES (CASE-INSENSITIVE) ────────────────────────────────────
+function isPending(c) {
+  const s = (c.status || "").toLowerCase();
+  return s === "pending" || s === "pendingcashier" || s === "pendingmanagerapproval";
 }
 
-function isApprovedButNotSettled(c) {
-  return c.status === "Approved" && !isSettledCredit(c);
+function isOutstanding(c) {
+  const status = (c.status || "").toLowerCase();
+  const paid = Number(c.amount_paid ?? 0);
+  console.log(`🔍 isOutstanding check: id=${c.id}, status=${status}, paid=${paid}, amount=${c.amount}`);
+  return status === "approved" && paid === 0;
 }
 
-// ─── CREDIT APPROVAL CARD (improved fonts) ───────────────────────────────────
+function isPartiallySettled(c) {
+  const status = (c.status || "").toLowerCase();
+  const paid = Number(c.amount_paid ?? 0);
+  const total = Number(c.amount ?? 0);
+  return status === "partiallysettled" || (status === "approved" && paid > 0 && paid < total);
+}
+
+function isFullySettled(c) {
+  const status = (c.status || "").toLowerCase();
+  const paid = Number(c.amount_paid ?? 0);
+  const total = Number(c.amount ?? 0);
+  return status === "fullysettled" || (total > 0 && paid >= total);
+}
+
+function isRejected(c) {
+  const s = (c.status || "").toLowerCase();
+  return s === "rejected";
+}
+
+// ─── CREDIT APPROVAL CARD (unchanged) ────────────────────────────────────────
 function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
   const ageMin = Math.floor((Date.now() - new Date(row.created_at)) / 60000);
   const ageStr = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ago`;
-  const missingClientInfo = !row.credit_name || !row.credit_phone;
-  const missingTableInfo = !row.table_name || row.table_name === "Unknown";
+  const amount = Number(row.amount || 0);
+  const isPendingCashier = row.status === "PendingCashier";
 
   return (
     <div className={`group relative overflow-hidden rounded-2xl border transition-all duration-300 hover:shadow-xl hover:scale-[1.01]
-      ${missingClientInfo || missingTableInfo
-        ? isDark ? "bg-gradient-to-br from-red-500/5 to-transparent border-red-500/30" : "bg-gradient-to-br from-red-50 to-transparent border-red-200"
-        : isDark ? "bg-gradient-to-br from-yellow-500/5 to-transparent border-yellow-500/30" : "bg-gradient-to-br from-yellow-50 to-transparent border-yellow-200"}`}>
-      
-      <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-yellow-500/5 to-transparent rounded-full -mr-20 -mt-20 group-hover:scale-150 transition-transform duration-700" />
-      
+      ${isDark
+        ? "bg-gradient-to-br from-yellow-500/5 to-transparent border-yellow-500/30"
+        : "bg-gradient-to-br from-yellow-50 to-transparent border-yellow-200"}`}>
+
       <div className={`flex items-center justify-between px-5 py-3 border-b
-        ${missingClientInfo || missingTableInfo
-          ? isDark ? "bg-red-500/10 border-red-500/20" : "bg-red-100 border-red-200"
-          : isDark ? "bg-yellow-500/10 border-yellow-500/20" : "bg-yellow-100 border-yellow-200"}`}>
-        <div className="flex items-center gap-2">
+        ${isDark ? "bg-yellow-500/10 border-yellow-500/20" : "bg-yellow-100 border-yellow-200"}`}>
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"/>
-          <span className={`text-[9px] font-black uppercase tracking-widest ${missingClientInfo || missingTableInfo ? "text-red-400" : "text-yellow-500"}`}>
-            Awaiting Approval
+          <span className="text-[9px] font-black uppercase tracking-widest text-yellow-500">
+            {isPendingCashier ? "With Cashier" : "Awaiting Approval"}
           </span>
-          <span className={`text-[9px] font-bold ${isDark ? "text-zinc-600" : "text-yellow-700/60"}`}>· {ageStr}</span>
+          <span className={`text-[9px] font-bold ${isDark ? "text-zinc-600" : "text-yellow-700/60"}`}>
+            · {ageStr}
+          </span>
         </div>
         <span className={`text-[9px] font-bold ${isDark ? "text-zinc-500" : "text-yellow-700/60"}`}>
-          via {row.confirmed_by || row.requested_by || "Cashier"}
+          via {row.requested_by || row.forwarded_by || "Cashier"}
         </span>
       </div>
 
@@ -72,170 +103,61 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
         <div className="flex-1 min-w-0 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`font-black text-base uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
-              {missingTableInfo ? "⚠️ Missing Table" : row.table_name}
+              {row.table_name || "Table"}
             </span>
             <span className="font-black italic text-yellow-500 text-sm">
               {row.label || `#${String(row.id).slice(-5)}`}
             </span>
-            <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-lg tracking-widest
-              ${isDark ? "bg-white/5 text-zinc-400" : "bg-yellow-200 text-yellow-700"}`}>
-              {row.requested_by}
-            </span>
           </div>
-          
+
           <div className="grid grid-cols-1 gap-2">
-            <div className={`flex items-center gap-2 p-2 rounded-xl ${!row.credit_name ? "bg-red-500/10 border border-red-500/20" : "bg-white/5"}`}>
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-white/5">
               <User size={12} className="text-purple-400 shrink-0"/>
-              <span className={`text-sm font-medium ${isDark ? "text-white" : "text-zinc-900"} ${!row.credit_name ? "text-red-400" : ""}`}>
-                {row.credit_name || "⚠️ Missing - Required!"}
+              <span className={`text-sm font-medium ${isDark ? "text-white" : "text-zinc-900"}`}>
+                {row.credit_name || row.client_name || "Client name"}
               </span>
             </div>
-            <div className={`flex items-center gap-2 p-2 rounded-xl ${!row.credit_phone ? "bg-red-500/10 border border-red-500/20" : "bg-white/5"}`}>
-              <Phone size={12} className="text-purple-400 shrink-0"/>
-              <span className={`text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"} ${!row.credit_phone ? "text-red-400" : ""}`}>
-                {row.credit_phone || "⚠️ Missing - Required!"}
-              </span>
-            </div>
-            {row.credit_pay_by && (
+            {(row.credit_phone || row.client_phone) && (
+              <div className="flex items-center gap-2 p-2 rounded-xl bg-white/5">
+                <Phone size={12} className="text-purple-400 shrink-0"/>
+                <span className={`text-sm ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+                  {row.credit_phone || row.client_phone}
+                </span>
+              </div>
+            )}
+            {(row.credit_pay_by || row.pay_by) && (
               <div className="flex items-center gap-2 p-2 rounded-xl bg-white/5">
                 <Calendar size={12} className="text-purple-400 shrink-0"/>
                 <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                  Pay by: {row.credit_pay_by}
+                  Pay by: {row.credit_pay_by || row.pay_by}
                 </span>
               </div>
             )}
           </div>
-          
-          {(missingClientInfo || missingTableInfo) && (
-            <div className="flex items-center gap-2 p-2 rounded-xl bg-red-500/10 border border-red-500/20">
-              <AlertCircle size={12} className="text-red-400 shrink-0"/>
-              <span className="text-[9px] font-black text-red-400">
-                ⚠️ Missing required information. Ask waiter to resend with complete details.
-              </span>
-            </div>
-          )}
         </div>
 
         <div className="flex flex-col items-end gap-3 shrink-0 w-full sm:w-auto">
           <div className="text-right">
             <p className="text-[8px] font-black uppercase text-purple-400 tracking-widest mb-1">Amount</p>
-            <p className="text-2xl font-black italic text-purple-400">{fmtK(row.amount)}</p>
+            <p className="text-2xl font-black italic text-purple-400">{fmtK(amount)}</p>
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button onClick={onReject}
-              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-bold text-[10px] uppercase tracking-widest hover:bg-red-500/20 transition-all flex items-center justify-center gap-1.5 hover:scale-105">
-              <XCircle size={12}/> Reject
-            </button>
-            <button 
-              onClick={onApprove} 
-              disabled={approvingId === row.id || missingClientInfo || missingTableInfo}
-              className={`flex-[2] sm:flex-initial px-6 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 hover:scale-105 disabled:opacity-50
-                ${(missingClientInfo || missingTableInfo)
-                  ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
-                  : "bg-emerald-500 text-black hover:bg-emerald-400 active:scale-[0.98]"}`}
-              title={missingClientInfo || missingTableInfo ? "Missing client or table info - cannot approve" : ""}>
-              {approvingId === row.id
-                ? <><RefreshCw size={12} className="animate-spin"/> Approving…</>
-                : <><CheckCircle2 size={12}/> Approve</>}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// ─── CREDIT LEDGER ROW ────────────────────────────────────────────────────────
-function CreditLedgerRow({ credit, isDark, onSettle }) {
-  const settled = isSettledCredit(credit);
-  const approvedButNotSettled = credit.status === "Approved" && !settled;
-  
-  return (
-    <div className={`group relative overflow-hidden rounded-xl p-4 border transition-all duration-300 hover:shadow-lg hover:scale-[1.01]
-      ${settled
-        ? isDark ? "bg-zinc-900/20 border-white/5 opacity-75" : "bg-zinc-50 border-zinc-100"
-        : approvedButNotSettled
-        ? isDark ? "bg-gradient-to-r from-emerald-500/10 to-transparent border-emerald-500/30" : "bg-gradient-to-r from-emerald-50 to-transparent border-emerald-200"
-        : isDark ? "bg-gradient-to-r from-purple-500/10 to-transparent border-purple-500/30" : "bg-gradient-to-r from-purple-50 to-transparent border-purple-200"}`}>
-      
-      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/5 to-transparent rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
-      
-      <div className="relative z-10 flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            <span className={`font-black text-base uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
-              {credit.table_name || "Table"}
-            </span>
-            {settled ? (
-              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase flex items-center gap-1">
-                <CheckCircle2 size={10}/> Settled
-              </span>
-            ) : approvedButNotSettled ? (
-              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase animate-pulse flex items-center gap-1">
-                <AlertCircle size={10}/> Approved - Awaiting Payment
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[8px] font-black uppercase animate-pulse flex items-center gap-1">
-                <AlertCircle size={10}/> Outstanding
-              </span>
-            )}
-          </div>
-          
-          <div className="flex flex-wrap gap-x-4 gap-y-2 text-[10px]">
-            {credit.client_name && (
-              <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg">
-                <User size={10} className="text-zinc-500"/>
-                <span className={isDark ? "text-zinc-300" : "text-zinc-700"}>{credit.client_name}</span>
-              </div>
-            )}
-            {credit.client_phone && (
-              <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg">
-                <Phone size={10} className="text-zinc-500"/>
-                <span className={isDark ? "text-zinc-400" : "text-zinc-500"}>{credit.client_phone}</span>
-              </div>
-            )}
-            {credit.pay_by && !settled && (
-              <div className="flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded-lg">
-                <Calendar size={10} className="text-amber-400"/>
-                <span className="text-amber-400 font-black text-[9px]">Pay by: {credit.pay_by}</span>
-              </div>
-            )}
-          </div>
-          
-          {settled && credit.settle_method && (
-            <p className={`text-[8px] mt-2 font-mono ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-              Settled via {credit.settle_method}
-              {credit.settle_txn  ? ` · ${credit.settle_txn}` : ""}
-              {credit.paid_at     ? ` · ${toLocalDateStr(new Date(credit.paid_at))}` : ""}
-            </p>
-          )}
-          
-          <p className={`text-[8px] mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
-            {credit.approved_by ? `Approved by ${credit.approved_by} · ` : ""}
-            {toLocalDateStr(new Date(credit.created_at))}
-          </p>
-          
-          {approvedButNotSettled && (
-            <p className="text-[8px] text-emerald-500/70 mt-1 flex items-center gap-1">
-              <CheckCircle2 size={8} />
-              Credit approved. Waiting for customer payment to settle.
-            </p>
-          )}
-        </div>
-        
-        <div className="text-right shrink-0">
-          <p className="text-lg font-black italic text-purple-400">{fmtK(credit.amount)}</p>
-          {settled && credit.amount_paid && Number(credit.amount_paid) !== Number(credit.amount) && (
-            <p className="text-[9px] text-emerald-400 font-bold mt-0.5">Paid: {fmtK(credit.amount_paid)}</p>
-          )}
-          
-          {approvedButNotSettled && (
-            <div className="flex gap-2 mt-3 justify-end">
-              <button
-                onClick={() => onSettle(credit)}
-                className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-black text-[8px] uppercase tracking-widest hover:bg-emerald-500/20 transition-all flex items-center gap-1 hover:scale-105"
-              >
-                <CircleDollarSign size={10}/> Record Settlement
+          {isPendingCashier ? (
+            <div className={`px-4 py-2 rounded-xl text-[9px] font-bold uppercase tracking-widest flex items-center gap-2
+              ${isDark ? "bg-zinc-800 text-zinc-500 border border-zinc-700" : "bg-zinc-100 text-zinc-400 border border-zinc-200"}`}>
+              <Clock size={11}/> Waiting for cashier
+            </div>
+          ) : (
+            <div className="flex gap-2 w-full sm:w-auto">
+              <button onClick={onReject}
+                className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-bold text-[10px] uppercase tracking-widest hover:bg-red-500/20 transition-all flex items-center justify-center gap-1.5 hover:scale-105">
+                <XCircle size={12}/> Reject
+              </button>
+              <button onClick={onApprove} disabled={approvingId === row.id}
+                className="flex-[2] sm:flex-initial px-6 py-2.5 rounded-xl bg-emerald-500 text-black font-bold text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 hover:scale-105 disabled:opacity-50">
+                {approvingId === row.id
+                  ? <><RefreshCw size={12} className="animate-spin"/> Approving…</>
+                  : <><CheckCircle2 size={12}/> Approve</>}
               </button>
             </div>
           )}
@@ -245,7 +167,80 @@ function CreditLedgerRow({ credit, isDark, onSettle }) {
   );
 }
 
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
+// ─── CREDIT LEDGER ROW ────────────────────────────────────────────────────────
+function CreditLedgerRow({ credit, isDark }) {
+  const amount      = Number(credit.amount      ?? 0);
+  const paid        = Number(credit.amount_paid ?? 0);
+  const balance     = Number(credit.balance     ?? (amount - paid));
+  const partial     = isPartiallySettled(credit);
+  const fully       = isFullySettled(credit);
+  const rej         = isRejected(credit);
+  const outstanding = isOutstanding(credit);
+  const percentPaid = amount > 0 ? (paid / amount) * 100 : 0;
+
+  return (
+    <div className={`group relative overflow-hidden rounded-xl p-4 border transition-all duration-300 hover:shadow-lg hover:scale-[1.01]
+      ${fully      ? (isDark ? "bg-zinc-900/20 border-white/5" : "bg-zinc-50 border-zinc-100")
+      : rej        ? (isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-200")
+      : partial    ? (isDark ? "bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/30" : "bg-gradient-to-r from-orange-50 to-transparent border-orange-200")
+      :               (isDark ? "bg-gradient-to-r from-purple-500/10 to-transparent border-purple-500/30" : "bg-gradient-to-r from-purple-50 to-transparent border-purple-200")}`}>
+
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <span className={`font-black text-base uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
+              {credit.table_name || "Table"}
+            </span>
+            {fully       && <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase">Fully Settled</span>}
+            {rej         && <span className="px-2 py-0.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[8px] font-black uppercase">Rejected</span>}
+            {partial     && <span className="px-2 py-0.5 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[8px] font-black uppercase">Partially Settled</span>}
+            {outstanding && <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[8px] font-black uppercase">Outstanding</span>}
+          </div>
+
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-[10px]">
+            {(credit.client_name || credit.credit_name) && (
+              <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg">
+                <User size={10} className="text-zinc-500"/>
+                <span className={isDark ? "text-zinc-300" : "text-zinc-700"}>
+                  {credit.client_name || credit.credit_name}
+                </span>
+              </div>
+            )}
+            {credit.created_at && (
+              <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg">
+                <Calendar size={10} className="text-zinc-500"/>
+                <span className={isDark ? "text-zinc-400" : "text-zinc-500"}>
+                  {toLocalDateStr(new Date(credit.created_at))}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {partial && (
+            <div className="mt-3">
+              <div className="flex justify-between text-[8px] mb-1">
+                <span className="text-zinc-500">Paid: {fmtK(paid)}</span>
+                <span className="text-orange-500 font-bold">Remaining: {fmtK(balance)}</span>
+              </div>
+              <div className="w-full bg-zinc-700 rounded-full h-1.5">
+                <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${percentPaid}%` }}/>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="text-right shrink-0">
+          {partial     && <><p className="text-lg font-black italic text-orange-400">{fmtK(balance)}</p><p className="text-[8px] text-zinc-500">of {fmtK(amount)}</p></>}
+          {fully       && <p className="text-lg font-black italic text-emerald-400">{fmtK(amount)}</p>}
+          {rej         && <p className="text-lg font-black italic text-red-400 line-through">{fmtK(amount)}</p>}
+          {outstanding && <p className="text-lg font-black italic text-purple-400">{fmtK(amount)}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function PerformanceReports() {
   const { theme } = useTheme();
   const { currentUser } = useData();
@@ -255,95 +250,130 @@ export default function PerformanceReports() {
     catch { return "Manager"; }
   })();
 
-  const [creditApprovals, setCreditApprovals] = useState([]);
-  const [creditsLedger, setCreditsLedger] = useState([]);
+  const [allCredits,     setAllCredits]     = useState([]);
   const [creditsLoading, setCreditsLoading] = useState(true);
-  const [approvingId, setApprovingId] = useState(null);
-  const [rejectingRow, setRejectingRow] = useState(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [ledgerExpanded, setLedgerExpanded] = useState(true);
-  const [creditFilter, setCreditFilter] = useState("all");
+  const [approvingId,    setApprovingId]    = useState(null);
+  const [rejectingRow,   setRejectingRow]   = useState(null);
+  const [rejectReason,   setRejectReason]   = useState("");
+  const [creditFilter,   setCreditFilter]   = useState("all");
+  const [selectedMonth,  setSelectedMonth]  = useState(getCurrentMonth());
 
-  // ─── Fetch credits ─────────────────────────────────────────────────────────
   const fetchCredits = useCallback(async () => {
     setCreditsLoading(true);
     try {
-      const approvalsRes = await fetch(`${API_URL}/api/cashier-ops/credit-approvals`);
-      if (approvalsRes.ok) setCreditApprovals(await approvalsRes.json());
-      
-      const creditsRes = await fetch(`${API_URL}/api/cashier-ops/credits`);
-      if (creditsRes.ok) {
-        const rows = await creditsRes.json();
-        setCreditsLedger(rows.map(r => ({ ...r, paid: isSettledCredit(r) })));
+      const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
+      if (res.ok) {
+        const data = await res.json();
+        console.log("🔍 RAW CREDITS from API:", data);
+        setAllCredits(data);
+      } else {
+        console.error("Failed to fetch credits:", res.status);
       }
-    } catch (e) { console.error("Credits fetch error:", e); }
-    finally { setCreditsLoading(false); }
+    } catch (e) {
+      console.error("Credits fetch error:", e);
+    } finally {
+      setCreditsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     fetchCredits();
-    const id = setInterval(fetchCredits, 10000);
-    return () => clearInterval(id);
+    const interval = setInterval(fetchCredits, 30000);
+    return () => clearInterval(interval);
   }, [fetchCredits]);
 
-  // ─── Derived stats ─────────────────────────────────────────────────────────
-  const outstanding = creditsLedger.filter(c => !isSettledCredit(c) && c.status !== "Approved");
-  const approvedButNotSettled = creditsLedger.filter(c => c.status === "Approved" && !isSettledCredit(c));
-  const settled = creditsLedger.filter(c => isSettledCredit(c));
-  
-  const totalOutstanding = outstanding.reduce((s, c) => s + Number(c.amount || 0), 0);
-  const totalApprovedButNotSettled = approvedButNotSettled.reduce((s, c) => s + Number(c.amount || 0), 0);
-  const totalSettled = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
-  
-  const filteredCredits =
-    creditFilter === "outstanding" ? outstanding :
-    creditFilter === "approved" ? approvedButNotSettled :
-    creditFilter === "settled" ? settled : creditsLedger;
+  // ─── DEBUG: Log all credits and their statuses ─────────────────────────────
+  useEffect(() => {
+    console.log("📋 All credits count:", allCredits.length);
+    allCredits.forEach(c => {
+      console.log(`📋 Credit id=${c.id}, status="${c.status}", amount_paid=${c.amount_paid}, amount=${c.amount}`);
+    });
 
-  // ─── Credit actions ───────────────────────────────────────────────────────
-  const handleApprove = async (queueId) => {
-    setApprovingId(queueId);
+    const pending = allCredits.filter(isPending);
+    console.log("⏳ Pending credits:", pending.map(c => ({ id: c.id, status: c.status })));
+
+    const outstanding = allCredits.filter(c => {
+      const status = (c.status || "").toLowerCase();
+      const paid = Number(c.amount_paid ?? 0);
+      return status === "approved" && paid === 0;
+    });
+    console.log("💜 Outstanding credits (approved & unpaid):", outstanding.map(c => ({ id: c.id, status: c.status, paid: c.amount_paid })));
+
+    const partial = allCredits.filter(c => {
+      const status = (c.status || "").toLowerCase();
+      const paid = Number(c.amount_paid ?? 0);
+      const total = Number(c.amount ?? 0);
+      return status === "partiallysettled" || (status === "approved" && paid > 0 && paid < total);
+    });
+    console.log("🟠 Partially settled credits:", partial.map(c => ({ id: c.id, paid: c.amount_paid, total: c.amount })));
+
+    const settled = allCredits.filter(c => {
+      const status = (c.status || "").toLowerCase();
+      const paid = Number(c.amount_paid ?? 0);
+      const total = Number(c.amount ?? 0);
+      return status === "fullysettled" || (total > 0 && paid >= total);
+    });
+    console.log("✅ Fully settled credits:", settled.map(c => ({ id: c.id, paid: c.amount_paid, total: c.amount })));
+
+    const rejected = allCredits.filter(c => {
+      const s = (c.status || "").toLowerCase();
+      return s === "rejected";
+    });
+    console.log("❌ Rejected credits:", rejected.map(c => ({ id: c.id, status: c.status })));
+  }, [allCredits]);
+
+  // ─── Bucketing (with date filter for ledger) ───────────────────────────────
+  const pendingCredits = allCredits.filter(isPending);
+
+  const ledgerCredits = allCredits
+    .filter(c => !isPending(c))
+    .filter(c => {
+      const date = c.created_at || c.confirmed_at;
+      if (!date) return false;
+      return toLocalDateStr(new Date(date)).substring(0, 7) === selectedMonth;
+    });
+
+  const outstandingCredits  = ledgerCredits.filter(isOutstanding);
+  const partialCredits      = ledgerCredits.filter(isPartiallySettled);
+  const fullySettledCredits = ledgerCredits.filter(isFullySettled);
+  const rejectedCredits     = ledgerCredits.filter(isRejected);
+
+  // Totals
+  const totalOutstanding      = outstandingCredits.reduce((s, c) => s + Number(c.amount ?? 0), 0);
+  const totalPartialRemaining = partialCredits.reduce((s, c) =>
+    s + Number(c.balance ?? (Number(c.amount ?? 0) - Number(c.amount_paid ?? 0))), 0);
+  const totalOutstandingBalance = totalOutstanding + totalPartialRemaining;
+
+  const totalFullySettledAmt = fullySettledCredits.reduce((s, c) => s + Number(c.amount ?? 0), 0);
+  const totalPartialPaid     = partialCredits.reduce((s, c) => s + Number(c.amount_paid ?? 0), 0);
+  const totalSettledPaid     = totalFullySettledAmt + totalPartialPaid;
+  const totalRejected        = rejectedCredits.reduce((s, c) => s + Number(c.amount ?? 0), 0);
+  const allTimeTotal         = ledgerCredits.reduce((s, c) => s + Number(c.amount ?? 0), 0);
+
+  console.log("📊 Final totals -> Outstanding amount:", totalOutstanding, "Partial remaining:", totalPartialRemaining, "Settled paid:", totalSettledPaid);
+
+  const filteredCredits =
+    creditFilter === "outstanding" ? [...outstandingCredits, ...partialCredits] :
+    creditFilter === "settled"     ? [...fullySettledCredits, ...partialCredits] :
+    creditFilter === "rejected"    ? rejectedCredits :
+    ledgerCredits;
+
+  // ─── Actions ───────────────────────────────────────────────────────────────
+  const handleApprove = async (creditId) => {
+    setApprovingId(creditId);
     try {
-      const res = await fetch(`${API_URL}/api/cashier-ops/credit-approvals/${queueId}/approve`, {
+      const res = await fetch(`${API_URL}/api/manager/credits/${creditId}/approve`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approved_by: currentStaffName }),
       });
       if (res.ok) {
-        setCreditApprovals(prev => prev.filter(r => r.id !== queueId));
         await fetchCredits();
-        alert("✅ Credit approved successfully!");
-      } else alert("Approval failed");
-    } catch (e) { alert("Network error"); }
-    setApprovingId(null);
-  };
-
-  const handleSettleCredit = async (credit) => {
-    setApprovingId(credit.id);
-    const method = prompt("Enter payment method (Cash, Card, Momo-MTN, Momo-Airtel):", "Cash");
-    if (!method) { setApprovingId(null); return; }
-    const transactionId = (method === "Momo-MTN" || method === "Momo-Airtel") ? prompt("Enter transaction ID:") : null;
-    if ((method === "Momo-MTN" || method === "Momo-Airtel") && !transactionId) {
-      alert("Transaction ID required");
-      setApprovingId(null);
-      return;
-    }
-    try {
-      const res = await fetch(`${API_URL}/api/credits/${credit.id}/settle`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount_paid: credit.amount,
-          method: method,
-          transaction_id: transactionId,
-          settled_by: currentStaffName,
-        }),
-      });
-      if (res.ok) {
-        await fetchCredits();
-        alert("✅ Credit settled successfully!");
-      } else alert("Settlement failed");
-    } catch (e) { alert("Network error"); }
+      } else {
+        const e = await res.json().catch(() => ({}));
+        alert(e.error || "Approval failed");
+      }
+    } catch { alert("Network error"); }
     setApprovingId(null);
   };
 
@@ -351,120 +381,218 @@ export default function PerformanceReports() {
     if (!rejectingRow) return;
     setApprovingId(rejectingRow);
     try {
-      const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${rejectingRow}/reject`, {
+      const res = await fetch(`${API_URL}/api/manager/credits/${rejectingRow}/reject`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: rejectReason || "Rejected by manager" }),
+        body: JSON.stringify({
+          rejected_by: currentStaffName,
+          reason: rejectReason.trim() || "Rejected by manager",
+        }),
       });
       if (res.ok) {
-        setCreditApprovals(prev => prev.filter(r => r.id !== rejectingRow));
         await fetchCredits();
-        alert("❌ Credit rejected");
-      } else alert("Rejection failed");
-    } catch (e) { alert("Network error"); }
+      } else {
+        const e = await res.json().catch(() => ({}));
+        alert(e.error || "Rejection failed");
+      }
+    } catch { alert("Network error"); }
     setRejectingRow(null);
     setRejectReason("");
     setApprovingId(null);
   };
 
-  // ─── Theme styles ─────────────────────────────────────────────────────────
+  const handlePreviousMonth = () => {
+    const [y, m] = selectedMonth.split("-");
+    const d = new Date(parseInt(y), parseInt(m) - 2, 1);
+    setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  const handleNextMonth = () => {
+    const [y, m] = selectedMonth.split("-");
+    const d = new Date(parseInt(y), parseInt(m), 1);
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (next <= getCurrentMonth()) setSelectedMonth(next);
+  };
+
   const card  = isDark ? "bg-zinc-900/40 border-white/5" : "bg-white border-black/5 shadow-sm";
   const muted = isDark ? "text-zinc-500" : "text-zinc-400";
 
   return (
-    <div className="p-4 md:p-8 space-y-6 animate-in fade-in duration-700 pb-32 font-sans antialiased">
-    
+    <div className="p-4 md:p-8 space-y-6 animate-in fade-in duration-700 pb-32">
 
-       {/* HEADER with Live Indicator */}
+      {/* ── HEADER ── */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-1 h-6 bg-yellow-500 rounded-full" />
+            <div className="w-1 h-6 bg-yellow-500 rounded-full"/>
             <p className="text-[20px] font-semibold uppercase tracking-[0.15em] text-yellow-900">Manage Credits</p>
           </div>
-          
-          <p className={`text-[13px] font-medium mt-1 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
-             Monitor credit approvals, track settled amounts, and oversee outstanding balances. 
-              Keep your revenue flow transparent and agile.
+          <p className={`text-[13px] font-medium mt-1 ${muted}`}>
+            Review credit approvals and track payment status
           </p>
         </div>
-       
+
+        <div className="flex items-center gap-3">
+          <button onClick={handlePreviousMonth}
+            className={`p-2 rounded-xl transition-all ${isDark ? "bg-zinc-800 hover:bg-zinc-700" : "bg-gray-100 hover:bg-gray-200"}`}>
+            <ChevronLeft size={16}/>
+          </button>
+          <div className={`px-4 py-2 rounded-xl font-bold text-sm ${isDark ? "bg-zinc-800" : "bg-gray-100"}`}>
+            {formatMonthDisplay(selectedMonth)}
+          </div>
+          <button onClick={handleNextMonth} disabled={selectedMonth === getCurrentMonth()}
+            className={`p-2 rounded-xl transition-all
+              ${selectedMonth === getCurrentMonth()
+                ? "opacity-50 cursor-not-allowed"
+                : isDark ? "bg-zinc-800 hover:bg-zinc-700" : "bg-gray-100 hover:bg-gray-200"}`}>
+            <ChevronRight size={16}/>
+          </button>
+        </div>
       </div>
 
-      {/* ── CREDITS LEDGER SECTION (enhanced) ── */}
-      <div className={`rounded-2xl border overflow-hidden transition-all duration-300 ${card}`}>
-        <div className="relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-purple-500/5 to-transparent rounded-full -mr-32 -mt-32" />
-          
-          <div className="flex items-center justify-between px-6 py-5 relative z-10">
-            <div className="flex items-center gap-3">
-              <div className={`p-2.5 rounded-xl ${isDark ? "bg-purple-500/10" : "bg-purple-100"} transition-transform`}>
-                <BookOpen size={15} className="text-purple-400"/>
-              </div>
-              <div>
-                <h3 className={`text-sm font-bold uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
-                  Credits Ledger
-                </h3>
-                <p className={`text-[9px] mt-0.5 flex items-center gap-2 ${muted}`}>
-                  {creditApprovals.length > 0 && (
-                    <span className="text-yellow-400 font-bold animate-pulse flex items-center gap-1">
-                      <AlertCircle size={10}/> {creditApprovals.length} pending approval
-                    </span>
-                  )}
-                  {approvedButNotSettled.length > 0 && (
-                    <span className="text-emerald-400 font-bold flex items-center gap-1">
-                      <CheckCircle2 size={10}/> {approvedButNotSettled.length} approved - ready to settle
-                    </span>
-                  )}
-                  {outstanding.length > 0 && (
-                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-400" />{outstanding.length} outstanding</span>
-                  )}
-                  {settled.length > 0 && (
-                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />{settled.length} settled</span>
-                  )}
-                </p>
-              </div>
+      {/* ── STATS CARDS ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+        {/* Pending */}
+        <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02]
+          ${isDark
+            ? "bg-gradient-to-br from-yellow-500/10 to-transparent border border-yellow-500/20"
+            : "bg-gradient-to-br from-yellow-50 to-transparent border border-yellow-200"}`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className={`p-2.5 rounded-xl ${isDark ? "bg-yellow-500/20" : "bg-yellow-100"}`}>
+              <Clock size={18} className="text-yellow-400"/>
             </div>
-            <button onClick={fetchCredits}
-              className={`p-2.5 rounded-xl transition-all hover:scale-110 ${isDark ? "bg-white/5 hover:bg-white/10" : "bg-zinc-100 hover:bg-zinc-200"}`}>
-              <RefreshCw size={13} className={creditsLoading ? "animate-spin text-yellow-400" : muted}/>
-            </button>
+            <span className={`text-[8px] font-black uppercase tracking-widest ${isDark ? "text-yellow-400/60" : "text-yellow-600"}`}>
+              Pending
+            </span>
+          </div>
+          <p className="text-2xl font-black text-yellow-400">{pendingCredits.length}</p>
+          <p className={`text-[9px] mt-2 ${muted}`}>awaiting review</p>
+          <div className="mt-3 pt-2 border-t border-yellow-500/10 space-y-1">
+            <div className="flex justify-between text-[8px]">
+              <span className={isDark ? "text-yellow-400/60" : "text-yellow-600/70"}>With cashier:</span>
+              <span className="text-yellow-400 font-bold">
+                {pendingCredits.filter(c => c.status === "PendingCashier").length}
+              </span>
+            </div>
+            <div className="flex justify-between text-[8px]">
+              <span className={isDark ? "text-yellow-400/60" : "text-yellow-600/70"}>Needs approval:</span>
+              <span className="text-yellow-400 font-bold">
+                {pendingCredits.filter(c => c.status === "PendingManagerApproval" || c.status === "Pending").length}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Summary tiles */}
-        <div className={`grid grid-cols-4 gap-4 px-6 pb-5 border-t pt-5 ${isDark ? "border-white/5" : "border-black/5"}`}>
-          <div className={`rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-purple-500/10" : "bg-purple-50 border border-purple-100"}`}>
-            <p className={`text-[8px] font-bold uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-purple-400"}`}>Outstanding</p>
-            <p className="text-purple-400 font-black text-xl leading-none">{fmtK(totalOutstanding)}</p>
-            <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-purple-400/60"}`}>{outstanding.length} client{outstanding.length !== 1 ? "s" : ""}</p>
+        {/* Outstanding */}
+        <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02]
+          ${isDark
+            ? "bg-gradient-to-br from-purple-500/10 to-transparent border border-purple-500/20"
+            : "bg-gradient-to-br from-purple-50 to-transparent border border-purple-200"}`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className={`p-2.5 rounded-xl ${isDark ? "bg-purple-500/20" : "bg-purple-100"}`}>
+              <AlertCircle size={18} className="text-purple-400"/>
+            </div>
+            <span className={`text-[8px] font-black uppercase tracking-widest ${isDark ? "text-purple-400/60" : "text-purple-400"}`}>
+              Outstanding
+            </span>
           </div>
-          <div className={`rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-emerald-500/10" : "bg-emerald-50 border border-emerald-100"}`}>
-            <p className={`text-[8px] font-bold uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-emerald-500"}`}>Approved</p>
-            <p className="text-emerald-400 font-black text-xl leading-none">{fmtK(totalApprovedButNotSettled)}</p>
-            <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-emerald-500/60"}`}>Awaiting settlement</p>
-          </div>
-          <div className={`rounded-2xl p-4 transition-all duration-300 hover:scale-[1.02] ${isDark ? "bg-black/40 border border-emerald-500/10" : "bg-emerald-50 border border-emerald-100"}`}>
-            <p className={`text-[8px] font-bold uppercase tracking-widest mb-2 ${isDark ? "text-zinc-500" : "text-emerald-500"}`}>Settled</p>
-            <p className="text-emerald-400 font-black text-xl leading-none">{fmtK(totalSettled)}</p>
-            <p className={`text-[9px] mt-1.5 ${isDark ? "text-zinc-600" : "text-emerald-500/60"}`}>{settled.length} record{settled.length !== 1 ? "s" : ""}</p>
-          </div>
-          <div className="rounded-2xl p-4 bg-gradient-to-br from-yellow-500 to-yellow-600 transition-all duration-300 hover:scale-[1.02]">
-            <p className="text-[8px] font-bold uppercase tracking-widest mb-2 text-black/50">All Time</p>
-            <p className="text-black font-black text-xl leading-none">{fmtK(totalOutstanding + totalApprovedButNotSettled + totalSettled)}</p>
-            <p className="text-[9px] mt-1.5 text-black/50">{creditsLedger.length} entries</p>
+          <p className="text-2xl font-black text-purple-400">{fmtK(totalOutstandingBalance)}</p>
+          <p className={`text-[9px] mt-2 ${muted}`}>
+            {outstandingCredits.length + partialCredits.length} credit{(outstandingCredits.length + partialCredits.length) !== 1 ? "s" : ""} with balance
+          </p>
+          <div className="mt-3 pt-2 border-t border-purple-500/10 space-y-1">
+            {outstandingCredits.length > 0 && (
+              <div className="flex justify-between text-[8px]">
+                <span className="text-purple-400/70">Unpaid:</span>
+                <span className="text-purple-400 font-bold">{fmtK(totalOutstanding)}</span>
+              </div>
+            )}
+            {partialCredits.length > 0 && (
+              <div className="flex justify-between text-[8px]">
+                <span className="text-orange-400/70">Partial remaining:</span>
+                <span className="text-orange-400 font-bold">{fmtK(totalPartialRemaining)}</span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Pending Approvals */}
-        {creditApprovals.length > 0 ? (
-          <div className={`px-6 pb-6 border-t pt-5 space-y-3 ${isDark ? "border-white/5" : "border-black/5"}`}>
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse shrink-0"/>
-              <p className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">Awaiting Your Approval</p>
-              <span className="ml-auto px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-[9px] font-bold">{creditApprovals.length}</span>
+        {/* Settled */}
+        <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02]
+          ${isDark
+            ? "bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20"
+            : "bg-gradient-to-br from-emerald-50 to-transparent border border-emerald-200"}`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className={`p-2.5 rounded-xl ${isDark ? "bg-emerald-500/20" : "bg-emerald-100"}`}>
+              <CheckCircle2 size={18} className="text-emerald-400"/>
             </div>
-            {creditApprovals.map(row => (
+            <span className={`text-[8px] font-black uppercase tracking-widest ${isDark ? "text-emerald-400/60" : "text-emerald-400"}`}>
+              Settled
+            </span>
+          </div>
+          <p className="text-2xl font-black text-emerald-400">{fmtK(totalSettledPaid)}</p>
+          <p className={`text-[9px] mt-2 ${muted}`}>
+            {fullySettledCredits.length} credit{fullySettledCredits.length !== 1 ? "s" : ""} paid
+          </p>
+          <div className="mt-3 pt-2 border-t border-emerald-500/10 space-y-1">
+            {fullySettledCredits.length > 0 && (
+              <div className="flex justify-between text-[8px]">
+                <span className="text-emerald-400/70">Fully settled:</span>
+                <span className="text-emerald-400 font-bold">{fmtK(totalFullySettledAmt)}</span>
+              </div>
+            )}
+            {partialCredits.length > 0 && (
+              <div className="flex justify-between text-[8px]">
+                <span className="text-orange-400/70">Partially paid:</span>
+                <span className="text-orange-400 font-bold">{fmtK(totalPartialPaid)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Monthly summary card */}
+        <div className="rounded-2xl p-5 bg-gradient-to-br from-yellow-500 to-yellow-600 transition-all duration-300 hover:scale-[1.02] shadow-lg">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-black/20">
+              <BookOpen size={18} className="text-black"/>
+            </div>
+            <span className="text-[8px] font-black uppercase tracking-widest text-black/50">
+              {formatMonthDisplay(selectedMonth)}
+            </span>
+          </div>
+          <p className="text-2xl font-black text-black">{fmtK(allTimeTotal)}</p>
+          <p className="text-[9px] mt-2 text-black/60">{ledgerCredits.length} entries</p>
+          <div className="mt-3 pt-2 border-t border-black/10 space-y-0.5">
+            <div className="flex justify-between text-[8px] text-black/60">
+              <span>Outstanding:</span>
+              <span className="font-bold">{fmtK(totalOutstandingBalance)}</span>
+            </div>
+            <div className="flex justify-between text-[8px] text-black/60">
+              <span>Settled:</span>
+              <span className="font-bold">{fmtK(totalSettledPaid)}</span>
+            </div>
+            <div className="flex justify-between text-[8px] text-black/60">
+              <span>Rejected:</span>
+              <span className="font-bold">{fmtK(totalRejected)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── PENDING APPROVAL SECTION ── */}
+      {pendingCredits.length > 0 && (
+        <div className={`rounded-2xl border p-6 ${card}`}>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse shrink-0"/>
+            <p className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">
+              Pending Credit Requests
+            </p>
+            <span className="ml-auto px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-[9px] font-bold">
+              {pendingCredits.length}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {pendingCredits.map(row => (
               <CreditApprovalCard
                 key={row.id}
                 row={row}
@@ -475,107 +603,111 @@ export default function PerformanceReports() {
               />
             ))}
           </div>
-        ) : (
-          <div className={`px-6 pb-6 border-t pt-5 ${isDark ? "border-white/5" : "border-black/5"}`}>
-            <div className="flex items-center justify-center py-8">
-              <div className="text-center">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-3">
-                  <CheckCircle2 size={20} className="text-emerald-500" />
-                </div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">No pending credit approvals</p>
-              </div>
+        </div>
+      )}
+
+      {/* ── CREDITS LEDGER ── */}
+      <div className={`rounded-2xl border overflow-hidden transition-all duration-300 ${card}`}>
+        <div className="flex items-center justify-between px-6 py-5 border-b">
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-xl ${isDark ? "bg-purple-500/10" : "bg-purple-100"}`}>
+              <BookOpen size={15} className="text-purple-400"/>
             </div>
+            <h3 className={`text-sm font-bold uppercase tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
+              Credits Ledger — {formatMonthDisplay(selectedMonth)}
+            </h3>
           </div>
-        )}
-
-        {/* Ledger Expandable */}
-        <div className={`border-t ${isDark ? "border-white/5" : "border-black/5"}`}>
-          <button onClick={() => setLedgerExpanded(v => !v)}
-            className="w-full flex items-center justify-between px-6 py-4 transition-all hover:bg-white/5">
-            <div className="flex items-center gap-2">
-              <div className={`p-1.5 rounded-lg ${ledgerExpanded ? "bg-yellow-500/20" : ""}`}>
-                <BookOpen size={12} className={ledgerExpanded ? "text-yellow-400" : muted}/>
-              </div>
-              <p className={`text-[10px] font-bold uppercase tracking-widest ${muted}`}>Credit History</p>
-              {creditsLedger.length > 0 && (
-                <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold ${isDark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
-                  {creditsLedger.length}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {totalOutstanding > 0 && <span className="sm:hidden text-[9px] font-bold text-rose-400">{fmtK(totalOutstanding)} unpaid</span>}
-              {ledgerExpanded ? <ChevronUp size={14} className={`${muted}`}/> : <ChevronDown size={14} className={`${muted}`}/>}
-            </div>
+          <button onClick={fetchCredits}
+            className={`p-2.5 rounded-xl transition-all hover:scale-110
+              ${isDark ? "bg-white/5 hover:bg-white/10" : "bg-zinc-100 hover:bg-zinc-200"}`}>
+            <RefreshCw size={13} className={creditsLoading ? "animate-spin text-yellow-400" : muted}/>
           </button>
+        </div>
 
-          {ledgerExpanded && (
-            <div className={`px-6 pb-6 space-y-4 border-t ${isDark ? "border-white/5" : "border-black/5"}`}>
-              <div className={`flex gap-1 p-1 rounded-xl w-fit mt-4 ${isDark ? "bg-zinc-900" : "bg-zinc-100"}`}>
-                {[
-                  { k: "all", l: "All", icon: <BookOpen size={10}/> },
-                  { k: "outstanding", l: "Outstanding", icon: <AlertCircle size={10}/> },
-                  { k: "approved", l: "Approved", icon: <CheckCircle2 size={10}/> },
-                  { k: "settled", l: "Settled", icon: <CheckCircle2 size={10}/> },
-                ].map(({ k, l, icon }) => (
-                  <button key={k} onClick={() => setCreditFilter(k)}
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5
-                      ${creditFilter === k
-                        ? "bg-yellow-500 text-black shadow-lg scale-105"
-                        : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-700"}`}>
-                    {icon} {l}
-                  </button>
-                ))}
-              </div>
+        <div className={`px-6 pt-4 pb-2 border-b ${isDark ? "border-white/5" : "border-black/5"}`}>
+          <div className={`flex gap-1 p-1 rounded-xl w-fit flex-wrap ${isDark ? "bg-zinc-900" : "bg-zinc-100"}`}>
+            {[
+              { k: "all",         l: "All",         icon: <BookOpen size={10}/> },
+              { k: "outstanding", l: "Outstanding",  icon: <AlertCircle size={10}/> },
+              { k: "settled",     l: "Settled",      icon: <CheckCircle2 size={10}/> },
+              { k: "rejected",    l: "Rejected",     icon: <XCircle size={10}/> },
+            ].map(({ k, l, icon }) => (
+              <button key={k} onClick={() => setCreditFilter(k)}
+                className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 whitespace-nowrap
+                  ${creditFilter === k
+                    ? k === "outstanding" ? "bg-purple-500 text-black shadow-lg scale-105"
+                      : k === "settled"   ? "bg-emerald-500 text-black shadow-lg scale-105"
+                      : k === "rejected"  ? "bg-red-500 text-black shadow-lg scale-105"
+                      :                     "bg-yellow-500 text-black shadow-lg scale-105"
+                    : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-700"}`}>
+                {icon} {l}
+              </button>
+            ))}
+          </div>
+        </div>
 
-              {creditsLoading ? (
-                <div className="space-y-2">{[...Array(3)].map((_,i)=> <div key={i} className={`h-24 rounded-xl animate-pulse ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`}/>)}</div>
-              ) : filteredCredits.length === 0 ? (
-                <div className={`py-14 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-white/5" : "border-zinc-200"}`}>
-                  <ShieldCheck size={26} className={`mx-auto mb-3 ${isDark ? "text-zinc-700" : "text-zinc-300"}`}/>
-                  <p className={`text-[9px] font-bold uppercase tracking-widest ${muted}`}>No {creditFilter === "all" ? "" : creditFilter} credits</p>
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                  {filteredCredits.map(c => <CreditLedgerRow key={c.id} credit={c} isDark={isDark} onSettle={handleSettleCredit} />)}
-                </div>
-              )}
+        <div className="px-6 pb-6 pt-4">
+          {creditsLoading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className={`h-24 rounded-xl animate-pulse ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`}/>
+              ))}
+            </div>
+          ) : filteredCredits.length === 0 ? (
+            <div className={`py-14 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-white/5" : "border-zinc-200"}`}>
+              <ShieldCheck size={26} className={`mx-auto mb-3 ${isDark ? "text-zinc-700" : "text-zinc-300"}`}/>
+              <p className={`text-[9px] font-bold uppercase tracking-widest ${muted}`}>
+                No {creditFilter === "all" ? "" : creditFilter} credits for {formatMonthDisplay(selectedMonth)}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+              {filteredCredits.map(c => <CreditLedgerRow key={c.id} credit={c} isDark={isDark}/>)}
             </div>
           )}
         </div>
       </div>
 
-      {/* ── 7-DAY REVENUE CHART ── */}
+      {/* ── REVENUE CHART ── */}
       <div className={`rounded-2xl border p-6 md:p-8 transition-all duration-300 hover:shadow-xl ${card}`}>
         <div className="mb-5">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-1 h-4 bg-yellow-500 rounded-full" />
+            <div className="w-1 h-4 bg-yellow-500 rounded-full"/>
             <p className={`text-[10px] font-bold uppercase tracking-widest ${muted}`}>7-Day Revenue Flow</p>
           </div>
-          <p className={`text-[8px] font-medium uppercase mt-0.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-            Cash · Card · MTN · Airtel · Gross
-          </p>
         </div>
         <div className="w-full overflow-hidden"><RevenueChart/></div>
       </div>
 
-      {/* ─── REJECT MODAL (unchanged) ── */}
+      {/* ── REJECT MODAL ── */}
       {rejectingRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-300">
-          <div className={`w-full max-w-sm rounded-2xl p-8 shadow-2xl border transition-all ${isDark ? "bg-zinc-950 border-white/10" : "bg-white border-black/10"}`}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className={`w-full max-w-sm rounded-2xl p-8 shadow-2xl border
+            ${isDark ? "bg-zinc-950 border-white/10" : "bg-white border-black/10"}`}>
             <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-5">
               <XCircle size={24} className="text-red-400"/>
             </div>
-            <h3 className="text-base font-bold uppercase text-red-400 mb-1 text-center tracking-widest">Reject Credit</h3>
-            <p className={`text-[10px] text-center mb-6 uppercase tracking-widest ${muted}`}>Order will return to Served status</p>
-            <textarea value={rejectReason} onChange={e=>setRejectReason(e.target.value)}
-              placeholder="Reason for rejection (optional)…"
-              className={`w-full border rounded-2xl p-4 text-sm outline-none resize-none h-24 mb-6 ${isDark ? "bg-black border-white/5 text-white placeholder-zinc-600 focus:border-red-500/30" : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-red-300"}`}/>
+            <h3 className="text-base font-bold uppercase text-red-400 mb-1 text-center">Reject Credit</h3>
+            <p className={`text-[10px] text-center mb-5 ${muted}`}>
+              This will permanently reject the credit request.
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              placeholder="Reason for rejection…"
+              className={`w-full border rounded-2xl p-4 text-sm outline-none resize-none h-24 mb-6
+                ${isDark ? "bg-black border-white/5 text-white" : "bg-zinc-50 border-zinc-200"}`}/>
             <div className="flex gap-3">
-              <button onClick={()=>setRejectingRow(null)} className="flex-1 py-4 font-bold text-[10px] uppercase rounded-2xl transition-all hover:scale-105 text-zinc-500 hover:text-zinc-300">Cancel</button>
+              <button onClick={() => setRejectingRow(null)}
+                className={`flex-1 py-4 font-bold text-[10px] uppercase rounded-2xl border transition-all
+                  ${isDark ? "border-white/10 text-zinc-400 hover:bg-white/5" : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"}`}>
+                Cancel
+              </button>
               <button onClick={handleReject} disabled={approvingId === rejectingRow}
-                className="flex-[2] py-4 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-bold uppercase text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] hover:scale-105 disabled:opacity-50">
-                {approvingId === rejectingRow ? <><RefreshCw size={14} className="animate-spin"/> Processing...</> : <><XCircle size={14}/> Confirm Reject</>}
+                className="flex-[2] py-4 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-bold uppercase text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50">
+                {approvingId === rejectingRow
+                  ? <><RefreshCw size={14} className="animate-spin"/> Processing…</>
+                  : <><XCircle size={14}/> Confirm Reject</>}
               </button>
             </div>
           </div>

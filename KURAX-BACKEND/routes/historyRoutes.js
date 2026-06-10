@@ -19,53 +19,74 @@ function kampalaDate() {
 //   status       — filter to a specific status e.g. "Paid" (optional)
 //   from / to    — date range YYYY-MM-DD (optional, ignored if date is set)
 router.get('/orders', async (req, res) => {
-  const limit    = Math.min(parseInt(req.query.limit)  || 100, 500); // cap at 500
-  const date     = req.query.date     || null;
-  const staffId  = req.query.staff_id || null;
-  const status   = req.query.status   || null;
-  const from     = req.query.from     || null;
-  const to       = req.query.to       || null;
-
+  const limit = Math.min(parseInt(req.query.limit) || 100, 500);
   try {
-    // Build WHERE clauses dynamically
-    const conditions = [];
-    const params     = [];
+    // 1. Orders (excluding ghost orders)
+    const ordersResult = await pool.query(`
+      SELECT
+        o.id AS source_id,
+        'order' AS type,
+        o.table_name,
+        COALESCE(s.name, o.staff_name, 'Unknown') AS staff_name,
+        COALESCE(s.role, 'WAITER') AS role,
+        o.total AS amount,
+        CASE 
+          WHEN o.payment_method IS NOT NULL AND o.payment_method != '' THEN o.payment_method
+          WHEN LOWER(o.status) = 'credit' THEN 'Credit'
+          ELSE '—'
+        END AS method,
+        o.created_at AS date,
+        o.status,
+        NULL AS settle_method,
+        NULL AS client_name,
+        NULL AS client_phone
+      FROM orders o
+      LEFT JOIN staff s ON s.id = o.staff_id
+      WHERE (o.payment_method IS NOT NULL AND o.payment_method != '')
+         OR LOWER(o.status) = 'credit'
+      ORDER BY o.created_at DESC
+      LIMIT $1
+    `, [limit]);
 
-    if (date) {
-      // Single day — cast to Kampala timezone so late-night orders aren't missed
-      params.push(date);
-      conditions.push(`(o.created_at AT TIME ZONE 'Africa/Nairobi')::date = $${params.length}`);
-    } else if (from && to) {
-      params.push(from); conditions.push(`(o.created_at AT TIME ZONE 'Africa/Nairobi')::date >= $${params.length}`);
-      params.push(to);   conditions.push(`(o.created_at AT TIME ZONE 'Africa/Nairobi')::date <= $${params.length}`);
-    }
+    // 2. Credit settlements with "Partial Settlement" vs "Settled" status
+    const settlementsResult = await pool.query(`
+      WITH credit_balance AS (
+        SELECT 
+          c.id AS credit_id,
+          c.amount AS original_amount,
+          COALESCE(SUM(cs2.amount_paid), 0) AS total_settled
+        FROM credits c
+        LEFT JOIN credit_settlements cs2 ON cs2.credit_id = c.id
+        GROUP BY c.id, c.amount
+      )
+      SELECT
+        cs.id AS source_id,
+        'credit_settlement' AS type,
+        c.table_name,
+        COALESCE(s.name, o.staff_name, c.waiter_name, c.requested_by, 'Unknown') AS staff_name,
+        COALESCE(s.role, 'WAITER') AS role,
+        cs.amount_paid AS amount,
+        CONCAT('credit/', LOWER(cs.method)) AS method,
+        cs.created_at AS date,
+        CASE 
+          WHEN cb.total_settled >= cb.original_amount THEN 'Settled'
+          ELSE 'Partial Settlement'
+        END AS status,
+        cs.method AS settle_method,
+        c.client_name,
+        c.client_phone
+      FROM credit_settlements cs
+      JOIN credits c ON cs.credit_id = c.id
+      JOIN credit_balance cb ON cb.credit_id = c.id
+      LEFT JOIN orders o ON o.id = c.order_id
+      LEFT JOIN staff s ON s.id = o.staff_id
+      ORDER BY cs.created_at DESC
+      LIMIT $1
+    `, [limit]);
 
-    if (staffId) {
-      params.push(staffId);
-      conditions.push(`o.staff_id = $${params.length}`);
-    }
-
-    if (status) {
-      params.push(status);
-      conditions.push(`o.status = $${params.length}`);
-    }
-
-    params.push(limit);
-    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const result = await pool.query(
-      `SELECT
-         o.*,
-         COALESCE(s.name, o.staff_name, 'Unknown') AS staff_name, COALESCE(s.role, 'WAITER') AS role
-       FROM orders o
-       LEFT JOIN staff s ON s.id = o.staff_id
-       ${whereClause}
-       ORDER BY o.created_at DESC
-       LIMIT $${params.length}`,
-      params
-    );
-
-    res.json(result.rows);
+    let all = [...ordersResult.rows, ...settlementsResult.rows];
+    all.sort((a, b) => new Date(b.date) - new Date(a.date));
+    res.json(all.slice(0, limit));
   } catch (err) {
     console.error('History orders error:', err.message);
     res.status(500).json({ error: err.message });

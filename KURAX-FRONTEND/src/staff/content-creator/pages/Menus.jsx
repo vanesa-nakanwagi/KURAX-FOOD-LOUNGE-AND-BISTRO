@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
-import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles } from 'lucide-react'
+import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles, Loader2 } from 'lucide-react'
 import Footer from "../../../customer/components/common/Foooter";
 import { getImageSrc } from "../../../utils/imageHelper";
 import API_URL from "../../../config/api";
@@ -24,6 +24,10 @@ export default function Menus() {
   const [formVisible, setFormVisible] = useState(false)
   const [editingMenu, setEditingMenu] = useState(null)
   const { theme } = useTheme();
+
+  // 👇 New states for visual feedback
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [statusMessage, setStatusMessage] = useState({ text: '', type: '' }) // type: 'success' | 'error'
 
   const [formData, setFormData] = useState({
     name: '',
@@ -61,8 +65,15 @@ export default function Menus() {
     });
   };
 
+  const clearStatusMessage = () => {
+    setTimeout(() => setStatusMessage({ text: '', type: '' }), 3000)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    setIsSubmitting(true)
+    setStatusMessage({ text: '', type: '' })
 
     const data = new FormData();
     data.append('name', formData.name);
@@ -90,13 +101,22 @@ export default function Menus() {
         const updatedItem = await response.json();
         if (editingMenu) {
           setMenus(prev => prev.map(m => (m.id === editingMenu.id ? updatedItem : m)));
+          setStatusMessage({ text: 'Menu item updated successfully!', type: 'success' })
         } else {
           setMenus(prev => [...prev, updatedItem]);
+          setStatusMessage({ text: 'New menu item added!', type: 'success' })
         }
         resetForm();
+      } else {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to save menu item')
       }
     } catch (err) {
       console.error("Database sync failed:", err);
+      setStatusMessage({ text: err.message || 'Something went wrong. Please try again.', type: 'error' })
+    } finally {
+      setIsSubmitting(false)
+      clearStatusMessage()
     }
   };
 
@@ -122,9 +142,13 @@ export default function Menus() {
       const response = await fetch(`${API_URL}/api/menus/${id}`, { method: 'DELETE' });
       if (response.ok) {
         setMenus(prev => prev.filter(menu => menu.id !== id));
+        setStatusMessage({ text: 'Item deleted successfully', type: 'success' })
+        clearStatusMessage()
       }
     } catch (err) {
       console.error("Delete failed:", err);
+      setStatusMessage({ text: 'Failed to delete item', type: 'error' })
+      clearStatusMessage()
     }
   };
 
@@ -134,6 +158,16 @@ export default function Menus() {
 
       <div id="content-area" className="flex-1 flex flex-col overflow-y-auto">
         <main className="p-4 md:p-8 pt-20 lg:pt-8">
+          {/* Status Toast / Banner */}
+          {statusMessage.text && (
+            <div className={`fixed top-20 right-4 z-50 flex items-center gap-2 p-3 rounded-xl shadow-lg animate-in slide-in-from-right-5 duration-300 ${
+              statusMessage.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' : 'bg-red-100 border border-red-300 text-red-800'
+            }`}>
+              {statusMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+              <span className="text-sm font-medium">{statusMessage.text}</span>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Menus</h1>
@@ -252,9 +286,16 @@ export default function Menus() {
                       <span className="text-gray-700 text-sm font-medium">Publish Menu</span>
                     </label>
                     <div className="flex gap-3">
-                      <button type="button" onClick={resetForm} className="px-6 py-3 text-gray-500 font-bold text-sm hover:text-gray-700">Cancel</button>
-                      <button type="submit" className="bg-yellow-500 px-8 py-3 rounded-xl text-black font-bold text-sm shadow-sm hover:bg-yellow-600 transition">
-                        {editingMenu ? 'Update' : 'Add Menu'}
+                      <button type="button" onClick={resetForm} className="px-6 py-3 text-gray-500 font-bold text-sm hover:text-gray-700">
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="bg-yellow-500 px-8 py-3 rounded-xl text-black font-bold text-sm shadow-sm hover:bg-yellow-600 transition disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {isSubmitting ? 'Saving...' : (editingMenu ? 'Update' : 'Add Menu')}
                       </button>
                     </div>
                   </div>

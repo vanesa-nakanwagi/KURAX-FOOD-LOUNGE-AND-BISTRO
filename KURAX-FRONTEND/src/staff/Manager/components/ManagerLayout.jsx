@@ -13,7 +13,7 @@ import ShiftReportModal   from "./ShiftModal";
 import LiveOrderStatus    from "./LiveOrderStatus";
 import LiveTableGrid      from "./LiveTableGrid"; 
 import PerformanceReports from "./PerformanceReports";
-import ManagerCreditPanel from "./ManagerCreditPanel"; // <--- Integrated Component
+import ManagerCreditPanel from "./ManagerCreditPanel";
 import OrderHistory from "./ManageTables";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
@@ -68,7 +68,7 @@ export default function ManagerLayout() {
     }
   };
 
-  // Main Content Switcher
+  // Main Content Switcher - FIXED: Don't pass theme prop to ManagerCreditPanel
   const renderContent = () => {
     switch (activeTab) {
       case "order": 
@@ -78,9 +78,9 @@ export default function ManagerLayout() {
       case "tables":  return <LiveTableGrid />; 
       case "target":  return <TargetSettings />;
       case "history": return <PerformanceDashboard />;
-       case "manage": return <OrderHistory />;
+      case "manage": return <OrderHistory />;
       case "reports": return <PerformanceReports />;
-      case "credits": return <ManagerCreditPanel managerName={currentStaffName} theme={theme} />; // <--- Credit Panel Integration
+      case "credits": return <ManagerCreditPanel managerName={currentStaffName} />; // REMOVED theme prop
       default:        return <NewOrder />;
     }
   };

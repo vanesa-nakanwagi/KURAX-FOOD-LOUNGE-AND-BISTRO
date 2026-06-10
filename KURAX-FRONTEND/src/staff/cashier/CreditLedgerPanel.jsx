@@ -78,7 +78,8 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
     if (!canSubmit) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/credits/${credit.id}/settle`, {
+      //const res = await fetch(`${API_URL}/api/credits/${credit.id}/settle`, {
+      const res = await fetch(`${API_URL}/api/cashier-ops/credits/${credit.id}/settle`, {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
@@ -238,7 +239,8 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
 
 // ─── Forward confirmation ─────────────────────────────────────────────────────
 async function forwardCreditToManager(creditId, cashierName) {
-  const res = await fetch(`${API_URL}/api/credits/${creditId}/forward`, {
+  //const res = await fetch(`${API_URL}/api/credits/${creditId}/forward`, {
+  const res = await fetch(`${API_URL}/api/cashier-ops/credits/${creditId}/forward`, {
     method:  "PATCH",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ forwarded_by: cashierName }),

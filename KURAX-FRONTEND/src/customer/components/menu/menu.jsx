@@ -21,7 +21,7 @@ function MenuCard({ item, onOrder, isNew }) {
     <div className="group relative font-outfit flex flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
       {isNew && (
         <div className="absolute top-4 left-4 z-30">
-          <div className="bg-yellow-500 text-black text-[8px] font-black px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
+          <div className="bg-yellow-500 text-black text-[8px]  px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
             <Sparkles size={8} /> NEW
           </div>
         </div>
@@ -92,6 +92,16 @@ export default function Menu() {
     totalAmount, checkoutStep, setCheckoutStep, customerDetails, setCustomerDetails,
   } = useCart();
 
+  // Helper: get effective category for display based on station
+  const getEffectiveCategory = (item) => {
+    // Barista / Barman always go to Drinks & Cocktails
+    if (item.station === 'Barista' || item.station === 'Barman') {
+      return 'Drinks & Cocktails';
+    }
+    // Kitchen or undefined: keep the saved category (Starters / Local Foods)
+    return item.category;
+  };
+
   // Fetch menus
   useEffect(() => {
     const fetchMenus = async () => {
@@ -143,7 +153,7 @@ export default function Menu() {
     return () => window.removeEventListener("search", handleGlobalSearch);
   }, []);
 
-  // Filter menus based on search or category
+  // Filter menus based on search or category (using effective category)
   useEffect(() => {
     if (dbMenus.length === 0) return;
     let results = [];
@@ -153,12 +163,12 @@ export default function Menu() {
         (item) =>
           item.name.toLowerCase().includes(query) ||
           (item.description && item.description.toLowerCase().includes(query)) ||
-          item.category.toLowerCase().includes(query)
+          getEffectiveCategory(item).toLowerCase().includes(query)
       );
     } else if (selectedCategory) {
-      results = dbMenus.filter((item) => item.category === selectedCategory);
+      results = dbMenus.filter((item) => getEffectiveCategory(item) === selectedCategory);
     } else {
-      results = dbMenus.filter((item) => item.category === "Starters");
+      results = dbMenus.filter((item) => getEffectiveCategory(item) === "Starters");
     }
     setFilteredMenus(results);
   }, [dbMenus, selectedCategory, searchQuery, isSearching]);
@@ -202,11 +212,6 @@ export default function Menu() {
       <TopSection searchPlaceholder="Search flavors..." />
 
       {/* ── 2. CATEGORY TABS — fixed strip right below TopSection ── */}
-      {/*
-        We use a normal sticky bar here WITHIN the flex column so it sticks
-        to the top of the scrollable region, not the viewport.
-        This avoids having to hard-code any pixel offsets.
-      */}
       {!isSearching && (
         <div className="flex-shrink-0 bg-[#F9F9F7]/95 dark:bg-[#080808]/95 backdrop-blur-xl border-b border-zinc-200/50 dark:border-zinc-800/50 z-40">
           <div className="w-full flex justify-center overflow-x-auto no-scrollbar">
@@ -294,9 +299,10 @@ export default function Menu() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
               {filteredMenus.map((item) => {
+                // NEW badge duration: 7 days (168 hours)
                 const createdDate = new Date(item.created_at);
                 const now = new Date();
-                const isNew = (now - createdDate) / (1000 * 60 * 60) <= 48;
+                const isNew = (now - createdDate) / (1000 * 60 * 60) <= 168;
 
                 return (
                   <MenuCard

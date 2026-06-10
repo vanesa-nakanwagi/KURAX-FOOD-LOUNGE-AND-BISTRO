@@ -13,7 +13,7 @@ import siteVisits from './routes/siteVisits.js';
 import managerRoutes from './routes/managerRoutes.js';
 import overviewRoutes from './routes/overviewRoutes.js';
 import weeklyRevenueRoutes from "./routes/weeklyRevenueRoutes.js";
-import sendToCashierRoute from "./routes/sendToCashierRoutes.js";
+import sendToCashierRoutes from "./routes/sendToCashierRoutes.js";   // ✅ FIXED: matches actual filename
 import summaryRoutes from './routes/summaryRoutes.js';
 import accountantRoutes from './routes/accountantRoutes.js';
 import kitchenRoutes from "./routes/kitchenRoutes.js";
@@ -23,22 +23,21 @@ import waiterRoutes from './routes/waiterRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
 import deliveryRoutes from './routes/deliveryRoutes.js';
 import dayClosureRoutes from './routes/dayClosureRoutes.js';
-
-// --- NEW CREDIT ROUTE IMPORT ---
 import creditRoutes, { initCreditTables } from './routes/creditRoutes.js';
 
 dotenv.config();
 const app = express();
 
-// 1. CORS - Updated for phone access
+// 1. CORS
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:5174',
+  'http://localhost:5175',
   'http://localhost:42107',
   'http://10.10.162.91:3000',
-  'http://10.137.60.94:41013',          // your current frontend origin
-  /^http:\/\/10\.137\.60\.94:\d+$/,     // allow any port on 10.137.60.94
+  'http://10.137.60.94:41013',
+  /^http:\/\/10\.137\.60\.94:\d+$/,
   /^http:\/\/10\.10\.162\.91:\d+$/,
   'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app',
   /\.vercel\.app$/
@@ -46,27 +45,28 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    
     const isAllowed = allowedOrigins.some((allowed) =>
       allowed instanceof RegExp ? allowed.test(origin) : allowed === origin
     );
-    
     if (isAllowed) {
       callback(null, true);
     } else {
-      console.log("❌ CORS Blocked for Origin:", origin);
-      callback(null, true); // Still allow but log it - change to error in production
+      console.log("⚠️ CORS Request from Origin:", origin);
+      callback(null, true); // allow all for testing
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['Content-Length', 'X-Requested-With'],
 }));
 
 // 2. HELMET
 app.use(helmet({
-  crossOriginResourcePolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: false,
 }));
 
 // 3. BODY PARSER
@@ -83,7 +83,7 @@ app.use('/api/visits', siteVisits);
 app.use('/api/menus', menuRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/cashier-ops', sendToCashierRoute);
+app.use('/api/cashier-ops', sendToCashierRoutes);      // ✅ now correctly mounted
 app.use('/api/events', eventRoutes);
 app.use('/api/manager', managerRoutes);
 app.use('/api/overview', overviewRoutes);
@@ -97,7 +97,6 @@ app.use('/api/waiter', waiterRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/delivery', deliveryRoutes);
 app.use('/api/day-closure', dayClosureRoutes);
-// --- REGISTER CREDIT ROUTES ---
 app.use('/api/credits', creditRoutes);
 
 // 6. HEALTH CHECK
@@ -105,17 +104,13 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Backend working' });
 });
 
-// 7. DATABASE VERIFICATION & INITIALIZATION
+// 7. DATABASE VERIFICATION
 const verifyDB = async () => {
   try {
-    // Check connection
     await pool.query('SELECT NOW()');
     console.log('✅ Database connected to Neon');
-
-    // Run Credit Table Setup
     await initCreditTables();
     console.log('✅ Credit tables verified/initialized');
-
   } catch (err) {
     console.error('❌ DB/Init Error:', err.message);
   }
@@ -123,23 +118,12 @@ const verifyDB = async () => {
 
 const PORT = process.env.PORT || 5010;
 
-// ERROR HANDLING
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise, '\nReason:', reason);
 });
 
 process.on('uncaughtException', (err) => {
   console.error('❌ Uncaught Exception:', err);
-});
-
-process.on('SIGTERM', () => {
-  console.warn('⚠️ Received SIGTERM, shutting down gracefully.');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.warn('⚠️ Received SIGINT, shutting down gracefully.');
-  process.exit(0);
 });
 
 app.listen(PORT, () => {

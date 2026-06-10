@@ -45,7 +45,7 @@ export default function GrossRevenueCard({ grossSales, settledCredits, pendingCr
             {formatCurrencyCompact(grossSales)}
           </h3>
           <p className="text-[7px] font-bold text-black/40 uppercase tracking-wider mt-1">
-            Cash + Card + Mobile Money (Paid Orders Only)
+            Cash + Card + Mobile Money (Gross Sales + Credit Settlements)
           </p>
         </div>
         
@@ -61,15 +61,7 @@ export default function GrossRevenueCard({ grossSales, settledCredits, pendingCr
                 <p className="text-[10px] font-black text-emerald-900 ">+ {formatCurrencyCompact(settledCredits)}</p>
               </div>
             </div>
-            <div className="flex items-center justify-between gap-2 bg-black/20 backdrop-blur-sm rounded-xl px-3 py-2 group-hover:bg-black/30 transition-all">
-              <div className="flex items-center gap-1.5">
-                <Zap size={10} className="text-black/60" />
-                <p className="text-[7px] font-black uppercase text-black/70 tracking-wider">Combined Total</p>
-              </div>
-              <p className="text-[11px] font-black text-black  tracking-tighter">
-                {formatCurrencyCompact(combinedTotal)}
-              </p>
-            </div>
+            
           </div>
         )}
       </div>

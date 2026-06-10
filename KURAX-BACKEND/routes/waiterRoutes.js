@@ -9,7 +9,33 @@ function kampalaDate(d = new Date()) {
     .toISOString().split('T')[0];
 }
 
-// ── PATCH /api/waiter/end-shift ───────────────────────────────────────────────
+// ── NEW: GET /api/waiter/live-orders ─────────────────────────────────────────
+// Returns orders that are still active (not paid, not archived, not sent to cashier)
+router.get('/live-orders', async (req, res) => {
+  const { staff_id, staff_name } = req.query;
+  if (!staff_id && !staff_name) {
+    return res.status(400).json({ error: 'staff_id or staff_name required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT * FROM orders
+       WHERE (staff_id = $1 OR staff_name = $2)
+         AND status NOT IN ('Paid', 'Closed', 'Voided')
+         AND sent_to_cashier = false
+         AND is_archived = false
+         AND shift_cleared = false
+       ORDER BY created_at ASC`,
+      [staff_id, staff_name]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Live orders error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH /api/waiter/end-shift (unchanged, already correct) ─────────────────
 router.patch('/end-shift', async (req, res) => {
   const { 
     waiter_id, 
@@ -54,7 +80,6 @@ router.patch('/end-shift', async (req, res) => {
     let finalCard   = Number(total_card);
     let finalPetty  = Number(petty_cash_spent) || 0;
 
-    // Fallback logic for Waiters/Staff who don't pass payload
     if (isNaN(finalGross)) {
       if (isPermitted) {
         const ordersRes = await pool.query(
@@ -128,16 +153,12 @@ router.patch('/end-shift', async (req, res) => {
     );
 
     // ── 3. THE CLEARING LOGIC (Archive live data) ───────────────────────────
-    // This makes the totals on the dashboard return to 0
     if (isPermitted) {
-      // Clear main orders
       await pool.query(
         `UPDATE orders SET shift_cleared = TRUE 
          WHERE staff_id = $1 AND date = $2 AND shift_cleared = FALSE`,
         [waiter_id, today]
       );
-      
-      // Clear cashier queue and history
       await pool.query(
         `UPDATE cashier_queue SET shift_cleared = TRUE 
          WHERE (staff_id = $1 OR requested_by = $2) 
@@ -177,7 +198,7 @@ router.get('/shifts/:staffId', async (req, res) => {
   }
 });
 
-// ── GET /api/waiter/manager-credit-stats ─────────────────────────────────────
+// ── GET /api/waiter/manager-credit-stats (unchanged) ─────────────────────────
 router.get('/manager-credit-stats', async (req, res) => {
   const { manager_name, date } = req.query;
   const today = date || kampalaDate();
@@ -191,7 +212,7 @@ router.get('/manager-credit-stats', async (req, res) => {
        FROM cashier_queue
        WHERE confirmed_by ILIKE $1 
        AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $2
-       AND shift_cleared = FALSE`, // Skip already finalized data
+       AND shift_cleared = FALSE`,
       [manager_name, today]
     );
     const row = result.rows[0];
@@ -205,7 +226,7 @@ router.get('/manager-credit-stats', async (req, res) => {
   }
 });
 
-// ── PREVIEW ROUTES (Manager & Supervisor) ────────────────────────────────────
+// ── PREVIEW ROUTES (UPDATED: exclude orders sent to cashier) ─────────────────
 router.get('/manager-shift-preview', async (req, res) => {
   const { staff_id, staff_name, date } = req.query;
   const today = date || kampalaDate();
@@ -213,8 +234,12 @@ router.get('/manager-shift-preview', async (req, res) => {
   try {
     const ordersRes = await pool.query(
       `SELECT COUNT(*) AS order_count, COALESCE(SUM(total), 0) AS gross_total
-       FROM orders WHERE staff_id = $1 AND date = $2 AND shift_cleared = FALSE 
-       AND status NOT IN ('Cancelled', 'Voided')`,
+       FROM orders 
+       WHERE staff_id = $1 
+         AND date = $2 
+         AND shift_cleared = FALSE 
+         AND sent_to_cashier = FALSE
+         AND status NOT IN ('Cancelled', 'Voided')`,
       [staff_id, today]
     );
     const queueRes = await pool.query(
@@ -225,8 +250,10 @@ router.get('/manager-shift-preview', async (req, res) => {
          COALESCE(SUM(CASE WHEN method IN ('Card','Visa','POS','Debit') THEN amount ELSE 0 END), 0) AS total_card
        FROM cashier_queue
        WHERE (staff_id = $1 OR requested_by = $2) 
-       AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
-       AND status = 'Confirmed' AND method != 'Credit' AND shift_cleared = FALSE`,
+         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
+         AND status = 'Confirmed' 
+         AND method != 'Credit' 
+         AND shift_cleared = FALSE`,
       [staff_id, staff_name || '', today]
     );
     res.json({
@@ -249,8 +276,12 @@ router.get('/supervisor-shift-preview', async (req, res) => {
   try {
     const ordersRes = await pool.query(
       `SELECT COUNT(*) AS order_count, COALESCE(SUM(total), 0) AS gross_total
-       FROM orders WHERE staff_id = $1 AND date = $2 AND shift_cleared = FALSE 
-       AND status NOT IN ('Cancelled', 'Voided')`,
+       FROM orders 
+       WHERE staff_id = $1 
+         AND date = $2 
+         AND shift_cleared = FALSE 
+         AND sent_to_cashier = FALSE
+         AND status NOT IN ('Cancelled', 'Voided')`,
       [staff_id, today]
     );
     const queueRes = await pool.query(
@@ -261,8 +292,10 @@ router.get('/supervisor-shift-preview', async (req, res) => {
          COALESCE(SUM(CASE WHEN method IN ('Card','Visa','POS','Debit') THEN amount ELSE 0 END), 0) AS total_card
        FROM cashier_queue
        WHERE (staff_id = $1 OR requested_by = $2) 
-       AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
-       AND status = 'Confirmed' AND method != 'Credit' AND shift_cleared = FALSE`,
+         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
+         AND status = 'Confirmed' 
+         AND method != 'Credit' 
+         AND shift_cleared = FALSE`,
       [staff_id, staff_name || '', today]
     );
     res.json({
@@ -278,14 +311,12 @@ router.get('/supervisor-shift-preview', async (req, res) => {
   }
 });
 
-// ── POST /api/accountant/finalize-day ────────────────────────────────────────
-// This archives the entire lounge's performance for the day
+// ── POST /api/accountant/finalize-day (unchanged) ────────────────────────────
 router.post('/finalize-day', async (req, res) => {
   const { final_gross, variance, recorded_by } = req.body;
   const today = kampalaDate();
 
   try {
-    // 1. Create a Master Daily Record for the Director
     await pool.query(
       `INSERT INTO daily_reconciliations 
          (date, total_system_gross, total_variance, finalized_by, status)
@@ -297,22 +328,17 @@ router.post('/finalize-day', async (req, res) => {
       [today, final_gross, variance, recorded_by]
     );
 
-    // 2. Archive live data so 'Live Audit' and 'Queue' clear
     await pool.query(
       `UPDATE orders SET shift_cleared = TRUE 
        WHERE date = $1 AND shift_cleared = FALSE`,
       [today]
     );
-
     await pool.query(
       `UPDATE cashier_queue SET shift_cleared = TRUE 
        WHERE (created_at AT TIME ZONE 'Africa/Nairobi')::date = $1 
        AND shift_cleared = FALSE`,
       [today]
     );
-
-    // ── 2.5 NEW: RESET REVENUE SUMMARY TABLE ──────────────────────────────
-    // This now clears the authoritative daily_summary row used by dashboards
     await pool.query(
       `UPDATE daily_summary 
        SET total_cash = 0,
@@ -328,7 +354,6 @@ router.post('/finalize-day', async (req, res) => {
     );
 
     console.log(`🏛️ DAY FINALIZED by ${recorded_by} | All summaries reset to 0.`);
-
     res.json({ 
       success: true, 
       message: 'All lounge accounts finalized and summary cards reset.' 
@@ -339,8 +364,7 @@ router.post('/finalize-day', async (req, res) => {
   }
 });
 
-// ── GET /api/accountant/physical-count ───────────────────────────────────────
-// Fetches the saved physical counts if the accountant previously saved them
+// ── GET /api/accountant/physical-count (unchanged) ───────────────────────────
 router.get('/physical-count', async (req, res) => {
   const today = kampalaDate();
   try {
@@ -354,8 +378,7 @@ router.get('/physical-count', async (req, res) => {
   }
 });
 
-// ── POST /api/physical-count ──────────────────────────────────────
-// Saves the intermediate physical count (from the Physical Count tab)
+// ── POST /api/physical-count (unchanged) ─────────────────────────────────────
 router.post('/physical-count', async (req, res) => {
   const { cash, momo_mtn, momo_airtel, card, notes, submitted_by } = req.body;
   const today = kampalaDate();

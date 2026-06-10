@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef, useMemo } from 'react';
 import API_URL from "../../../config/api";
 
 const DataContext = createContext();
@@ -23,26 +23,43 @@ function normMethod(raw = '') {
   return 'unknown';
 }
 
-export const DataProvider = ({ children }) => {
-  const [staffList, setStaffList] = useState([]);
-  const [orders, setOrders] = useState([]);
-  const [menus, setMenus] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+// ─── Create fallback weekly data (empty chart) ──────────────────────────────
+function createFallbackWeeklyData() {
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const today = new Date();
+  return days.map((day, index) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() - (6 - index));
+    return {
+      date: day,
+      fullDate: d.toISOString().split('T')[0],
+      total_cash: 0, total_card: 0, total_mtn: 0,
+      total_airtel: 0, total_settled_credits: 0, total_gross: 0,
+    };
+  });
+}
 
+export const DataProvider = ({ children }) => {
+  // ─── Raw data from APIs ───────────────────────────────────────────────────
+  const [staffList, setStaffList]     = useState([]);
+  const [allOrders, setAllOrders]     = useState([]); // unfiltered (includes archived)
+  const [menus, setMenus]             = useState([]);
+  const [events, setEvents]           = useState([]);
+  const [isLoading, setIsLoading]     = useState(true);
+  const [globalResetKey, setGlobalResetKey] = useState(0);
+
+  // ─── Financial summaries ──────────────────────────────────────────────────
   const [todaySummary, setTodaySummary] = useState({
     summary_date: null,
-    total_gross: 0,
-    total_cash: 0,
-    total_card: 0,
-    total_mtn: 0,
-    total_airtel: 0,
-    total_credit: 0,
-    total_mixed: 0,
-    order_count: 0,
+    total_gross: 0, total_cash: 0, total_card: 0,
+    total_mtn: 0, total_airtel: 0, total_credit: 0,
+    total_mixed: 0, order_count: 0,
   });
+  const [weeklyRevenue, setWeeklyRevenue] = useState([]);
   const [monthlySummary, setMonthlySummary] = useState({ totals: {}, daily: [] });
   const [pettyCash, setPettyCash] = useState({ total_in: 0, total_out: 0, net: 0, entries: [] });
+
+  // ─── Targets and user state ───────────────────────────────────────────────
   const [dailyGoal, setDailyGoal] = useState(20);
   const [monthlyTargets, setMonthlyTargets] = useState({});
   const [isGranted, setIsGranted] = useState(false);
@@ -51,37 +68,59 @@ export const DataProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // ── Day closure state ─────────────────────────────────────────────────────
-  const [dayClosed, setDayClosed] = useState(false);
+  // ─── Day closure state ────────────────────────────────────────────────────
+  const [dayClosed, setDayClosed]           = useState(false);
   const [lastClosedDate, setLastClosedDate] = useState(null);
   const [dayClosureInfo, setDayClosureInfo] = useState(null);
-  const refreshIntervalRef = useRef(null);
-  const sseRef = useRef(null);
 
-  // ─── DEFINE ALL FETCH FUNCTIONS FIRST ─────────────────────────────────────
+  // ─── Refs for polling / SSE / timers ──────────────────────────────────────
+  const refreshIntervalRef = useRef(null);
+  const sseRef             = useRef(null);
+  const currentUserRef     = useRef(currentUser);
+  const lastClosedDateRef  = useRef(lastClosedDate);
+  const dayClosedRef       = useRef(dayClosed);
+
+  useEffect(() => { currentUserRef.current   = currentUser;    }, [currentUser]);
+  useEffect(() => { lastClosedDateRef.current = lastClosedDate; }, [lastClosedDate]);
+  useEffect(() => { dayClosedRef.current      = dayClosed;      }, [dayClosed]);
+
+  // ─── FILTERED ORDERS (respects day closure & user role) ──────────────────
+  const orders = useMemo(() => {
+    if (!dayClosed) return allOrders;
+    const role = currentUser?.role?.toUpperCase();
+    const canSeeArchived = role === 'ACCOUNTANT';
+    if (canSeeArchived) return allOrders;
+    return allOrders.filter(order => !order.is_archived);
+  }, [allOrders, dayClosed, currentUser]);
+
+  // ─── DATA FETCHERS ────────────────────────────────────────────────────────
   const fetchTodaySummary = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/summaries/today?t=${Date.now()}`);
+      if (res.ok) setTodaySummary(await res.json());
+    } catch (err) { console.error("fetchTodaySummary error:", err); }
+  }, []);
+
+  const fetchWeeklyRevenue = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/overview/weekly-revenue?t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
-        setTodaySummary(data);
-        return data;
-      }
+        if (Array.isArray(data) && data.length > 0) setWeeklyRevenue(data);
+        else setWeeklyRevenue(createFallbackWeeklyData());
+      } else setWeeklyRevenue(createFallbackWeeklyData());
     } catch (err) {
-      console.error("Failed to fetch today's summary:", err);
+      console.error("fetchWeeklyRevenue error:", err);
+      setWeeklyRevenue(createFallbackWeeklyData());
     }
-    return null;
   }, []);
 
   const fetchMonthlySummary = useCallback(async (month) => {
-    const m = month || new Date().toISOString().substring(0, 7);
+    const targetMonth = month || new Date().toISOString().substring(0, 7);
     try {
-      //const res = await fetch(`${API_URL}/api/summaries/monthly?month=${m}`);
-      const res = await fetch(`${API_URL}/api/accountant/today?t=${Date.now()}`);
+      const res = await fetch(`${API_URL}/api/accountant/monthly-profit?month=${targetMonth}&t=${Date.now()}`);
       if (res.ok) setMonthlySummary(await res.json());
-    } catch (err) {
-      console.error("Failed to fetch monthly summary:", err);
-    }
+    } catch (err) { console.error("fetchMonthlySummary error:", err); }
   }, []);
 
   const fetchPettyCash = useCallback(async (date) => {
@@ -89,9 +128,7 @@ export const DataProvider = ({ children }) => {
     try {
       const res = await fetch(`${API_URL}/api/summaries/petty-cash?date=${d}`);
       if (res.ok) setPettyCash(await res.json());
-    } catch (err) {
-      console.error("Failed to fetch petty cash:", err);
-    }
+    } catch (err) { console.error("fetchPettyCash error:", err); }
   }, []);
 
   const fetchTargets = useCallback(async () => {
@@ -102,22 +139,17 @@ export const DataProvider = ({ children }) => {
         const currentMonth = new Date().toISOString().substring(0, 7);
         setMonthlyTargets(prev => ({
           ...prev,
-          [currentMonth]: { revenue: data.target }
+          [currentMonth]: { revenue: data.target },
         }));
       }
-    } catch (err) {
-      console.error("Failed to fetch targets:", err);
-    }
+    } catch (err) { console.error("fetchTargets error:", err); }
   }, []);
 
-  // ─── REFRESH DATA FUNCTION (DEFINED BEFORE IT'S USED) ─────────────────────
-  const refreshData = useCallback(async (isInitialLoad = false) => {
-    if (isInitialLoad) setIsLoading(true);
-
+  // ─── REFRESH ALL DATA (full sync) ─────────────────────────────────────────
+  const refreshAllData = useCallback(async () => {
     try {
-      const permissionUrl = currentUser
-        ? `${API_URL}/api/staff/permission/${currentUser.id}`
-        : null;
+      const user = currentUserRef.current;
+      const permissionUrl = user ? `${API_URL}/api/staff/permission/${user.id}` : null;
 
       const [staffRes, orderRes, menuRes, eventRes, permRes] = await Promise.allSettled([
         fetch(`${API_URL}/api/staff`),
@@ -130,69 +162,50 @@ export const DataProvider = ({ children }) => {
       if (staffRes.status === 'fulfilled' && staffRes.value.ok)
         setStaffList(await staffRes.value.json());
       if (orderRes.status === 'fulfilled' && orderRes.value.ok)
-        setOrders(await orderRes.value.json());
+        setAllOrders(await orderRes.value.json());
       if (menuRes.status === 'fulfilled' && menuRes.value.ok)
         setMenus(await menuRes.value.json());
 
       if (permRes.status === 'fulfilled' && permRes.value.ok) {
         const data = await permRes.value.json();
-        setIsGranted(currentUser?.role === 'DIRECTOR' ? true : data.is_granted);
+        setIsGranted(user?.role === 'DIRECTOR' ? true : data.is_granted);
       } else {
-        setIsGranted(currentUser?.role === 'DIRECTOR');
+        setIsGranted(user?.role === 'DIRECTOR');
       }
 
       if (eventRes.status === 'fulfilled' && eventRes.value.ok) {
         const rawEvents = await eventRes.value.json();
         setEvents(rawEvents.map(event => ({
           ...event,
-          tags: typeof event.tags === 'string' ? JSON.parse(event.tags) : (event.tags || [])
+          tags: typeof event.tags === 'string' ? JSON.parse(event.tags) : (event.tags || []),
         })));
       }
 
       await Promise.allSettled([
         fetchTodaySummary(),
+        fetchWeeklyRevenue(),
         fetchTargets(),
       ]);
-
-      if (currentUser?.role === 'CASHIER') {
-        fetchPettyCash();
-      }
-
+      if (currentUserRef.current?.role === 'CASHIER') fetchPettyCash();
     } catch (err) {
-      console.error("Sync Error:", err.message);
+      console.error("refreshAllData error:", err.message);
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, fetchTargets, fetchTodaySummary, fetchPettyCash]);
+  }, [fetchTodaySummary, fetchWeeklyRevenue, fetchTargets, fetchPettyCash]);
 
-  // ─── FORCE REFRESH ────────────────────────────────────────────────────────
-  const forceRefresh = useCallback(async () => {
-    console.log("Force refresh requested");
-    await refreshData(true);
-    await fetchTodaySummary();
-  }, [refreshData, fetchTodaySummary]);
-
-  // ─── RESET ALL DATA AFTER DAY CLOSURE ─────────────────────────────────────
-  const resetAllData = useCallback(async () => {
-    console.log("Resetting all data after day closure...");
-    
+  // ─── RESET DAY DATA (called after day closure) ────────────────────────────
+  const resetDayData = useCallback(async () => {
+    console.log("Resetting day‑specific data after closure...");
     setTodaySummary({
       summary_date: null,
-      total_gross: 0,
-      total_cash: 0,
-      total_card: 0,
-      total_mtn: 0,
-      total_airtel: 0,
-      total_credit: 0,
-      total_mixed: 0,
-      order_count: 0,
+      total_gross: 0, total_cash: 0, total_card: 0,
+      total_mtn: 0, total_airtel: 0, total_credit: 0,
+      total_mixed: 0, order_count: 0,
     });
-    
     setPettyCash({ total_in: 0, total_out: 0, net: 0, entries: [] });
-    setMonthlySummary({ totals: {}, daily: [] });
-    setOrders([]);
-    setStaffList([]);
-    
+    setGlobalResetKey(prev => prev + 1);
+
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -201,99 +214,104 @@ export const DataProvider = ({ children }) => {
       }
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
-    
-    await refreshData(true);
-    
-    window.dispatchEvent(new CustomEvent('dataReset', { 
-      detail: { message: 'All data has been reset after day closure', timestamp: new Date().toISOString() }
-    }));
-  }, [refreshData]);
 
-  // ─── CHECK DAY CLOSURE ────────────────────────────────────────────────────
+    await refreshAllData();
+
+    window.dispatchEvent(new CustomEvent('dayClosed', {
+      detail: { date: lastClosedDateRef.current, message: 'Business day closed. Daily totals reset.' },
+    }));
+  }, [refreshAllData]);
+
+  // ─── CLOSE DAY (called by Accountant) ─────────────────────────────────────
+  const closeDayAndReset = useCallback(async () => {
+    const user = currentUserRef.current;
+    const res = await fetch(`${API_URL}/api/day-closure/close-day`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        closed_by: user?.name || user?.username || 'Accountant',
+        closed_by_id: user?.id,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to close day. Please try again.');
+    }
+
+    const data = await res.json();
+    setDayClosed(true);
+    setLastClosedDate(data.closing_date || kampalaDateStr());
+    setDayClosureInfo(data);
+    await resetDayData();
+    return data;
+  }, [resetDayData]);
+
+  // ─── POLL DAY STATUS (fallback for SSE) ──────────────────────────────────
   const checkDayClosure = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/day-closure/day-status`);
-      if (res.ok) {
-        const data = await res.json();
-        const today = kampalaDateStr();
-        
-        if (data.is_closed && lastClosedDate !== data.date) {
-          console.log(`Day ${data.date} was closed by ${data.closed_by}`);
-          setDayClosed(true);
-          setLastClosedDate(data.date);
-          setDayClosureInfo(data);
-          await resetAllData();
-          
-          const notification = document.createElement('div');
-          notification.innerHTML = `
-            <div style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; background: #10B981; color: white; padding: 16px 24px; border-radius: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); animation: slideIn 0.3s ease-out; font-family: system-ui;">
-              ✅ Day has been closed! All totals have been reset for the new day.
-            </div>
-            <style>
-              @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-              }
-            </style>
-          `;
-          document.body.appendChild(notification);
-          setTimeout(() => notification.remove(), 5000);
-        } else if (!data.is_closed && dayClosed) {
-          setDayClosed(false);
-          setDayClosureInfo(null);
-        }
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.is_closed && lastClosedDateRef.current !== data.date) {
+        console.log(`Day ${data.date} was closed by ${data.closed_by}`);
+        setDayClosed(true);
+        setLastClosedDate(data.date);
+        setDayClosureInfo(data);
+        await resetDayData();
+        const div = document.createElement('div');
+        div.innerHTML = `<div style="position:fixed;bottom:20px;right:20px;z-index:9999;background:#10B981;color:white;padding:16px 24px;border-radius:16px;font-weight:bold;box-shadow:0 4px 6px rgba(0,0,0,0.1);animation:slideIn 0.3s;">✅ Day closed! Totals reset.</div>`;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 5000);
+      } else if (!data.is_closed && dayClosedRef.current) {
+        setDayClosed(false);
+        setDayClosureInfo(null);
       }
     } catch (e) {
-      console.error("Check day closure error:", e);
+      console.error("checkDayClosure error:", e);
     }
-  }, [lastClosedDate, resetAllData, dayClosed]);
+  }, [resetDayData]);
 
-  // ─── SETUP SSE CONNECTION ─────────────────────────────────────────────────
+  // ─── SSE SETUP (real‑time events) ─────────────────────────────────────────
   const setupSSE = useCallback(() => {
-    if (sseRef.current) {
-      sseRef.current.close();
-    }
-    
+    if (sseRef.current) sseRef.current.close();
     try {
-      const eventSource = new EventSource(`${API_URL}/api/overview/stream`);
-      sseRef.current = eventSource;
-      
-      eventSource.onmessage = (event) => {
+      const es = new EventSource(`${API_URL}/api/overview/stream`);
+      sseRef.current = es;
+      es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
           if (data.type === 'DAY_CLOSED') {
-            console.log("Day closure event received via SSE");
-            resetAllData();
+            setDayClosed(true);
+            setLastClosedDate(data.date || kampalaDateStr());
+            setDayClosureInfo(data);
+            resetDayData();
           }
-          
-          if (['ORDER_CONFIRMED', 'PAYMENT_CONFIRMED', 'SUMMARY_UPDATE', 'CASHIER_CONFIRMED', 'CREDIT_SETTLED'].includes(data.type)) {
+          if (['ORDER_CONFIRMED', 'PAYMENT_CONFIRMED', 'SUMMARY_UPDATE',
+               'CASHIER_CONFIRMED', 'CREDIT_SETTLED'].includes(data.type)) {
             fetchTodaySummary();
+            fetchWeeklyRevenue();
           }
-          
-          if (['CREDIT_CREATED', 'CREDIT_APPROVED', 'CREDIT_SETTLED', 'CREDIT_REJECTED'].includes(data.type)) {
-            refreshData(false);
+          if (['CREDIT_CREATED', 'CREDIT_APPROVED', 'CREDIT_SETTLED',
+               'CREDIT_REJECTED'].includes(data.type)) {
+            refreshAllData();
+            fetchWeeklyRevenue();
           }
         } catch (e) {
-          console.error("Error parsing SSE message:", e);
+          console.error("SSE message parse error:", e);
         }
       };
-      
-      eventSource.onerror = () => {
-        console.error("SSE connection error, will reconnect in 30 seconds");
-        if (sseRef.current) {
-          sseRef.current.close();
-          sseRef.current = null;
-        }
-        setTimeout(() => setupSSE(), 30000);
+      es.onerror = () => {
+        console.error("SSE connection error, reconnecting in 30s");
+        es.close();
+        setTimeout(setupSSE, 30000);
       };
-      
     } catch (e) {
       console.error("Failed to establish SSE connection:", e);
     }
-  }, [fetchTodaySummary, refreshData, resetAllData]);
+  }, [fetchTodaySummary, fetchWeeklyRevenue, refreshAllData, resetDayData]);
 
-  // ─── GET STAFF STATS ──────────────────────────────────────────────────────
+  // ─── STAFF STATS (helper) ─────────────────────────────────────────────────
   const getStaffStats = useCallback((staffId, targetDate) => {
     const date = targetDate || kampalaDateStr();
     const staffOrders = orders.filter(o => {
@@ -311,57 +329,75 @@ export const DataProvider = ({ children }) => {
         return acc;
       }
       acc.totalRevenue += amt;
-      if (norm === 'mtn') acc.MTN += amt;
+      if (norm === 'mtn')         acc.MTN    += amt;
       else if (norm === 'airtel') acc.AIRTEL += amt;
-      else if (norm === 'card') acc.CARD += amt;
-      else if (norm === 'cash') acc.CASH += amt;
+      else if (norm === 'card')   acc.CARD   += amt;
+      else if (norm === 'cash')   acc.CASH   += amt;
       return acc;
     }, { totalOrders: 0, totalRevenue: 0, CASH: 0, MTN: 0, AIRTEL: 0, CARD: 0 });
   }, [orders]);
 
-  // ─── USE EFFECTS (AFTER ALL FUNCTIONS ARE DEFINED) ────────────────────────
+  // ─── INITIAL BOOTSTRAP ────────────────────────────────────────────────────
   useEffect(() => {
-    refreshData(true);
+    refreshAllData();
     setupSSE();
-    
     refreshIntervalRef.current = setInterval(() => {
-      refreshData(false);
+      refreshAllData();
       fetchTodaySummary();
+      fetchWeeklyRevenue();
     }, 10000);
-    
     const closureInterval = setInterval(checkDayClosure, 30000);
-    
     return () => {
       if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
       clearInterval(closureInterval);
       if (sseRef.current) sseRef.current.close();
     };
-  }, [refreshData, fetchTodaySummary, checkDayClosure, setupSSE]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── VALUE PROVIDER ───────────────────────────────────────────────────────
+  // ─── CONTEXT VALUE (includes allOrders) ───────────────────────────────────
   const value = {
+    // Data
     staffList, setStaffList,
-    orders, setOrders,
+    allOrders,                    // ← raw orders (includes archived)
+    orders,                       // filtered orders (respects day closure)
+    setOrders: (newOrders) => setAllOrders(newOrders),
     menus, setMenus,
     events, setEvents,
+    isLoading,
+    globalResetKey,
+
+    // Auth
     currentUser, setCurrentUser,
     isGranted,
-    isLoading,
+
+    // Financials
     todaySummary,
+    weeklyRevenue,
     monthlySummary,
     pettyCash,
-    fetchTodaySummary,
-    fetchMonthlySummary,
-    fetchPettyCash,
-    getStaffStats,
-    refreshData,
-    forceRefresh,
     dailyGoal, setDailyGoal,
     monthlyTargets,
+
+    // Fetchers
+    fetchTodaySummary,
+    fetchWeeklyRevenue,
+    fetchMonthlySummary,
+    fetchPettyCash,
+    fetchTargets,
+
+    // Refresh / reset
+    refreshData: refreshAllData,
+    forceRefresh: refreshAllData,
+    resetDayData,
+    closeDayAndReset,
+
+    // Staff
+    getStaffStats,
+
+    // Day closure state
     dayClosed,
     lastClosedDate,
     dayClosureInfo,
-    resetAllData,
     checkDayClosure,
   };
 
@@ -370,8 +406,8 @@ export const DataProvider = ({ children }) => {
 
 export const useData = () => {
   const context = useContext(DataContext);
-  if (!context) {
-    throw new Error('useData must be used within a DataProvider');
-  }
+  if (!context) throw new Error('useData must be used within a DataProvider');
   return context;
 };
+
+export default DataContext;

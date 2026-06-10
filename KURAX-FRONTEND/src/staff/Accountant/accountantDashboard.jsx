@@ -100,7 +100,7 @@ function GrossRevenueCard({ grossSales, settledCredits }) {
   return (
     <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-yellow-500 via-yellow-600 to-amber-600 p-5 shadow-lg shadow-yellow-500/20 hover:shadow-2xl hover:shadow-yellow-500/30 transition-all duration-300 hover:scale-[1.02]">
       <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-white/20 to-transparent rounded-full -mr-20 -mt-20 group-hover:scale-150 transition-transform duration-700" />
-      <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-black/20 to-transparent rounded-full -ml-16 -mb-16 group-hover:scale-150 transition-transform duration-700" />
+      <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-black/20 to-transparent rounded-full -ml-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
       <div className="absolute top-4 right-4 flex gap-1 opacity-30">
         <div className="w-1 h-1 rounded-full bg-white" />
         <div className="w-1 h-1 rounded-full bg-white" />
@@ -127,7 +127,7 @@ function GrossRevenueCard({ grossSales, settledCredits }) {
             {formatCurrencyCompact(grossSales)}
           </h3>
           <p className="text-[7px] font-bold text-black/40 uppercase tracking-wider mt-1">
-            Cash + Card + Mobile Money
+            Cash + Card + Mobile Money (Paid Orders Only)
           </p>
         </div>
         {hasSettledCredits && (
@@ -392,7 +392,6 @@ function StationCard({ icon, label, color, borderColor, summary, loading, ticket
     </div>
   );
 }
-me
 
 // ─── START NEW DAY MODAL ──────────────────────────────────────────────────────
 function StartNewDayModal({ isOpen, onClose, onStart, starting }) {
@@ -493,28 +492,107 @@ function StartNewDayModal({ isOpen, onClose, onStart, starting }) {
   );
 }
 
-// ─── FORCE HARD REFRESH FUNCTION ──────────────────────────────────────────────
-const forceHardRefresh = () => {
-  console.log("Performing hard refresh to clear all totals...");
-  
-  const userData = localStorage.getItem("kurax_user");
-  localStorage.clear();
-  if (userData) localStorage.setItem("kurax_user", userData);
-  
-  sessionStorage.clear();
-  
-  document.cookie.split(";").forEach(function(c) {
-    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-  });
-  
-  if ('caches' in window) {
-    caches.keys().then(names => {
-      names.forEach(name => caches.delete(name));
-    });
-  }
-  
-  window.location.href = window.location.pathname + '?refresh=' + Date.now();
-};
+// ─── REOPEN DAY MODAL ─────────────────────────────────────────────────────────
+function ReopenDayModal({ isOpen, onClose, closedDays, loading, onReopen, reopening }) {
+  const [selectedDate, setSelectedDate] = useState('');
+  const [reason, setReason] = useState('');
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[600] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300">
+      <div className="w-full max-w-md bg-[#0f0f0f] border border-white/10 rounded-3xl p-8 shadow-2xl">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-purple-500/10">
+              <RotateCcw size={20} className="text-purple-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-white uppercase tracking-tighter">Reopen Day</h3>
+              <p className="text-[9px] text-zinc-500 mt-0.5">Restore a previously closed day</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-all">
+            <XCircleIcon size={18} className="text-zinc-400" />
+          </button>
+        </div>
+
+        <div className="mb-4">
+          <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2 block">
+            Select Date to Reopen
+          </label>
+          {loading ? (
+            <div className="bg-black/60 border border-white/10 rounded-2xl p-4 text-center">
+              <Loader2 size={20} className="animate-spin mx-auto text-zinc-500" />
+            </div>
+          ) : closedDays.length === 0 ? (
+            <div className="bg-black/60 border border-white/10 rounded-2xl p-4 text-center">
+              <p className="text-zinc-500 text-[10px]">No closed days found</p>
+            </div>
+          ) : (
+            <select
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-white font-bold outline-none focus:border-purple-500/50 transition-all"
+            >
+              <option value="">Select a closed day</option>
+              {closedDays.map(day => (
+                <option key={day.date} value={day.date}>
+                  {day.date} - Closed by {day.closed_by || 'Unknown'}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div className="mb-6">
+          <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2 block">
+            Reason for Reopening
+          </label>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g., Correction needed, Day closed by mistake, etc."
+            className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-white text-sm outline-none focus:border-purple-500/50 resize-none h-20"
+          />
+        </div>
+
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-4 mb-6">
+          <p className="text-[8px] font-black text-yellow-400 uppercase tracking-widest text-center">
+            ⚠️ Reopening will restore all revenue totals for that day
+          </p>
+          <p className="text-[7px] text-zinc-500 text-center mt-2">
+            Staff can resume working on this day
+          </p>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-4 rounded-2xl border border-white/10 text-zinc-400 font-black text-[10px] uppercase hover:bg-white/5 transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onReopen(selectedDate, reason)}
+            disabled={reopening || !selectedDate}
+            className={`flex-[2] py-4 rounded-2xl font-black text-[10px] uppercase transition-all flex items-center justify-center gap-2
+              ${reopening || !selectedDate
+                ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                : "bg-purple-500 text-white hover:bg-purple-400 active:scale-[0.98]"
+              }`}
+          >
+            {reopening ? (
+              <><Loader2 size={14} className="animate-spin" /> Reopening...</>
+            ) : (
+              <><RotateCcw size={14} /> Reopen Day</>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function AccountantDashboard() {
@@ -526,6 +604,7 @@ export default function AccountantDashboard() {
   const [dayClosed, setDayClosed] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [dayClosureInfo, setDayClosureInfo] = useState(null);
 
   // ── Reopen Day State ────────────────────────────────────────────────────────
   const [showReopenModal, setShowReopenModal] = useState(false);
@@ -534,6 +613,12 @@ export default function AccountantDashboard() {
   const [reopenReason, setReopenReason] = useState('');
   const [reopeningDay, setReopeningDay] = useState(false);
   const [loadingClosedDays, setLoadingClosedDays] = useState(false);
+
+    // ── Credit summary state ──────────────────────────────────────────────────
+  const [creditSettledToday, setCreditSettledToday] = useState(0);
+  const [creditOutstandingToday, setCreditOutstandingToday] = useState(0);
+  const [savingAll, setSavingAll] = useState(false);
+  const [savedAll, setSavedAll] = useState(false);
 
   // ── Start New Day State ─────────────────────────────────────────────────────
   const [showStartNewDayModal, setShowStartNewDayModal] = useState(false);
@@ -936,7 +1021,7 @@ export default function AccountantDashboard() {
     if (activeSection === "VIEW_SALES") loadSales(salesDate);
   }, [activeSection, salesDate]);
 
-  // ── Derived values ────────────────────────────────────────────────────────
+  // ── Derived values from database ──────────────────────────────────────────
   const src = liveSummary || todaySummary || {};
   const sys = {
     cash:   Number(src.total_cash)   || 0,
@@ -945,9 +1030,47 @@ export default function AccountantDashboard() {
     airtel: Number(src.total_airtel) || 0,
     gross:  Number(src.total_gross)  || 0,
     orders: Number(src.order_count)  || 0,
+    settled_credits: Number(src.total_settled_credits) || 0,
   };
 
   const totalMobileMoney = sys.mtn + sys.airtel;
+
+  // ✅ FIXED: Credit totals - Only count APPROVED credits (not pending)
+  const settled = creditsLedger.filter(c => getCreditStatus(c) === "settled");
+  
+  // Only approved credits (not pending)
+  const approvedOnly = creditsLedger.filter(c => {
+    const status = getCreditStatus(c);
+    return status === "approved";
+  });
+  
+  // Partially settled credits (their remaining balance)
+  const partiallySettled = creditsLedger.filter(c => c.status === "PartiallySettled");
+  
+  // Pending credits (waiting for manager) - NOT included in outstanding
+  const pendingCredits = creditsLedger.filter(c => {
+    const status = getCreditStatus(c);
+    return status === "pendingCashier" || status === "pendingManager";
+  });
+  
+  // ✅ CORRECT OUTSTANDING = Approved credits (full amount) + Partially settled (remaining balance only)
+  const totalOutstanding = approvedOnly.reduce((s, c) => s + Number(c.amount || 0), 0)
+    + partiallySettled.reduce((s, c) => s + (Number(c.amount || 0) - Number(c.amount_paid || 0)), 0);
+  
+  const totalSettled = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
+  
+  const totalRejected = creditsLedger
+    .filter(c => getCreditStatus(c) === "rejected")
+    .reduce((s, c) => s + Number(c.amount || 0), 0);
+  
+  // For filtering - show outstanding = approved + partially settled only
+  const filteredCredits = creditFilter === "outstanding" 
+    ? [...approvedOnly, ...partiallySettled]
+    : creditFilter === "settled"   
+      ? settled
+      : creditFilter === "rejected"  
+        ? creditsLedger.filter(c => getCreditStatus(c) === "rejected")
+        : creditsLedger;
 
   // ── VARIANCE CALCULATION ───────────────────────────────────────────────────
   const pettyCashIn      = Number(pettyCashToday.total_in) || 0;
@@ -958,37 +1081,6 @@ export default function AccountantDashboard() {
   const varAirtel = physMomoAirtel   - sys.airtel;
   const varCard   = physCard         - sys.card;
   const varTotal  = varCash + varMTN + varAirtel + varCard;
-
-  // ── Credit totals ─────────────────────────────────────────────────────────
-  const settled = creditsLedger.filter(c => getCreditStatus(c) === "settled");
-
-  const totalSettledToday = settled
-    .filter(c => {
-      const settledDate = toLocalDateStr(new Date(c.paid_at || c.created_at));
-      return settledDate === kampalaDate();
-    })
-    .reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
-
-  const approvedAndPending = creditsLedger.filter(c => {
-    const status = getCreditStatus(c);
-    return status === "approved" || status === "pendingCashier" || status === "pendingManager";
-  });
-
-  const partiallySettled = creditsLedger.filter(c => c.status === "PartiallySettled");
-
-  const totalOutstanding = approvedAndPending.reduce((s, c) => s + Number(c.amount || 0), 0)
-    + partiallySettled.reduce((s, c) => s + (Number(c.amount || 0) - Number(c.amount_paid || 0)), 0);
-
-  const totalSettled = settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0);
-
-  const totalRejected = creditsLedger
-    .filter(c => getCreditStatus(c) === "rejected")
-    .reduce((s, c) => s + Number(c.amount || 0), 0);
-
-  const filteredCredits = creditFilter === "outstanding" ? approvedAndPending.concat(partiallySettled)
-    : creditFilter === "settled"   ? settled
-    : creditFilter === "rejected"  ? creditsLedger.filter(c => getCreditStatus(c) === "rejected")
-    : creditsLedger;
 
   // ── Void handlers ─────────────────────────────────────────────────────────
   const loggedInUser = JSON.parse(localStorage.getItem("kurax_user") || "{}");
@@ -1013,7 +1105,7 @@ export default function AccountantDashboard() {
     } catch (e) { console.error("void reject:", e); }
   };
 
-  // ── DAY CLOSURE HANDLER WITH HARD REFRESH ───────────────────────────────────
+  // ── DAY CLOSURE HANDLER ───────────────────────────────────────────────────
   const handleDayClosure = async () => {
     if (!hasPhysicalCount) {
       alert("⚠️ Please enter the physical count first before closing the day!\n\nGo to PHYSICAL COUNT section and enter all cash, mobile money, and card totals.");
@@ -1091,7 +1183,7 @@ export default function AccountantDashboard() {
       window.dispatchEvent(new Event('refresh'));
       
       setTimeout(() => {
-        forceHardRefresh();
+        window.location.reload();
       }, 1500);
       
     } catch (e) {
@@ -1100,8 +1192,6 @@ export default function AccountantDashboard() {
       setIsFinalizing(false);
     }
   };
-
-
 
   const bgClass      = isDark ? 'bg-[#0a0a0a]'                        : 'bg-gray-50';
   const textClass    = isDark ? 'text-white'                           : 'text-gray-900';
@@ -1191,13 +1281,8 @@ export default function AccountantDashboard() {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
-              
-              
             </div>
             
-           
-            
-            {/* Start New Day Button */}
             <button 
               onClick={() => setShowStartNewDayModal(true)}
               className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider hover:bg-emerald-400 transition-all"
@@ -1205,7 +1290,6 @@ export default function AccountantDashboard() {
               <Sparkles size={12} /> Start New Day
             </button>
             
-            {/* Reopen Day Button - Only show when day is closed */}
             {dayClosed && (
               <button 
                 onClick={() => {
@@ -1258,8 +1342,82 @@ export default function AccountantDashboard() {
             </div>
           )}
 
+          {/* FINANCIAL HISTORY (Dashboard) - MAIN VIEW */}
+          {activeSection === "FINANCIAL_HISTORY" && (
+            <div className="space-y-6 animate-in fade-in duration-500">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard 
+                  icon={<Banknote size={18}/>} 
+                  label="CASH REVENUE" 
+                  value={sys.cash}
+                  color="text-emerald-400" 
+                  gradient="from-emerald-950/40 to-emerald-900/20"
+                />
+                <StatCard 
+                  icon={<CreditCard size={18}/>} 
+                  label="CARD PAYMENTS" 
+                  value={sys.card}
+                  color="text-blue-400" 
+                  gradient="from-blue-950/40 to-blue-900/20"
+                />
+                <StatCard 
+                  icon={<Smartphone size={18}/>} 
+                  label="MOBILE MONEY" 
+                  value={totalMobileMoney}
+                  color="text-yellow-400" 
+                  gradient="from-yellow-950/40 to-yellow-900/20"
+                />
+                <StatCard 
+                  icon={<Receipt size={18}/>} 
+                  label="TOTAL ORDERS" 
+                  value={sys.orders}
+                  color="text-purple-400" 
+                  gradient="from-purple-950/40 to-purple-900/20"
+                  isCompact={false}
+                />
+              </div>
 
-          {/* PHYSICAL COUNT - Shows zeros when day is closed */}
+              <GrossRevenueCard 
+                grossSales={sys.gross}
+                settledCredits={sys.settled_credits}
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${cardBgClass}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1 h-4 bg-yellow-500 rounded-full" />
+                    <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">Today's Activity</p>
+                  </div>
+                  <p className="text-2xl font-black text-white italic">{sys.orders} Orders</p>
+                  <p className="text-[9px] text-zinc-500 mt-1">Completed transactions</p>
+                </div>
+                <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${cardBgClass}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1 h-4 bg-purple-500 rounded-full" />
+                    <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">Average Order Value</p>
+                  </div>
+                  <p className="text-2xl font-black text-white italic">
+                    {sys.orders > 0 ? formatCurrencyCompact(sys.gross / sys.orders) : "UGX 0"}
+                  </p>
+                  <p className="text-[9px] text-zinc-500 mt-1">Per transaction</p>
+                </div>
+                <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${cardBgClass}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1 h-4 bg-emerald-500 rounded-full" />
+                    <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">Collection Rate</p>
+                  </div>
+                  <p className="text-2xl font-black text-white italic">
+                    {sys.gross + sys.settled_credits > 0 
+                      ? Math.round((sys.settled_credits / (sys.gross + sys.settled_credits)) * 100)
+                      : 0}%
+                  </p>
+                  <p className="text-[9px] text-zinc-500 mt-1">Credit recovery rate</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* PHYSICAL COUNT */}
           {activeSection === "PHYSICAL_COUNT" && (
             <div className="space-y-8 animate-in fade-in duration-500">
               <div>
@@ -1504,9 +1662,8 @@ export default function AccountantDashboard() {
               </div>
             </div>
           )}
-
         
-          {/* LIVE AUDIT, CREDITS, VIEW SALES, MONTHLY COSTS sections remain the same */}
+          {/* LIVE AUDIT */}
           {activeSection === "LIVE_AUDIT" && (
             <div className="space-y-6 animate-in fade-in duration-500">
               <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1674,7 +1831,7 @@ export default function AccountantDashboard() {
             </div>
           )}
 
-          {/* CREDITS */}
+          {/* CREDITS - FIXED OUTSTANDING CALCULATION */}
           {activeSection === "CREDITS" && (
             <div className="space-y-6 animate-in fade-in duration-500">
               <div>
@@ -1683,28 +1840,38 @@ export default function AccountantDashboard() {
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Outstanding Card - Only shows APPROVED credits (not pending) */}
                 <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${cardBgClass}`}>
                   <div className="p-2.5 w-fit bg-purple-500/10 rounded-xl text-purple-400 mb-3"><BookOpen size={16}/></div>
                   <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Outstanding</p>
                   <h3 className="text-xl font-black text-purple-400 italic">{formatCurrencyCompact(totalOutstanding)}</h3>
-                  <p className="text-[9px] text-zinc-600 mt-0.5">{approvedAndPending.length + partiallySettled.length} pending</p>
+                  <p className="text-[9px] text-zinc-600 mt-0.5">{approvedOnly.length + partiallySettled.length} approved pending payment</p>
+                  {pendingCredits.length > 0 && (
+                    <p className="text-[8px] text-yellow-500 mt-1">⏳ {pendingCredits.length} waiting for approval (not included)</p>
+                  )}
                 </div>
+                
+                {/* Settled Card */}
                 <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${cardBgClass}`}>
                   <div className="p-2.5 w-fit bg-emerald-500/10 rounded-xl text-emerald-400 mb-3"><CheckCircle2 size={16}/></div>
                   <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Settled</p>
                   <h3 className="text-xl font-black text-emerald-400 italic">{formatCurrencyCompact(totalSettled)}</h3>
                   <p className="text-[9px] text-zinc-600 mt-0.5">{settled.length} cleared</p>
                 </div>
+                
+                {/* Rejected Card */}
                 <div className={`rounded-2xl p-5 transition-all duration-300 hover:scale-[1.02] ${cardBgClass}`}>
                   <div className="p-2.5 w-fit bg-red-500/10 rounded-xl text-red-400 mb-3"><XCircle size={16}/></div>
                   <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest mb-1">Rejected</p>
                   <h3 className="text-xl font-black text-red-400 italic">{formatCurrencyCompact(totalRejected)}</h3>
                   <p className="text-[9px] text-zinc-600 mt-0.5">{creditsLedger.filter(c => getCreditStatus(c) === "rejected").length} rejected</p>
                 </div>
+                
+                {/* All Time Credits Card */}
                 <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 p-5 rounded-2xl">
                   <div className="p-2.5 w-fit bg-black/20 rounded-xl text-black mb-3"><Receipt size={16}/></div>
                   <p className="text-[8px] font-black uppercase text-black/60 tracking-widest mb-1">All Time Credits</p>
-                  <h3 className="text-xl font-black text-black italic">{formatCurrencyCompact(totalOutstanding + totalSettled + totalRejected)}</h3>
+                  <h3 className="text-xl font-black text-black italic">{formatCurrencyCompact(creditsLedger.reduce((s, c) => s + Number(c.amount || 0), 0))}</h3>
                   <p className="text-[9px] text-black/50 mt-0.5">{creditsLedger.length} total entries (current month)</p>
                 </div>
               </div>

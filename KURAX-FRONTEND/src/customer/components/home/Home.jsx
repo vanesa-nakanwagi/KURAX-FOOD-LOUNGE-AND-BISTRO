@@ -28,13 +28,16 @@ import hero3 from "../../assets/images/kurax9.png";
 import rice from "../../assets/images/rice.jpg";
 import hero from "../../assets/images/hero.png";
 
-// Delivery image
+// Delivery imageF
 import deliveryImg from "../../assets/images/delivery.jpg";
 
 // Chef carousel images
 import chefImg1 from "../../assets/images/chef.jpg";
 import chefImg2 from "../../assets/images/waiter1.jpg";
 import chefImg3 from "../../assets/images/hero17.jpg";
+import chefImg4 from "../../assets/images/chef1.jpeg";
+import chefImg5 from "../../assets/images/waiter1.jpeg";
+
 
 const heroImages = [hero1, hero12, hero3, hero];
 
@@ -140,7 +143,7 @@ function DeliverySection() {
 // ========== CHEF SECTION (stabilized height, smooth crossfade, no dots) ==========
 function ChefSection() {
   const [chefIndex, setChefIndex] = useState(0);
-  const chefImages = [chefImg1, chefImg2, chefImg3];
+  const chefImages = [chefImg1,chefImg4, chefImg2, chefImg5, chefImg3 ];
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -411,14 +414,14 @@ export default function Home() {
               ))
             ) : (
               dbEvents.map(event => (
-                <EventCard 
-                  key={event.id}
-                  event={{...event, image: getImageSrc(event.image_url)}} 
-                  onBook={() => {
-                    setSelectedEventTitle(event.title);
-                    setIsModalOpen(true);
-                  }} 
-                />
+               <EventCard 
+  key={event.id}
+  event={{...event, image: getImageSrc(event.image_url)}} 
+  onBook={() => {
+    setSelectedEventTitle(event.title);
+    setIsModalOpen(true);
+  }} 
+/>
               ))
             )}
           </motion.div>

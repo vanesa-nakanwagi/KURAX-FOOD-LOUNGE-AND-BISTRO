@@ -224,19 +224,30 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
         </div>
       </div>
 
-      
-
-      {/* Navigation */}
+      {/* Desktop navigation with icons */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {items.map(item => (
-          <NavButton
-            key={item.id}
-            item={item}
-            showLabel={true}
-            isActive={activeTab === item.id}
-            onClick={() => setActiveTab(item.id)}
-          />
-        ))}
+        {items.map(item => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`
+                w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all justify-start
+                ${isActive
+                  ? "bg-yellow-500 text-black shadow-sm shadow-yellow-500/20"
+                  : isDark
+                    ? "text-zinc-500 hover:bg-white/5 hover:text-white"
+                    : "text-gray-600 hover:bg-gray-100"
+                }
+              `}
+            >
+              <Icon size={18} className={isActive ? "text-black" : "text-yellow-500"} />
+              <span className="truncate">{item.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
       {/* Logout – unified */}

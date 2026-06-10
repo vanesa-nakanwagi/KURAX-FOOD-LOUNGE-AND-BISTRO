@@ -8,18 +8,19 @@ import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 
-// ✅ Store component FUNCTIONS, not JSX
+//  Store component FUNCTIONS, not JSX
 const DEFAULT_MENU = [
-  { id: "order",   label: "Take Order",        icon: ClipboardList },
-  { id: "status",  label: "Order Status",      icon: Clock },
-  { id: "history", label: "Performance Hub",   icon: History },
-  { id: "tables",  label: "Manage Table",      icon: LayoutGrid },
-  { id: "targets", label: "Set Staff Targets", icon: Target },
+  //{ id: "order",   label: "Take Order",        icon: ClipboardList },
+  { id: "order", label: "take order", icon: ClipboardList },
+  { id: "status",  label: "order status",      icon: Clock },
+  { id: "history", label: "performance hub",   icon: History },
+  { id: "tables",  label: "manage table",      icon: LayoutGrid },
+  { id: "targets", label: "set staff targets", icon: Target },
 ];
 
 const BOTTOM_NAV_ITEMS = [
-  { id: "status", label: "Status", icon: Clock },
-  { id: "targets", label: "Targets", icon: Target },
+  { id: "status", label: "status", icon: Clock },
+  { id: "targets", label: "targets", icon: Target },
 ];
 
 const DRAWER_MENU_ITEMS = DEFAULT_MENU.filter(
@@ -110,9 +111,9 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
             <div className={`flex items-center gap-3 p-5 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
               <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30" />
               <div>
-                <p className={`text-[11px] font-black uppercase tracking-tighter leading-none
+                <p className={`text-[11px] font-black tracking-tighter leading-none
                   ${isDark ? "text-white" : "text-gray-900"}`}>KURAX FOOD LOUNGE</p>
-                <p className={`text-[8px] font-bold uppercase tracking-widest mt-0.5
+                <p className={`text-[8px] font-bold tracking-widest mt-0.5
                   ${isDark ? "text-yellow-500" : "text-yellow-600"}`}>SUPERVISOR PANEL</p>
               </div>
             </div>
@@ -123,10 +124,10 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
                 {fullName[0]}
               </div>
               <div>
-                <p className={`text-sm font-black uppercase leading-none ${isDark ? "text-white" : "text-gray-900"}`}>{fullName}</p>
+                <p className={`text-sm font-black leading-none ${isDark ? "text-white" : "text-gray-900"}`}>{fullName}</p>
                 <div className="flex items-center gap-1.5 mt-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                  <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Active</p>
+                  <p className="text-[9px] font-bold text-gray-500 tracking-widest">Active</p>
                 </div>
               </div>
             </div>
@@ -175,7 +176,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
                   }`}
               >
                 <Icon size={20} className={isActive ? "text-black" : "text-yellow-500"} />
-                <span className="text-[8px] font-black uppercase tracking-wide">{item.label}</span>
+                <span className="text-[8px] font-black tracking-wide">{item.label}</span>
               </button>
             );
           })}
@@ -194,11 +195,11 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
       <div className={`flex items-center gap-3 p-5 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
         <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30 shrink-0" />
         <div className="min-w-0">
-          <p className={`text-[11px] font-black uppercase tracking-tighter leading-none truncate
+          <p className={`text-[11px] font-black tracking-tighter leading-none truncate
             ${isDark ? "text-white" : "text-gray-900"}`}>
             KURAX FOOD LOUNGE
           </p>
-          <p className={`text-[8px] font-bold uppercase tracking-widest mt-0.5
+          <p className={`text-[8px] font-bold tracking-widest mt-0.5
             ${isDark ? "text-yellow-500" : "text-yellow-600"}`}>
             SUPERVISOR PANEL
           </p>
@@ -211,11 +212,11 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
           {firstName[0]}
         </div>
         <div className="min-w-0">
-          <p className={`text-[10px] font-black uppercase truncate leading-none
+          <p className={`text-[10px] font-black truncate leading-none
             ${isDark ? "text-white" : "text-gray-900"}`}>{firstName}</p>
           <div className="flex items-center gap-1 mt-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-            <p className="text-[8px] font-bold text-gray-500 uppercase tracking-widest leading-none">Active</p>
+            <p className="text-[8px] font-bold text-gray-500 tracking-widest leading-none">Active</p>
           </div>
         </div>
       </div>

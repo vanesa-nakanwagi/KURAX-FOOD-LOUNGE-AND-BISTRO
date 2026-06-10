@@ -170,7 +170,7 @@ export default function StaffTargets() {
             </button>
           </div>
           <div className="mt-2">
-            <p className="text-[10px] text-gray-500 leading-relaxed">
+            <p className="text-xs font-medium text-zinc-700 leading-relaxed">
               Select a team member to view and adjust their monthly revenue and daily order targets.
             </p>
           </div>
@@ -238,7 +238,7 @@ export default function StaffTargets() {
                           {s.name.split(" ")[0]}
                         </p>
                         <div className="flex items-center gap-1 mt-0.5">
-                          <span className={`text-[8px] font-bold uppercase tracking-wider ${active ? "text-black/60" : "text-gray-500"}`}>
+                          <span className={`text-xs font-medium uppercase tracking-wider ${active ? "text-zinc-700" : "text-gray-500"}`}>
                             {s.role}
                           </span>
                           {active && <div className="w-1 h-1 rounded-full bg-black/40" />}

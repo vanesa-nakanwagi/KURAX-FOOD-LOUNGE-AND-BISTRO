@@ -71,7 +71,6 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 });
 
-// --- UPDATE EVENT ---
 router.put('/:id', upload.single('image'), async (req, res) => {
     try {
         const { id } = req.params;
@@ -93,7 +92,7 @@ router.put('/:id', upload.single('image'), async (req, res) => {
             RETURNING *, (CASE WHEN published = true THEN 'live' ELSE 'draft' END) as status;
         `;
 
-        // FIX: Passing tagsData array directly to $8
+        // ✅ Correct: pass array directly (no JSON.stringify)
         const values = [
             name, 
             description || '', 
@@ -102,7 +101,7 @@ router.put('/:id', upload.single('image'), async (req, res) => {
             time || null, 
             imageUrl, 
             isPublished, 
-            JSON.stringify(tagsData), 
+            tagsData,   // <-- FIXED: array, not JSON string
             id
         ];
 
