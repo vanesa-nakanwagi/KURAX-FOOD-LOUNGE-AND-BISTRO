@@ -11,9 +11,13 @@ import {
   Info, PlusCircle
 } from "lucide-react";
 
-// --- HELPERS (unchanged) ---
+// --- HELPERS ---
 function fmtUGX(n) {
   return `UGX ${Number(n || 0).toLocaleString()}`;
+}
+
+function formatNumber(n) {
+  return Number(n || 0).toLocaleString();
 }
 
 function formatTime(dateStr) {
@@ -406,7 +410,6 @@ export default function TargetSettings() {
 
   // ─── REPORT DATA (choose source based on reportType) ──────────────────
   const reportData = useMemo(() => {
-    // Choose order source: daily uses filteredOrders, weekly/monthly use allOrders
     const sourceOrders = reportType === "daily" ? filteredOrders : allOrders;
 
     const orderKampalaDate = (order) => {
@@ -556,7 +559,6 @@ export default function TargetSettings() {
     }
   };
 
-  // ✅ FIXED: Always allow PDF generation (backend has data even if frontend table empty)
   const generatePDF = async () => {
     setIsGeneratingPDF(true);
     try {
@@ -850,8 +852,8 @@ export default function TargetSettings() {
 
           {/* Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            <StatCardSmall label="Total Orders"    value={reportData.totalTransactions} icon={<Receipt size={14} />}      color="text-yellow-500"  isDark={isDark} />
-            <StatCardSmall label="Items Sold"      value={reportData.totalItemsSold}    icon={<ShoppingBag size={14} />}   color="text-blue-400"    isDark={isDark} />
+            <StatCardSmall label="Total Orders"    value={formatNumber(reportData.totalTransactions)} icon={<Receipt size={14} />}      color="text-yellow-500"  isDark={isDark} />
+            <StatCardSmall label="Items Sold"      value={formatNumber(reportData.totalItemsSold)}    icon={<ShoppingBag size={14} />}   color="text-blue-400"    isDark={isDark} />
             <StatCardSmall label="Gross Revenue"   value={fmtUGX(reportData.totalRevenue)} icon={<Banknote size={14} />}  color="text-emerald-400" isDark={isDark} tooltip="Confirmed payment records only (Cash + Card + Mobile Money). Excludes credit settlements and source/kitchen orders." />
             <StatCardSmall label="Credits Settled" value={loadingCredits ? "..." : fmtUGX(creditsData.settled_amount)} icon={<CheckCircle2 size={14} />} color="text-emerald-400" isDark={isDark} />
           </div>
@@ -961,7 +963,6 @@ export default function TargetSettings() {
             </div>
           )}
 
-          {/* ✅ FIXED: Button always enabled – only disabled while generating */}
           <button onClick={generatePDF} disabled={isGeneratingPDF} className="w-full py-4 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black rounded-2xl font-black uppercase italic text-xs flex items-center justify-center gap-2 hover:scale-[1.02] transition-all disabled:opacity-20 shadow-xl">
             {isGeneratingPDF ? <><Loader2 size={16} className="animate-spin" /> Generating PDF...</> : <><Printer size={16} /> Download PDF Report</>}
           </button>
@@ -971,7 +972,7 @@ export default function TargetSettings() {
   );
 }
 
-// ─── SUB-COMPONENTS (unchanged) ───────────────────────────────────────────────
+// ─── SUB-COMPONENTS (cleaned) ───────────────────────────────────────────────
 function StatCardSmall({ label, value, icon, color, isDark, tooltip = "" }) {
   return (
     <div className={`p-3 rounded-xl transition-all duration-200 hover:scale-[1.02] ${isDark ? "bg-white/5" : "bg-black/5"}`}>
@@ -987,7 +988,7 @@ function StatCardSmall({ label, value, icon, color, isDark, tooltip = "" }) {
   );
 }
 
-function PaymentMethodCard({ label, value, color }) {
+function PaymentMethodCard({ label, value, color, isDark }) {
   const colorMap = {
     emerald: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
     yellow:  "bg-yellow-500/10 border-yellow-500/20 text-yellow-400",
@@ -1002,7 +1003,7 @@ function PaymentMethodCard({ label, value, color }) {
   );
 }
 
-function CreditSummaryCard({ label, value, count, color }) {
+function CreditSummaryCard({ label, value, count, color, isDark }) {
   const colorMap = {
     purple: "bg-purple-500/10 border-purple-500/20 text-purple-400",
     green:  "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",

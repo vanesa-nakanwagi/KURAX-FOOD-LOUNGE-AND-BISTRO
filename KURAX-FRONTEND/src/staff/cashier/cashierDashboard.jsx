@@ -45,16 +45,15 @@ function methodStyle(method) {
   }
 }
 
-function formatCurrencyCompact(n) {
+// ✅ NEW: Full amount formatter (no abbreviation)
+function formatFullAmount(n) {
   const num = Number(n || 0);
-  if (num >= 1_000_000) return `UGX ${(num / 1_000_000).toFixed(1)}M`;
-  if (num >= 1_000) return `UGX ${(num / 1_000).toFixed(0)}K`;
   return `UGX ${num.toLocaleString()}`;
 }
 
-// ─── STAT CARD (matches Director style) ───────────────────────────────────────
+// ─── STAT CARD (full numbers) ────────────────────────────────────────────────
 function StatCard({ icon, label, value, color, note, trend }) {
-  const formattedValue = formatCurrencyCompact(value);
+  const formattedValue = formatFullAmount(value);
 
   const colorBgMap = {
     "text-emerald-600": "bg-emerald-50",
@@ -70,14 +69,12 @@ function StatCard({ icon, label, value, color, note, trend }) {
     <div className="group relative overflow-hidden rounded-2xl bg-white p-5 shadow-sm hover:shadow-md transition-all duration-300 border border-gray-200 hover:border-yellow-500/30">
       <div className="relative z-10">
         <div className="flex items-center justify-between mb-3">
-          <div className={`p-2.5 rounded-xl ${iconBg}`}>
-            {icon}
-          </div>
+          <div className={`p-2.5 rounded-xl ${iconBg}`}>{icon}</div>
           <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Today</span>
         </div>
         <p className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1 truncate">{label}</p>
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className={`text-2xl font-black ${color} break-words`}>
+          <span className={`text-2xl font-black ${color} break-words whitespace-normal`}>
             {formattedValue}
           </span>
         </div>
@@ -94,7 +91,7 @@ function StatCard({ icon, label, value, color, note, trend }) {
   );
 }
 
-// ─── GROSS REVENUE CARD (matches Director style) ──────────────────────────────
+// ─── GROSS REVENUE CARD (full numbers) ───────────────────────────────────────
 function GrossRevenueCard({ grossSales, creditSettledToday }) {
   const combinedTotal = grossSales + creditSettledToday;
   const hasCredits = creditSettledToday > 0;
@@ -115,18 +112,18 @@ function GrossRevenueCard({ grossSales, creditSettledToday }) {
           </div>
         </div>
         <p className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">Gross Revenue</p>
-        <span className="text-2xl font-black text-emerald-600 break-words">
-          {formatCurrencyCompact(grossSales)}
+        <span className="text-2xl font-black text-emerald-600 break-words whitespace-normal">
+          {formatFullAmount(grossSales)}
         </span>
         {hasCredits ? (
           <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
             <div className="flex items-center justify-between">
               <p className="text-[9px] text-zinc-500 font-bold">Credits settled today</p>
-              <p className="text-[10px] font-black text-emerald-600">+{formatCurrencyCompact(creditSettledToday)}</p>
+              <p className="text-[10px] font-black text-emerald-600">+{formatFullAmount(creditSettledToday)}</p>
             </div>
             <div className="flex items-center justify-between bg-gray-50 rounded-lg px-2 py-1.5">
               <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider">Combined</p>
-              <p className="text-[11px] font-black text-gray-800">{formatCurrencyCompact(combinedTotal)}</p>
+              <p className="text-[11px] font-black text-gray-800 break-words">{formatFullAmount(combinedTotal)}</p>
             </div>
           </div>
         ) : (
@@ -181,7 +178,6 @@ export default function CashierDashboard() {
   // ── DAY CLOSURE EFFECT – reset totals when dayClosed becomes true ─────────
   useEffect(() => {
     if (dayClosed) {
-      // Refresh all data to reflect the new day (queue, history, petty, credits)
       fetchAll();
     }
   }, [dayClosed]);
@@ -209,7 +205,7 @@ export default function CashierDashboard() {
   const cashOnCounter = Math.max(0, cashRevenue - pettyCashInTotal);
   const netCashAfterPetty = cashRevenue - pettyCashOutTotal;
 
-  // Credit action counts (from credits array)
+  // Credit action counts (from credits array) – used only inside CREDITS section now
   const creditNeedsForwarding = useMemo(
     () => credits.filter(c => c.status === "PendingCashier").length,
     [credits]
@@ -272,7 +268,6 @@ export default function CashierDashboard() {
     return () => clearInterval(id);
   }, [fetchAll]);
 
-  // Refresh context when needed (e.g., after petty change)
   const handleRefresh = () => {
     refreshData();
     fetchAll();
@@ -330,7 +325,7 @@ export default function CashierDashboard() {
         return;
       }
       await fetchAll();
-      refreshData(); // refresh context totals
+      refreshData();
     } catch (e) { console.error("Confirm failed:", e); }
     setTimeout(() => {
       setAnimatingIds(prev => prev.filter(id => id !== order.id));
@@ -372,7 +367,7 @@ export default function CashierDashboard() {
         refreshData();
         setProcessingOrder(null);
         setRequestingApproval(false);
-        alert(`✅ Credit request forwarded to manager!\n\nClient: ${order.credit_name}\nAmount: ${formatCurrencyCompact(order.amount)}`);
+        alert(`✅ Credit request forwarded to manager!\n\nClient: ${order.credit_name}\nAmount: ${formatFullAmount(order.amount)}`);
         return;
       }
       const error = await res.json();
@@ -595,7 +590,7 @@ export default function CashierDashboard() {
                   label="Cash on Counter"
                   value={dayClosed ? 0 : cashOnCounter}
                   color="text-emerald-600"
-                  note={pettyCashInTotal > 0 ? `-${formatCurrencyCompact(pettyCashInTotal)} to petty` : null}
+                  note={pettyCashInTotal > 0 ? `-${formatFullAmount(pettyCashInTotal)} to petty` : null}
                 />
                 <StatCard
                   icon={<CreditCard size={18} className="text-blue-600" />}
@@ -667,42 +662,7 @@ export default function CashierDashboard() {
                 )}
               </div>
 
-              {totalCreditsNeedingAction > 0 && (
-                <button
-                  onClick={() => setActiveSection("CREDITS")}
-                  className="w-full p-5 bg-purple-50 border border-purple-200 rounded-[2.5rem] flex items-center gap-4 hover:bg-purple-100 transition-all text-left group"
-                >
-                  <div className="p-4 rounded-2xl bg-white border border-purple-200 text-purple-600 shrink-0">
-                    <BookOpen size={20} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-black text-black uppercase tracking-tighter text-sm">Credit Ledger</p>
-                    <p className="text-[10px] text-zinc-500 font-bold mt-0.5 break-words">
-                      {creditNeedsForwarding > 0 && `${creditNeedsForwarding} need forwarding to manager · `}
-                      {creditPendingManager > 0 && `${creditPendingManager} awaiting manager approval · `}
-                      {creditApprovedNotSettled > 0 && `${creditApprovedNotSettled} approved - ready to settle`}
-                    </p>
-                  </div>
-                  <ArrowRightLeft size={16} className="text-zinc-400 group-hover:text-purple-600 transition-colors shrink-0" />
-                </button>
-              )}
-
-              {forwardedQueue.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1 h-4 bg-purple-500 rounded-full" />
-                      <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500">Awaiting Manager Approval</h3>
-                    </div>
-                    <span className="px-2 py-0.5 bg-purple-500 text-white text-[9px] rounded-full font-black animate-pulse">
-                      {forwardedQueue.length}
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {forwardedQueue.map(order => <ForwardedCreditCard key={order.id} order={order} />)}
-                  </div>
-                </div>
-              )}
+              {/* ❌ REMOVED: "Credit Ledger" button (totalCreditsNeedingAction > 0) and "Awaiting Manager Approval" section */}
             </div>
           )}
 
@@ -739,7 +699,7 @@ export default function CashierDashboard() {
                         <div className="min-w-0">
                           <p className="text-sm font-black text-black uppercase italic truncate">{order.table_name || `Order #${order.id}`}</p>
                           <p className="text-[10px] text-zinc-500 font-bold uppercase mt-0.5">
-                            {order.requested_by} · {formatCurrencyCompact(order.amount)} · {timeAgo(order.created_at)}
+                            {order.requested_by} · {formatFullAmount(order.amount)} · {timeAgo(order.created_at)}
                           </p>
                         </div>
                         <button
@@ -774,7 +734,7 @@ export default function CashierDashboard() {
                   <div className="p-3 bg-rose-100 rounded-xl text-rose-600"><Wallet size={18} /></div>
                   <div>
                     <p className="text-[8px] font-black text-rose-600 uppercase tracking-widest leading-none mb-1.5">Shift Outflow</p>
-                    <p className="text-lg font-black text-black italic">{formatCurrencyCompact(pettyCashOutTotal)}</p>
+                    <p className="text-lg font-black text-black italic">{formatFullAmount(pettyCashOutTotal)}</p>
                   </div>
                 </div>
               </div>
@@ -867,7 +827,7 @@ export default function CashierDashboard() {
                 {processingOrder.label || "Amount Due"}
               </span>
               <span className="text-3xl font-black text-black italic tracking-tighter break-words">
-                {formatCurrencyCompact(processingOrder.amount)}
+                {formatFullAmount(processingOrder.amount)}
               </span>
             </div>
 
@@ -1061,7 +1021,7 @@ export default function CashierDashboard() {
   );
 }
 
-// ─── LIVE ORDER CARD (unchanged) ──────────────────────────────────────────────
+// ─── LIVE ORDER CARD (full amounts) ──────────────────────────────────────────
 function LiveOrderCard({ order, onConfirm, onDelivery }) {
   const isCredit = order.method === "Credit";
   return (
@@ -1097,7 +1057,7 @@ function LiveOrderCard({ order, onConfirm, onDelivery }) {
             {order.method === "Momo-MTN" ? "MTN" : order.method === "Momo-Airtel" ? "Airtel" : order.method}
           </p>
           <p className="text-base sm:text-xl font-black text-black italic tracking-tighter whitespace-nowrap">
-            {formatCurrencyCompact(order.amount)}
+            {formatFullAmount(order.amount)}
           </p>
         </div>
       </div>
@@ -1143,7 +1103,7 @@ function LiveOrderCard({ order, onConfirm, onDelivery }) {
   );
 }
 
-// ─── FORWARDED CREDIT CARD (unchanged) ────────────────────────────────────────
+// ─── FORWARDED CREDIT CARD (unchanged – amounts now full) ─────────────────────
 function ForwardedCreditCard({ order }) {
   return (
     <div className="bg-purple-50 border border-purple-200 rounded-[2.5rem] p-5 flex items-center justify-between gap-4 flex-wrap opacity-70">
@@ -1163,7 +1123,7 @@ function ForwardedCreditCard({ order }) {
         </div>
       </div>
       <div className="text-right shrink-0">
-        <p className="text-xl font-black text-purple-600 italic whitespace-nowrap">{formatCurrencyCompact(order.amount)}</p>
+        <p className="text-xl font-black text-purple-600 italic whitespace-nowrap">{formatFullAmount(order.amount)}</p>
         <div className="flex items-center justify-end gap-1 mt-1">
           <Clock size={9} className="text-purple-600 animate-pulse" />
           <span className="text-[9px] text-purple-600 font-black uppercase tracking-widest whitespace-nowrap">Pending Manager</span>
@@ -1173,15 +1133,15 @@ function ForwardedCreditCard({ order }) {
   );
 }
 
-// ─── HISTORY CARD (unchanged) ─────────────────────────────────────────────────
+// ─── HISTORY CARD (full amounts) ─────────────────────────────────────────────
 function HistoryCard({ item }) {
   const { color, icon } = methodStyle(item.method);
   const isPartiallySettled = item.status === "PartiallySettled";
   const isConfirmed = item.status === "Confirmed";
 
   const displayAmount = isPartiallySettled && item.paid_amount
-    ? `${formatCurrencyCompact(item.paid_amount)} / ${formatCurrencyCompact(item.amount)}`
-    : formatCurrencyCompact(item.amount);
+    ? `${formatFullAmount(item.paid_amount)} / ${formatFullAmount(item.amount)}`
+    : formatFullAmount(item.amount);
 
   const statusColor = isPartiallySettled ? "text-yellow-600" : isConfirmed ? "text-emerald-600" : "text-red-600";
   const statusIcon  = isPartiallySettled
@@ -1224,7 +1184,7 @@ function HistoryCard({ item }) {
           )}
           {isPartiallySettled && item.remaining_amount > 0 && (
             <p className="text-[9px] text-yellow-600 font-mono mt-0.5">
-              Remaining: {formatCurrencyCompact(item.remaining_amount)}
+              Remaining: {formatFullAmount(item.remaining_amount)}
             </p>
           )}
         </div>
@@ -1242,7 +1202,7 @@ function HistoryCard({ item }) {
   );
 }
 
-// ─── SHIFT SUMMARY MODAL (unchanged) ─────────────────────────────────────────
+// ─── SHIFT SUMMARY MODAL (full amounts) ─────────────────────────────────────
 function ShiftSummaryModal({ data, onClose, onFinalize, isFinalizing }) {
   if (!data) return null;
   return (
@@ -1254,14 +1214,14 @@ function ShiftSummaryModal({ data, onClose, onFinalize, isFinalizing }) {
           <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-2">Verify totals before closing</p>
         </div>
         <div className="space-y-4 mb-8">
-          <SummaryRow label="Total Cash" value={formatCurrencyCompact(data.cash)} />
-          <SummaryRow label="Mobile Money" value={formatCurrencyCompact(data.momo)} />
-          <SummaryRow label="Card Payments" value={formatCurrencyCompact(data.card)} />
-          <SummaryRow label="Petty Cash" value={`-${formatCurrencyCompact(data.petty)}`} color="text-rose-600" />
+          <SummaryRow label="Total Cash" value={formatFullAmount(data.cash)} />
+          <SummaryRow label="Mobile Money" value={formatFullAmount(data.momo)} />
+          <SummaryRow label="Card Payments" value={formatFullAmount(data.card)} />
+          <SummaryRow label="Petty Cash" value={`-${formatFullAmount(data.petty)}`} color="text-rose-600" />
           <div className="pt-4 mt-4 border-t border-black/10">
             <div className="bg-yellow-500 p-5 rounded-2xl border border-yellow-400 shadow-xl shadow-yellow-500/20">
               <p className="text-[9px] font-black text-black/60 uppercase tracking-widest mb-1">Handover Balance (Cash)</p>
-              <p className="text-2xl font-black text-black italic tracking-tighter break-words">{formatCurrencyCompact(data.net)}</p>
+              <p className="text-2xl font-black text-black italic tracking-tighter break-words">{formatFullAmount(data.net)}</p>
             </div>
           </div>
         </div>

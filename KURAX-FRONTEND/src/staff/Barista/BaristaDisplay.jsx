@@ -6,7 +6,6 @@ import {
   AlertCircle, Search, RotateCcw, Trophy, Bean,
   UserPlus, Power, X, ShieldAlert
 } from "lucide-react";
-import Footer from "../../customer/components/common/Foooter";
 import API_URL from "../../config/api";
 
 // ─── KAMPALA DATE ─────────────────────────────────────────────────────────────
@@ -569,8 +568,6 @@ export default function BaristaDisplay() {
           ))
         )}
       </div>
-
-      <Footer/>
     </div>
   );
 }

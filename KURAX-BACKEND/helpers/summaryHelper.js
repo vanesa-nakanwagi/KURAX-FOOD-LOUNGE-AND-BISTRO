@@ -45,9 +45,9 @@ export async function updateDailySummary({ amount, method, date, orderCount = 1,
            updated_at            = NOW()`,
         [summaryDate, amt]
       );
-      console.log(`✅ Credit settlement of UGX ${amt} recorded in total_settled_credits only (gross/cash untouched)`);
+      console.log(`Credit settlement of UGX ${amt} recorded in total_settled_credits only (gross/cash untouched)`);
     } catch (err) {
-      console.error('⚠️ Summary update (credit settlement) failed (non-fatal):', err.message);
+      console.error('Summary update (credit settlement) failed (non-fatal):', err.message);
     }
     return; // ← exit early, do NOT fall through to the regular sale logic below
   }

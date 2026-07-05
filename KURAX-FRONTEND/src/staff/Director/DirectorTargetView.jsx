@@ -7,16 +7,14 @@ import {
   ChevronLeft, ChevronRight, BarChart3, Clock, AlertCircle, CheckCircle2, Lock, Info
 } from "lucide-react";
 
-function fmtUGX(n) {
-  const v = Number(n) || 0;
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
-  if (v >= 1_000)     return `${(v / 1_000).toFixed(0)}K`;
-  return v.toLocaleString();
+// ✅ FULL NUMBER FORMATTER (no abbreviation)
+function formatFullAmount(n) {
+  const num = Number(n) || 0;
+  return `UGX ${num.toLocaleString()}`;
 }
 
 export default function DirectorTargetView() {
   const { theme } = useTheme();
-  // Use allOrders (raw, unfiltered) instead of orders
   const { allOrders = [], monthlyTargets = {}, refreshData } = useData();
   const dark = theme === "dark";
 
@@ -115,12 +113,12 @@ export default function DirectorTargetView() {
         <div className="flex justify-between items-start p-6 relative z-10">
           <div>
             <p className={`text-[10px] font-black uppercase tracking-widest ${subtextClass}`}>Monthly Target</p>
-            <h3 className="text-2xl font-black tracking-tighter italic">{fmtUGX(targetRevenue)}</h3>
+            <h3 className="text-2xl font-black tracking-tighter italic break-words">{formatFullAmount(targetRevenue)}</h3>
           </div>
           <div className="flex items-center gap-2"><Calendar size={14} className={subtextClass} /><span className="text-[9px] font-black">{monthKey}</span></div>
         </div>
 
-        <div className="flex items-center gap-6 mb-6 px-6 relative z-10">
+        <div className="flex items-center gap-6 mb-6 px-6 relative z-10 flex-wrap sm:flex-nowrap">
           <div className="relative flex-shrink-0" style={{ width: 140, height: 140 }}>
             <svg width="140" height="140" viewBox="0 0 140 140" style={{ transform: "rotate(-90deg)" }}>
               <defs><linearGradient id="ringGradDir" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#EAB308" /><stop offset="60%" stopColor="#CA8A04" /><stop offset="100%" stopColor={dark ? "#3f3f46" : "#27272a"} /></linearGradient></defs>
@@ -132,40 +130,40 @@ export default function DirectorTargetView() {
               <span className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>done</span>
             </div>
           </div>
-          <div className="flex-1 flex flex-col gap-2">
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
             <div className={`p-3 rounded-xl border-l-2 border-emerald-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
               <div className="flex items-center justify-between">
                 <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Current Revenue</p>
                 <span className="text-[7px] text-gray-400 flex items-center gap-1 cursor-help" title="Gross Sales + Credit Settlements collected this month"><Info size={8} /> info</span>
               </div>
-              <p className="text-sm font-black italic text-emerald-500">{fmtUGX(totalRevenue)}</p>
-              <p className="text-[7px] font-bold text-gray-500 mt-0.5">{fmtUGX(grossSales)} + {fmtUGX(creditSettlements)} (credits)</p>
+              <p className="text-sm font-black italic text-emerald-500 break-words">{formatFullAmount(totalRevenue)}</p>
+              <p className="text-[7px] font-bold text-gray-500 mt-0.5 break-words">{formatFullAmount(grossSales)} + {formatFullAmount(creditSettlements)} (credits)</p>
             </div>
             <div className={`p-3 rounded-xl border-l-2 border-yellow-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
               <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Target</p>
-              <p className="text-sm font-black italic text-yellow-500">{fmtUGX(targetRevenue)}</p>
+              <p className="text-sm font-black italic text-yellow-500 break-words">{formatFullAmount(targetRevenue)}</p>
             </div>
             <div className={`p-3 rounded-xl border-l-2 ${dark ? "border-white/20 bg-white/5" : "border-black/20 bg-black/[0.03]"}`}>
               <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Remaining</p>
-              <p className={`text-sm font-black italic ${subtextClass}`}>{fmtUGX(Math.max(targetRevenue - totalRevenue, 0))}</p>
+              <p className={`text-sm font-black italic ${subtextClass} break-words`}>{formatFullAmount(Math.max(targetRevenue - totalRevenue, 0))}</p>
             </div>
           </div>
         </div>
       </div>
 
       <div className={`rounded-2xl border p-6 transition-all duration-300 hover:shadow-xl ${cardBg}`}>
-        <div className="flex justify-between items-start">
+        <div className="flex justify-between items-start flex-wrap gap-2">
           <div>
             <BarChart3 size={22} className={isOnTrack ? "text-emerald-500" : "text-rose-500"} />
             <p className={`text-[9px] font-black uppercase tracking-widest mt-2 ${subtextClass}`}>Projected Month End (based on gross sales)</p>
-            <h3 className={`text-3xl font-black italic mt-1 ${isOnTrack ? "text-emerald-500" : "text-rose-500"}`}>{fmtUGX(projectedRevenue)}</h3>
+            <h3 className={`text-3xl font-black italic mt-1 ${isOnTrack ? "text-emerald-500" : "text-rose-500"} break-words`}>{formatFullAmount(projectedRevenue)}</h3>
           </div>
           <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${isOnTrack ? (dark ? "bg-emerald-500 text-black" : "bg-emerald-600 text-white") : (dark ? "bg-rose-500 text-white" : "bg-rose-600 text-white")}`}>
             {isOnTrack ? 'On Track' : 'Behind Target'}
           </div>
         </div>
         <p className={`text-[9px] mt-4 ${subtextClass}`}>
-          Based on current daily average of {fmtUGX(dailyAvg)} over {elapsedDays} days (gross sales only). Credit settlements add {fmtUGX(creditSettlements)} to total revenue.
+          Based on current daily average of {formatFullAmount(dailyAvg)} over {elapsedDays} days (gross sales only). Credit settlements add {formatFullAmount(creditSettlements)} to total revenue.
         </p>
       </div>
 
@@ -173,12 +171,12 @@ export default function DirectorTargetView() {
         <div className={`p-5 rounded-2xl border transition-all duration-300 hover:border-yellow-500/30 hover:shadow-lg ${miniCardBg}`}>
           <Zap size={16} className="text-yellow-500 mb-2" />
           <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${subtextClass}`}>Daily Average (Gross)</p>
-          <p className={`text-xl font-black italic ${textClass}`}>{fmtUGX(dailyAvg)}</p>
+          <p className={`text-xl font-black italic ${textClass} break-words`}>{formatFullAmount(dailyAvg)}</p>
         </div>
         <div className={`p-5 rounded-2xl border transition-all duration-300 hover:border-yellow-500/30 hover:shadow-lg ${miniCardBg}`}>
           <TrendingUp size={16} className="text-yellow-500 mb-2" />
           <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${subtextClass}`}>Required / Day (incl. credits)</p>
-          <p className={`text-xl font-black italic ${textClass}`}>{fmtUGX(Math.max(0, dailyPaceNeeded))}</p>
+          <p className={`text-xl font-black italic ${textClass} break-words`}>{formatFullAmount(Math.max(0, dailyPaceNeeded))}</p>
         </div>
         <div className={`p-5 rounded-2xl border transition-all duration-300 hover:border-yellow-500/30 hover:shadow-lg ${miniCardBg}`}>
           <Calendar size={16} className="text-yellow-500 mb-2" />

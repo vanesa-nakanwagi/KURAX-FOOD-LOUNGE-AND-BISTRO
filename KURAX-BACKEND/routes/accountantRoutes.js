@@ -1,805 +1,712 @@
-// routes/sendToCashierRoute.js - FIXED VERSION
-
-import express from "express";
-import pool from "../db.js";
-import { updateDailySummary } from '../helpers/summaryHelper.js';
-import logActivity from '../utils/logsActivity.js'; 
+import express from 'express';
+import pool from '../db.js';
+import { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
 
 const router = express.Router();
 
-// Helper function to get table_name from order_ids if missing
-async function getTableNameFromOrderIds(orderIds) {
-  if (!orderIds || orderIds.length === 0) return null;
-  try {
-    const result = await pool.query(
-      `SELECT table_name FROM orders WHERE id = $1 LIMIT 1`,
-      [orderIds[0]]
-    );
-    return result.rows[0]?.table_name || null;
-  } catch (err) {
-    console.error("Error fetching table_name:", err.message);
-    return null;
-  }
+// ─── HELPER: Kampala date (YYYY-MM-DD) ──────────────────────────────────────
+function kampalaDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
-// POST /api/cashier-ops/send-to-cashier
-router.post("/send-to-cashier", async (req, res) => {
-  let {
-    order_ids, table_name, label, method, amount,
-    is_item = false, item, items, credit_info, requested_by, staff_id,
-    split_payments,
-    is_split = false
+// ─── 0. TEST ROUTE ──────────────────────────────────────────────────────────
+router.get('/test', (req, res) => {
+  console.log('🔵 TEST endpoint called');
+  res.json({ 
+    status: 'ok', 
+    message: 'Accountant routes are working!',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ─── 1. SIMPLE ORDER SUMMARY (used by older endpoints) ───────────────────────
+router.get('/summary', async (req, res) => {
+  const date = req.query.date || kampalaDate();
+  console.log(`🔵 /summary endpoint called for date: ${date}`);
+  try {
+    const result = await pool.query(
+      `SELECT
+         COUNT(*)                                             AS total_orders,
+         COALESCE(SUM(total), 0)                             AS total_revenue,
+         COUNT(CASE WHEN is_archived = false THEN 1 END)     AS active_tables
+       FROM orders
+       WHERE (timestamp AT TIME ZONE 'Africa/Nairobi')::date = $1`,
+      [date]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('❌ Overview Summary Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 2. TODAY'S STAT-CARD SUMMARY ───────────────────────────────────────────
+router.get('/today', async (req, res) => {
+  const today = kampalaDate();
+  console.log(`🔵 /today endpoint called for date: ${today}`);
+  
+  try {
+    // Ensure today's row exists
+    await pool.query(
+      `INSERT INTO daily_summary 
+        (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, 
+         total_credit, total_mixed, order_count, total_settled_credits, day_closed, created_at, updated_at)
+       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
+       ON CONFLICT (summary_date) DO NOTHING`,
+      [today]
+    );
+
+    const summaryRes = await pool.query(
+      `SELECT
+         COALESCE(total_gross, 0) AS total_gross,
+         COALESCE(total_cash, 0) AS total_cash,
+         COALESCE(total_card, 0) AS total_card,
+         COALESCE(total_mtn, 0) AS total_mtn,
+         COALESCE(total_airtel, 0) AS total_airtel,
+         COALESCE(order_count, 0) AS order_count,
+         COALESCE(total_settled_credits, 0) AS total_settled_credits
+       FROM daily_summary
+       WHERE summary_date = $1`,
+      [today]
+    );
+
+    const daily = summaryRes.rows[0] || {};
+    const response = {
+      total_gross: Number(daily.total_gross) || 0,
+      total_cash: Number(daily.total_cash) || 0,
+      total_card: Number(daily.total_card) || 0,
+      total_mtn: Number(daily.total_mtn) || 0,
+      total_airtel: Number(daily.total_airtel) || 0,
+      order_count: Number(daily.order_count) || 0,
+      total_settled_credits: Number(daily.total_settled_credits) || 0,
+    };
+    
+    res.json(response);
+  } catch (err) {
+    console.error('❌ Today Summary Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 2a. CREATE TODAY'S SUMMARY IF NOT EXISTS ────────────────────────────────
+router.post('/ensure-today', async (req, res) => {
+  const today = kampalaDate();
+  try {
+    const result = await pool.query(
+      `INSERT INTO daily_summary 
+        (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, 
+         total_credit, total_mixed, order_count, total_settled_credits, day_closed, created_at, updated_at)
+       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
+       ON CONFLICT (summary_date) DO NOTHING
+       RETURNING *`,
+      [today]
+    );
+    res.json({ success: true, created: result.rows.length > 0 });
+  } catch (err) {
+    console.error('❌ Ensure today summary error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 3. MONTHLY CREDIT SUMMARY ────────────────────────────────────────────────
+router.get('/credit-summary-monthly', async (req, res) => {
+  const { month } = req.query;
+  const targetMonth = month || new Date().toISOString().slice(0, 7);
+  console.log(`🔵 /credit-summary-monthly called for month: ${targetMonth}`);
+
+  try {
+    const creditsRes = await pool.query(
+      `SELECT
+         c.*,
+         COALESCE(cs.total_settled, 0) AS amount_paid
+       FROM credits c
+       LEFT JOIN (
+         SELECT credit_id, SUM(amount_paid) AS total_settled
+         FROM credit_settlements
+         GROUP BY credit_id
+       ) cs ON cs.credit_id = c.id
+       WHERE DATE_TRUNC('month', c.created_at AT TIME ZONE 'Africa/Nairobi')
+           = DATE_TRUNC('month', ($1 || '-01')::date)
+       ORDER BY c.created_at DESC`,
+      [targetMonth]
+    );
+
+    const credits = creditsRes.rows;
+    let totalSettled = 0, totalOutstanding = 0, totalRejected = 0;
+
+    credits.forEach(credit => {
+      const status  = String(credit.status || '').toLowerCase();
+      const amount  = Number(credit.amount     || 0);
+      const paid    = Number(credit.amount_paid || 0);
+
+      if (status === 'fullysettled') {
+        totalSettled += paid || amount;
+      } else if (status === 'partiallysettled') {
+        totalSettled     += paid;
+        totalOutstanding += amount - paid;
+      } else if (['approved', 'pendingcashier', 'pendingmanagerapproval'].includes(status)) {
+        totalOutstanding += amount;
+      } else if (status === 'rejected') {
+        totalRejected += amount;
+      }
+    });
+
+    res.json({
+      month:             targetMonth,
+      total_credits:     credits.length,
+      total_settled:     totalSettled,
+      total_outstanding: totalOutstanding,
+      total_expected:    totalSettled + totalOutstanding,
+      total_rejected:    totalRejected,
+      credits,
+    });
+  } catch (err) {
+    console.error('❌ Monthly Credit Summary Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 4. ACTIVITY LOGS — initial page load ────────────────────────────────────
+router.get('/logs', async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+  try {
+    const result = await pool.query(
+      `SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT $1`,
+      [limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('❌ Overview Logs Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 5. SSE — REAL-TIME ACTIVITY STREAM ──────────────────────────────────────
+router.get('/stream', (req, res) => {
+  console.log('🔵 SSE stream connection established');
+  res.setHeader('Content-Type',      'text/event-stream');
+  res.setHeader('Cache-Control',     'no-cache');
+  res.setHeader('Connection',        'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  res.write(`data: ${JSON.stringify({ type: 'CONNECTED', message: 'Live feed connected' })}\n\n`);
+
+  registerSSEClient(res);
+
+  const heartbeat = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); }
+    catch { clearInterval(heartbeat); }
+  }, 25_000);
+
+  req.on('close', () => {
+    console.log('🔴 SSE stream closed');
+    clearInterval(heartbeat);
+    removeSSEClient(res);
+  });
+});
+
+// ─── 6. WEEKLY REVENUE — for RevenueChart ────────────────────────────────────
+router.get('/weekly-revenue', async (req, res) => {
+  console.log('🔵 /weekly-revenue called');
+  try {
+    const result = await pool.query(`
+      WITH day_series AS (
+        SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Nairobi')::date - n AS day
+        FROM generate_series(0, 6) AS gs(n)
+      ),
+      sales AS (
+        SELECT
+          (confirmed_at AT TIME ZONE 'Africa/Nairobi')::date AS day,
+          COALESCE(SUM(amount), 0) AS gross,
+          COALESCE(SUM(CASE WHEN method = 'Cash'                      THEN amount ELSE 0 END), 0) AS cash,
+          COALESCE(SUM(CASE WHEN method = 'Card'                      THEN amount ELSE 0 END), 0) AS card,
+          COALESCE(SUM(CASE WHEN method IN ('Momo-MTN','Momo-Airtel') THEN amount ELSE 0 END), 0) AS momo
+        FROM cashier_queue
+        WHERE status = 'Confirmed'
+          AND method != 'Credit'
+          AND confirmed_at IS NOT NULL
+          AND (confirmed_at AT TIME ZONE 'Africa/Nairobi')::date
+              >= (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Nairobi')::date - 6
+        GROUP BY 1
+      ),
+      settled AS (
+        SELECT
+          (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date AS day,
+          COALESCE(SUM(cs.amount_paid), 0) AS credit_settled
+        FROM credit_settlements cs
+        WHERE (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date
+              >= (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Nairobi')::date - 6
+        GROUP BY 1
+      ),
+      expenses AS (
+        SELECT
+          entry_date AS day,
+          COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE 0 END), 0) AS petty
+        FROM petty_cash
+        WHERE entry_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Nairobi')::date - 6
+        GROUP BY 1
+      )
+      SELECT
+        ds.day,
+        TO_CHAR(ds.day, 'Dy')                                                   AS date,
+        COALESCE(s.gross, 0) + COALESCE(st.credit_settled, 0)                  AS gross,
+        COALESCE(s.cash,  0)                                                    AS cash,
+        COALESCE(s.card,  0)                                                    AS card,
+        COALESCE(s.momo,  0)                                                    AS momo,
+        COALESCE(st.credit_settled, 0)                                          AS credit_settled,
+        COALESCE(e.petty, 0)                                                    AS petty,
+        (COALESCE(s.gross, 0) + COALESCE(st.credit_settled, 0))
+          - COALESCE(e.petty, 0)                                                AS profit
+      FROM day_series ds
+      LEFT JOIN sales    s  ON s.day  = ds.day
+      LEFT JOIN settled  st ON st.day = ds.day
+      LEFT JOIN expenses e  ON e.day  = ds.day
+      ORDER BY ds.day ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('❌ Weekly Revenue Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 7. SHIFT LIQUIDATIONS ────────────────────────────────────────────────────
+router.get('/shifts', async (req, res) => {
+  const date = req.query.date || kampalaDate();
+  try {
+    const result = await pool.query(
+      `SELECT
+         id, staff_id, staff_name, role,
+         total_orders,
+         total_cash, total_mtn, total_airtel, total_card, gross_total,
+         shift_date,
+         created_at AS clock_out
+       FROM staff_shifts
+       WHERE shift_date = $1
+       ORDER BY created_at ASC`,
+      [date]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('❌ Overview Shifts Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 8. PETTY CASH — GET today's entries ─────────────────────────────────────
+router.get('/petty-cash', async (req, res) => {
+  const today = kampalaDate();
+  console.log(`🔵 /petty-cash GET called for ${today}`);
+  try {
+    const result = await pool.query(
+      `SELECT *
+       FROM petty_cash
+       WHERE entry_date = $1
+       ORDER BY created_at DESC`,
+      [today]
+    );
+
+    const entries   = result.rows;
+    const total_out = entries.filter(e => e.direction === 'OUT').reduce((s, e) => s + Number(e.amount), 0);
+    const total_in  = entries.filter(e => e.direction === 'IN' ).reduce((s, e) => s + Number(e.amount), 0);
+
+    res.json({
+      total_out,
+      total_in,
+      net: total_in - total_out,
+      entries,
+    });
+  } catch (err) {
+    console.error('❌ Petty Cash GET Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 9. PETTY CASH — POST new entry ──────────────────────────────────────────
+router.post('/petty-cash', async (req, res) => {
+  const { amount, direction, category, description, logged_by } = req.body;
+  if (!amount || !direction || !description) {
+    return res.status(400).json({ error: 'amount, direction, and description are required' });
+  }
+  if (!['IN', 'OUT'].includes(direction)) {
+    return res.status(400).json({ error: 'direction must be IN or OUT' });
+  }
+
+  const today = kampalaDate();
+  try {
+    const result = await pool.query(
+      `INSERT INTO petty_cash (amount, direction, category, description, logged_by, entry_date)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [Number(amount), direction, category || 'General', description.trim(), logged_by || 'Director', today]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('❌ Petty Cash POST Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 10. PETTY CASH — DELETE entry ───────────────────────────────────────────
+router.delete('/petty-cash/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM petty_cash WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Petty Cash DELETE Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 11. DIRECTOR DAILY SUMMARY (combined endpoint) ──────────────────────────
+router.get('/director/daily-summary', async (req, res) => {
+  const today = kampalaDate();
+  try {
+    const dailyRes = await pool.query(
+      `SELECT
+         COALESCE(total_gross,  0) AS total_gross,
+         COALESCE(total_cash,   0) AS total_cash,
+         COALESCE(total_card,   0) AS total_card,
+         COALESCE(total_mtn,    0) AS total_mtn,
+         COALESCE(total_airtel, 0) AS total_airtel,
+         COALESCE(order_count,  0) AS order_count,
+         COALESCE(total_settled_credits, 0) AS total_settled_credits
+       FROM daily_summary
+       WHERE summary_date = $1`,
+      [today]
+    );
+
+    const settleRes = await pool.query(
+      `SELECT COALESCE(SUM(cs.amount_paid), 0) AS total_settled
+       FROM credit_settlements cs
+       WHERE (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date = $1`,
+      [today]
+    );
+
+    const monthlyRes = await pool.query(
+      `SELECT
+         c.*,
+         COALESCE(cs.total_paid, 0) AS amount_paid_total
+       FROM credits c
+       LEFT JOIN (
+         SELECT credit_id, SUM(amount_paid) AS total_paid
+         FROM credit_settlements
+         GROUP BY credit_id
+       ) cs ON cs.credit_id = c.id
+       WHERE DATE_TRUNC('month', c.created_at AT TIME ZONE 'Africa/Nairobi')
+           = DATE_TRUNC('month', CURRENT_DATE)
+       ORDER BY c.created_at DESC`
+    );
+
+    let totalSettledMonthly = 0, totalOutstandingMonthly = 0;
+    monthlyRes.rows.forEach(credit => {
+      const status = String(credit.status || '').toLowerCase();
+      const amount = Number(credit.amount           || 0);
+      const paid   = Number(credit.amount_paid_total || credit.amount_paid || 0);
+
+      if (status === 'fullysettled') {
+        totalSettledMonthly += paid || amount;
+      } else if (status === 'partiallysettled') {
+        totalSettledMonthly     += paid;
+        totalOutstandingMonthly += amount - paid;
+      } else if (['approved', 'pendingcashier', 'pendingmanagerapproval'].includes(status)) {
+        totalOutstandingMonthly += amount;
+      }
+    });
+
+    res.json({
+      daily: {
+        gross:                    Number(dailyRes.rows[0]?.total_gross || 0),
+        cash:                     Number(dailyRes.rows[0]?.total_cash || 0),
+        card:                     Number(dailyRes.rows[0]?.total_card || 0),
+        mtn:                      Number(dailyRes.rows[0]?.total_mtn || 0),
+        airtel:                   Number(dailyRes.rows[0]?.total_airtel || 0),
+        orders:                   Number(dailyRes.rows[0]?.order_count || 0),
+        total_settled_credits:    Number(dailyRes.rows[0]?.total_settled_credits || 0),
+        credit_settlements_today: Number(settleRes.rows[0]?.total_settled || 0),
+      },
+      monthly_credits: {
+        total_settled:     totalSettledMonthly,
+        total_outstanding: totalOutstandingMonthly,
+        total_expected:    totalSettledMonthly + totalOutstandingMonthly,
+        total_records:     monthlyRes.rows.length,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Director Daily Summary Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 12. PHYSICAL COUNT – GET latest unsaved entry (if any) ─────────────────
+router.get('/physical-count', async (req, res) => {
+  console.log('🔵 GET /physical-count called');
+  try {
+    const result = await pool.query(
+      `SELECT cash, mtn, airtel, card, notes,
+              credit_settled_today, credit_outstanding_today
+       FROM physical_counts
+       WHERE saved = false
+       ORDER BY created_at DESC
+       LIMIT 1`
+    );
+    if (result.rows.length === 0) {
+      return res.json({
+        cash: 0,
+        mtn: 0,
+        airtel: 0,
+        card: 0,
+        notes: '',
+        creditSettledToday: 0,
+        creditOutstandingToday: 0
+      });
+    }
+    const row = result.rows[0];
+    res.json({
+      cash: Number(row.cash) || 0,
+      mtn: Number(row.mtn) || 0,
+      airtel: Number(row.airtel) || 0,
+      card: Number(row.card) || 0,
+      notes: row.notes || '',
+      creditSettledToday: Number(row.credit_settled_today) || 0,
+      creditOutstandingToday: Number(row.credit_outstanding_today) || 0
+    });
+  } catch (err) {
+    console.error('❌ GET /physical-count error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 13. PHYSICAL COUNT – SAVE (or update) ──────────────────────────────────
+router.post('/physical-count', async (req, res) => {
+  const {
+    cash, mtn, airtel, card, notes,
+    creditSettledToday, creditOutstandingToday
   } = req.body;
 
-  console.log("🔵 SEND-TO-CASHIER Request:", { method, amount, is_item, order_ids, table_name });
+  console.log(`🔵 POST /physical-count – cash: ${cash}, settled: ${creditSettledToday}`);
 
-  // Handle split payments
-  if (split_payments && Array.isArray(split_payments) && split_payments.length > 0) {
-    try {
-      let formattedOrderIds = [];
-      if (!Array.isArray(order_ids)) {
-        if (typeof order_ids === 'number' || typeof order_ids === 'string') {
-          formattedOrderIds = [parseInt(order_ids)];
-        } else if (typeof order_ids === 'object' && order_ids !== null) {
-          formattedOrderIds = Object.values(order_ids).map(id => parseInt(id));
-        }
-      } else {
-        formattedOrderIds = order_ids.map(id => parseInt(id));
-      }
-
-      if (!table_name && formattedOrderIds && formattedOrderIds.length > 0) {
-        table_name = await getTableNameFromOrderIds(formattedOrderIds);
-      }
-
-      if (!table_name) {
-        table_name = "WALK-IN";
-      }
-
-      // Create orders for split payments
-      for (const payment of split_payments) {
-        const paymentMethod = payment.method.toLowerCase();
-        const amount = payment.amount;
-        const transactionId = payment.transaction_id || null;
-        const creditInfo = payment.creditInfo || null;
-        
-        // Create individual paid order for each split payment
-        const orderResult = await pool.query(
-          `INSERT INTO orders 
-             (original_order_ids, table_name, payment_method, total, status, paid_at, transaction_id, is_archived, created_at)
-           VALUES ($1::jsonb, $2, $3, $4, 'Paid', NOW(), $5, false, NOW())
-           RETURNING id`,
-          [JSON.stringify(formattedOrderIds), table_name, paymentMethod, amount, transactionId]
-        );
-        
-        console.log(`✅ SPLIT: Created PAID order #${orderResult.rows[0].id} for UGX ${amount} via ${paymentMethod}`);
-        
-        // Update daily summary
-        await updateDailySummary({ amount: amount, method: paymentMethod });
-      }
-
-      // Mark original orders as processed
-      if (formattedOrderIds?.length) {
-        await pool.query(
-          `UPDATE orders SET sent_to_cashier = true, is_archived = true WHERE id = ANY($1::int[])`,
-          [formattedOrderIds]
-        );
-      }
-
-      res.json({ 
-        success: true, 
-        split: true,
-        message: `${split_payments.length} payment records created`
-      });
-      return;
-    } catch (err) {
-      console.error("split payment failed:", err);
-      return res.status(500).json({ error: err.message });
-    }
-  }
-
-  // Original single payment logic
-  if (!method || amount === undefined || amount === null) {
-    return res.status(400).json({ error: "method and amount are required" });
-  }
-
-  let formattedOrderIds = [];
-  if (!Array.isArray(order_ids)) {
-    if (typeof order_ids === 'number' || typeof order_ids === 'string') {
-      formattedOrderIds = [parseInt(order_ids)];
-    } else if (typeof order_ids === 'object' && order_ids !== null) {
-      formattedOrderIds = Object.values(order_ids).map(id => parseInt(id));
-    }
-  } else {
-    formattedOrderIds = order_ids.map(id => parseInt(id));
-  }
-
-  if (!table_name && formattedOrderIds && formattedOrderIds.length > 0) {
-    table_name = await getTableNameFromOrderIds(formattedOrderIds);
-  }
-
-  if (!table_name) {
-    table_name = "WALK-IN";
+  if (cash === undefined || mtn === undefined || airtel === undefined || card === undefined) {
+    return res.status(400).json({ error: 'Missing required numeric fields' });
   }
 
   try {
+    // Mark any previous unsaved records as saved (only one working copy)
+    await pool.query(`UPDATE physical_counts SET saved = true WHERE saved = false`);
+
     const result = await pool.query(
-      `INSERT INTO cashier_queue
-         (order_ids, table_name, label, method, amount, is_item, item,
-          requested_by, staff_id, credit_name, credit_phone, credit_pay_by,
-          status, created_at)
-       VALUES ($1::jsonb, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, 'Pending', NOW())
+      `INSERT INTO physical_counts
+         (cash, mtn, airtel, card, notes,
+          credit_settled_today, credit_outstanding_today, saved, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
        RETURNING id`,
       [
-        JSON.stringify(formattedOrderIds),
-        table_name,
-        label || null,
-        method,
-        Number(amount),
-        is_item,
-        item ? JSON.stringify(item) : null,
-        requested_by || null,
-        staff_id || null,
-        credit_info?.name || null,
-        credit_info?.phone || null,
-        credit_info?.pay_by || null,
+        Number(cash),
+        Number(mtn),
+        Number(airtel),
+        Number(card),
+        notes || '',
+        Number(creditSettledToday || 0),
+        Number(creditOutstandingToday || 0)
       ]
     );
 
-    const newQueueId = result.rows[0].id;
-    console.log(`🔵 Created cashier_queue entry #${newQueueId} for ${method} payment of UGX ${amount}`);
-
-    if (formattedOrderIds?.length) {
-      await pool.query(
-        `UPDATE orders SET sent_to_cashier = true WHERE id = ANY($1::int[])`,
-        [formattedOrderIds]
-      );
-    }
-
-    // When method is Credit, also create a row in the credits table
-    if (method === 'Credit' && credit_info?.name) {
-      try {
-        await pool.query(
-          `INSERT INTO credits
-             (order_id, table_name, label, amount, amount_paid, balance,
-              client_name, client_phone, pay_by, waiter_name, status, cashier_queue_id, created_at)
-           VALUES ($1, $2, $3, $4, 0, $4, $5, $6, $7, $8, 'PendingCashier', $9, NOW())`,
-          [
-            formattedOrderIds?.[0] || null,
-            table_name,
-            label || `Credit – ${table_name}`,
-            Number(amount),
-            credit_info.name.trim(),
-            credit_info.phone?.trim() || null,
-            credit_info.pay_by?.trim() || null,
-            requested_by || null,
-            newQueueId,
-          ]
-        );
-        console.log(`✅ Credit record created with cashier_queue_id: ${newQueueId}`);
-      } catch (creditErr) {
-        console.error('Credit record creation warning:', creditErr.message);
-      }
-    }
-
-    res.json({ success: true, queue_id: newQueueId });
+    console.log(`✅ Physical count saved with id ${result.rows[0].id}`);
+    res.json({ success: true, id: result.rows[0].id });
   } catch (err) {
-    console.error("send-to-cashier failed:", err);
-    res.status(500).json({ error: "Failed to send to cashier" });
-  }
-});
-
-// ✅ FIXED: PATCH /api/cashier-ops/cashier-queue/:id/confirm
-router.patch("/cashier-queue/:id/confirm", async (req, res) => {
-  const { id } = req.params;
-  const { confirmed_by, transaction_id, split_payments } = req.body || {};
-
-  console.log(`🔵 CONFIRMING payment for queue item #${id} by ${confirmed_by || 'Cashier'}`);
-
-  try {
-    const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
-    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
-    const q = qRes.rows[0];
-
-    console.log(`📋 Queue item: method=${q.method}, amount=${q.amount}, is_item=${q.is_item}, order_ids=${q.order_ids}`);
-
-    // Skip if already confirmed
-    if (q.status === 'Confirmed') {
-      return res.json({ success: true, message: "Already confirmed" });
-    }
-
-    // Handle Credit payments
-    if (q.method === "Credit") {
-      return res.status(400).json({
-        error: "Credit payments require manager approval — use Request Approval instead"
-      });
-    }
-
-    // Validate Momo transaction ID
-    if ((q.method === "Momo-MTN" || q.method === "Momo-Airtel") && !transaction_id) {
-      return res.status(400).json({ error: "Transaction ID is required for Momo payments" });
-    }
-
-    // Update cashier_queue status
-    await pool.query(
-      `UPDATE cashier_queue
-       SET status = 'Confirmed',
-           confirmed_by = $1,
-           confirmed_at = NOW(),
-           transaction_id = $2
-       WHERE id = $3`,
-      [confirmed_by || "Cashier", transaction_id || null, id]
-    );
-
-    const paymentMethod = q.method.toLowerCase();
-
-    if (q.is_item) {
-      // ✅ INDIVIDUAL ITEM PAYMENT
-      console.log(`🔵 Processing INDIVIDUAL ITEM payment: ${q.amount} via ${paymentMethod}`);
-      
-      if (q.order_ids?.length && q.item) {
-        for (const orderId of q.order_ids) {
-          // Get the current order
-          const orderRes = await pool.query(
-            `SELECT items, table_name, status FROM orders WHERE id = $1`,
-            [orderId]
-          );
-          
-          if (orderRes.rows.length > 0) {
-            let items = orderRes.rows[0].items;
-            if (typeof items === 'string') {
-              items = JSON.parse(items);
-            }
-            
-            // Update the specific item to paid
-            let found = false;
-            const updatedItems = items.map(item => {
-              const itemName = item.name?.trim().toLowerCase();
-              if (!found && itemName === q.item.name?.trim().toLowerCase() && !item._rowPaid) {
-                found = true;
-                return {
-                  ...item,
-                  _rowPaid: true,
-                  payment_method: paymentMethod,
-                  paid_at: new Date().toISOString()
-                };
-              }
-              return item;
-            });
-            
-            if (found) {
-              await pool.query(
-                `UPDATE orders SET items = $1, updated_at = NOW() WHERE id = $2`,
-                [JSON.stringify(updatedItems), orderId]
-              );
-              console.log(`✅ Updated item ${q.item.name} in order #${orderId} as paid via ${paymentMethod}`);
-            }
-            
-            // Check if ALL items in this order are now paid
-            const allItemsPaid = updatedItems.every(item => item._rowPaid === true || item.status === 'VOIDED');
-            
-            if (allItemsPaid) {
-              // ✅ CRITICAL: Mark the entire order as Paid with correct payment method
-              await pool.query(
-                `UPDATE orders 
-                 SET status = 'Paid', 
-                     payment_method = $1,
-                     paid_at = NOW(),
-                     is_archived = false
-                 WHERE id = $2`,
-                [paymentMethod, orderId]
-              );
-              console.log(`✅ Order #${orderId} fully paid, marked as Paid via ${paymentMethod}`);
-            }
-          }
-        }
-      }
-      
-      // Update daily summary
-      await updateDailySummary({ amount: q.amount, method: paymentMethod, orderCount: 0 });
-      console.log(`✅ Updated daily summary for item payment: ${q.amount} via ${paymentMethod}`);
-      
-    } else {
-      // ✅ FULL TABLE PAYMENT - Mark the existing order as Paid
-      console.log(`🔵 Processing FULL TABLE payment: ${q.amount} via ${paymentMethod}`);
-      
-      if (q.order_ids?.length) {
-        for (const orderId of q.order_ids) {
-          // Get current order
-          const orderRes = await pool.query(
-            `SELECT items, table_name FROM orders WHERE id = $1`,
-            [orderId]
-          );
-          
-          if (orderRes.rows.length > 0) {
-            let items = orderRes.rows[0].items;
-            if (typeof items === 'string') {
-              items = JSON.parse(items);
-            }
-            
-            // Mark ALL items as paid
-            const updatedItems = items.map(item => ({
-              ...item,
-              _rowPaid: true,
-              payment_method: paymentMethod,
-              paid_at: new Date().toISOString()
-            }));
-            
-            // ✅ CRITICAL: Update the EXISTING order to Paid with correct payment method
-            await pool.query(
-              `UPDATE orders 
-               SET items = $1,
-                   status = 'Paid', 
-                   payment_method = $2,
-                   paid_at = NOW(),
-                   is_archived = false
-               WHERE id = $3`,
-              [JSON.stringify(updatedItems), paymentMethod, orderId]
-            );
-            
-            console.log(`✅ Order #${orderId} marked as Paid via ${paymentMethod} for UGX ${q.amount}`);
-          }
-        }
-      }
-      
-      // Update daily summary
-      await updateDailySummary({ amount: q.amount, method: paymentMethod });
-      console.log(`✅ Updated daily summary for table payment: ${q.amount} via ${paymentMethod}`);
-    }
-
-    await logActivity(pool, 'SALE',
-      `${q.table_name || 'Table'} — UGX ${Number(q.amount).toLocaleString()} ${q.method} confirmed by ${confirmed_by || 'Cashier'}`,
-      { queue_id: id, method: q.method, amount: q.amount }
-    );
-    
-    res.json({ success: true });
-  } catch (err) {
-    console.error("cashier confirm failed:", err);
+    console.error('❌ POST /physical-count error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/cashier-ops/cashier-queue
-router.get("/cashier-queue", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT * FROM cashier_queue
-       WHERE status IN ('Pending','PendingManagerApproval')
-       ORDER BY created_at ASC`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("cashier-queue fetch failed:", err);
-    res.status(500).json({ error: "Failed to fetch queue" });
+// ========== INVENTORY AND REPORTS ROUTES (ADDED) ==========
+
+// ─── 14. PURCHASES – Record a new purchase invoice ──────────────────────────
+router.post('/purchases', async (req, res) => {
+  const { purchase_date, supplier, total_amount, invoice_number, notes } = req.body;
+  if (!purchase_date || total_amount === undefined) {
+    return res.status(400).json({ error: 'purchase_date and total_amount are required' });
   }
-});
-
-// PATCH /api/cashier-ops/cashier-queue/:id/request-approval
-router.patch("/cashier-queue/:id/request-approval", async (req, res) => {
-  const { id } = req.params;
-  const { requested_by } = req.body || {};
-
+  // Optionally get logged-in user from JWT (if you have auth middleware)
+  const user = req.user?.name || 'Accountant';
   try {
-    const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
-    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
-    const q = qRes.rows[0];
-
-    if (q.method !== "Credit") {
-      return res.status(400).json({ error: "Only Credit queue items need manager approval" });
-    }
-    if (q.status !== "Pending") {
-      return res.status(400).json({ error: `Already in status: ${q.status}` });
-    }
-
-    if (!q.credit_name || !q.credit_phone) {
-      return res.status(400).json({ 
-        error: "Missing client information. Client name and phone number are required for credit requests." 
-      });
-    }
-
-    let tableName = q.table_name;
-    if (!tableName && q.order_ids && q.order_ids.length > 0) {
-      tableName = await getTableNameFromOrderIds(q.order_ids);
-      if (tableName) {
-        await pool.query(
-          `UPDATE cashier_queue SET table_name = $1 WHERE id = $2`,
-          [tableName, id]
-        );
-      }
-    }
-
-    if (!tableName) {
-      return res.status(400).json({ 
-        error: "table_name is required - cannot determine table for this credit request." 
-      });
-    }
-
     await pool.query(
-      `UPDATE cashier_queue
-       SET status = 'PendingManagerApproval', confirmed_by = $1
-       WHERE id = $2`,
-      [requested_by || "Cashier", id]
-    );
-
-    await pool.query(
-      `UPDATE credits
-       SET status = 'PendingManagerApproval'
-       WHERE UPPER(table_name) = UPPER($1)
-         AND status = 'PendingCashier'`,
-      [tableName]
-    );
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("request-approval failed:", err);
-    res.status(500).json({ error: "Failed to request approval" });
-  }
-});
-
-// PATCH /api/cashier-ops/cashier-queue/:id/reject
-router.patch("/cashier-queue/:id/reject", async (req, res) => {
-  const { id } = req.params;
-  const { reason } = req.body || {};
-
-  try {
-    const qRes = await pool.query(
-      `SELECT order_ids, table_name FROM cashier_queue WHERE id = $1`,
-      [id]
-    );
-    if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
-    const q = qRes.rows[0];
-    const ids = q.order_ids || [];
-
-    await pool.query(
-      `UPDATE cashier_queue
-       SET status = 'Rejected', confirmed_by = $1, confirmed_at = NOW()
-       WHERE id = $2`,
-      [reason || "Rejected by cashier", id]
-    );
-
-    if (ids && ids.length > 0) {
-      await pool.query(
-        `UPDATE orders SET sent_to_cashier = false, status = 'Served'
-         WHERE id = ANY($1::int[]) AND status NOT IN ('Paid','Credit')`,
-        [ids]
-      );
-    }
-
-    if (q.table_name) {
-      try {
-        await pool.query(
-          `UPDATE credits
-           SET status = 'Rejected', reject_reason = $1
-           WHERE UPPER(table_name) = UPPER($2) 
-             AND status IN ('PendingCashier', 'PendingManagerApproval')`,
-          [reason || "Rejected by cashier", q.table_name]
-        );
-      } catch (e) {
-        console.error("Failed to update credit status:", e.message);
-      }
-    }
-
-    await logActivity(pool, 'REJECT',
-      `Payment rejected — ${reason || 'No reason given'}`,
-      { queue_id: id }
-    );
-    res.json({ success: true });
-  } catch (err) {
-    console.error("cashier reject failed:", err);
-    res.status(500).json({ error: "Failed to reject" });
-  }
-});
-
-// GET /api/cashier-ops/credit-approvals
-router.get("/credit-approvals", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT cq.*, 
-              c.client_name, c.client_phone, c.pay_by, c.amount as credit_amount
-       FROM cashier_queue cq
-       LEFT JOIN credits c ON c.cashier_queue_id = cq.id
-       WHERE cq.status = 'PendingManagerApproval'
-       ORDER BY cq.created_at ASC`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("credit-approvals fetch failed:", err);
-    res.status(500).json({ error: "Failed to fetch credit approvals" });
-  }
-});
-
-// PATCH /api/cashier-ops/credit-approvals/:id/approve
-router.patch("/credit-approvals/:id/approve", async (req, res) => {
-  const { id } = req.params;
-  const { approved_by } = req.body || {};
-
-  try {
-    const qRes = await pool.query(`SELECT * FROM cashier_queue WHERE id = $1`, [id]);
-    if (!qRes.rows.length) return res.status(404).json({ error: "Approval request not found" });
-    const q = qRes.rows[0];
-
-    if (q.status !== "PendingManagerApproval") {
-      return res.status(400).json({ error: `Cannot approve — current status: ${q.status}` });
-    }
-
-    if (!q.credit_name || !q.credit_phone) {
-      return res.status(400).json({ 
-        error: "Cannot approve credit: missing client information. Please reject and have the waiter resend." 
-      });
-    }
-
-    let tableName = q.table_name;
-    if (!tableName && q.order_ids && q.order_ids.length > 0) {
-      const orderRes = await pool.query(
-        `SELECT table_name FROM orders WHERE id = $1`,
-        [q.order_ids[0]]
-      );
-      if (orderRes.rows.length > 0 && orderRes.rows[0].table_name) {
-        tableName = orderRes.rows[0].table_name;
-      }
-    }
-
-    if (!tableName) {
-      return res.status(400).json({ 
-        error: "Cannot approve credit: table_name is missing." 
-      });
-    }
-
-    await pool.query(
-      `UPDATE cashier_queue
-       SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW()
-       WHERE id = $2`,
-      [approved_by || "Manager", id]
-    );
-
-    // Update credits status to Approved
-    const creditUpdateRes = await pool.query(
-      `UPDATE credits
-       SET status = 'Approved',
-           approved_by = $1,
-           approved_at = NOW()
-       WHERE UPPER(table_name) = UPPER($2)
-         AND status IN ('PendingCashier', 'PendingManagerApproval')
-       RETURNING id`,
-      [approved_by || "Manager", tableName]
-    );
-
-    if (!creditUpdateRes.rows.length) {
-      await pool.query(
-        `INSERT INTO credits
-           (order_id, table_name, label, amount, amount_paid, balance,
-            client_name, client_phone, pay_by, approved_by, status, cashier_queue_id, created_at)
-         VALUES ($1, $2, $3, $4, 0, $4, $5, $6, $7, $8, 'Approved', $9, NOW())`,
-        [
-          q.order_ids?.[0] || null,
-          tableName,
-          q.label || `Credit – ${tableName}`,
-          Number(q.amount),
-          q.credit_name || null,
-          q.credit_phone || null,
-          q.credit_pay_by || null,
-          approved_by || "Manager",
-          id
-        ]
-      );
-    }
-
-    if (q.order_ids?.length) {
-      await pool.query(
-        `UPDATE orders
-         SET status = 'Credit', payment_method = 'Credit', sent_to_cashier = false
-         WHERE id = ANY($1::int[])`,
-        [q.order_ids]
-      );
-    }
-
-    await logActivity(pool, 'CREDIT_APPROVED',
-      `Credit approved — ${tableName} · ${q.credit_name || 'Client'} · UGX ${Number(q.amount).toLocaleString()} by ${approved_by || 'Manager'}`,
-      { queue_id: id, amount: q.amount, client: q.credit_name }
-    );
-    
-    res.json({ success: true });
-  } catch (err) {
-    console.error("credit approve failed:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/cashier-ops/cashier-history
-router.get("/cashier-history", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT cq.*
-       FROM cashier_queue cq
-       WHERE cq.status IN ('Confirmed', 'Rejected')
-         AND cq.method != 'Credit'
-         AND DATE(cq.created_at) = CURRENT_DATE
-       ORDER BY cq.confirmed_at DESC NULLS LAST
-       LIMIT 500`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("cashier-history failed:", err);
-    res.status(500).json({ error: "Failed to fetch history" });
-  }
-});
-
-// GET /api/cashier-ops/credits
-router.get("/credits", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT * FROM credits ORDER BY created_at DESC`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("credits fetch failed:", err);
-    res.status(500).json({ error: "Failed to fetch credits" });
-  }
-});
-
-// GET /api/staff/credit-settlements
-router.get("/staff/credit-settlements", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT 
-         cs.amount_paid,
-         cs.method as settle_method,
-         cs.created_at as settled_at,
-         c.waiter_name,
-         c.table_name,
-         c.client_name,
-         c.id as credit_id
-       FROM credit_settlements cs
-       JOIN credits c ON cs.credit_id = c.id
-       WHERE DATE(cs.created_at) = CURRENT_DATE
-       ORDER BY cs.created_at DESC`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Staff credit settlements fetch failed:", err);
-    res.status(500).json({ error: "Failed to fetch credit settlements" });
-  }
-});
-
-// PATCH /api/cashier-ops/credits/:id/settle
-router.patch("/credits/:id/settle", async (req, res) => {
-  const { id } = req.params;
-  const { settled_by, method, transaction_id, notes, amount_paid } = req.body || {};
-
-  try {
-    const cRes = await pool.query(`SELECT * FROM credits WHERE id = $1`, [id]);
-    if (!cRes.rows.length) return res.status(404).json({ error: "Credit not found" });
-    const credit = cRes.rows[0];
-
-    const paid_amount = Number(amount_paid) || 0;
-    const credit_total = Number(credit.amount);
-    const already_paid = Number(credit.amount_paid || 0);
-    const total_paid = already_paid + paid_amount;
-    const is_full = total_paid >= credit_total;
-
-    // Insert settlement record
-    await pool.query(
-      `INSERT INTO credit_settlements 
-         (credit_id, amount_paid, method, transaction_id, notes, settled_by)
+      `INSERT INTO purchases (purchase_date, supplier, total_amount, invoice_number, notes, created_by)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, paid_amount, method || "Cash", transaction_id || null, notes || null, settled_by]
+      [purchase_date, supplier || null, total_amount, invoice_number || null, notes || null, user]
     );
-
-    // Update credit record
-    await pool.query(
-      `UPDATE credits
-       SET paid = $1,
-           paid_at = CASE WHEN $1 THEN NOW() ELSE paid_at END,
-           settle_method = $2,
-           settle_txn = $3,
-           amount_paid = $4,
-           balance = $5,
-           status = $6
-       WHERE id = $7`,
-      [
-        is_full,
-        method || "Cash",
-        transaction_id,
-        total_paid,
-        credit_total - total_paid,
-        is_full ? 'FullySettled' : 'PartiallySettled',
-        id
-      ]
-    );
-
-    // ✅ CRITICAL: Update the associated order to Paid with correct payment method
-    if (credit.order_id) {
-      await pool.query(
-        `UPDATE orders
-         SET status = 'Paid',
-             payment_method = $1,
-             paid_at = NOW()
-         WHERE id = $2`,
-        [method || "Cash", credit.order_id]
-      );
-    }
-
-    // Update daily summary
-    await updateDailySummary({ amount: paid_amount, method: method || "Cash" });
-
-    res.json({ 
-      success: true, 
-      fully_settled: is_full,
-      remaining_balance: credit_total - total_paid,
-      total_paid: total_paid
-    });
+    res.status(201).json({ success: true });
   } catch (err) {
-    console.error("settle credit failed:", err);
+    console.error('❌ POST /purchases error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Add this to your accountant.js route file
-
-// GET /api/overview/weekly-revenue - FIXED to return proper data structure
-router.get('/weekly-revenue', async (req, res) => {
+// ─── 15. PURCHASES – Get purchases (optionally filtered by date range) ───────
+router.get('/purchases', async (req, res) => {
+  const { start, end } = req.query;
   try {
-    const today = kampalaDate();
-    
-    // Get last 7 days
-    const last7Days = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = kampalaDate(d);
-      last7Days.push(dateStr);
+    let query = 'SELECT * FROM purchases ORDER BY purchase_date DESC';
+    const params = [];
+    if (start && end) {
+      query = 'SELECT * FROM purchases WHERE purchase_date BETWEEN $1 AND $2 ORDER BY purchase_date DESC';
+      params.push(start, end);
     }
-    
-    const result = await pool.query(`
-      SELECT 
-        summary_date,
-        total_cash,
-        total_card,
-        total_mtn,
-        total_airtel,
-        total_settled_credits,
-        total_gross
-      FROM daily_summary 
-      WHERE summary_date >= $1
-      ORDER BY summary_date ASC
-    `, [last7Days[0]]);
-    
-    // Create a map of existing data
-    const dataMap = new Map();
-    result.rows.forEach(row => {
-      dataMap.set(row.summary_date, {
-        date: row.summary_date,
-        total_cash: Number(row.total_cash) || 0,
-        total_card: Number(row.total_card) || 0,
-        total_mtn: Number(row.total_mtn) || 0,
-        total_airtel: Number(row.total_airtel) || 0,
-        total_settled_credits: Number(row.total_settled_credits) || 0,
-        total_gross: Number(row.total_gross) || 0
-      });
-    });
-    
-    // Format the response with all 7 days
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const response = last7Days.map((date, index) => {
-      const data = dataMap.get(date) || {};
-      const dayOfWeek = new Date(date).getDay();
-      
-      return {
-        date: days[dayOfWeek],
-        fullDate: date,
-        total_cash: data.total_cash || 0,
-        total_card: data.total_card || 0,
-        total_mtn: data.total_mtn || 0,
-        total_airtel: data.total_airtel || 0,
-        total_settled_credits: data.total_settled_credits || 0,
-        total_gross: data.total_gross || 0
-      };
-    });
-    
-    console.log("📊 Weekly Revenue Response:", response);
-    res.json(response);
-    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
   } catch (err) {
-    console.error('Weekly revenue error:', err);
+    console.error('❌ GET /purchases error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 16. INVENTORY SNAPSHOTS – Record a snapshot ────────────────────────────
+router.post('/inventory-snapshots', async (req, res) => {
+  const { snapshot_date, total_value, notes } = req.body;
+  if (!snapshot_date || total_value === undefined) {
+    return res.status(400).json({ error: 'snapshot_date and total_value are required' });
+  }
+  const user = req.user?.name || 'Accountant';
+  try {
+    await pool.query(
+      `INSERT INTO inventory_snapshots (snapshot_date, total_value, notes, created_by)
+       VALUES ($1, $2, $3, $4)`,
+      [snapshot_date, total_value, notes || null, user]
+    );
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('❌ POST /inventory-snapshots error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 17. INVENTORY SNAPSHOTS – Get snapshots (by date or latest) ────────────
+router.get('/inventory-snapshots', async (req, res) => {
+  const { date, latest } = req.query;
+  try {
+    if (latest === 'true') {
+      const result = await pool.query(
+        `SELECT * FROM inventory_snapshots ORDER BY snapshot_date DESC LIMIT 1`
+      );
+      return res.json(result.rows[0] || null);
+    }
+    if (date) {
+      const result = await pool.query(
+        `SELECT * FROM inventory_snapshots WHERE snapshot_date = $1 ORDER BY snapshot_date DESC`,
+        [date]
+      );
+      return res.json(result.rows[0] || null);
+    }
+    const result = await pool.query(`SELECT * FROM inventory_snapshots ORDER BY snapshot_date DESC`);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('❌ GET /inventory-snapshots error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 18. REPORT: INCOME STATEMENT ───────────────────────────────────────────
+router.post('/reports/income-statement', async (req, res) => {
+  const { startDate, endDate } = req.body;
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
+  }
+  try {
+    // Beginning inventory (latest snapshot before startDate)
+    const beginningRes = await pool.query(
+      `SELECT total_value FROM inventory_snapshots
+       WHERE snapshot_date < $1
+       ORDER BY snapshot_date DESC LIMIT 1`,
+      [startDate]
+    );
+    const beginning = Number(beginningRes.rows[0]?.total_value) || 0;
+
+    // Ending inventory (latest snapshot on or before endDate)
+    const endingRes = await pool.query(
+      `SELECT total_value FROM inventory_snapshots
+       WHERE snapshot_date <= $1
+       ORDER BY snapshot_date DESC LIMIT 1`,
+      [endDate]
+    );
+    const ending = Number(endingRes.rows[0]?.total_value) || 0;
+
+    // Sum of purchases in period
+    const purchasesRes = await pool.query(
+      `SELECT COALESCE(SUM(total_amount), 0) AS total
+       FROM purchases
+       WHERE purchase_date BETWEEN $1 AND $2`,
+      [startDate, endDate]
+    );
+    const purchases = Number(purchasesRes.rows[0].total);
+
+    const cogs = beginning + purchases - ending;
+
+    // Total revenue from daily_summary (gross sales + credit settlements)
+    const revenueRes = await pool.query(
+      `SELECT COALESCE(SUM(total_gross), 0) AS total_revenue
+       FROM daily_summary
+       WHERE summary_date BETWEEN $1 AND $2`,
+      [startDate, endDate]
+    );
+    const totalRevenue = Number(revenueRes.rows[0].total_revenue);
+
+    const grossProfit = totalRevenue - cogs;
+    const netIncome = grossProfit; // you can subtract other expenses later
+
+    res.json({
+      revenue: totalRevenue,
+      cogs: cogs,
+      grossProfit: grossProfit,
+      netIncome: netIncome,
+      beginning_inventory: beginning,
+      purchases: purchases,
+      ending_inventory: ending,
+    });
+  } catch (err) {
+    console.error('❌ POST /reports/income-statement error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 19. REPORT: BALANCE SHEET (simplified) ─────────────────────────────────
+router.post('/reports/balance-sheet', async (req, res) => {
+  const { asOfDate } = req.body;
+  if (!asOfDate) {
+    return res.status(400).json({ error: 'asOfDate is required' });
+  }
+  try {
+    // Inventory asset
+    const inventoryRes = await pool.query(
+      `SELECT total_value FROM inventory_snapshots
+       WHERE snapshot_date <= $1
+       ORDER BY snapshot_date DESC LIMIT 1`,
+      [asOfDate]
+    );
+    const inventory = Number(inventoryRes.rows[0]?.total_value) || 0;
+
+    // You can add more asset/liability queries here (e.g., cash from daily_summary)
+    // For now, return a simple structure.
+    res.json({
+      assets: {
+        inventory: inventory,
+        cash: 0,           // TODO: sum of daily cash on asOfDate
+        receivables: 0,    // TODO: outstanding credits as of asOfDate
+        total_assets: inventory,
+      },
+      liabilities: {
+        total_liabilities: 0,
+      },
+      equity: {
+        total_equity: inventory, // placeholder – should be assets - liabilities
+      },
+    });
+  } catch (err) {
+    console.error('❌ POST /reports/balance-sheet error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -2,13 +2,12 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Receipt, Calculator, CheckCircle2, X, LogOut,
-  RotateCcw, BookOpen, BarChart3, Wallet, Sparkles, Menu
+  RotateCcw, BookOpen, BarChart3, Wallet, Sparkles, Menu, FileText
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
 import { useData } from "../../customer/components/context/DataContext";
 
-// ✅ Store component FUNCTIONS, not JSX
 const DESKTOP_MENU_ITEMS = [
   { key: "FINANCIAL_HISTORY", label: "Dashboard",          icon: Receipt },
   { key: "PHYSICAL_COUNT",    label: "Physical Finances",  icon: Calculator },
@@ -16,8 +15,8 @@ const DESKTOP_MENU_ITEMS = [
   { key: "MONTHLY_COSTS",     label: "Monthly Costs",      icon: Wallet },
   { key: "CREDITS",           label: "Credits",            icon: BookOpen },
   { key: "VIEW_SALES",        label: "View Sales",         icon: BarChart3 },
-  { key: "START_NEW_DAY",     label: "Start New Day",      icon: Sparkles },
-  { key: "REOPEN_DAY",        label: "Reopen Day",         icon: RotateCcw },
+ // { key: "REPORTS",           label: "Reports",            icon: FileText },   
+  { key: "REOPEN_DAY",        label: "Reopen Day",         icon: RotateCcw },   
   { key: "END_OF_SHIFT",      label: "End of Shift",       icon: RotateCcw },
 ];
 
@@ -27,7 +26,7 @@ const BOTTOM_NAV_ITEMS = [
   { key: "CREDITS",    label: "Credits", icon: BookOpen },
 ];
 
-// Drawer menu items (all items except bottom nav items)
+// Drawer menu items – includes Reports (all except bottom nav items)
 const DRAWER_MENU_ITEMS = DESKTOP_MENU_ITEMS.filter(
   item => !BOTTOM_NAV_ITEMS.some(nav => nav.key === item.key)
 );
@@ -62,7 +61,6 @@ export default function SideBar({
     navigate('/staff/login');
   };
 
-  // Unified NavButton – receives component function, not JSX
   const NavButton = ({ item, showLabel = true, onClick, isActive, badge }) => {
     const Icon = item.icon;
     return (
@@ -118,7 +116,6 @@ export default function SideBar({
               ${isOpen ? "translate-x-0" : "translate-x-full"}
               ${dark ? "bg-zinc-950 border-l border-white/5" : "bg-white border-l border-gray-200"}`}
           >
-            {/* Drawer header */}
             <div className={`flex items-center gap-3 p-5 border-b ${dark ? "border-white/5" : "border-gray-200"}`}>
               <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30" />
               <div>
@@ -129,9 +126,6 @@ export default function SideBar({
               </div>
             </div>
 
-           
-
-            {/* Drawer menu items */}
             <nav className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
               {DRAWER_MENU_ITEMS.map((item) => {
                 let badge = null;
@@ -150,7 +144,6 @@ export default function SideBar({
               })}
             </nav>
 
-            {/* Logout in drawer */}
             <div className={`p-4 border-t ${dark ? "border-white/5" : "border-gray-200"}`}>
               <button
                 onClick={handleLogout}
@@ -162,7 +155,7 @@ export default function SideBar({
           </div>
         </div>
 
-        {/* Bottom Navigation Bar (two items) */}
+        {/* Bottom Navigation Bar */}
         <div
           className={`fixed bottom-0 left-0 right-0 z-30 flex justify-around items-center px-3 py-2 border-t backdrop-blur-lg
             ${dark ? "bg-zinc-950/95 border-white/10" : "bg-white/95 border-gray-200 shadow-lg"}`}
@@ -198,8 +191,6 @@ export default function SideBar({
             );
           })}
         </div>
-
-        {/* Bottom spacing */}
         <div className="pb-20" />
       </>
     );
@@ -211,7 +202,6 @@ export default function SideBar({
       className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
         ${dark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
     >
-      {/* Logo header – unified */}
       <div className={`flex items-center gap-3 p-5 border-b ${dark ? "border-white/5" : "border-gray-200"}`}>
         <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30 shrink-0" />
         <div className="min-w-0">
@@ -226,9 +216,6 @@ export default function SideBar({
         </div>
       </div>
 
-      
-
-      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {DESKTOP_MENU_ITEMS.map((item) => {
           let badge = null;
@@ -247,7 +234,6 @@ export default function SideBar({
         })}
       </nav>
 
-      {/* Logout – unified */}
       <div className={`px-3 pb-5 pt-3 border-t ${dark ? "border-white/5" : "border-gray-200"}`}>
         <button
           onClick={handleLogout}

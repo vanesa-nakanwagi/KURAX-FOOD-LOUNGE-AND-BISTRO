@@ -12,23 +12,23 @@ const pool = new Pool({
   },
 });
 
-// 🔥 Listen for idle client errors to prevent Node from crashing
+//  Listen for idle client errors to prevent Node from crashing
 pool.on('error', (err, client) => {
-  console.error('❌ Unexpected idle client error:', err.message);
+  console.error('Unexpected idle client error:', err.message);
 });
 
 // 🔹 Optional: Test connection at startup
 (async () => {
   try {
     const client = await pool.connect();
-    console.log('✅ Database connected successfully to Neon');
+    console.log('Database connected successfully to Neon');
     client.release();
   } catch (err) {
-    console.error('❌ Database connection failed:', err.message);
-    console.error('❌ Error code:', err.code);           // add this
-    console.error('❌ Error detail:', err);
+    console.error('Database connection failed:', err.message);
+    console.error('Error code:', err.code);           // add this
+    console.error('Error detail:', err);
     console.error(
-      '❌ DATABASE_URL is',
+      'DATABASE_URL is',
       process.env.DATABASE_URL ? 'Set' : 'NOT SET'
     );
   }

@@ -6,7 +6,7 @@ import {
   Search, RotateCcw, Trophy, UserPlus, AlertCircle,
   ChefHat, Power, X, ShieldAlert
 } from "lucide-react";
-import Footer from "../../customer/components/common/Foooter";
+
 import API_URL from "../../config/api";
 
 // ─── KAMPALA DATE ─────────────────────────────────────────────────────────────
@@ -542,7 +542,7 @@ export default function KitchenDisplay() {
         )}
       </div>
 
-      <Footer/>
+    
     </div>
   );
 }

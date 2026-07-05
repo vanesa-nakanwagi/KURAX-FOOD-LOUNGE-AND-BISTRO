@@ -8,7 +8,7 @@ import {
   AlertTriangle, Clock, Receipt, Banknote,
   Calendar, User, BookOpen, ClipboardList, Search, Hourglass,
   CheckCircle2, XCircle, Award, CircleDollarSign, Zap
-} from 'lucide-react';
+} from "lucide-react";
 import API_URL from "../../../config/api";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -19,15 +19,9 @@ function toLocalDateStr(date) {
 }
 function getTodayLocal() { return toLocalDateStr(new Date()); }
 
+// ✅ Full amount formatter (no abbreviations)
 function fmtUGX(n) {
   return `UGX ${Number(n || 0).toLocaleString()}`;
-}
-
-function fmtLargeNumber(n) {
-  const num = Number(n || 0);
-  if (num >= 1_000_000) return `UGX ${(num / 1_000_000).toFixed(1)}M`;
-  if (num >= 1_000) return `UGX ${(num / 1_000).toFixed(0)}K`;
-  return `UGX ${num.toLocaleString()}`;
 }
 
 // ─── PENDING PAYMENT PERSISTENCE ─────────────────────────────────────────────
@@ -127,7 +121,7 @@ function PayModal({ target, onClose, onSend }) {
           <div className="min-w-0 flex-1">
             <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">{isItem ? "Item Payment" : "Table Payment"} · {target?.tableName}</p>
             <h2 className="text-base sm:text-lg font-medium text-yellow-900 uppercase tracking-tight leading-tight truncate">{label}</h2>
-            <p className="text-zinc-600 text-xs mt-0.5 font-bold">UGX {amount.toLocaleString()}</p>
+            <p className="text-zinc-600 text-xs mt-0.5 font-bold">{fmtUGX(amount)}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-yellow-100 flex items-center justify-center hover:bg-yellow-200 shrink-0 transition-all">
             <X size={16} className="text-yellow-700" />
@@ -196,7 +190,7 @@ function PayModal({ target, onClose, onSend }) {
           )}
           <div className="bg-yellow-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex justify-between items-center border border-yellow-200">
             <span className="text-[10px] sm:text-[11px] font-semibold text-yellow-700 uppercase tracking-widest">{isItem ? "Item Total" : "Table Total"}</span>
-            <span className="font-black text-yellow-900 text-lg sm:text-xl">UGX {amount.toLocaleString()}</span>
+            <span className="font-black text-yellow-900 text-lg sm:text-xl">{fmtUGX(amount)}</span>
           </div>
           <button disabled={!canSend || sending} onClick={handleSend}
             className={`w-full py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-md
@@ -250,7 +244,7 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
               <span className="text-gray-900 font-black text-xs sm:text-sm truncate">{item?.name}</span>
               <span className="text-yellow-600 font-black text-xs sm:text-sm shrink-0">x{item?.quantity || 1}</span>
             </div>
-            <p className="text-gray-500 text-[9px] sm:text-[10px] mt-1">UGX {Number(item?.price || 0).toLocaleString()}</p>
+            <p className="text-gray-500 text-[9px] sm:text-[10px] mt-1">{fmtUGX(item?.price || 0)}</p>
           </div>
           <textarea 
             value={reason} 
@@ -283,7 +277,7 @@ function VoidModal({ item, tableName, onClose, onConfirmVoid }) {
   );
 }
 
-// ─── CREDIT STATUS HELPER (without emojis) ─────────────────────────────────────
+// ─── CREDIT STATUS HELPER ─────────────────────────────────────────────────────
 function getCreditStatusDisplay(credit) {
   const status = credit.status;
   const isFullySettled = status === "FullySettled" || credit.paid === true;
@@ -301,7 +295,7 @@ function getCreditStatusDisplay(credit) {
   return { label: "Outstanding", color: "text-purple-400", bg: "bg-purple-500/10", icon: <BookOpen size={10} /> };
 }
 
-// ─── CREDITED ITEMS PANEL ─────────────────────────────────────────────────────
+// ─── CREDITED ITEMS PANEL (full amounts) ─────────────────────────────────────
 function CreditedItemsPanel({ creditedItems, theme }) {
   const isDark = theme === "dark";
   const myCredits = creditedItems || [];
@@ -354,7 +348,7 @@ function CreditedItemsPanel({ creditedItems, theme }) {
           </div>
           <div className="mb-3 pb-2 border-b border-zinc-100">
             <p className="text-[9px] sm:text-[10px] text-yellow-900">Total Settled</p>
-            <p className="text-base sm:text-lg font-black text-emerald-600 break-words">{fmtLargeNumber(creditStats.settled.amount)}</p>
+            <p className="text-base sm:text-lg font-black text-emerald-600 break-words">{fmtUGX(creditStats.settled.amount)}</p>
           </div>
           <div className="space-y-2 sm:space-y-3 max-h-80 overflow-y-auto">
             {myCredits.filter(c => c.status === "FullySettled" || c.status === "PartiallySettled" || c.paid === true).map((credit, idx) => {
@@ -390,7 +384,7 @@ function CreditedItemsPanel({ creditedItems, theme }) {
           </div>
           <div className="mb-3 pb-2 border-b border-zinc-100">
             <p className="text-[9px] sm:text-[10px] text-yellow-900">Total Outstanding</p>
-            <p className="text-base sm:text-lg font-black text-orange-600 break-words">{fmtLargeNumber(creditStats.outstanding.amount)}</p>
+            <p className="text-base sm:text-lg font-black text-orange-600 break-words">{fmtUGX(creditStats.outstanding.amount)}</p>
           </div>
           <div className="space-y-2 sm:space-y-3 max-h-80 overflow-y-auto">
             {myCredits.filter(c => c.status === "Approved" || c.status === "PartiallySettled").map((credit, idx) => {
@@ -423,7 +417,7 @@ function CreditedItemsPanel({ creditedItems, theme }) {
           </div>
           <div className="mb-3 pb-2 border-b border-zinc-100">
             <p className="text-[9px] sm:text-[10px] text-yellow-900">Total Rejected</p>
-            <p className="text-base sm:text-lg font-black text-red-600 break-words">{fmtLargeNumber(creditStats.rejected.amount)}</p>
+            <p className="text-base sm:text-lg font-black text-red-600 break-words">{fmtUGX(creditStats.rejected.amount)}</p>
           </div>
           <div className="space-y-2 sm:space-y-3 max-h-80 overflow-y-auto">
             {myCredits.filter(c => c.status === "Rejected").map((credit, idx) => {
@@ -483,7 +477,7 @@ function CreditedItemsPanel({ creditedItems, theme }) {
   );
 }
 
-// ─── RECENTLY PAID ITEMS PANEL ────────────────────────────────────────────────
+// ─── RECENTLY PAID ITEMS PANEL (full amounts) ────────────────────────────────
 function RecentlyPaidItemsPanel({ orders, theme }) {
   const isDark = theme === "dark";
   const paidItems = useMemo(() => {
@@ -568,7 +562,7 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
   );
 }
 
-// ─── ORDER CARD (with paid item badge, no emojis) ─────────────────────────────
+// ─── ORDER CARD ───────────────────────────────────────────────────────────────
 function OrderCard({ 
   order, 
   theme, 
@@ -619,7 +613,7 @@ function OrderCard({
 
   const isAwaitingCashier = tablePaymentPending || hasAnyPaymentRequested;
 
-  // ── Display status (no emojis) ──
+  // ── Display status ──
   let displayStatus = order.status;
   let displayColor  = "text-zinc-400";
   let displayBg     = "bg-zinc-500/10 border-zinc-500/20";
@@ -672,7 +666,7 @@ function OrderCard({
             <div className="min-w-0 flex-1">
               <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>{order.tableName}</span>
               <p className="text-[9px] sm:text-[10px] font-bold text-zinc-500">
-                {nonVoidedItems.length} items · UGX {(order.total || 0).toLocaleString()}
+                {nonVoidedItems.length} items · {fmtUGX(order.total || 0)}
               </p>
             </div>
             <div className="flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg sm:rounded-xl border text-[7px] sm:text-[8px] font-black uppercase bg-emerald-500/10 border-emerald-500/20 text-emerald-400">
@@ -695,7 +689,7 @@ function OrderCard({
           <div className="min-w-0 flex-1">
             <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>{order.tableName}</span>
             <p className="text-[9px] sm:text-[10px] font-bold text-zinc-900">
-              {nonVoidedItems.length} items · UGX {(order.total || 0).toLocaleString()}
+              {nonVoidedItems.length} items · {fmtUGX(order.total || 0)}
             </p>
           </div>
           <div className={`flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg sm:rounded-xl border text-[7px] sm:text-[8px] font-black uppercase ${displayBg} ${displayColor}`}>
@@ -741,7 +735,7 @@ function OrderCard({
                         {isCreditRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">(credit pending)</span>}
                       </p>
                       <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
-                        ×{item.quantity || 1} · UGX {Number(item.price || 0).toLocaleString()}
+                        ×{item.quantity || 1} · {fmtUGX(item.price || 0)}
                       </p>
                     </div>
                   </div>
@@ -784,7 +778,7 @@ function OrderCard({
                   <div className="flex justify-between items-center gap-2">
                     <div className="min-w-0">
                       <p className="font-black text-[9px] sm:text-[11px] line-through text-zinc-500 break-words">{item.name}</p>
-                      <p className="text-[7px] sm:text-[8px] font-bold text-zinc-500">×{item.quantity || 1} · UGX {Number(item.price || 0).toLocaleString()}</p>
+                      <p className="text-[7px] sm:text-[8px] font-bold text-zinc-500">×{item.quantity || 1} · {fmtUGX(item.price || 0)}</p>
                     </div>
                     <span className="text-[7px] sm:text-[8px] text-red-400 font-black shrink-0">VOIDED</span>
                   </div>
@@ -843,7 +837,7 @@ function OrderCard({
   );
 }
 
-// ─── VOIDED ITEMS PANEL ───────────────────────────────────────────────────────
+// ─── VOIDED ITEMS PANEL (full amounts) ───────────────────────────────────────
 function VoidedItemsPanel({ voidedItems, theme }) {
   const isDark = theme === "dark";
   if (!voidedItems || voidedItems.length === 0) {
@@ -865,7 +859,7 @@ function VoidedItemsPanel({ voidedItems, theme }) {
     <div className="space-y-3 sm:space-y-4 pb-6 sm:pb-8">
       <div className={`rounded-xl sm:rounded-2xl border p-3 sm:p-4 ${isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"}`}>
         <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-red-400 mb-1">Total Cancelled Value</p>
-        <p className="text-lg sm:text-2xl font-black text-red-400">UGX {totalVoided.toLocaleString()}</p>
+        <p className="text-lg sm:text-2xl font-black text-red-400">{fmtUGX(totalVoided)}</p>
         <p className={`text-[8px] sm:text-[9px] font-bold mt-0.5 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{voidedItems.length} item{voidedItems.length !== 1 ? "s" : ""} voided</p>
       </div>
       <div className="space-y-2">
@@ -888,7 +882,7 @@ function VoidedItemsPanel({ voidedItems, theme }) {
                 {item.voidedAt && <p className={`text-[7px] sm:text-[8px] font-bold mt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>{new Date(item.voidedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
               </div>
               <div className="text-right shrink-0">
-                <p className="text-base sm:text-lg font-black text-red-400">UGX {(Number(item.price) * Number(item.quantity || 1)).toLocaleString()}</p>
+                <p className="text-base sm:text-lg font-black text-red-400">{fmtUGX(Number(item.price) * Number(item.quantity || 1))}</p>
               </div>
             </div>
           </div>
@@ -1116,7 +1110,7 @@ export default function OrderHistory({ onAddItems }) {
     markPending(lsKey);
     try {
       if (payload.method === "Credit" && (!payload.creditInfo?.name || !payload.creditInfo?.phone)) {
-        alert("❌ Client name and phone number are required for credit requests!");
+        alert("Error: Client name and phone number are required for credit requests!");
         clearPending(lsKey);
         return;
       }
@@ -1138,21 +1132,21 @@ export default function OrderHistory({ onAddItems }) {
         body: JSON.stringify(requestBody),
       });
       if (res.ok) {
-        alert("✅ Payment request sent to cashier!");
+        alert("Success: Payment request sent to cashier!");
         refreshData?.();
         fetchCredits();
       } else {
         const error = await res.json().catch(() => ({}));
         if (res.status === 409) {
-          alert("⚠️ A pending request for this table/item already exists. Please wait for the cashier to confirm.");
+          alert("Warning: A pending request for this table/item already exists. Please wait for the cashier to confirm.");
         } else {
-          alert(`❌ Failed to send payment: ${error.error || "Unknown error"}`);
+          alert(`Error: Failed to send payment - ${error.error || "Unknown error"}`);
           clearPending(lsKey);
         }
       }
     } catch (err) {
       console.error("Send failed:", err);
-      alert(`❌ Network error: ${err.message}`);
+      alert(`Network error: ${err.message}`);
       clearPending(lsKey);
     } finally {
       setIsPaying(false);
@@ -1168,14 +1162,14 @@ export default function OrderHistory({ onAddItems }) {
         body: JSON.stringify({ order_id: orderId, item_name: item.name, reason, requested_by: currentStaffName }),
       });
       if (res.ok) {
-        alert(`✅ Void request for "${item.name}" sent to accountant for approval!`);
+        alert(`Success: Void request for "${item.name}" sent to accountant for approval!`);
         refreshData?.();
       } else {
         const errData = await res.json().catch(() => ({}));
-        alert(`❌ Failed to send void request: ${errData.error || "Unknown error"}`);
+        alert(`Error: Failed to send void request - ${errData.error || "Unknown error"}`);
       }
     } catch (err) {
-      alert(`❌ Network error: ${err.message}`);
+      alert(`Network error: ${err.message}`);
     }
   }, [currentStaffName, refreshData]);
 
@@ -1305,7 +1299,7 @@ export default function OrderHistory({ onAddItems }) {
                   if (isPaying) return;
                   const lsKey = pendingItemKey(ord?.tableName ?? order.tableName, item?.name);
                   if (pendingPayments[lsKey]) {
-                    alert("⚠️ A payment request for this item is already pending with the cashier.");
+                    alert("Warning: A payment request for this item is already pending with the cashier.");
                     return;
                   }
                   setIsPaying(true);
@@ -1322,7 +1316,7 @@ export default function OrderHistory({ onAddItems }) {
                   if (isPaying) return;
                   const lsKey = pendingTableKey(o.tableName);
                   if (pendingPayments[lsKey]) {
-                    alert("⚠️ A payment request for this table is already pending with the cashier.");
+                    alert("Warning: A payment request for this table is already pending with the cashier.");
                     return;
                   }
                   setIsPaying(true);

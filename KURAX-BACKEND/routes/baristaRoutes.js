@@ -56,7 +56,7 @@ router.post('/tickets', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2a. GET /api/barista/tickets/summary  — ⚠️ registered BEFORE /:id routes
+// 2a. GET /api/barista/tickets/summary  —  registered BEFORE /:id routes
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/tickets/summary', async (req, res) => {
   const date = req.query.date || kampalaDate();
@@ -103,7 +103,6 @@ router.get('/tickets/summary', async (req, res) => {
       [date]
     );
 
-    // FIXED: Removed cleared_by_barista column that doesn't exist
     const ticketsRes = await pool.query(
       `SELECT id, order_id, table_name, staff_name, items,
               total, status, ready_at, cleared_at, created_at
@@ -215,7 +214,7 @@ router.patch('/clear-shift', async (req, res) => {
        RETURNING id`,
       [cleared_by, date]
     );
-    console.log(`✅ Barista shift cleared by ${cleared_by} — ${result.rowCount} ticket(s) archived`);
+    console.log(`Barista shift cleared by ${cleared_by} — ${result.rowCount} ticket(s) archived`);
     res.json({ cleared: result.rowCount, cleared_by, date });
   } catch (err) {
     console.error('Clear barista shift error:', err.message);

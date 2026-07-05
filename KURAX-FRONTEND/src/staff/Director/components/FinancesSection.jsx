@@ -18,14 +18,13 @@ function monthLabel(ym) {
   return new Date(Number(y), Number(m) - 1, 1)
     .toLocaleString("en-US", { month: "long", year: "numeric" });
 }
-function fmtUGX(n) {
-  const v = Number(n || 0);
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000)     return `${(v / 1_000).toFixed(0)}K`;
-  return v.toLocaleString();
+// ✅ FULL NUMBER FORMATTER (no abbreviation)
+function formatFullAmount(n) {
+  const num = Number(n || 0);
+  return `UGX ${num.toLocaleString()}`;
 }
 
-// ─── SVG RING ────────────────────────────────────────────────────────────────
+// ─── SVG RING (unchanged, but label formatting uses full amounts) ────────────
 function Ring({ pct = 0, size = 72, stroke = 7, color = "#EAB308", bg = "rgba(0,0,0,0.06)", label, sub }) {
   const r  = (size - stroke) / 2;
   const cx = size / 2;
@@ -54,12 +53,12 @@ function Ring({ pct = 0, size = 72, stroke = 7, color = "#EAB308", bg = "rgba(0,
         </div>
       </div>
       {label && <p className="text-[8px] font-black uppercase tracking-widest text-gray-500 text-center leading-tight max-w-[70px]">{label}</p>}
-      {sub   && <p className="text-[9px] font-bold text-gray-800 text-center leading-none">{sub}</p>}
+      {sub   && <p className="text-[9px] font-bold text-gray-800 text-center leading-none break-words">{sub}</p>}
     </div>
   );
 }
 
-// ─── CREDIT STATUS BADGE ─────────────────────────────────────────────────────
+// ─── CREDIT STATUS BADGE (unchanged) ─────────────────────────────────────────
 function CreditStatusBadge({ status }) {
   const s = String(status || "").toLowerCase();
   const map = {
@@ -78,7 +77,7 @@ function CreditStatusBadge({ status }) {
   );
 }
 
-// ─── SECTION HEADER ──────────────────────────────────────────────────────────
+// ─── SECTION HEADER (unchanged) ──────────────────────────────────────────────
 function SectionHeader({ title, sub, right }) {
   return (
     <div className="flex items-start justify-between gap-4 mb-5">
@@ -94,7 +93,7 @@ function SectionHeader({ title, sub, right }) {
   );
 }
 
-// ─── DIVIDER ─────────────────────────────────────────────────────────────────
+// ─── DIVIDER (unchanged) ─────────────────────────────────────────────────────
 function Divider() {
   return <div className="border-t border-gray-200 my-8" />;
 }
@@ -318,34 +317,34 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
                 stroke={8}
                 color={marginPct >= 0 ? "#22c55e" : "#ef4444"}
                 label="Net Margin"
-                sub={`UGX ${fmtUGX(net)}`}
+                sub={formatFullAmount(net)}
               />
             </div>
 
             <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
-              <Ring pct={100} size={72} stroke={6} color="#EAB308" label="Gross Sales" sub={`UGX ${fmtUGX(grossSales)}`} />
+              <Ring pct={100} size={72} stroke={6} color="#EAB308" label="Gross Sales" sub={formatFullAmount(grossSales)} />
             </div>
 
             <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
-              <Ring pct={cashPct} size={72} stroke={6} color="#34d399" label="Cash Share" sub={`UGX ${fmtUGX(rawCash)}`} />
+              <Ring pct={cashPct} size={72} stroke={6} color="#34d399" label="Cash Share" sub={formatFullAmount(rawCash)} />
             </div>
 
             <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
-              <Ring pct={cardPct} size={72} stroke={6} color="#3b82f6" label="Card Share" sub={`UGX ${fmtUGX(rawCard)}`} />
+              <Ring pct={cardPct} size={72} stroke={6} color="#3b82f6" label="Card Share" sub={formatFullAmount(rawCard)} />
             </div>
 
             <div className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border border-gray-200 bg-gray-50">
-              <Ring pct={momoPct} size={72} stroke={6} color="#10b981" label="Mobile Money Share" sub={`UGX ${fmtUGX(mobileMoney)}`} />
+              <Ring pct={momoPct} size={72} stroke={6} color="#10b981" label="Mobile Money Share" sub={formatFullAmount(mobileMoney)} />
             </div>
           </div>
 
           {/* KPI Tiles: Total Revenue, Total Expenses, Net Profit */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-6">
-            <KpiTile label="Total Revenue"  value={`UGX ${totalRevenue.toLocaleString()}`}   accent="text-gray-900" />
-            <KpiTile label="Total Expenses" value={`UGX ${expenses.toLocaleString()}`} accent="text-red-600" />
+            <KpiTile label="Total Revenue"  value={formatFullAmount(totalRevenue)}   accent="text-gray-900" />
+            <KpiTile label="Total Expenses" value={formatFullAmount(expenses)} accent="text-red-600" />
             <KpiTile
               label="Net Profit"
-              value={`UGX ${Math.abs(net).toLocaleString()}`}
+              value={formatFullAmount(Math.abs(net))}
               accent={net >= 0 ? "text-emerald-600" : "text-red-600"}
               icon={net >= 0 ? <TrendingUp size={12}/> : <TrendingDown size={12}/>}
               className="col-span-2 md:col-span-1"
@@ -361,16 +360,16 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
       {/* ══ 3. CREDITS LEDGER ════════════════════════════════════════════ */}
       <SectionHeader
         title="Credits Ledger"
-        sub={`${monthStats.total} total · ${monthStats.settled} settled · UGX ${fmtUGX(monthStats.totalSettled)} collected`}
+        sub={`${monthStats.total} total · ${monthStats.settled} settled · ${formatFullAmount(monthStats.totalSettled)} collected`}
         right={
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="text-[8px] font-black uppercase text-gray-500">Settled Amount</p>
-              <p className="text-sm font-black text-emerald-600">UGX {fmtUGX(monthStats.totalSettled)}</p>
+              <p className="text-sm font-black text-emerald-600">{formatFullAmount(monthStats.totalSettled)}</p>
             </div>
             <div className="text-right">
               <p className="text-[8px] font-black uppercase text-gray-500">Outstanding</p>
-              <p className="text-sm font-black text-purple-600">UGX {fmtUGX(monthStats.totalOutstanding)}</p>
+              <p className="text-sm font-black text-purple-600">{formatFullAmount(monthStats.totalOutstanding)}</p>
             </div>
           </div>
         }
@@ -436,7 +435,7 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
           !profitLoad && (
             <div className="text-right mt-1">
               <p className="text-[8px] font-black uppercase text-gray-500 tracking-wider">Total</p>
-              <p className="text-lg font-black text-red-600">UGX {fmtUGX(costs.fixed_total)}</p>
+              <p className="text-lg font-black text-red-600">{formatFullAmount(costs.fixed_total)}</p>
             </div>
           )
         }
@@ -464,7 +463,7 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
             {fixedItems.length} line item{fixedItems.length !== 1 ? "s" : ""} · {monthLabel(month)}
           </p>
           <p className="text-lg font-black text-red-600">
-            UGX {Number(costs.fixed_total || 0).toLocaleString()}
+            {formatFullAmount(costs.fixed_total)}
           </p>
         </div>
       )}
@@ -472,20 +471,20 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
   );
 }
 
-// ─── KPI TILE ────────────────────────────────────────────────────────────────
+// ─── KPI TILE (uses full amount) ─────────────────────────────────────────────
 function KpiTile({ label, value, accent, icon, className = "" }) {
   return (
     <div className={`p-4 rounded-2xl border border-gray-200 bg-gray-50 ${className}`}>
       <p className="text-[8px] font-black uppercase tracking-widest text-gray-500 mb-1">{label}</p>
       <div className={`flex items-center gap-1.5 font-black text-base ${accent}`}>
         {icon}
-        {value}
+        <span className="break-words">{value}</span>
       </div>
     </div>
   );
 }
 
-// ─── CREDIT CARD ITEM ────────────────────────────────────────────────────────
+// ─── CREDIT CARD ITEM (full amounts) ─────────────────────────────────────────
 function CreditCardItem({ credit, Badge }) {
   const date = credit.created_at || credit.confirmed_at;
   const dateStr = date
@@ -508,7 +507,7 @@ function CreditCardItem({ credit, Badge }) {
   } else if (isPartiallySettled) {
     const remaining = Number(credit.amount || 0) - Number(credit.amount_paid || 0);
     amountColor = "text-amber-600";
-    statusLabel = ` (${fmtUGX(remaining)} left)`;
+    statusLabel = ` (${formatFullAmount(remaining)} left)`;
   } else if (isRejected) {
     amountColor = "text-red-600";
   } else if (isApproved) {
@@ -546,12 +545,12 @@ function CreditCardItem({ credit, Badge }) {
       </div>
 
       <div className="text-right shrink-0">
-        <p className={`text-sm font-black ${amountColor}`}>
-          UGX {Number(displayAmount || 0).toLocaleString()}{statusLabel}
+        <p className={`text-sm font-black ${amountColor} break-words`}>
+          {formatFullAmount(displayAmount)}{statusLabel}
         </p>
         {isPartiallySettled && credit.amount_paid > 0 && (
           <p className="text-[8px] font-bold text-emerald-600 mt-0.5">
-            Paid: UGX {Number(credit.amount_paid).toLocaleString()}
+            Paid: {formatFullAmount(credit.amount_paid)}
           </p>
         )}
         {isSettled && credit.settle_method && (
@@ -562,7 +561,7 @@ function CreditCardItem({ credit, Badge }) {
   );
 }
 
-// ─── EXPENSE ROW ─────────────────────────────────────────────────────────────
+// ─── EXPENSE ROW (full amounts) ──────────────────────────────────────────────
 function ExpenseRow({ item }) {
   return (
     <div className="group flex items-start justify-between gap-3 p-4 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-all relative overflow-hidden">
@@ -575,7 +574,7 @@ function ExpenseRow({ item }) {
         </p>
       </div>
       <div className="text-right shrink-0">
-        <p className="text-sm font-black text-red-600">UGX {Number(item.amount).toLocaleString()}</p>
+        <p className="text-sm font-black text-red-600 break-words">{formatFullAmount(item.amount)}</p>
         <p className="text-[7px] font-bold text-gray-400 mt-0.5 uppercase">Verified</p>
       </div>
     </div>

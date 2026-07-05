@@ -7,9 +7,10 @@ import {
   Activity, Target, ClipboardList, TrendingUp, Award, Calendar,
   Clock, CheckCircle2, Loader2, RefreshCw, AlertCircle, BookOpen,
   CheckCircle, XCircle, Clock as ClockIcon, Sparkles, Crown, Star,
-  Coffee, Sunset, Moon, Sun, Zap, Heart, Smile, ThumbsUp
+  Coffee, Sunset, Moon, Sun, Zap, Heart, Smile, ThumbsUp,
+  DollarSign, CreditCard, Trophy
 } from "lucide-react";
-import { useData } from "../../../customer/components/context/DataContext"; // adjust path if needed
+import { useData } from "../../../customer/components/context/DataContext";
 import API_URL from "../../../config/api";
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -24,15 +25,9 @@ function formatOrderDate(dateStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// ✅ Full amount formatter (no abbreviations)
 function fmtUGX(n) {
   return `UGX ${Number(n || 0).toLocaleString()}`;
-}
-
-function fmtLargeNumber(n) {
-  const num = Number(n || 0);
-  if (num >= 1_000_000) return `UGX ${(num / 1_000_000).toFixed(1)}M`;
-  if (num >= 1_000) return `UGX ${(num / 1_000).toFixed(0)}K`;
-  return `UGX ${num.toLocaleString()}`;
 }
 
 function getItemCount(items) {
@@ -107,7 +102,7 @@ function getItemPaymentStatus(item) {
   return { label: "Pending", color: "text-zinc-400", bg: "bg-zinc-500/10", icon: <Clock size={10} /> };
 }
 
-// ─── DAILY MOTIVATIONAL MESSAGES (unchanged) ──────────────────────────────────
+// ─── DAILY MOTIVATIONAL MESSAGES (icons only, no emojis) ──────────────────────
 const MOTIVATIONAL_MESSAGES = [
   { icon: <Sparkles size={14} />, text: "Every plate tells a story. Make yours unforgettable!" },
   { icon: <Crown size={14} />, text: "Excellence is not a skill. It's an attitude." },
@@ -136,7 +131,7 @@ function getDailyMotivation() {
   return MOTIVATIONAL_MESSAGES[messageIndex];
 }
 
-// ─── TOOLTIP (unchanged) ──────────────────────────────────────────────────────
+// ─── TOOLTIP ──────────────────────────────────────────────────────────────────
 const CreditChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
@@ -152,7 +147,7 @@ const CreditChartTooltip = ({ active, payload, label }) => {
   );
 };
 
-// ─── STAT CARD (unchanged) ─────────────────────────────────────────────────────
+// ─── STAT CARD ────────────────────────────────────────────────────────────────
 function StatCard({ icon, iconBg, iconColor, badge, label, value, sub, progress, progressColor, accent, children }) {
   const isGradient = !!accent;
   return (
@@ -195,7 +190,7 @@ function StatCard({ icon, iconBg, iconColor, badge, label, value, sub, progress,
 function getProgressColor(p) { return p >= 75 ? "text-emerald-500" : p >= 50 ? "text-yellow-500" : p >= 25 ? "text-orange-500" : "text-red-500"; }
 function getProgressBarColor(p) { return p >= 75 ? "bg-emerald-500" : p >= 50 ? "bg-yellow-500" : p >= 25 ? "bg-orange-500" : "bg-red-500"; }
 
-// ─── MOBILE ORDER ROW (unchanged) ─────────────────────────────────────────────
+// ─── MOBILE ORDER ROW ─────────────────────────────────────────────────────────
 function MobileOrderRow({ item }) {
   const status = getItemPaymentStatus(item);
   const method = item.payment_method || (item.is_paid ? "Cash" : item.is_credit ? "Credit" : "Pending");
@@ -208,7 +203,7 @@ function MobileOrderRow({ item }) {
           <p className="text-[10px] text-zinc-400 mt-0.5">{item.table_name || "Walk-in"} · x{item.quantity} · {timeStr}</p>
         </div>
         <div className="text-right flex-shrink-0">
-          <p className="text-[12px] font-black text-emerald-500">{fmtLargeNumber(item.total)}</p>
+          <p className="text-[12px] font-black text-emerald-500">{fmtUGX(item.total)}</p>
           <div className={`inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded-full ${status.bg}`}>
             {status.icon}
             <span className={`text-[8px] font-bold uppercase ${status.color}`}>{status.label}</span>
@@ -373,7 +368,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
     return () => clearInterval(interval);
   }, []);
 
-  // ─── Compute derived values (unchanged from original) ────────────────────
+  // ─── Compute derived values ───────────────────────────────────────────────
   const monthlyRevenue = monthlyIncomeData?.monthly_income || 0;
   const revenueTarget = staffTargets.monthly_income_target || monthlyIncomeData?.monthly_target || 0;
 
@@ -434,11 +429,13 @@ export default function PerformanceDashboard({ theme = "light" }) {
   return (
     <div className="min-h-screen bg-zinc-50 font-[Outfit]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-4 sm:space-y-6">
-        {/* ── HEADER (unchanged) ── */}
+        {/* ── HEADER (no emojis) ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className="min-w-0">
-              <p className="text-[10px] sm:text-[19px] text-yellow-900 font-medium uppercase tracking-wider">✨ Today's Motivation ✨</p>
+              <p className="text-[10px] sm:text-[19px] text-yellow-900 font-medium uppercase tracking-wider flex items-center gap-2">
+                <Sparkles size={14} className="text-yellow-600" /> Today's Motivation
+              </p>
               <p className="text-xs sm:text-sm font-medium text-zinc-700 leading-tight mt-0.5">{dailyMotivation?.text || "You're amazing! Keep serving with excellence!"}</p>
               <p className="text-[8px] text-zinc-400 mt-1 hidden sm:block">{todayDisplay}</p>
             </div>
@@ -448,7 +445,9 @@ export default function PerformanceDashboard({ theme = "light" }) {
               <p className="text-sm font-black text-zinc-900">{currentStaffName}</p>
               <div className="flex items-center justify-end gap-1.5 mt-0.5">
                 <span className="px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-700 text-[8px] font-bold uppercase tracking-wider">{staffRole}</span>
-                <span className="text-[8px] text-emerald-500 font-bold">✓ Active</span>
+                <span className="text-[8px] text-emerald-500 font-bold flex items-center gap-1">
+                  <CheckCircle2 size={8} /> Active
+                </span>
               </div>
             </div>
             <div className="relative flex-shrink-0">
@@ -474,7 +473,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
           </div>
         )}
 
-        {/* ── STAT CARDS ── */}
+        {/* ── STAT CARDS (full amounts, no emojis) ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <StatCard
             icon={<ClipboardList size={16} />}
@@ -489,7 +488,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
             icon={<TrendingUp size={16} />}
             iconBg="bg-yellow-500/10" iconColor="text-yellow-500"
             badge="Today" label="Revenue"
-            value={fmtLargeNumber(grossToday)}
+            value={fmtUGX(grossToday)}
             sub={revenueTarget > 0 ? `${Math.round((grossToday / revenueTarget) * 100)}% of monthly` : ""}
           />
           <StatCard
@@ -499,8 +498,8 @@ export default function PerformanceDashboard({ theme = "light" }) {
             accent="bg-gradient-to-br from-emerald-500 to-emerald-600"
             progress={revenueProgress}
           >
-            <p className="text-lg sm:text-xl font-black text-white leading-tight break-all">{fmtLargeNumber(monthlyRevenue)}</p>
-            <p className="text-[9px] text-white/60 mt-0.5">/ {fmtLargeNumber(revenueTarget)}</p>
+            <p className="text-lg sm:text-xl font-black text-white leading-tight break-all">{fmtUGX(monthlyRevenue)}</p>
+            <p className="text-[9px] text-white/60 mt-0.5">/ {fmtUGX(revenueTarget)}</p>
           </StatCard>
           <StatCard
             icon={<BookOpen size={16} />}
@@ -509,21 +508,31 @@ export default function PerformanceDashboard({ theme = "light" }) {
             accent="bg-gradient-to-br from-purple-500 to-purple-600"
           >
             <div className="space-y-1 mt-1">
-              {[ { k: "Settled", v: creditStats.settled.amount }, { k: "Outstanding", v: creditStats.outstanding.amount }, { k: "Rejected", v: creditStats.rejected.amount } ].map(({ k, v }) => (
+              {[ 
+                { k: "Settled", v: creditStats.settled.amount, icon: <CheckCircle2 size={10} /> },
+                { k: "Outstanding", v: creditStats.outstanding.amount, icon: <Clock size={10} /> },
+                { k: "Rejected", v: creditStats.rejected.amount, icon: <XCircle size={10} /> }
+              ].map(({ k, v, icon }) => (
                 <div key={k} className="flex items-center justify-between gap-1">
-                  <span className="text-[9px] text-white/60">{k}</span>
-                  <span className="text-[10px] font-black text-white">{fmtLargeNumber(v)}</span>
+                  <div className="flex items-center gap-1">
+                    {icon}
+                    <span className="text-[9px] text-white/60">{k}</span>
+                  </div>
+                  <span className="text-[10px] font-black text-white">{fmtUGX(v)}</span>
                 </div>
               ))}
               <div className="pt-1 mt-1 border-t border-white/20 flex items-center justify-between gap-1">
-                <span className="text-[9px] text-white/60">Total</span>
-                <span className="text-[10px] font-black text-yellow-300">{fmtLargeNumber(creditStats.totalAmount)}</span>
+                <div className="flex items-center gap-1">
+                  <DollarSign size={9} className="text-white/60" />
+                  <span className="text-[9px] text-white/60">Total</span>
+                </div>
+                <span className="text-[10px] font-black text-yellow-300">{fmtUGX(creditStats.totalAmount)}</span>
               </div>
             </div>
           </StatCard>
         </div>
 
-        {/* ── CHART ── */}
+        {/* ── CHART (full amounts) ── */}
         <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
             <div className="flex items-center gap-2">
@@ -540,7 +549,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
             <LineChart data={creditChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#a1a1aa", fontFamily: "Outfit, sans-serif" }} tickLine={false} axisLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: "#a1a1aa", fontFamily: "Outfit, sans-serif" }} tickLine={false} axisLine={false} tickFormatter={v => fmtLargeNumber(v).replace("UGX ", "")} width={45} />
+              <YAxis tick={{ fontSize: 9, fill: "#a1a1aa", fontFamily: "Outfit, sans-serif" }} tickLine={false} axisLine={false} tickFormatter={v => fmtUGX(v).replace("UGX ", "")} width={45} />
               <Tooltip content={<CreditChartTooltip />} />
               <Line type="monotone" dataKey="Settled" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
               <Line type="monotone" dataKey="Approved" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
@@ -550,7 +559,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
           </ResponsiveContainer>
         </div>
 
-        {/* ── ORDER ITEMS (now uses staffOrders) ── */}
+        {/* ── ORDER ITEMS (full amounts) ── */}
         <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <div className="p-2 rounded-xl bg-blue-500/10"><Activity size={15} className="text-blue-500" /></div>
@@ -561,7 +570,8 @@ export default function PerformanceDashboard({ theme = "light" }) {
             <table className="w-full text-left" style={{ tableLayout: "fixed" }}>
               <colgroup><col style={{ width: "28%" }} /><col style={{ width: "12%" }} /><col style={{ width: "7%" }} /><col style={{ width: "16%" }} /><col style={{ width: "14%" }} /><col style={{ width: "14%" }} /><col style={{ width: "9%" }} /></colgroup>
               <thead className="border-b border-zinc-100">
-                <tr>{["Item", "Table", "Qty", "Amount", "Method", "Status", "Time"].map(h => <th key={h} className="pb-3 text-[9px] font-bold text-zinc-400 uppercase tracking-wider pr-2">{h}</th>)}</tr></thead>
+                <tr>{["Item", "Table", "Qty", "Amount", "Method", "Status", "Time"].map(h => <th key={h} className="pb-3 text-[9px] font-bold text-zinc-400 uppercase tracking-wider pr-2">{h}</th>)}</tr>
+              </thead>
               <tbody>
                 {recentOrderItems.length > 0 ? recentOrderItems.map((item, idx) => {
                   const status = getItemPaymentStatus(item);
@@ -589,15 +599,15 @@ export default function PerformanceDashboard({ theme = "light" }) {
           </div>
         </div>
 
-        {/* ── PERFORMANCE INSIGHTS (unchanged) ── */}
+        {/* ── PERFORMANCE INSIGHTS (no emojis) ── */}
         <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
           <div className="flex items-center gap-2 mb-4"><div className="p-2 rounded-xl bg-purple-500/10"><Award size={15} className="text-purple-500" /></div><h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Performance Insights</h3></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
-              { icon: <Target size={13} className="text-yellow-500" />, label: "Daily Target", color: "text-yellow-600", bg: "bg-yellow-50", text: dailyStaffItemsCount >= orderTarget && orderTarget > 0 ? "🎉 Daily item target achieved!" : orderTarget > 0 ? `📋 ${orderTarget - dailyStaffItemsCount} more item${orderTarget - dailyStaffItemsCount !== 1 ? "s" : ""} to reach today's target` : "📋 No daily target set" },
-              { icon: <TrendingUp size={13} className="text-emerald-500" />, label: "Monthly Revenue", color: "text-emerald-600", bg: "bg-emerald-50", text: monthlyRevenue >= revenueTarget && revenueTarget > 0 ? "🏆 Monthly revenue target exceeded!" : revenueTarget > 0 ? `💰 ${Math.round(revenueProgress)}% of monthly target reached` : "💰 No monthly target set" },
+              { icon: <Target size={13} className="text-yellow-500" />, label: "Daily Target", color: "text-yellow-600", bg: "bg-yellow-50", text: dailyStaffItemsCount >= orderTarget && orderTarget > 0 ? "Daily item target achieved!" : orderTarget > 0 ? `${orderTarget - dailyStaffItemsCount} more item${orderTarget - dailyStaffItemsCount !== 1 ? "s" : ""} to reach today's target` : "No daily target set" },
+              { icon: <TrendingUp size={13} className="text-emerald-500" />, label: "Monthly Revenue", color: "text-emerald-600", bg: "bg-emerald-50", text: monthlyRevenue >= revenueTarget && revenueTarget > 0 ? "Monthly revenue target exceeded!" : revenueTarget > 0 ? `${Math.round(revenueProgress)}% of monthly target reached` : "No monthly target set" },
               { icon: <Calendar size={13} className="text-blue-500" />, label: "Daily Average Needed", color: "text-blue-600", bg: "bg-blue-50", text: revenueTarget > 0 ? `Aim for ${fmtUGX(Math.ceil(revenueTarget / 30))} per day` : "Set a monthly target to see daily recommendations" },
-              { icon: <BookOpen size={13} className="text-purple-500" />, label: "Credit Summary", color: "text-purple-600", bg: "bg-purple-50", text: creditStats.total > 0 ? `💳 ${creditStats.settled.count} settled · ${creditStats.outstanding.count} outstanding` : "💳 No credit records for today" },
+              { icon: <BookOpen size={13} className="text-purple-500" />, label: "Credit Summary", color: "text-purple-600", bg: "bg-purple-50", text: creditStats.total > 0 ? `${creditStats.settled.count} settled · ${creditStats.outstanding.count} outstanding` : "No credit records for today" },
             ].map(({ icon, label, color, bg, text }) => (
               <div key={label} className={`p-3 sm:p-4 rounded-xl ${bg}`}>
                 <div className="flex items-center gap-1.5 mb-1.5">{icon}<span className={`text-[9px] font-bold uppercase tracking-wider ${color}`}>{label}</span></div>
@@ -607,13 +617,17 @@ export default function PerformanceDashboard({ theme = "light" }) {
           </div>
         </div>
 
-        {/* ── ACHIEVEMENT ── */}
+        {/* ── ACHIEVEMENT (no emojis) ── */}
         {(orderProgress >= 100 || revenueProgress >= 100) && (
           <div className="rounded-2xl bg-yellow-500 p-4 text-center">
             <div className="flex items-center justify-center gap-2">
-              <Award size={18} className="text-black" />
+              <Trophy size={18} className="text-black" />
               <span className="text-[11px] font-black text-black uppercase tracking-wider">
-                {orderProgress >= 100 && revenueProgress >= 100 ? "🏆 Double Achievement! Both targets crushed!" : orderProgress >= 100 ? "🎯 Daily target achieved!" : "🎯 Monthly revenue target achieved!"}
+                {orderProgress >= 100 && revenueProgress >= 100 
+                  ? "Double Achievement! Both targets crushed!" 
+                  : orderProgress >= 100 
+                    ? "Daily target achieved!" 
+                    : "Monthly revenue target achieved!"}
               </span>
             </div>
           </div>

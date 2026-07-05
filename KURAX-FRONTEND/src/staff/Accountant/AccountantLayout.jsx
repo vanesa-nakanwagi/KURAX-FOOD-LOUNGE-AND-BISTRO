@@ -13,6 +13,7 @@ import LiveAudit from "./sections/LiveAudit";
 import Credits from "./sections/Credits";
 import ViewSales from "./sections/ViewSales";
 import MonthlyCosts from "./MonthlyCosts";
+import ReportsPanel from "./ReportsPanel";
 
 // Import modal components
 import ReopenDayModal from "./modals/ReopenDayModal";
@@ -68,6 +69,10 @@ export default function AccountantLayout() {
   const [physSaved, setPhysSaved] = useState(false);
   const [physLoading, setPhysLoading] = useState(false);
   const [hasPhysicalCount, setHasPhysicalCount] = useState(false);
+
+  // ── Credit summary state (for PhysicalCount) ───────────────────────────────
+  const [creditSettledToday, setCreditSettledToday] = useState(0);
+  const [creditOutstandingToday, setCreditOutstandingToday] = useState(0);
 
   // ── Today's petty cash ─────────────────────────────────────────────────────
   const [pettyCashToday, setPettyCashToday] = useState({ total_in: 0, total_out: 0 });
@@ -272,18 +277,6 @@ export default function AccountantLayout() {
     }
   };
 
-  // Effect to handle when Start New Day is selected from sidebar
-  useEffect(() => {
-    if (activeSection === "START_NEW_DAY") {
-      setShowStartNewDayModal(true);
-      setTimeout(() => {
-        if (activeSection === "START_NEW_DAY") {
-          setActiveSection("FINANCIAL_HISTORY");
-        }
-      }, 100);
-    }
-  }, [activeSection]);
-
   // Effect to handle when Reopen Day is selected from sidebar
   useEffect(() => {
     if (activeSection === "REOPEN_DAY") {
@@ -297,12 +290,14 @@ export default function AccountantLayout() {
     }
   }, [activeSection, fetchClosedDays]);
 
+  // REMOVED START_NEW_DAY effect because it's no longer in the sidebar
+
   const checkPhysicalCount = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/accountant/physical-count`);
       if (res.ok) {
         const data = await res.json();
-        const hasData = data.cash > 0 || data.momo_mtn > 0 || data.momo_airtel > 0 || data.card > 0;
+        const hasData = data.cash > 0 || data.mtn > 0 || data.airtel > 0 || data.card > 0;
         setHasPhysicalCount(hasData);
       }
     } catch (e) {
@@ -360,10 +355,12 @@ export default function AccountantLayout() {
       if (res.ok) {
         const d = await res.json();
         setPhysCash(Number(d.cash) || 0);
-        setPhysMomoMTN(Number(d.momo_mtn) || 0);
-        setPhysMomoAirtel(Number(d.momo_airtel) || 0);
+        setPhysMomoMTN(Number(d.mtn) || 0);
+        setPhysMomoAirtel(Number(d.airtel) || 0);
         setPhysCard(Number(d.card) || 0);
         setPhysNotes(d.notes || "");
+        setCreditSettledToday(Number(d.creditSettledToday) || 0);
+        setCreditOutstandingToday(Number(d.creditOutstandingToday) || 0);
       }
     } catch (e) { console.error("physical count load:", e); }
     setPhysLoading(false);
@@ -371,21 +368,32 @@ export default function AccountantLayout() {
 
   useEffect(() => { loadPhysicalCount(); }, [loadPhysicalCount]);
 
+  // ─── SAVE PHYSICAL COUNT + CREDIT SUMMARY ─────────────────────────────────
   const savePhysicalCount = async () => {
     setPhysSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("kurax_user") || "{}");
-      await fetch(`${API_URL}/api/accountant/physical-count`, {
+      const res = await fetch(`${API_URL}/api/accountant/physical-count`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cash: physCash, momo_mtn: physMomoMTN, momo_airtel: physMomoAirtel,
-          card: physCard, notes: physNotes, submitted_by: u?.name || "Accountant",
+          cash: physCash,
+          mtn: physMomoMTN,
+          airtel: physMomoAirtel,
+          card: physCard,
+          notes: physNotes,
+          creditSettledToday: creditSettledToday,
+          creditOutstandingToday: creditOutstandingToday,
+          submitted_by: u?.name || "Accountant",
         }),
       });
-      setPhysSaved(true);
-      setHasPhysicalCount(true);
-      setTimeout(() => setPhysSaved(false), 3000);
+      if (res.ok) {
+        setPhysSaved(true);
+        setHasPhysicalCount(true);
+        setTimeout(() => setPhysSaved(false), 3000);
+      } else {
+        console.error("Save failed:", await res.text());
+      }
     } catch (e) { console.error("save physical count:", e); }
     setPhysSaving(false);
   };
@@ -445,16 +453,16 @@ export default function AccountantLayout() {
 
   // ── Derived values ────────────────────────────────────────────────────────
   const src = liveSummary || todaySummary || {};
- const sys = {
-  cash: Number(src.total_cash) || 0,
-  card: Number(src.total_card) || 0,
-  mtn: Number(src.total_mtn) || 0,
-  airtel: Number(src.total_airtel) || 0,
-  gross: Number(src.total_gross) || 0,
-  orders: Number(src.order_count) || 0,
-  pending_credits: Number(src.total_credit) || 0,  // Credits issued but not paid
-  credit_settlements: Number(src.total_settled_credits) || 0,  
-};
+  const sys = {
+    cash: Number(src.total_cash) || 0,
+    card: Number(src.total_card) || 0,
+    mtn: Number(src.total_mtn) || 0,
+    airtel: Number(src.total_airtel) || 0,
+    gross: Number(src.total_gross) || 0,
+    orders: Number(src.order_count) || 0,
+    pending_credits: Number(src.total_credit) || 0,
+    credit_settlements: Number(src.total_settled_credits) || 0,
+  };
 
   const totalMobileMoney = sys.mtn + sys.airtel;
   const pettyCashIn = Number(pettyCashToday.total_in) || 0;
@@ -727,8 +735,6 @@ export default function AccountantLayout() {
             </div>
           )}
 
-        
-
           {activeSection === "FINANCIAL_HISTORY" && (
             <FinancialHistory
               dayClosed={dayClosed}
@@ -760,9 +766,6 @@ export default function AccountantLayout() {
               setPhysCard={setPhysCard}
               physNotes={physNotes}
               setPhysNotes={setPhysNotes}
-              physSaving={physSaving}
-              physSaved={physSaved}
-              savePhysicalCount={savePhysicalCount}
               pettyCashIn={pettyCashIn}
               sys={sys}
               adjustedPhysCash={adjustedPhysCash}
@@ -774,6 +777,13 @@ export default function AccountantLayout() {
               isDark={false}
               cardBgClass={cardBgClass}
               textClass={textClass}
+              savingAll={physSaving}
+              savedAll={physSaved}
+              saveAllData={savePhysicalCount}
+              creditSettledToday={creditSettledToday}
+              setCreditSettledToday={setCreditSettledToday}
+              creditOutstandingToday={creditOutstandingToday}
+              setCreditOutstandingToday={setCreditOutstandingToday}
             />
           )}
 
@@ -794,6 +804,8 @@ export default function AccountantLayout() {
               isDark={false}
               cardBgClass={cardBgClass}
               textClass={textClass}
+              creditSettledToday={creditSettledToday}
+              creditOutstandingToday={creditOutstandingToday}
             />
           )}
 
@@ -851,6 +863,12 @@ export default function AccountantLayout() {
               API_URL={API_URL}
             />
           )}
+
+          {/* NEW: Reports Section */}
+          {activeSection === "REPORTS" && (
+            <ReportsPanel dark={false} />
+          )}
+
         </main>
         <Footer isDark={false} />
       </div>

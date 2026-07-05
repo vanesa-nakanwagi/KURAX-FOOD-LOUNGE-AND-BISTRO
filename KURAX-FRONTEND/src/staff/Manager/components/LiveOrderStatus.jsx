@@ -476,14 +476,14 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
   return (
     <div className="space-y-5">
 
-      {/* ── SUMMARY CARDS ── */}
+      {/* ── SUMMARY CARDS (full numbers, break-words) ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
 
         {/* With Cashier */}
         {withCashierCredits.length > 0 && (
           <div className={`rounded-xl p-3 sm:p-4 border ${isDark ? "bg-zinc-800/30 border-zinc-700/40" : "bg-zinc-50 border-zinc-200"}`}>
             <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-1">With Cashier</p>
-            <p className="text-lg sm:text-2xl font-black text-zinc-400 leading-tight break-all">
+            <p className="text-lg sm:text-2xl font-black text-zinc-400 leading-tight break-words whitespace-normal">
               UGX {totalWithCashier.toLocaleString()}
             </p>
             <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
@@ -497,7 +497,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
         {pendingCredits.length > 0 && (
           <div className={`rounded-xl p-3 sm:p-4 border ${isDark ? "bg-amber-500/5 border-amber-500/20" : "bg-amber-50 border-amber-100"}`}>
             <p className="text-[8px] font-black uppercase tracking-widest text-amber-600 mb-1">Pending Approval</p>
-            <p className="text-lg sm:text-2xl font-black text-amber-600 leading-tight break-all">
+            <p className="text-lg sm:text-2xl font-black text-amber-600 leading-tight break-words whitespace-normal">
               UGX {totalPending.toLocaleString()}
             </p>
             <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
@@ -509,7 +509,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
         {/* Outstanding */}
         <div className={`rounded-xl p-3 sm:p-4 border ${isDark ? "bg-purple-500/5 border-purple-500/20" : "bg-purple-50 border-purple-100"}`}>
           <p className="text-[8px] font-black uppercase tracking-widest text-purple-600 mb-1">Outstanding</p>
-          <p className="text-lg sm:text-2xl font-black text-purple-600 leading-tight break-all">
+          <p className="text-lg sm:text-2xl font-black text-purple-600 leading-tight break-words whitespace-normal">
             UGX {totalOutstanding.toLocaleString()}
           </p>
           <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
@@ -522,7 +522,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
         {partiallySettled.length > 0 && (
           <div className={`rounded-xl p-3 sm:p-4 border ${isDark ? "bg-orange-500/5 border-orange-500/20" : "bg-orange-50 border-orange-100"}`}>
             <p className="text-[8px] font-black uppercase tracking-widest text-orange-600 mb-1">Partially Settled</p>
-            <p className="text-lg sm:text-2xl font-black text-orange-600 leading-tight break-all">
+            <p className="text-lg sm:text-2xl font-black text-orange-600 leading-tight break-words whitespace-normal">
               UGX {totalPartialRemaining.toLocaleString()}
             </p>
             <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
@@ -535,7 +535,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
         {/* Settled */}
         <div className={`rounded-xl p-3 sm:p-4 border ${isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"}`}>
           <p className="text-[8px] font-black uppercase tracking-widest text-emerald-600 mb-1">Total Settled</p>
-          <p className="text-lg sm:text-2xl font-black text-emerald-600 leading-tight break-all">
+          <p className="text-lg sm:text-2xl font-black text-emerald-600 leading-tight break-words whitespace-normal">
             UGX {totalSettledPaid.toLocaleString()}
           </p>
           <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
@@ -547,7 +547,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
         {rejected.length > 0 && (
           <div className={`rounded-xl p-3 sm:p-4 border ${isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"}`}>
             <p className="text-[8px] font-black uppercase tracking-widest text-red-600 mb-1">Rejected</p>
-            <p className="text-lg sm:text-2xl font-black text-red-600 leading-tight break-all">
+            <p className="text-lg sm:text-2xl font-black text-red-600 leading-tight break-words whitespace-normal">
               UGX {totalRejected.toLocaleString()}
             </p>
             <p className={`text-[9px] font-bold mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
@@ -594,7 +594,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
                   </p>
                 </div>
               </div>
-              <p className={`text-sm font-black shrink-0 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              <p className={`text-sm font-black shrink-0 break-words whitespace-normal text-right ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                 UGX {Number(credit.amount || 0).toLocaleString()}
               </p>
             </div>
@@ -642,7 +642,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className={`text-sm font-black ${isDark ? "text-amber-400" : "text-amber-600"}`}>
+                  <p className={`text-sm font-black break-words whitespace-normal ${isDark ? "text-amber-400" : "text-amber-600"}`}>
                     UGX {Number(credit.amount || 0).toLocaleString()}
                   </p>
                 </div>
@@ -681,7 +681,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
                       <p className="text-[8px] font-black text-zinc-600 uppercase">Order Details</p>
                       <div className={`border rounded-lg p-2 text-center ${isDark ? "bg-black border-white/5" : "bg-zinc-50 border-zinc-200"}`}>
                         <p className="text-[8px] text-zinc-600 uppercase font-black">Credit Amount</p>
-                        <p className={`text-base font-black ${isDark ? "text-amber-400" : "text-amber-600"}`}>
+                        <p className={`text-base font-black break-words whitespace-normal ${isDark ? "text-amber-400" : "text-amber-600"}`}>
                           UGX {Number(credit.amount || 0).toLocaleString()}
                         </p>
                       </div>
@@ -793,7 +793,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
   );
 }
 
-// ─── CREDIT LEDGER ROW ────────────────────────────────────────────────────────
+// ─── CREDIT LEDGER ROW (full amounts) ────────────────────────────────────────
 // variant: 'outstanding' | 'partial' | 'settled' | 'rejected'
 function CreditLedgerRow({ credit, isDark, variant }) {
   const date    = credit.confirmed_at || credit.created_at;
@@ -881,11 +881,11 @@ function CreditLedgerRow({ credit, isDark, variant }) {
               <div className="mt-2">
                 <div className="flex justify-between text-[8px] mb-1">
                   <span className="text-gray-500">Paid:</span>
-                  <span className="text-green-500 font-bold">UGX {amountPaid.toLocaleString()}</span>
+                  <span className="text-green-500 font-bold break-words">UGX {amountPaid.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-[8px] mb-1">
                   <span className="text-gray-500">Remaining:</span>
-                  <span className="text-orange-500 font-bold">UGX {remainingBalance.toLocaleString()}</span>
+                  <span className="text-orange-500 font-bold break-words">UGX {remainingBalance.toLocaleString()}</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
                   <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${percentPaid}%` }}/>
@@ -910,7 +910,7 @@ function CreditLedgerRow({ credit, isDark, variant }) {
         <div className="text-right shrink-0">
           {variant === "partial" ? (
             <>
-              <p className={`text-sm sm:text-base font-black ${s.amount}`}>
+              <p className={`text-sm sm:text-base font-black break-words whitespace-normal ${s.amount}`}>
                 UGX {remainingBalance.toLocaleString()}
               </p>
               <p className={`text-[7px] font-bold mt-0.5 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
@@ -918,7 +918,7 @@ function CreditLedgerRow({ credit, isDark, variant }) {
               </p>
             </>
           ) : (
-            <p className={`text-sm sm:text-base font-black ${s.amount}`}>
+            <p className={`text-sm sm:text-base font-black break-words whitespace-normal ${s.amount}`}>
               UGX {totalAmount.toLocaleString()}
             </p>
           )}
@@ -933,7 +933,7 @@ function CreditLedgerRow({ credit, isDark, variant }) {
   );
 }
 
-// ─── ORDER STATUS CARD ────────────────────────────────────────────────────────
+// ─── ORDER STATUS CARD (full amounts) ────────────────────────────────────────
 function OrderStatusCard({ order, category, isDark, chefMap, creditInfo }) {
   const ts          = order.timestamp || order.created_at || order.createdAt;
   const minsElapsed = ts ? Math.floor((Date.now() - new Date(ts)) / 60000) : null;
@@ -1020,7 +1020,7 @@ function OrderStatusCard({ order, category, isDark, chefMap, creditInfo }) {
               <div className={`flex flex-wrap gap-x-2 gap-y-0.5 mt-1 text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-gray-500" : "text-gray-400"}`}>
                 <div className="flex items-center gap-1"><User size={8}/><span className="truncate max-w-[80px]">{waiterName}</span></div>
                 {!fromLedger && (paidAmount > 0 || pendingAmount > 0) && (
-                  <div className="flex items-center gap-1"><Banknote size={8}/><span>UGX {(paidAmount + pendingAmount).toLocaleString()}</span></div>
+                  <div className="flex items-center gap-1"><Banknote size={8}/><span className="break-words">UGX {(paidAmount + pendingAmount).toLocaleString()}</span></div>
                 )}
               </div>
             </div>
@@ -1042,8 +1042,8 @@ function OrderStatusCard({ order, category, isDark, chefMap, creditInfo }) {
       {(category === "Open" || category === "Delayed") && !isFullyPaid && paidAmount > 0 && (
         <div className={`rounded-lg border overflow-hidden ${isDark ? "border-gray-700/30" : "border-gray-200"}`}>
           <div className={`flex flex-col gap-1.5 px-3 py-2 ${isDark ? "bg-gray-800/20" : "bg-gray-50"}`}>
-            <div className="flex justify-between text-[9px]"><span className="text-gray-500">Paid:</span><span className="font-bold text-green-500">UGX {paidAmount.toLocaleString()}</span></div>
-            <div className="flex justify-between text-[9px]"><span className="text-gray-500">Pending:</span><span className="font-bold text-orange-500">UGX {pendingAmount.toLocaleString()}</span></div>
+            <div className="flex justify-between text-[9px]"><span className="text-gray-500">Paid:</span><span className="font-bold text-green-500 break-words">UGX {paidAmount.toLocaleString()}</span></div>
+            <div className="flex justify-between text-[9px]"><span className="text-gray-500">Pending:</span><span className="font-bold text-orange-500 break-words">UGX {pendingAmount.toLocaleString()}</span></div>
             <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
               <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${(paidAmount / (paidAmount + pendingAmount)) * 100}%` }}/>
             </div>
@@ -1063,9 +1063,9 @@ function OrderStatusCard({ order, category, isDark, chefMap, creditInfo }) {
           )}
           {isCreditPartial && (
             <div className={`px-3 py-2 space-y-1.5 ${isDark ? "bg-orange-500/5" : "bg-orange-50"}`}>
-              <div className="flex justify-between text-[9px]"><span className="text-gray-500">Total Credit:</span><span className="font-bold">UGX {totalAmount.toLocaleString()}</span></div>
-              <div className="flex justify-between text-[9px]"><span className="text-gray-500">Amount Paid:</span><span className="text-green-500 font-bold">UGX {amountPaid.toLocaleString()}</span></div>
-              <div className="flex justify-between text-[9px]"><span className="text-gray-500">Remaining:</span><span className="text-orange-500 font-bold">UGX {remainingBalance.toLocaleString()}</span></div>
+              <div className="flex justify-between text-[9px]"><span className="text-gray-500">Total Credit:</span><span className="font-bold break-words">UGX {totalAmount.toLocaleString()}</span></div>
+              <div className="flex justify-between text-[9px]"><span className="text-gray-500">Amount Paid:</span><span className="text-green-500 font-bold break-words">UGX {amountPaid.toLocaleString()}</span></div>
+              <div className="flex justify-between text-[9px]"><span className="text-gray-500">Remaining:</span><span className="text-orange-500 font-bold break-words">UGX {remainingBalance.toLocaleString()}</span></div>
               <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1"><div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${(amountPaid / totalAmount) * 100}%` }}/></div>
               <p className="text-[8px] text-center text-gray-500 mt-1">{Math.round((amountPaid / totalAmount) * 100)}% settled</p>
             </div>

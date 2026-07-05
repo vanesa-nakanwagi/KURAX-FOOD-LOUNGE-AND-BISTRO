@@ -1,5 +1,5 @@
 import React from "react";
-import { RefreshCw, RotateCcw, CheckCircle2, AlertTriangle } from "lucide-react";
+import { RefreshCw, RotateCcw, CheckCircle2, AlertTriangle, CreditCard } from "lucide-react";
 import { fmt } from "../utils/helpers";
 
 export default function EndOfShift({ 
@@ -17,9 +17,13 @@ export default function EndOfShift({
   setActiveSection,
   isDark = false,
   cardBgClass = "bg-white border border-gray-200 shadow-sm",
-  textClass = "text-gray-900"
+  textClass = "text-gray-900",
+  // ─── NEW CREDIT PROPS ─────────────────────────────────────────────────────
+  creditSettledToday = 0,      // Accountant‑entered settled credits today
+  creditOutstandingToday = 0,  // Accountant‑entered outstanding credits after today's payments
 }) {
   const physicalTotal = physCash + physMomoMTN + physMomoAirtel + physCard;
+  const systemCreditSettled = Number(sys.credit_settlements) || 0;
 
   return (
     <div className="max-w-3xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
@@ -27,7 +31,7 @@ export default function EndOfShift({
         <h2 className={`text-2xl font-medium text-yellow-900 uppercase tracking-tighter ${textClass}`}>
           Day Finalization
         </h2>
-        <p className="text-zinc-600 text-[13px] font-medium mt-2  tracking-widest italic opacity-80">
+        <p className="text-zinc-600 text-[13px] font-medium mt-2 tracking-widest italic opacity-80">
           Reconcile system data with physical collections
         </p>
       </div>
@@ -63,26 +67,29 @@ export default function EndOfShift({
       <div className={`rounded-3xl p-10 shadow-lg relative overflow-hidden transition-all duration-300 ${cardBgClass}`}>
         <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/10 blur-[60px] rounded-full"/>
 
-        <h3 className="text-[10px] font-black uppercase text-gray-500 tracking-[0.25em] mb-10 text-center">
+        <h3 className="text-[10px] font-black uppercase text-gray-500 tracking-[0.25em] mb-8 text-center">
           Verification Summary
         </h3>
 
-        <div className="space-y-6 mb-12">
-          <div className="flex justify-between items-center border-b border-gray-100 pb-6">
+        <div className="space-y-6 mb-8">
+          {/* System Gross */}
+          <div className="flex justify-between items-center border-b border-gray-100 pb-5">
             <span className="text-gray-500 text-[11px] font-black uppercase tracking-wider">System Gross</span>
-            <span className={`text-2xl font-black  ${textClass}`}>
+            <span className={`text-2xl font-black ${textClass}`}>
               {dayClosed ? "UGX 0" : `UGX ${fmt(sys.gross)}`}
             </span>
           </div>
           
-          <div className="flex justify-between items-center border-b border-gray-100 pb-6">
-            <span className="text-gray-500 text-[11px] font-black uppercase tracking-wider">Physical Total</span>
-            <span className={`text-2xl font-black  ${textClass}`}>
+          {/* Physical Total (cash + momo + card) */}
+          <div className="flex justify-between items-center border-b border-gray-100 pb-5">
+            <span className="text-gray-500 text-[11px] font-black uppercase tracking-wider">Physical Total (Cash + Momo + Card)</span>
+            <span className={`text-2xl font-black ${textClass}`}>
               {dayClosed ? "UGX 0" : `UGX ${fmt(physicalTotal)}`}
             </span>
           </div>
           
-          <div className="flex justify-between items-center pt-4">
+          {/* Closing Variance */}
+          <div className="flex justify-between items-center border-b border-gray-100 pb-5">
             <span className="text-gray-500 text-[11px] font-black uppercase tracking-wider">Closing Variance</span>
             <div className="text-right">
               <span className={`text-2xl font-black ${dayClosed ? "text-emerald-600" : varTotal >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
@@ -90,6 +97,43 @@ export default function EndOfShift({
               </span>
               <p className="text-[8px] font-black uppercase text-gray-400 mt-1">
                 {dayClosed ? "Day Closed" : (varTotal === 0 ? "Balanced" : varTotal > 0 ? "Overage" : "Shortage")}
+              </p>
+            </div>
+          </div>
+
+          {/* ─── CREDIT SECTION ───────────────────────────────────────────── */}
+          <div className="bg-gray-50 rounded-2xl p-5 space-y-4 border border-gray-100">
+            <div className="flex items-center gap-2">
+              <CreditCard size={14} className="text-yellow-600" />
+              <p className="text-[10px] font-black uppercase text-gray-600 tracking-widest">Credit Summary for Today</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[8px] font-black uppercase text-gray-400">Settled Credits (Recorded)</p>
+                <p className={`text-lg font-black ${textClass}`}>
+                  {dayClosed ? "UGX 0" : `UGX ${fmt(creditSettledToday)}`}
+                </p>
+                <p className="text-[8px] text-gray-400 mt-1">Amount collected from credit customers today</p>
+              </div>
+              <div>
+                <p className="text-[8px] font-black uppercase text-gray-400">Outstanding Credits (Remaining)</p>
+                <p className={`text-lg font-black ${textClass}`}>
+                  {dayClosed ? "UGX 0" : `UGX ${fmt(creditOutstandingToday)}`}
+                </p>
+                <p className="text-[8px] text-gray-400 mt-1">Credit balance still owed after today's settlements</p>
+              </div>
+            </div>
+            <div className="pt-2 border-t border-gray-200">
+              <div className="flex justify-between items-center">
+                <span className="text-[8px] font-black uppercase text-gray-400">System Settled Credits (from sales)</span>
+                <span className={`text-sm font-black ${textClass}`}>
+                  {dayClosed ? "UGX 0" : `UGX ${fmt(systemCreditSettled)}`}
+                </span>
+              </div>
+              <p className="text-[7px] text-gray-400 mt-1">
+                {creditSettledToday !== systemCreditSettled && !dayClosed
+                  ? "⚠️ Entered settled credits differ from system records – review credit settlements"
+                  : "✓ Matches system records"}
               </p>
             </div>
           </div>
@@ -105,6 +149,7 @@ export default function EndOfShift({
             "Reset variance analysis to zero",
             "Expire any pending void requests",
             "Save a permanent audit record of today's close",
+            "Keep credit ledger intact (month‑long persistence)",
           ].map((item, i) => (
             <div key={i} className="flex items-center gap-2.5">
               <div className="w-4 h-4 rounded-full bg-yellow-100 border border-yellow-200 flex items-center justify-center shrink-0">

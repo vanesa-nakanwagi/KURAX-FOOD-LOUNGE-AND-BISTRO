@@ -6,7 +6,6 @@ import {
   Search, RotateCcw, Trophy, UserPlus,
   Power, X, ShieldAlert, Wine
 } from "lucide-react";
-import Footer from "../../customer/components/common/Foooter";
 import API_URL from "../../config/api";
 
 // ─── KAMPALA DATE ─────────────────────────────────────────────────────────────
@@ -549,7 +548,6 @@ export default function BarmanDisplay() {
         )}
       </div>
 
-      <Footer/>
     </div>
   );
 }

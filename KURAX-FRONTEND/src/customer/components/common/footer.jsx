@@ -79,7 +79,7 @@ export default function FooterGlobal() {
 
           {/* 2. NAVIGATION */}
           <div>
-            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-yellow-600 mb-8 flex items-center gap-2">
+            <h3 className="text-[15px] font-black  text-yellow-600 mb-8 flex items-center gap-2">
               <span className="w-4 h-[1px] bg-yellow-600" /> Navigation
             </h3>
             <ul className="space-y-4">
@@ -99,7 +99,7 @@ export default function FooterGlobal() {
 
           {/* 3. CONNECT */}
           <div>
-            <h3 className="text-xs font-black uppercase tracking-[0.3em] text-yellow-600 mb-8 flex items-center gap-2">
+            <h3 className="text-[15px] font-black  text-yellow-600 mb-8 flex items-center gap-2">
               <span className="w-4 h-[1px] bg-yellow-600" /> Connect
             </h3>
             <div className="space-y-6">
@@ -123,7 +123,7 @@ export default function FooterGlobal() {
           {/* 4. VIBRANT PAYMENT METHODS */}
           <div className="space-y-10">
             <div>
-              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-yellow-600 mb-6 "> <span className="w-4 h-[1px] bg-yellow-600" /> Secure Payment</h3>
+              <h3 className="text-[15px] font-black  text-yellow-600 mb-6 "> <span className="w-4 h-[1px] bg-yellow-600" /> Secure Payment</h3>
               <div className="flex gap-4">
                 {paymentMethods.map((method) => (
                   <motion.div 

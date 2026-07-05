@@ -468,9 +468,7 @@ router.get('/performance-summary', async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 14. BULK UPDATE STAFF TARGETS (For setting targets for multiple staff)
-// ─────────────────────────────────────────────────────────────────────────────
+
 router.post('/bulk-update-targets', async (req, res) => {
   const { targets } = req.body; // Array of { staff_id, income_target, order_target }
   

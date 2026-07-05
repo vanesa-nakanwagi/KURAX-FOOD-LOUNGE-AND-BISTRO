@@ -31,10 +31,9 @@ function formatMonthDisplay(monthStr) {
   return `${monthNames[parseInt(month) - 1]} ${year}`;
 }
 
-function fmtK(n) {
+// ✅ FULL NUMBER FORMATTER (no abbreviation)
+function formatFullAmount(n) {
   const v = Number(n || 0);
-  if (v >= 1_000_000) return `UGX ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000)     return `UGX ${(v / 1_000).toFixed(0)}K`;
   return `UGX ${v.toLocaleString()}`;
 }
 
@@ -47,7 +46,6 @@ function isPending(c) {
 function isOutstanding(c) {
   const status = (c.status || "").toLowerCase();
   const paid = Number(c.amount_paid ?? 0);
-  console.log(`🔍 isOutstanding check: id=${c.id}, status=${status}, paid=${paid}, amount=${c.amount}`);
   return status === "approved" && paid === 0;
 }
 
@@ -70,7 +68,7 @@ function isRejected(c) {
   return s === "rejected";
 }
 
-// ─── CREDIT APPROVAL CARD (unchanged) ────────────────────────────────────────
+// ─── CREDIT APPROVAL CARD (full amounts) ─────────────────────────────────────
 function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
   const ageMin = Math.floor((Date.now() - new Date(row.created_at)) / 60000);
   const ageStr = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ago`;
@@ -139,7 +137,9 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
         <div className="flex flex-col items-end gap-3 shrink-0 w-full sm:w-auto">
           <div className="text-right">
             <p className="text-[8px] font-black uppercase text-purple-400 tracking-widest mb-1">Amount</p>
-            <p className="text-2xl font-black italic text-purple-400">{fmtK(amount)}</p>
+            <p className="text-2xl font-black italic text-purple-400 break-words whitespace-normal">
+              {formatFullAmount(amount)}
+            </p>
           </div>
 
           {isPendingCashier ? (
@@ -167,7 +167,7 @@ function CreditApprovalCard({ row, isDark, approvingId, onApprove, onReject }) {
   );
 }
 
-// ─── CREDIT LEDGER ROW ────────────────────────────────────────────────────────
+// ─── CREDIT LEDGER ROW (full amounts, break-words) ───────────────────────────
 function CreditLedgerRow({ credit, isDark }) {
   const amount      = Number(credit.amount      ?? 0);
   const paid        = Number(credit.amount_paid ?? 0);
@@ -219,8 +219,8 @@ function CreditLedgerRow({ credit, isDark }) {
           {partial && (
             <div className="mt-3">
               <div className="flex justify-between text-[8px] mb-1">
-                <span className="text-zinc-500">Paid: {fmtK(paid)}</span>
-                <span className="text-orange-500 font-bold">Remaining: {fmtK(balance)}</span>
+                <span className="text-zinc-500">Paid: {formatFullAmount(paid)}</span>
+                <span className="text-orange-500 font-bold break-words">Remaining: {formatFullAmount(balance)}</span>
               </div>
               <div className="w-full bg-zinc-700 rounded-full h-1.5">
                 <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${percentPaid}%` }}/>
@@ -230,10 +230,10 @@ function CreditLedgerRow({ credit, isDark }) {
         </div>
 
         <div className="text-right shrink-0">
-          {partial     && <><p className="text-lg font-black italic text-orange-400">{fmtK(balance)}</p><p className="text-[8px] text-zinc-500">of {fmtK(amount)}</p></>}
-          {fully       && <p className="text-lg font-black italic text-emerald-400">{fmtK(amount)}</p>}
-          {rej         && <p className="text-lg font-black italic text-red-400 line-through">{fmtK(amount)}</p>}
-          {outstanding && <p className="text-lg font-black italic text-purple-400">{fmtK(amount)}</p>}
+          {partial     && <><p className="text-lg font-black italic text-orange-400 break-words whitespace-normal">{formatFullAmount(balance)}</p><p className="text-[8px] text-zinc-500">of {formatFullAmount(amount)}</p></>}
+          {fully       && <p className="text-lg font-black italic text-emerald-400 break-words whitespace-normal">{formatFullAmount(amount)}</p>}
+          {rej         && <p className="text-lg font-black italic text-red-400 line-through break-words whitespace-normal">{formatFullAmount(amount)}</p>}
+          {outstanding && <p className="text-lg font-black italic text-purple-400 break-words whitespace-normal">{formatFullAmount(amount)}</p>}
         </div>
       </div>
     </div>
@@ -264,7 +264,6 @@ export default function PerformanceReports() {
       const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
       if (res.ok) {
         const data = await res.json();
-        console.log("🔍 RAW CREDITS from API:", data);
         setAllCredits(data);
       } else {
         console.error("Failed to fetch credits:", res.status);
@@ -281,46 +280,6 @@ export default function PerformanceReports() {
     const interval = setInterval(fetchCredits, 30000);
     return () => clearInterval(interval);
   }, [fetchCredits]);
-
-  // ─── DEBUG: Log all credits and their statuses ─────────────────────────────
-  useEffect(() => {
-    console.log("📋 All credits count:", allCredits.length);
-    allCredits.forEach(c => {
-      console.log(`📋 Credit id=${c.id}, status="${c.status}", amount_paid=${c.amount_paid}, amount=${c.amount}`);
-    });
-
-    const pending = allCredits.filter(isPending);
-    console.log("⏳ Pending credits:", pending.map(c => ({ id: c.id, status: c.status })));
-
-    const outstanding = allCredits.filter(c => {
-      const status = (c.status || "").toLowerCase();
-      const paid = Number(c.amount_paid ?? 0);
-      return status === "approved" && paid === 0;
-    });
-    console.log("💜 Outstanding credits (approved & unpaid):", outstanding.map(c => ({ id: c.id, status: c.status, paid: c.amount_paid })));
-
-    const partial = allCredits.filter(c => {
-      const status = (c.status || "").toLowerCase();
-      const paid = Number(c.amount_paid ?? 0);
-      const total = Number(c.amount ?? 0);
-      return status === "partiallysettled" || (status === "approved" && paid > 0 && paid < total);
-    });
-    console.log("🟠 Partially settled credits:", partial.map(c => ({ id: c.id, paid: c.amount_paid, total: c.amount })));
-
-    const settled = allCredits.filter(c => {
-      const status = (c.status || "").toLowerCase();
-      const paid = Number(c.amount_paid ?? 0);
-      const total = Number(c.amount ?? 0);
-      return status === "fullysettled" || (total > 0 && paid >= total);
-    });
-    console.log("✅ Fully settled credits:", settled.map(c => ({ id: c.id, paid: c.amount_paid, total: c.amount })));
-
-    const rejected = allCredits.filter(c => {
-      const s = (c.status || "").toLowerCase();
-      return s === "rejected";
-    });
-    console.log("❌ Rejected credits:", rejected.map(c => ({ id: c.id, status: c.status })));
-  }, [allCredits]);
 
   // ─── Bucketing (with date filter for ledger) ───────────────────────────────
   const pendingCredits = allCredits.filter(isPending);
@@ -349,8 +308,6 @@ export default function PerformanceReports() {
   const totalSettledPaid     = totalFullySettledAmt + totalPartialPaid;
   const totalRejected        = rejectedCredits.reduce((s, c) => s + Number(c.amount ?? 0), 0);
   const allTimeTotal         = ledgerCredits.reduce((s, c) => s + Number(c.amount ?? 0), 0);
-
-  console.log("📊 Final totals -> Outstanding amount:", totalOutstanding, "Partial remaining:", totalPartialRemaining, "Settled paid:", totalSettledPaid);
 
   const filteredCredits =
     creditFilter === "outstanding" ? [...outstandingCredits, ...partialCredits] :
@@ -450,7 +407,7 @@ export default function PerformanceReports() {
         </div>
       </div>
 
-      {/* ── STATS CARDS ── */}
+      {/* ── STATS CARDS (full amounts) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
         {/* Pending */}
@@ -497,7 +454,9 @@ export default function PerformanceReports() {
               Outstanding
             </span>
           </div>
-          <p className="text-2xl font-black text-purple-400">{fmtK(totalOutstandingBalance)}</p>
+          <p className="text-2xl font-black text-purple-400 break-words whitespace-normal">
+            {formatFullAmount(totalOutstandingBalance)}
+          </p>
           <p className={`text-[9px] mt-2 ${muted}`}>
             {outstandingCredits.length + partialCredits.length} credit{(outstandingCredits.length + partialCredits.length) !== 1 ? "s" : ""} with balance
           </p>
@@ -505,13 +464,13 @@ export default function PerformanceReports() {
             {outstandingCredits.length > 0 && (
               <div className="flex justify-between text-[8px]">
                 <span className="text-purple-400/70">Unpaid:</span>
-                <span className="text-purple-400 font-bold">{fmtK(totalOutstanding)}</span>
+                <span className="text-purple-400 font-bold break-words">{formatFullAmount(totalOutstanding)}</span>
               </div>
             )}
             {partialCredits.length > 0 && (
               <div className="flex justify-between text-[8px]">
                 <span className="text-orange-400/70">Partial remaining:</span>
-                <span className="text-orange-400 font-bold">{fmtK(totalPartialRemaining)}</span>
+                <span className="text-orange-400 font-bold break-words">{formatFullAmount(totalPartialRemaining)}</span>
               </div>
             )}
           </div>
@@ -530,7 +489,9 @@ export default function PerformanceReports() {
               Settled
             </span>
           </div>
-          <p className="text-2xl font-black text-emerald-400">{fmtK(totalSettledPaid)}</p>
+          <p className="text-2xl font-black text-emerald-400 break-words whitespace-normal">
+            {formatFullAmount(totalSettledPaid)}
+          </p>
           <p className={`text-[9px] mt-2 ${muted}`}>
             {fullySettledCredits.length} credit{fullySettledCredits.length !== 1 ? "s" : ""} paid
           </p>
@@ -538,13 +499,13 @@ export default function PerformanceReports() {
             {fullySettledCredits.length > 0 && (
               <div className="flex justify-between text-[8px]">
                 <span className="text-emerald-400/70">Fully settled:</span>
-                <span className="text-emerald-400 font-bold">{fmtK(totalFullySettledAmt)}</span>
+                <span className="text-emerald-400 font-bold break-words">{formatFullAmount(totalFullySettledAmt)}</span>
               </div>
             )}
             {partialCredits.length > 0 && (
               <div className="flex justify-between text-[8px]">
                 <span className="text-orange-400/70">Partially paid:</span>
-                <span className="text-orange-400 font-bold">{fmtK(totalPartialPaid)}</span>
+                <span className="text-orange-400 font-bold break-words">{formatFullAmount(totalPartialPaid)}</span>
               </div>
             )}
           </div>
@@ -560,20 +521,22 @@ export default function PerformanceReports() {
               {formatMonthDisplay(selectedMonth)}
             </span>
           </div>
-          <p className="text-2xl font-black text-black">{fmtK(allTimeTotal)}</p>
+          <p className="text-2xl font-black text-black break-words whitespace-normal">
+            {formatFullAmount(allTimeTotal)}
+          </p>
           <p className="text-[9px] mt-2 text-black/60">{ledgerCredits.length} entries</p>
           <div className="mt-3 pt-2 border-t border-black/10 space-y-0.5">
             <div className="flex justify-between text-[8px] text-black/60">
               <span>Outstanding:</span>
-              <span className="font-bold">{fmtK(totalOutstandingBalance)}</span>
+              <span className="font-bold break-words">{formatFullAmount(totalOutstandingBalance)}</span>
             </div>
             <div className="flex justify-between text-[8px] text-black/60">
               <span>Settled:</span>
-              <span className="font-bold">{fmtK(totalSettledPaid)}</span>
+              <span className="font-bold break-words">{formatFullAmount(totalSettledPaid)}</span>
             </div>
             <div className="flex justify-between text-[8px] text-black/60">
               <span>Rejected:</span>
-              <span className="font-bold">{fmtK(totalRejected)}</span>
+              <span className="font-bold break-words">{formatFullAmount(totalRejected)}</span>
             </div>
           </div>
         </div>
@@ -668,7 +631,7 @@ export default function PerformanceReports() {
         </div>
       </div>
 
-      {/* ── REVENUE CHART ── */}
+      {/* ── REVENUE CHART (unchanged) ── */}
       <div className={`rounded-2xl border p-6 md:p-8 transition-all duration-300 hover:shadow-xl ${card}`}>
         <div className="mb-5">
           <div className="flex items-center gap-2 mb-2">
@@ -679,7 +642,7 @@ export default function PerformanceReports() {
         <div className="w-full overflow-hidden"><RevenueChart/></div>
       </div>
 
-      {/* ── REJECT MODAL ── */}
+      {/* ── REJECT MODAL (unchanged) ── */}
       {rejectingRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className={`w-full max-w-sm rounded-2xl p-8 shadow-2xl border
