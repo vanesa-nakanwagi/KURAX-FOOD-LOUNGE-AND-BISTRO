@@ -145,22 +145,23 @@ export default function ManagerCreditPanel({ managerName }) {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const normalizeCreditStatus = (status) => String(status || "").trim().toLowerCase();
+  const isPendingManagerStatus = (status) => {
+    const s = normalizeCreditStatus(status);
+    return ["pendingmanagerapproval", "pendingmanager", "pending", "pendingcashier"].includes(s);
+  };
+
   const load = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
       if (res.ok) {
         const all = await res.json();
-        // ✅ Pending = status is 'PendingCashier' or 'PendingManagerApproval'
-        const pending = all.filter(c =>
-          c.status === "PendingCashier" ||
-          c.status === "PendingManagerApproval" ||
-          c.status === "Pending"
-        );
+        const pending = all.filter(c => isPendingManagerStatus(c.status));
         setPendingCredits(pending);
       }
     } catch (err) { console.error(err); }
     setLoading(false);
-  }, []);
+  }, [isPendingManagerStatus]);
 
   useEffect(() => {
     load();

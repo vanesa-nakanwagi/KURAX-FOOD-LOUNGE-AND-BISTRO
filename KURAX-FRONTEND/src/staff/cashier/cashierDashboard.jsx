@@ -380,6 +380,14 @@ export default function CashierDashboard() {
   };
 
   const handleReject = async () => {
+    if (processingOrder?.method === "Credit") {
+      alert("❌ Cashier cannot reject a credit request. Forward it to the manager for approval or rejection.");
+      setProcessingOrder(null);
+      setRejecting(false);
+      setRejectNote("");
+      return;
+    }
+
     setConfirming(true);
     try {
       await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${processingOrder.id}/reject`, {
@@ -479,7 +487,7 @@ export default function CashierDashboard() {
             <div>
               <div className="flex items-center gap-3 mb-1">
                 <div className="w-1 h-6 bg-yellow-500 rounded-full" />
-                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-600">Cashier Overview</h4>
+                      <XCircle size={13} /> Manager Rejects Credit
               </div>
               <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-black tracking-tight">
                 Welcome back, <span className="text-yellow-600 capitalize whitespace-nowrap">{cashierName}</span>

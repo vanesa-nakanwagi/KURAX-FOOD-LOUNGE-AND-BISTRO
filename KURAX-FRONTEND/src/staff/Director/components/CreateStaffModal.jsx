@@ -3,7 +3,7 @@ import { X, Mail, Eye, EyeOff, RefreshCcw } from "lucide-react";
 
 const ROLES = [
   "WAITER", "CASHIER", "CHEF", "MANAGER", "DIRECTOR",
-  "CONTENT-MANAGER", "ACCOUNTANT", "BARISTA", "BARMAN", "SUPERVISOR",
+  "CONTENT-MANAGER", "ACCOUNTANT", "BARISTA", "BARMAN", "SHISHA", "SUPERVISOR",
 ];
 
 export default function CreateStaffModal({ onClose, onSave, initialData, staffList }) {

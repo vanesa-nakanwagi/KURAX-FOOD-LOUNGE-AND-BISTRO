@@ -22,7 +22,6 @@ router.get('/live-orders', async (req, res) => {
       `SELECT * FROM orders
        WHERE (staff_id = $1 OR staff_name = $2)
          AND status NOT IN ('Paid', 'Closed', 'Voided')
-         AND sent_to_cashier = false
          AND is_archived = false
          AND shift_cleared = false
        ORDER BY created_at ASC`,

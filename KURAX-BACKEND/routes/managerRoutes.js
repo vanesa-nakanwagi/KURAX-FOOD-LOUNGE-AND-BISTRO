@@ -52,7 +52,7 @@ const PAID_ORDER_FILTER = `
   AND UPPER(COALESCE(o.payment_method,'')) NOT LIKE '%CREDIT%'
 `;
 
-const STAFF_NAME_EXPR = `COALESCE(s.name, o.staff_name, o.waiter_name, 'Unknown')`;
+const STAFF_NAME_EXPR = `COALESCE(s.name, o.staff_name, 'Unknown')`;
 
 function orderDateCondition(type, { date, month, startDate, endDate }) {
   const col = `COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'`;
@@ -373,6 +373,149 @@ router.get("/performance-list", async (req, res) => {
   } catch (err) {
     console.error("Performance List Error:", err.message);
     res.status(500).json({ error: "Failed to load staff performance directory" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. STAFF SALES PERFORMANCE / INSIGHTS
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/staff-sales-performance", async (req, res) => {
+  try {
+    const {
+      startDate,
+      endDate,
+      staffId,
+      role,
+      paymentStatus = "all"
+    } = req.query;
+
+    const params = [];
+    const addParam = value => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+    const orderConditions = [
+      `COALESCE(o.timestamp, o.created_at) IS NOT NULL`,
+      `COALESCE(o.is_archived, false) = false`,
+      `COALESCE(s.role, 'WAITER') IN ('WAITER', 'MANAGER', 'SUPERVISOR')`
+    ];
+
+    if (startDate) {
+      orderConditions.push(`DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') >= ${addParam(startDate)}`);
+    }
+    if (endDate) {
+      orderConditions.push(`DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') <= ${addParam(endDate)}`);
+    }
+    if (staffId) orderConditions.push(`s.id = ${addParam(staffId)}`);
+    if (role && ['WAITER', 'MANAGER', 'SUPERVISOR'].includes(role.toUpperCase())) {
+      orderConditions.push(`s.role = ${addParam(role.toUpperCase())}`);
+    }
+
+    if (paymentStatus === 'paid') {
+      orderConditions.push(`o.payment_confirmed = true AND LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'served')`);
+    } else if (paymentStatus === 'credit') {
+      orderConditions.push(`(UPPER(COALESCE(o.payment_method, '')) LIKE '%CREDIT%' OR LOWER(o.status) = 'credit')`);
+    } else if (paymentStatus === 'pending') {
+      orderConditions.push(`COALESCE(o.payment_confirmed, false) = false AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')`);
+    }
+
+    const whereClause = orderConditions.join(' AND ');
+    const orderRows = await pool.query(`
+      SELECT
+        o.id,
+        s.id AS staff_id,
+        ${STAFF_NAME_EXPR} AS staff_name,
+        COALESCE(s.role, 'WAITER') AS role,
+        o.total,
+        o.status,
+        o.payment_method,
+        o.payment_confirmed,
+        COALESCE(o.timestamp, o.created_at) AS order_date
+      FROM orders o
+      LEFT JOIN staff s ON s.id = o.staff_id
+      WHERE ${whereClause}
+      ORDER BY order_date DESC
+    `, params);
+
+    const staffParams = [];
+    const staffFilters = [`s.role IN ('WAITER', 'MANAGER', 'SUPERVISOR')`];
+    if (staffId) {
+      staffParams.push(staffId);
+      staffFilters.push(`s.id = $${staffParams.length}`);
+    }
+    if (role && ['WAITER', 'MANAGER', 'SUPERVISOR'].includes(role.toUpperCase())) {
+      staffParams.push(role.toUpperCase());
+      staffFilters.push(`s.role = $${staffParams.length}`);
+    }
+    const staffResult = await pool.query(`
+      SELECT s.id AS staff_id, s.name AS staff_name, s.role
+      FROM staff s
+      WHERE ${staffFilters.join(' AND ')}
+      ORDER BY s.name ASC
+    `, staffParams);
+
+    const staffMap = new Map(staffResult.rows.map(staff => [String(staff.staff_id), {
+      ...staff,
+      orders_count: 0,
+      total_sales: 0,
+      payment_breakdown: {}
+    }]));
+    const dailyMap = new Map();
+    const paymentTotals = {};
+
+    orderRows.rows.forEach(order => {
+      const key = String(order.staff_id || order.staff_name);
+      if (!staffMap.has(key)) {
+        staffMap.set(key, {
+          staff_id: order.staff_id,
+          staff_name: order.staff_name,
+          role: order.role,
+          orders_count: 0,
+          total_sales: 0,
+          payment_breakdown: {}
+        });
+      }
+      const amount = Number(order.total || 0);
+      const payment = order.payment_method || (order.payment_confirmed ? 'Paid' : 'Pending');
+      const staff = staffMap.get(key);
+      staff.orders_count += 1;
+      staff.total_sales += amount;
+      staff.payment_breakdown[payment] = (staff.payment_breakdown[payment] || 0) + 1;
+      paymentTotals[payment] = (paymentTotals[payment] || 0) + 1;
+
+      const day = new Date(order.order_date).toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
+      const dayRow = dailyMap.get(day) || { date: day, orders_count: 0, total_sales: 0, staff: {} };
+      dayRow.orders_count += 1;
+      dayRow.total_sales += amount;
+      dayRow.staff[staff.staff_name] = (dayRow.staff[staff.staff_name] || 0) + amount;
+      dailyMap.set(day, dayRow);
+    });
+
+    const staff = Array.from(staffMap.values()).map(row => ({
+      ...row,
+      total_sales: Number(row.total_sales.toFixed(2)),
+      average_sales_per_day: startDate && endDate
+        ? Number((row.total_sales / Math.max(1, Math.ceil((new Date(endDate) - new Date(startDate)) / 86400000) + 1)).toFixed(2))
+        : Number(row.total_sales.toFixed(2))
+    })).sort((a, b) => b.total_sales - a.total_sales);
+    const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+    const totalOrders = staff.reduce((sum, row) => sum + row.orders_count, 0);
+    const totalSales = staff.reduce((sum, row) => sum + row.total_sales, 0);
+
+    res.json({
+      staff,
+      daily,
+      paymentTotals,
+      summary: {
+        total_orders: totalOrders,
+        total_sales: Number(totalSales.toFixed(2)),
+        active_staff: staff.filter(row => row.orders_count > 0).length
+      },
+      filters: { startDate: startDate || null, endDate: endDate || null, staffId: staffId || null, role: role || null, paymentStatus }
+    });
+  } catch (err) {
+    console.error("Staff Sales Performance Error:", err.message);
+    res.status(500).json({ error: "Failed to load staff sales performance" });
   }
 });
 

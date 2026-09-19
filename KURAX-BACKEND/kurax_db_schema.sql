@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS menus (
   station     TEXT,       -- kitchen | barista | barman
   image_url   TEXT,
   is_available BOOLEAN    DEFAULT true,
+  published   BOOLEAN     DEFAULT false,
+  customer_visible BOOLEAN DEFAULT false,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );

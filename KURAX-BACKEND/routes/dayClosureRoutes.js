@@ -88,7 +88,6 @@ router.post('/close-day', async (req, res) => {
     `, [closingDate]);
     const clearedOrdersCount = ordersResult.rowCount;
 
-    // Clear kitchen tickets
     const ticketsResult = await client.query(`
       UPDATE kitchen_tickets
       SET cleared_by_kitchen = true,
@@ -100,6 +99,26 @@ router.post('/close-day', async (req, res) => {
       RETURNING id
     `, [actor, closingDate]);
     const clearedTicketsCount = ticketsResult.rowCount;
+
+    await client.query(`
+      UPDATE barista_tickets
+      SET cleared_by_kitchen = true,
+          cleared_by = $1,
+          cleared_at = NOW(),
+          updated_at = NOW()
+      WHERE cleared_by_kitchen = false
+        AND ticket_date <= $2
+    `, [actor, closingDate]);
+
+    await client.query(`
+      UPDATE barman_tickets
+      SET cleared_by_kitchen = true,
+          cleared_by = $1,
+          cleared_at = NOW(),
+          updated_at = NOW()
+      WHERE cleared_by_kitchen = false
+        AND ticket_date <= $2
+    `, [actor, closingDate]);
 
     // Clear cashier queue (shift cleared)
     await client.query(`
@@ -128,6 +147,22 @@ router.post('/close-day', async (req, res) => {
           updated_at = NOW()
       WHERE status = 'Occupied'
     `);
+
+    await client.query(`DELETE FROM physical_counts WHERE count_date = $1`, [closingDate]);
+    await client.query(`DELETE FROM daily_reconciliations WHERE recon_date = $1`, [closingDate]);
+    await client.query(`
+      UPDATE daily_summaries
+      SET total_gross = 0,
+          total_cash = 0,
+          total_card = 0,
+          total_mtn = 0,
+          total_airtel = 0,
+          total_credit = 0,
+          total_mixed = 0,
+          order_count = 0,
+          updated_at = NOW()
+      WHERE summary_date = $1
+    `, [closingDate]);
 
     await logActivity(pool, {
       type: 'DAY_CLOSED',

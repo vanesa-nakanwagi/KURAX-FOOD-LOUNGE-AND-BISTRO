@@ -819,8 +819,27 @@ function OrderCard({
           )}
 
           {isServed && isAwaitingCashier && !allItemsPaid && (
-            <div className="w-full py-1.5 sm:py-2.5 bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5">
-              <Hourglass size={11} className="animate-pulse" /> Sent to Cashier — Awaiting Confirmation
+            <div className="w-full space-y-2">
+              <div className="w-full py-1.5 sm:py-2.5 bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5">
+                <Hourglass size={11} className="animate-pulse" /> Sent to Cashier — Awaiting Confirmation
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const payload = {
+                    type: "table",
+                    tableName: order.tableName,
+                    orderIds: order.orderIds || [],
+                  };
+                  const ok = await cancelPendingRequest(payload);
+                  if (ok) {
+                    alert("Request cancelled — you can submit again after confirming the client payment method.");
+                  }
+                }}
+                className="w-full py-1.5 sm:py-2.5 border border-red-300 bg-red-50 text-red-700 font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5"
+              >
+                <X size={10} /> Undo Send to Cashier
+              </button>
             </div>
           )}
 
@@ -1100,6 +1119,40 @@ export default function OrderHistory({ onAddItems }) {
       fetchCredits();
     } catch (err) { console.error("Mark paid failed:", err); }
   }, [refreshData, fetchCredits]);
+
+  const cancelPendingRequest = useCallback(async (payload) => {
+    const tableName = String(payload?.tableName || "").trim().toUpperCase();
+    const isItemPay = payload?.type === "item";
+    const lsKey = isItemPay
+      ? pendingItemKey(tableName, payload?.item?.name || "")
+      : pendingTableKey(tableName);
+
+    try {
+      const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/cancel-pending`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          table_name: tableName,
+          order_ids: payload?.orderIds || [],
+          item_name: payload?.item?.name || null,
+          canceled_by: currentStaffName,
+        }),
+      });
+
+      if (res.ok) {
+        clearPending(lsKey);
+        refreshData?.();
+        return true;
+      }
+
+      const error = await res.json().catch(() => ({}));
+      console.error("Cancel pending request failed:", error.error || "Unknown error");
+      return false;
+    } catch (err) {
+      console.error("Cancel pending request network error:", err);
+      return false;
+    }
+  }, [currentStaffName, refreshData, clearPending]);
 
   const handleSend = useCallback(async (payload) => {
     const tableName = String(payload.tableName || "").trim().toUpperCase();

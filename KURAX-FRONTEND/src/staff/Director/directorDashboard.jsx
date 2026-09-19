@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, BarChart3,
   History, Target, Bell, Menu, X, LogOut, Bike,
-  BookOpen, CheckCircle2, XCircle, Clock, Hourglass
+  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet
 } from "lucide-react";
 
 // ── Local components ──────────────────────────────────────────────────────────
@@ -22,6 +22,8 @@ import { useData }  from "../../customer/components/context/DataContext";
 import Logo         from "../../customer/assets/images/logo.jpeg";
 import Footer       from "../../customer/components/common/Foooter";
 import API_URL      from "../../config/api";
+import ReconciliationViewer from "../Accountant/sections/ReconciliationViewer";
+import StaffSalesPerformance from "../components/StaffSalesPerformance";
 
 // ── CREDIT STATUS BADGE COMPONENT ────────────────────────────────────────────
 function CreditStatusBadge({ status }) {
@@ -48,8 +50,10 @@ function CreditStatusBadge({ status }) {
 
 const NAV = [
   { icon: <LayoutDashboard size={18} />, label: "Dashboard",  tab: "OVERVIEW"  },
+  { icon: <Wallet size={18} />,       label: "Reconciliation", tab: "RECONCILIATION" },
   { icon: <Users size={18} />,           label: "Staff",      tab: "STAFF"     },
   { icon: <BarChart3 size={18} />,       label: "Finances & Credits",  tab: "FINANCES"  },
+  { icon: <BarChart3 size={18} />,       label: "Staff Performance",   tab: "PERFORMANCE" },
   { icon: <History size={18} />,         label: "History",    tab: "HISTORY"   },
   { icon: <Target size={18} />,          label: "Targets",    tab: "TARGETS"   },
   { icon: <Bike size={18} />,            label: "Riders",     tab: "RIDERS"    },
@@ -337,6 +341,10 @@ export default function DirectorDashboard() {
               <OverviewSection onViewRegistry={() => setActiveTab("HISTORY")} />
             )}
 
+            {activeTab === "RECONCILIATION" && (
+              <ReconciliationViewer userName={currentUser?.name || "Director"} onlyReconciliation />
+            )}
+
             {activeTab === "TARGETS" && (
               <div className="animate-in fade-in duration-500">
                 <DirectorTargetView />
@@ -363,6 +371,8 @@ export default function DirectorDashboard() {
                 CreditStatusBadge={CreditStatusBadge}
               />
             )}
+
+            {activeTab === "PERFORMANCE" && <StaffSalesPerformance role="DIRECTOR" />}
             
             {activeTab === "HISTORY"  && <HistorySection />}
 

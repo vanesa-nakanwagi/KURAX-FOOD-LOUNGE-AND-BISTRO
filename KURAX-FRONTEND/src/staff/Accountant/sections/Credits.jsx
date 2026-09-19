@@ -50,8 +50,14 @@ export default function Credits({
   const rejectedCredits = creditsLedger.filter(c => c.status === "Rejected");
   const correctRejectedTotal = rejectedCredits.reduce((sum, c) => sum + Number(c.amount || 0), 0);
   
-  // Total credits (all time)
-  const allTimeTotal = creditsLedger.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  // Total credits (all time) should only include approved or settled values.
+  // Pending cashier / manager approval items are not yet approved and must not
+  // be counted as active credit exposure.
+  const approvedOrSettled = creditsLedger.filter(c => {
+    const s = String(c.status || "").toLowerCase();
+    return ["approved", "fullysettled", "partiallysettled", "settled"].includes(s);
+  });
+  const allTimeTotal = approvedOrSettled.reduce((sum, c) => sum + Number(c.amount_paid || c.amount || 0), 0);
   
   const textClassColor = isDark ? "text-white" : "text-gray-900";
   const subTextClassColor = isDark ? "text-gray-400" : "text-gray-500";

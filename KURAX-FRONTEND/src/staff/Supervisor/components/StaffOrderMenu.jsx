@@ -5,7 +5,7 @@ import { getImageSrc } from "../../../utils/imageHelper";
 
 export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = "", activeCategory, setActiveCategory }) {
   const { theme } = useTheme();
-  const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
+  const categories = ["Starters", "Local Foods", "Drinks & Cocktails", "Shisha"];
 
   const filteredMenus = items.filter((item) => {
     const query = searchQuery.toLowerCase();
@@ -70,8 +70,8 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
           </p>
         </div>
       ) : (
-        /* GRID: 1 col mobile, 2 col tablet, 3 col desktop */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 md:gap-6 lg:gap-8 pb-20">
+        /* GRID: 1 col mobile, 2 col tablet, 4 col desktop */
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 md:gap-5 pb-20">
           {filteredMenus.map((item) => {
             const isNew =
               item.created_at &&
@@ -80,7 +80,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
             return (
               <div
                 key={item.id}
-                className={`group relative rounded-2xl overflow-hidden flex flex-col transition-all duration-300 border shadow-sm hover:shadow-xl active:scale-[0.99] md:hover:-translate-y-1
+                className={`group relative font-outfit flex flex-col rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border transition-all duration-500 hover:-translate-y-2
                   ${
                     theme === "dark"
                       ? "bg-[#0A0A0A] border-zinc-800/40 hover:border-yellow-500/30"
@@ -88,7 +88,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                   }`}
               >
                 {/* IMAGE */}
-                <div className="h-40 sm:h-44 md:h-48 relative overflow-hidden shrink-0 bg-zinc-100 dark:bg-zinc-900">
+                <div className="relative h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
                   {/* Badges */}
                   <div className="absolute top-2.5 left-2.5 right-2.5 flex justify-between items-start z-10">
                     <span
@@ -112,7 +112,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                   <img
                     src={getImageSrc(item.image_url)}
                     alt={item.name}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                     onError={(e) => {
                       e.target.src = "https://via.placeholder.com/300?text=No+Image";
                     }}
@@ -121,18 +121,18 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                 </div>
 
                 {/* CONTENT */}
-                <div className="p-3.5 sm:p-4 md:p-5 flex-1 flex flex-col justify-between">
-                  <div>
+                <div className="p-6 flex-1 flex flex-col justify-between">
+                  <div className="space-y-2 text-left">
                     <h4
-                      className={`text-sm sm:text-base md:text-lg font-[Outfit] uppercase tracking-tight leading-tight line-clamp-1 ${
-                        theme === "dark" ? "text-white" : "text-yellow-900"
+                      className={`text-lg font-[Outfit] tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1 ${
+                        theme === "dark" ? "text-white" : "text-yellow-700"
                       }`}
                     >
                       {item.name}
                     </h4>
                     <p
-                      className={`text-[11px] sm:text-[12px] leading-relaxed mt-1.5 line-clamp-2 ${
-                        theme === "dark" ? "text-zinc-400" : "text-zinc-500"
+                      className={`text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed line-clamp-2 ${
+                        theme === "dark" ? "text-zinc-400" : "text-zinc-900"
                       }`}
                     >
                       {item.description?.substring(0, 80) ||
@@ -143,14 +143,14 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
 
                   {/* INTERACTION BAR */}
                   <div
-                    className={`flex items-center justify-between pt-3 mt-3 border-t ${
-                      theme === "dark" ? "border-zinc-800/50" : "border-zinc-100"
+                    className={`flex items-center justify-between pt-5 mt-4 border-t ${
+                      theme === "dark" ? "border-zinc-800/50" : "border-zinc-200"
                     }`}
                   >
                     {/* ORDER BUTTON — always shows icon + text */}
                     <button
                       onClick={() => onAddItem(item)}
-                      className="flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-black rounded-xl text-[9px] sm:text-[10px] font-medium uppercase tracking-[0.15em] shadow-md active:scale-95 transition-all"
+                      className="flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-600 text-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
                     >
                       <Plus size={11} strokeWidth={3.5} />
                       Order Now
@@ -159,7 +159,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                     {/* PRICE */}
                     <div className="text-right">
                       <span
-                        className={`block text-base sm:text-lg md:text-xl font-semibold tracking-tight leading-none ${
+                        className={`block text-xl tracking-tighter leading-none ${
                           theme === "dark" ? "text-white" : "text-zinc-900"
                         }`}
                       >

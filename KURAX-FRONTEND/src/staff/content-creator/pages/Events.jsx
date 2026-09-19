@@ -9,6 +9,7 @@ export default function Events() {
   const { events = [], setEvents } = useData()
   const [formVisible, setFormVisible] = useState(false)
   const [editingEvent, setEditingEvent] = useState(null)
+  const [imagePreview, setImagePreview] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)   // 👈 Track which event is being deleted
@@ -44,6 +45,17 @@ export default function Events() {
     setFormData(prev => ({ ...prev, image_file: e.target.files[0] || null }))
   }
 
+  useEffect(() => {
+    if (!formData.image_file) {
+      setImagePreview(formData.image_url ? `${API_URL}${formData.image_url}` : '')
+      return undefined
+    }
+
+    const previewUrl = URL.createObjectURL(formData.image_file)
+    setImagePreview(previewUrl)
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [formData.image_file, formData.image_url])
+
   const addTag = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -72,6 +84,7 @@ export default function Events() {
       time: '',
       location: '',
       image_file: null,
+      image_url: '',
       published: true,
       tags: []
     });
@@ -252,8 +265,35 @@ export default function Events() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                   <input type="date" name="date" value={formData.date} onChange={handleChange} required className="bg-white border border-gray-300 p-3 rounded-xl text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30" />
                   <input type="time" name="time" value={formData.time} onChange={handleChange} required className="bg-white border border-gray-300 p-3 rounded-xl text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30" />
-                  <input type="file" accept="image/*" onChange={handleFileChange} className="bg-white border border-gray-300 p-2.5 rounded-xl text-xs text-gray-500 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-yellow-500 file:text-black file:font-bold hover:file:bg-yellow-600" />
+                  <div className="flex items-center gap-3">
+                    <input type="file" accept="image/*" onChange={handleFileChange} className="min-w-0 flex-1 bg-white border border-gray-300 p-2.5 rounded-xl text-xs text-gray-500 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-yellow-500 file:text-black file:font-bold hover:file:bg-yellow-600" />
+                    {imagePreview && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewOpen(true)}
+                        className="relative w-24 h-16 rounded-xl overflow-hidden border border-gray-200 bg-gray-100 shrink-0 shadow-sm hover:shadow-md transition"
+                      >
+                        <img src={imagePreview} alt="Event preview" className="w-full h-full object-cover" />
+                        <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[8px] text-center py-0.5 uppercase tracking-wide">Preview</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {previewOpen && imagePreview && (
+                  <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setPreviewOpen(false)}>
+                    <div className="relative w-full max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden bg-white shadow-2xl border border-white/10" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewOpen(false)}
+                        className="absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                      <img src={imagePreview} alt="Full event preview" className="w-full max-h-[90vh] object-contain bg-gray-100" />
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 mt-4 border-t border-gray-200">
                   <div className="flex items-center gap-3">

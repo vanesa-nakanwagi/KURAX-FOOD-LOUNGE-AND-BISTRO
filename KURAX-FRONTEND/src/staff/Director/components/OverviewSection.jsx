@@ -388,92 +388,11 @@ export default function OverviewSection({ onViewRegistry }) {
         </div>
       )}
 
-      {/* ── DAILY SUMMARY HEADER ── */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-xl bg-yellow-100">
-          <Calendar size={18} className="text-yellow-600" />
-        </div>
-        <div>
-          <h3 className="text-medium font-medium uppercase tracking-tighter text-yellow-900">
-            Daily Summary
-          </h3>
-          <p className="text-xs text-medium text-zinc-700 mt-0.5">Revenue breakdown for {getKampalaDate()}</p>
-        </div>
+      {/* ── REVENUE CHART ── */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 md:p-8">
+        <h3 className="text-xs font-black uppercase italic mb-3 tracking-widest text-gray-500">Revenue Flow</h3>
+        <div className="w-full overflow-hidden"><RevenueChart /></div>
       </div>
-
-      {/* ── STAT CARDS (2 per row on mobile) ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
-        <DashboardStatCard
-          label="Cash Revenue"
-          value={dayClosed ? 0 : displayCash}
-          sub={dayClosed ? "Day closed - totals reset" : "Cash payments only"}
-          icon={<Banknote size={18} className="text-emerald-600" />}
-          color="text-emerald-600"
-          largeValue={true}
-          isLive={!dayClosed}
-        />
-
-        <DashboardStatCard
-          label="Card Revenue"
-          value={dayClosed ? 0 : displayCard}
-          sub={dayClosed ? "Day closed - totals reset" : "POS card payments only"}
-          icon={<CreditCard size={18} className="text-blue-600" />}
-          color="text-blue-600"
-          largeValue={true}
-          isLive={!dayClosed}
-        />
-
-        <DashboardStatCard
-          label="MTN Momo Revenue"
-          value={dayClosed ? 0 : displayMTN}
-          sub={dayClosed ? "Day closed - totals reset" : "MTN mobile money only"}
-          icon={<Smartphone size={18} className="text-yellow-600" />}
-          color="text-yellow-600"
-          largeValue={true}
-          isLive={!dayClosed}
-        />
-
-        <DashboardStatCard
-          label="Airtel Money Revenue"
-          value={dayClosed ? 0 : displayAirtel}
-          sub={dayClosed ? "Day closed - totals reset" : "Airtel mobile money only"}
-          icon={<Smartphone size={18} className="text-red-600" />}
-          color="text-red-600"
-          largeValue={true}
-          isLive={!dayClosed}
-        />
-
-        <DashboardStatCard
-          label="Gross Revenue"
-          value={dayClosed ? 0 : displayGross}
-          sub={settleTotal > 0 && !dayClosed
-            ? `${fmtLargeNumber(settleTotal)} credit settlements collected today`
-            : dayClosed ? "Day closed - totals reset" : "Cash + Card + MTN + Airtel (Paid orders only)"}
-          icon={<TrendingUp size={18} className="text-emerald-600" />}
-          color="text-emerald-600"
-          largeValue={true}
-          isLive={!dayClosed}
-        />
-      </div>
-
-      {/* Credit Settlements Today Banner */}
-      {!dayClosed && settleTotal > 0 && (
-        <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 size={14} className="text-emerald-500" />
-              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Credits Settled Today:</p>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              {settleCash > 0 && <span className="text-[9px] font-black text-emerald-500">Cash: {fmtLargeNumber(settleCash)}</span>}
-              {settleCard > 0 && <span className="text-[9px] font-black text-emerald-500">Card: {fmtLargeNumber(settleCard)}</span>}
-              {settleMTN > 0 && <span className="text-[9px] font-black text-emerald-500">MTN: {fmtLargeNumber(settleMTN)}</span>}
-              {settleAirtel > 0 && <span className="text-[9px] font-black text-emerald-500">Airtel: {fmtLargeNumber(settleAirtel)}</span>}
-              <span className="text-[10px] font-black text-emerald-700">Total: {fmtLargeNumber(settleTotal)}</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── PETTY CASH LEDGER PANEL (unchanged) ── */}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
@@ -600,12 +519,6 @@ export default function OverviewSection({ onViewRegistry }) {
             </>
           )}
         </div>
-      </div>
-
-      {/* ── REVENUE CHART ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 md:p-8">
-        <h3 className="text-xs font-black uppercase italic mb-3 tracking-widest text-gray-500">Revenue Flow</h3>
-        <div className="w-full overflow-hidden"><RevenueChart /></div>
       </div>
 
       {/* ── LIVE ACTIVITY FEED ── */}

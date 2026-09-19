@@ -15,6 +15,8 @@ import LiveTableGrid      from "./LiveTableGrid";
 import PerformanceReports from "./PerformanceReports";
 import ManagerCreditPanel from "./ManagerCreditPanel";
 import OrderHistory from "./ManageTables";
+import ReconciliationViewer from "../../Accountant/sections/ReconciliationViewer";
+import StaffSalesPerformance from "../../components/StaffSalesPerformance";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData }  from "../../../customer/components/context/DataContext";
@@ -71,6 +73,7 @@ export default function ManagerLayout() {
   // Main Content Switcher - FIXED: Don't pass theme prop to ManagerCreditPanel
   const renderContent = () => {
     switch (activeTab) {
+      case "reconciliation": return <ReconciliationViewer userName={currentStaffName} dark={isDark} onlyReconciliation />;
       case "order": 
         if (!isGranted) return <LockedView name={currentStaffName} role={currentUser?.role} theme={theme} />;
         return <NewOrder />;
@@ -79,7 +82,7 @@ export default function ManagerLayout() {
       case "target":  return <TargetSettings />;
       case "history": return <PerformanceDashboard />;
       case "manage": return <OrderHistory />;
-      case "reports": return <PerformanceReports />;
+      case "reports": return <StaffSalesPerformance role="MANAGER" />;
       case "credits": return <ManagerCreditPanel managerName={currentStaffName} />; // REMOVED theme prop
       default:        return <NewOrder />;
     }

@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
 // --- POST NEW MENU ---
 router.post('/', upload.single('image'), async (req, res) => {
   try {
-    const { name, description, price, category, station, published } = req.body;
+    const { name, description, price, category, station, published, customer_visible } = req.body;
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : req.body.image_url;
     
     // Convert 'true'/'false' string from FormData to actual boolean
@@ -44,13 +44,14 @@ router.post('/', upload.single('image'), async (req, res) => {
 
     // UPDATED: Return 'status' string in the response
     const query = `
-      INSERT INTO menus (name, description, price, category, station, image_url, published) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7) 
+      INSERT INTO menus (name, description, price, category, station, image_url, published, customer_visible)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *, (CASE WHEN $7 = true THEN 'live' ELSE 'draft' END) as status
     `;
 
     const result = await pool.query(query, [
-      name, description, price, category, station, imageUrl, isPublished
+      name, description, price, category, station, imageUrl, isPublished,
+      customer_visible === 'true' || customer_visible === true
     ]);
     
     res.status(201).json(result.rows[0]);
@@ -63,7 +64,7 @@ router.post('/', upload.single('image'), async (req, res) => {
 // --- PUT UPDATE MENU ---
 router.put('/:id', upload.single('image'), async (req, res) => {
   const { id } = req.params;
-  const { name, description, price, category, station, published } = req.body;
+  const { name, description, price, category, station, published, customer_visible } = req.body;
   
   try {
     let imageUrl = req.body.image_url;
@@ -74,13 +75,14 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     // UPDATED: Return 'status' string in the response
     const query = `
       UPDATE menus 
-      SET name=$1, description=$2, price=$3, category=$4, station=$5, published=$6, image_url=$7 
-      WHERE id=$8 
+      SET name=$1, description=$2, price=$3, category=$4, station=$5, published=$6, image_url=$7, customer_visible=$8
+      WHERE id=$9
       RETURNING *, (CASE WHEN published = true THEN 'live' ELSE 'draft' END) as status
     `;
 
     const result = await pool.query(query, [
-      name, description, price, category, station, isPublished, imageUrl, id
+      name, description, price, category, station, isPublished, imageUrl,
+      customer_visible === 'true' || customer_visible === true, id
     ]);
     
     if (result.rows.length === 0) return res.status(404).json({ error: "Item not found" });

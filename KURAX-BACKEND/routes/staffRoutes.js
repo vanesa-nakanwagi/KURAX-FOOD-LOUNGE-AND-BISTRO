@@ -176,7 +176,7 @@ router.get("/performance-list", async (req, res) => {
          daily_order_target,
          is_permitted
        FROM staff 
-       WHERE role IN ('WAITER', 'MANAGER', 'SUPERVISOR', 'CHEF', 'BARISTA', 'BARMAN')
+      WHERE role IN ('WAITER', 'MANAGER', 'SUPERVISOR', 'CHEF', 'BARISTA', 'BARMAN', 'SHISHA')
        ORDER BY 
          CASE role 
            WHEN 'MANAGER' THEN 1 

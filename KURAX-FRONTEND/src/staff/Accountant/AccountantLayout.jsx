@@ -14,6 +14,7 @@ import Credits from "./sections/Credits";
 import ViewSales from "./sections/ViewSales";
 import MonthlyCosts from "./MonthlyCosts";
 import ReportsPanel from "./ReportsPanel";
+import ReconciliationOverview from "./sections/ReconciliationOverview";
 
 // Import modal components
 import ReopenDayModal from "./modals/ReopenDayModal";
@@ -25,7 +26,7 @@ import { kampalaDate, fmt, toLocalDateStr, formatCurrencyCompact, getCreditStatu
 export default function AccountantLayout() {
   const { todaySummary, orders = [], refreshData } = useData() || {};
 
-  const [activeSection, setActiveSection] = useState("FINANCIAL_HISTORY");
+  const [activeSection, setActiveSection] = useState("DASHBOARD");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [error, setError] = useState(null);
   const [dayClosed, setDayClosed] = useState(false);
@@ -121,11 +122,15 @@ export default function AccountantLayout() {
   }, [fetchLiveSummary]);
 
   const fetchPettyCashToday = useCallback(async () => {
+    if (dayClosed) {
+      setPettyCashToday({ total_in: 0, total_out: 0 });
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/api/accountant/petty-cash?date=${kampalaDate()}`);
       if (res.ok) setPettyCashToday(await res.json());
     } catch (e) { console.error("petty cash today:", e); }
-  }, []);
+  }, [dayClosed]);
 
   useEffect(() => {
     fetchPettyCashToday();
@@ -670,6 +675,7 @@ export default function AccountantLayout() {
             setPhysMomoAirtel(0);
             setPhysCard(0);
             setHasPhysicalCount(false);
+            setPettyCashToday({ total_in: 0, total_out: 0 });
           }
         }
       } catch (e) {
@@ -733,6 +739,48 @@ export default function AccountantLayout() {
                 </span>
               </div>
             </div>
+          )}
+
+          {activeSection === "DASHBOARD" && (
+            <ReconciliationOverview
+              dayClosed={dayClosed}
+              sys={sys}
+              physCash={physCash}
+              physMomoMTN={physMomoMTN}
+              physMomoAirtel={physMomoAirtel}
+              physCard={physCard}
+              pettyCashIn={pettyCashIn}
+              pettyCashToday={pettyCashToday}
+              varCash={varCash}
+              varMTN={varMTN}
+              varAirtel={varAirtel}
+              varCard={varCard}
+              varTotal={varTotal}
+              hasPhysicalCount={hasPhysicalCount}
+              creditsLedger={creditsLedger}
+              creditsLoading={creditsLoading}
+              voidRequests={voidRequests}
+              voidRequestsLoading={voidRequestsLoading}
+              profitData={profitData}
+              profitLoad={profitLoad}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              userName={userName}
+              summaryAvailable={Boolean(liveSummary || todaySummary)}
+              refreshDashboard={async () => {
+                await Promise.all([
+                  refreshData?.(),
+                  fetchLiveSummary(),
+                  fetchPettyCashToday(),
+                  loadPhysicalCount(),
+                  loadVoidRequests(),
+                ]);
+              }}
+              setActiveSection={setActiveSection}
+              handleDayClosure={handleDayClosure}
+              isFinalizing={isFinalizing}
+              error={error}
+            />
           )}
 
           {activeSection === "FINANCIAL_HISTORY" && (

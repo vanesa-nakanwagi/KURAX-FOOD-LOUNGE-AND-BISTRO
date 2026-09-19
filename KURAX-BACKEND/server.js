@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
-import pool from './db.js';
+import pool, { ensureDatabaseSchema } from './db.js';
 
 // ROUTE IMPORTS
 import menuRoutes from './routes/menuRoutes.js';
@@ -19,6 +19,7 @@ import accountantRoutes from './routes/accountantRoutes.js';
 import kitchenRoutes from "./routes/kitchenRoutes.js";
 import baristaRoutes from "./routes/baristaRoutes.js";
 import barmanRoutes from "./routes/barmanRoutes.js";
+import shishaRoutes from './routes/shishaRoutes.js';
 import waiterRoutes from './routes/waiterRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
 import deliveryRoutes from './routes/deliveryRoutes.js';
@@ -93,6 +94,7 @@ app.use('/api/accountant', accountantRoutes);
 app.use('/api/kitchen', kitchenRoutes);
 app.use('/api/barista', baristaRoutes);
 app.use('/api/barman', barmanRoutes);
+app.use('/api/shisha', shishaRoutes);
 app.use('/api/waiter', waiterRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/delivery', deliveryRoutes);
@@ -108,7 +110,13 @@ app.get('/api/health', (req, res) => {
 const verifyDB = async () => {
   try {
     await pool.query('SELECT NOW()');
-    console.log('✅ Database connected to Neon');
+    console.log(
+      process.env.DATABASE_URL?.includes('localhost')
+        ? '✅ Database connected to local Postgres'
+        : '✅ Database connected to Neon'
+    );
+    await ensureDatabaseSchema();
+    console.log('✅ Database schema verified/bootstrapped');
     await initCreditTables();
     console.log('✅ Credit tables verified/initialized');
   } catch (err) {
@@ -119,14 +127,14 @@ const verifyDB = async () => {
 const PORT = process.env.PORT || 5010;
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, '\nReason:', reason);
+  console.error(' Unhandled Rejection at:', promise, '\nReason:', reason);
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err);
+  console.error(' Uncaught Exception:', err);
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(` Server running on port ${PORT}`);
   verifyDB();
 });
