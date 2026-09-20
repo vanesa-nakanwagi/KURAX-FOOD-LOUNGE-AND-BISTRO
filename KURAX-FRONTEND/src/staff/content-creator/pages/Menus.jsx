@@ -1,7 +1,7 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
-import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles, Loader2 } from 'lucide-react'
+import { Plus, Utensils, Cigarette, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles, Loader2 } from 'lucide-react'
 import Footer from "../../../customer/components/common/Foooter";
 import { getImageSrc } from "../../../utils/imageHelper";
 import API_URL from "../../../config/api";
@@ -10,19 +10,22 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
 
-const CATEGORIES = ["Starters", "Local Foods", "Drinks & Cocktails"];
+const CATEGORIES = ["Starters", "Local Foods", "Drinks & Cocktails", "Shisha"];
 
 // Station routing options
 const STATIONS = [
   { id: 'Kitchen', label: 'Kitchen', icon: <Utensils className="w-3 h-3" /> },
   { id: 'Barista', label: 'Barista', icon: <Coffee className="w-3 h-3" /> },
-  { id: 'Barman', label: 'Bar', icon: <Wine className="w-3 h-3" /> }
+  { id: 'Barman', label: 'Bar', icon: <Wine className="w-3 h-3" /> },
+  { id: 'Shisha', label: 'Shisha', icon: <Cigarette className="w-3 h-3" /> }
 ];
 
 export default function Menus() {
   const { menus, setMenus } = useData()
   const [formVisible, setFormVisible] = useState(false)
   const [editingMenu, setEditingMenu] = useState(null)
+  const [imagePreview, setImagePreview] = useState('')
+  const [previewOpen, setPreviewOpen] = useState(false)
   const { theme } = useTheme();
 
   // 👇 New states for visual feedback
@@ -36,7 +39,8 @@ export default function Menus() {
     category: 'Starters',
     station: 'Kitchen',
     image_file: null,
-    published: false
+    published: false,
+    customer_visible: false
   })
 
   const handleChange = (e) => {
@@ -47,9 +51,24 @@ export default function Menus() {
       const cleanValue = value.replace(/\D/g, '')
       setFormData(prev => ({ ...prev, [name]: cleanValue }))
     } else {
-      setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
+      setFormData(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value,
+        ...(name === 'category' && value === 'Shisha' ? { station: 'Shisha' } : {})
+      }))
     }
   }
+
+  useEffect(() => {
+    if (!formData.image_file) {
+      setImagePreview(formData.current_image_url ? getImageSrc(formData.current_image_url) : '')
+      return undefined
+    }
+
+    const previewUrl = URL.createObjectURL(formData.image_file)
+    setImagePreview(previewUrl)
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [formData.image_file, formData.current_image_url])
 
   const resetForm = () => {
     setFormVisible(false);
@@ -61,7 +80,9 @@ export default function Menus() {
       category: 'Starters',
       station: 'Kitchen',
       image_file: null,
-      published: false
+      published: false,
+      current_image_url: '',
+      customer_visible: false
     });
   };
 
@@ -82,6 +103,7 @@ export default function Menus() {
     data.append('category', formData.category);
     data.append('station', formData.station);
     data.append('published', formData.published);
+    data.append('customer_visible', formData.customer_visible);
 
     if (formData.image_file) {
       data.append('image', formData.image_file);
@@ -130,7 +152,8 @@ export default function Menus() {
       station: menu.station,
       published: menu.published,
       image_file: null,
-      current_image_url: menu.image_url
+      current_image_url: menu.image_url,
+      customer_visible: menu.customer_visible === true
     });
     setFormVisible(true);
     document.getElementById('content-area')?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -227,7 +250,7 @@ export default function Menus() {
 
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Order Routing (Station Tag)</label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {STATIONS.map(station => (
                         <button
                           key={station.id}
@@ -278,12 +301,42 @@ export default function Menus() {
                         {formData.image_file ? 'Change Image' : 'Upload Image'}
                       </div>
                     </div>
+                    {imagePreview && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewOpen(true)}
+                        className="relative w-24 h-16 rounded-xl overflow-hidden border border-gray-200 bg-gray-100 shrink-0 shadow-sm hover:shadow-md transition"
+                      >
+                        <img src={imagePreview} alt="Menu preview" className="w-full h-full object-cover" />
+                        <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[8px] text-center py-0.5 uppercase tracking-wide">Preview</span>
+                      </button>
+                    )}
                   </div>
+                </div>
+
+                {previewOpen && imagePreview && (
+                  <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setPreviewOpen(false)}>
+                    <div className="relative w-full max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden bg-white shadow-2xl border border-white/10" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewOpen(false)}
+                        className="absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                      <img src={imagePreview} alt="Full menu preview" className="w-full max-h-[90vh] object-contain bg-gray-100" />
+                    </div>
+                  </div>
+                )}
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-t border-gray-200 pt-6">
                     <label className="flex items-center space-x-3 cursor-pointer group">
                       <input type="checkbox" name="published" checked={formData.published} onChange={handleChange} className="w-5 h-5 accent-yellow-500 rounded" />
                       <span className="text-gray-700 text-sm font-medium">Publish Menu</span>
+                    </label>
+                    <label className="flex items-center space-x-3 cursor-pointer group">
+                      <input type="checkbox" name="customer_visible" checked={formData.customer_visible} onChange={handleChange} className="w-5 h-5 accent-yellow-500 rounded" />
+                      <span className="text-gray-700 text-sm font-medium">Show to Customers</span>
                     </label>
                     <div className="flex gap-3">
                       <button type="button" onClick={resetForm} className="px-6 py-3 text-gray-500 font-bold text-sm hover:text-gray-700">
@@ -299,7 +352,6 @@ export default function Menus() {
                       </button>
                     </div>
                   </div>
-                </div>
               </form>
             </div>
           )}

@@ -1,0 +1,2 @@
+.env
+ole.log('Pending queue items:', result.rows[0].count);

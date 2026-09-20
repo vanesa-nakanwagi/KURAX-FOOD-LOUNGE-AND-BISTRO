@@ -156,19 +156,22 @@ export default function Menu() {
   // Filter menus based on search or category (using effective category)
   useEffect(() => {
     if (dbMenus.length === 0) return;
+    const customerVisibleMenus = dbMenus.filter(
+      (item) => item.category !== "Shisha" || item.customer_visible === true
+    );
     let results = [];
     if (isSearching && searchQuery) {
       const query = searchQuery.toLowerCase().trim();
-      results = dbMenus.filter(
+      results = customerVisibleMenus.filter(
         (item) =>
           item.name.toLowerCase().includes(query) ||
           (item.description && item.description.toLowerCase().includes(query)) ||
           getEffectiveCategory(item).toLowerCase().includes(query)
       );
     } else if (selectedCategory) {
-      results = dbMenus.filter((item) => getEffectiveCategory(item) === selectedCategory);
+      results = customerVisibleMenus.filter((item) => getEffectiveCategory(item) === selectedCategory);
     } else {
-      results = dbMenus.filter((item) => getEffectiveCategory(item) === "Starters");
+      results = customerVisibleMenus.filter((item) => getEffectiveCategory(item) === "Starters");
     }
     setFilteredMenus(results);
   }, [dbMenus, selectedCategory, searchQuery, isSearching]);

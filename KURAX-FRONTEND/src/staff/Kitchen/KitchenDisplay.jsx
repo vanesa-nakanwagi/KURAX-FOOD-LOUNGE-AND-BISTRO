@@ -289,7 +289,7 @@ export default function KitchenDisplay() {
         if (dayCleared || shiftCleared || kitchenCleared) return false;
 
         // ── Kitchen-only items (no barman / barista items = skip) ──────────
-        if (!(order.items || []).some(i => i.station !== "Barman" && i.station !== "Barista")) return false;
+        if (!(order.items || []).some(i => !["Barman", "Barista", "Shisha"].includes(i.station))) return false;
 
         // ── Search filter ──────────────────────────────────────────────────
         if (searchQuery.trim()) {
@@ -303,7 +303,7 @@ export default function KitchenDisplay() {
       .map(order => ({
         ...order,
         _ticketId: ticketMapRef.current[order.id] || null,
-        items: (order.items || []).filter(i => i.station !== "Barman" && i.station !== "Barista"),
+        items: (order.items || []).filter(i => !["Barman", "Barista", "Shisha"].includes(i.station)),
       }))
       .sort((a, b) => {
         const p = { Pending: 0, Preparing: 1, Ready: 2 };
@@ -349,7 +349,7 @@ export default function KitchenDisplay() {
   useEffect(() => {
     if (orders.length > prevLen.current) {
       const latest = orders[orders.length - 1];
-      const hasFood = (latest?.items || []).some(i => i.station !== "Barman" && i.station !== "Barista");
+      const hasFood = (latest?.items || []).some(i => !["Barman", "Barista", "Shisha"].includes(i.station));
       if (latest?.status === "Pending" && hasFood && audioEnabled) playDing();
     }
     prevLen.current = orders.length;
@@ -435,7 +435,7 @@ export default function KitchenDisplay() {
     setOrders(prev => prev.map(order => {
       const isKitchenActive =
         ["Pending", "Preparing", "Ready"].includes(order.status) &&
-        (order.items || []).some(i => i.station !== "Barman" && i.station !== "Barista");
+        (order.items || []).some(i => !["Barman", "Barista", "Shisha"].includes(i.station));
       return isKitchenActive ? { ...order, clearedByKitchen: true } : order;
     }));
 

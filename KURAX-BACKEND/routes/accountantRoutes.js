@@ -448,11 +448,23 @@ router.get('/physical-count', async (req, res) => {
   console.log('🔵 GET /physical-count called');
   try {
     const result = await pool.query(
-      `SELECT cash, mtn, airtel, card, notes,
+          `SELECT cash,
+            COALESCE(NULLIF(mtn, 0), momo_mtn, 0) AS mtn,
+            COALESCE(NULLIF(airtel, 0), momo_airtel, 0) AS airtel,
+            card, notes,
               credit_settled_today, credit_outstanding_today
        FROM physical_counts
-       WHERE saved = false
-       ORDER BY created_at DESC
+       ORDER BY CASE WHEN
+         COALESCE(cash, 0) <> 0 OR
+         COALESCE(mtn, 0) <> 0 OR
+         COALESCE(airtel, 0) <> 0 OR
+         COALESCE(momo_mtn, 0) <> 0 OR
+         COALESCE(momo_airtel, 0) <> 0 OR
+         COALESCE(card, 0) <> 0 OR
+         COALESCE(credit_settled_today, 0) <> 0 OR
+         COALESCE(credit_outstanding_today, 0) <> 0
+         THEN 0 ELSE 1 END,
+         created_at DESC
        LIMIT 1`
     );
     if (result.rows.length === 0) {

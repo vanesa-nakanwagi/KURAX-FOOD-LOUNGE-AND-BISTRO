@@ -9,7 +9,8 @@ import { useTheme } from "../../customer/components/context/ThemeContext";
 import { useData } from "../../customer/components/context/DataContext";
 
 const DESKTOP_MENU_ITEMS = [
-  { key: "FINANCIAL_HISTORY", label: "Dashboard",          icon: Receipt },
+  { key: "DASHBOARD",         label: "Dashboard",           icon: Receipt },
+  { key: "FINANCIAL_HISTORY", label: "Financial History",   icon: FileText },
   { key: "PHYSICAL_COUNT",    label: "Physical Finances",  icon: Calculator },
   { key: "LIVE_AUDIT",        label: "Live Audit",         icon: CheckCircle2 },
   { key: "MONTHLY_COSTS",     label: "Monthly Costs",      icon: Wallet },

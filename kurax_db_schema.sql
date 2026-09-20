@@ -841,7 +841,8 @@ CREATE TABLE public.menus (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     published boolean DEFAULT true,
-    available boolean DEFAULT true
+    available boolean DEFAULT true,
+    customer_visible boolean DEFAULT false
 );
 
 

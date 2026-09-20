@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Lock, ShieldCheck, RefreshCcw, LayoutGrid, Menu as MenuIcon, Zap, Bell } from "lucide-react";
-import { ClipboardList, Clock, History, Target } from "lucide-react";
+import { BarChart3, ClipboardList, Clock, History, Target } from "lucide-react";
 
 import NewOrder from "./NewOrder";
 import PerformanceDashboard from "./PerformanceDashboard";
@@ -12,6 +12,7 @@ import OrderHistory from "./ManageTables";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData } from "../../../customer/components/context/DataContext";
 import API_URL from "../../../config/api";
+import StaffSalesPerformance from "../../components/StaffSalesPerformance";
 
 // ── MENU CONFIGURATION (Shift Removed) ──────────────────────────────────────
 const SUPERVISOR_MENU = [
@@ -20,6 +21,7 @@ const SUPERVISOR_MENU = [
   { id: "tables",  label: "MANAGE TABLE",      icon: LayoutGrid },
   { id: "status",  label: "VIEW ORDER STATUS", icon: Clock },
   { id: "targets", label: "STAFF TARGETS",     icon: Target },
+  { id: "performance", label: "STAFF PERFORMANCE", icon: BarChart3 },
 ];
 
 export default function SupervisorLayout() {
@@ -47,6 +49,8 @@ export default function SupervisorLayout() {
         return <LiveOrderStatus />;
       case "targets":
         return <StaffTargets />;
+      case "performance":
+        return <StaffSalesPerformance role="SUPERVISOR" />;
       case "manage":
         return <PerformanceDashboard />;
          case "tables":

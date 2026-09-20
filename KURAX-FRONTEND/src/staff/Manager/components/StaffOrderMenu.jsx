@@ -15,7 +15,7 @@ export default function ManagerOrderMenu({
   isGranted = true 
 }) {
   const { theme } = useTheme();
-  const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
+  const categories = ["Starters", "Local Foods", "Drinks & Cocktails", "Shisha"];
 
   const filteredMenus = items.filter((item) => {
     const query = searchQuery.toLowerCase();
@@ -75,21 +75,21 @@ export default function ManagerOrderMenu({
         </div>
       ) : (
         /* --- CONSISTENT MANAGER GRID --- */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 pb-20">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 md:gap-5 pb-20">
           {filteredMenus.map((item) => {
             const isNew = item.created_at && (new Date() - new Date(item.created_at)) / (1000 * 60 * 60) <= 48;
 
             return (
               <div 
                 key={item.id} 
-                className={`group relative rounded-[2.5rem] overflow-hidden flex flex-col h-full transition-all duration-500 border shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl hover:-translate-y-2
+                className={`group relative font-outfit flex flex-col rounded-[1rem] overflow-hidden h-full shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border transition-all duration-500 hover:-translate-y-2
                   ${theme === 'dark' 
                     ? 'bg-[#0A0A0A] border-zinc-800/40 hover:border-yellow-500/30' 
                     : 'bg-white border-zinc-100 hover:border-yellow-500/30 shadow-sm'}`}
               >
                 {/* Image Section */}
-                <div className="h-52 bg-zinc-50 dark:bg-zinc-900 relative overflow-hidden shrink-0">
-                  <div className="absolute top-4 left-4 right-4 flex justify-between items-start z-10">
+                <div className="relative h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
+                  <div className="absolute top-2.5 left-2.5 right-2.5 flex justify-between items-start z-10">
                     <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border backdrop-blur-md shadow-sm ${
                       item.station === 'Barista' ? 'bg-amber-900/60 text-amber-200 border-amber-500/30' : 
                       item.station === 'Barman' ? 'bg-blue-900/60 text-blue-200 border-blue-500/30' : 
@@ -118,13 +118,13 @@ export default function ManagerOrderMenu({
                 {/* Details Section */}
                 <div className="p-6 flex-1 flex flex-col justify-between text-left">
                   <div className="space-y-2">
-                    <h4 className={`text-lg font-serif font-bold uppercase tracking-tight leading-tight group-hover:text-yellow-600 transition-colors line-clamp-1 ${
-                      theme === 'dark' ? 'text-white' : 'text-zinc-900'
+                    <h4 className={`text-lg font-[Outfit] tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1 ${
+                      theme === 'dark' ? 'text-white' : 'text-yellow-700'
                     }`}>
                       {item.name}
                     </h4>
-                    <p className={`text-[11px] font-light leading-relaxed line-clamp-2 italic ${
-                      theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'
+                    <p className={`text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed line-clamp-2 ${
+                      theme === 'dark' ? 'text-zinc-400' : 'text-zinc-900'
                     }`}>
                       {item.description || `Manager selection: ${item.name}`}
                     </p>
@@ -132,12 +132,12 @@ export default function ManagerOrderMenu({
 
                   {/* Interaction Bar (Action Left | Price Right) */}
                   <div className={`flex items-center justify-between pt-5 mt-4 border-t ${
-                    theme === 'dark' ? 'border-zinc-800/50' : 'border-zinc-50'
+                    theme === 'dark' ? 'border-zinc-800/50' : 'border-zinc-200'
                   }`}>
                     {isGranted ? (
                       <button 
                         onClick={() => onAddItem(item)} 
-                        className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-black rounded-xl text-[10px] font-black flex items-center justify-center gap-1.5 transition-all uppercase tracking-[0.2em] shadow-md active:scale-95"
+                        className="flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
                       >
                         <Plus size={12} strokeWidth={4} /> Order Now
                       </button>
@@ -148,12 +148,12 @@ export default function ManagerOrderMenu({
                     )}
 
                     <div className="text-right">
-                      <span className={`block text-xl font-black tracking-tighter leading-none ${
+                      <span className={`block text-xl tracking-tighter leading-none ${
                         theme === 'dark' ? 'text-white' : 'text-zinc-900'
                       }`}>
                         {Number(item.price).toLocaleString()}
                       </span>
-                      <span className="text-[9px] text-yellow-600 font-bold uppercase tracking-widest leading-none">
+                      <span className="text-[8px] text-yellow-600 font-bold uppercase tracking-wider leading-none">
                         UGX
                       </span>
                     </div>

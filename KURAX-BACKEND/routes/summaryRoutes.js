@@ -489,16 +489,18 @@ router.get('/staff-monthly-income', async (req, res) => {
     if (staffId) {
       const queuePayments = await pool.query(`
         SELECT
-          COALESCE(SUM(amount), 0)                                                       AS total,
-          COUNT(*)                                                                        AS transaction_count,
-          COALESCE(SUM(CASE WHEN method = 'Cash'       THEN amount ELSE 0 END), 0)       AS cash_amount,
-          COALESCE(SUM(CASE WHEN method = 'Card'       THEN amount ELSE 0 END), 0)       AS card_amount,
-          COALESCE(SUM(CASE WHEN method = 'Momo-MTN'   THEN amount ELSE 0 END), 0)       AS mtn_amount,
-          COALESCE(SUM(CASE WHEN method = 'Momo-Airtel'THEN amount ELSE 0 END), 0)       AS airtel_amount
-        FROM cashier_queue
-        WHERE status = 'Confirmed'
-          AND staff_id = $1
-          AND TO_CHAR((confirmed_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+          COALESCE(SUM(o.total), 0) AS total,
+          COUNT(*) AS transaction_count,
+          COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.payment_method, '')) = 'cash' THEN o.total ELSE 0 END), 0) AS cash_amount,
+          COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.payment_method, '')) IN ('card', 'visa', 'pos') THEN o.total ELSE 0 END), 0) AS card_amount,
+          COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.payment_method, '')) IN ('mtn', 'momo-mtn', 'momo') THEN o.total ELSE 0 END), 0) AS mtn_amount,
+          COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.payment_method, '')) IN ('airtel', 'momo-airtel') THEN o.total ELSE 0 END), 0) AS airtel_amount
+        FROM orders o
+        WHERE COALESCE(o.is_archived, false) = false
+          AND o.staff_id = $1
+          AND o.payment_confirmed = true
+          AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+          AND TO_CHAR((COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
       `, [staffId, targetMonth]);
 
       queueTotal     = Number(queuePayments.rows[0].total);
@@ -549,16 +551,18 @@ router.get('/staff-monthly-income', async (req, res) => {
     } else if (staffName) {
       const queuePayments = await pool.query(`
         SELECT
-          COALESCE(SUM(amount), 0)                                                       AS total,
-          COUNT(*)                                                                        AS transaction_count,
-          COALESCE(SUM(CASE WHEN method = 'Cash'       THEN amount ELSE 0 END), 0)       AS cash_amount,
-          COALESCE(SUM(CASE WHEN method = 'Card'       THEN amount ELSE 0 END), 0)       AS card_amount,
-          COALESCE(SUM(CASE WHEN method = 'Momo-MTN'   THEN amount ELSE 0 END), 0)       AS mtn_amount,
-          COALESCE(SUM(CASE WHEN method = 'Momo-Airtel'THEN amount ELSE 0 END), 0)       AS airtel_amount
-        FROM cashier_queue
-        WHERE status = 'Confirmed'
-          AND requested_by ILIKE $1
-          AND TO_CHAR((confirmed_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+          COALESCE(SUM(o.total), 0) AS total,
+          COUNT(*) AS transaction_count,
+          COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.payment_method, '')) = 'cash' THEN o.total ELSE 0 END), 0) AS cash_amount,
+          COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.payment_method, '')) IN ('card', 'visa', 'pos') THEN o.total ELSE 0 END), 0) AS card_amount,
+          COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.payment_method, '')) IN ('mtn', 'momo-mtn', 'momo') THEN o.total ELSE 0 END), 0) AS mtn_amount,
+          COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.payment_method, '')) IN ('airtel', 'momo-airtel') THEN o.total ELSE 0 END), 0) AS airtel_amount
+        FROM orders o
+        WHERE COALESCE(o.is_archived, false) = false
+          AND UPPER(COALESCE(o.staff_name, '')) = UPPER($1)
+          AND o.payment_confirmed = true
+          AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
+          AND TO_CHAR((COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
       `, [`%${staffName}%`, targetMonth]);
 
       queueTotal     = Number(queuePayments.rows[0].total);

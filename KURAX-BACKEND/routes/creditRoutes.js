@@ -1,17 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════
-//  CREDIT FLOW ROUTES  –  mount at /api/credits
-//
-//  Full lifecycle:
-//   Waiter → POST /api/credits          (creates credit request, status=PendingCashier)
-//   Cashier → PATCH /:id/forward        (forwards to manager, status=PendingManager)
-//   Manager → PATCH /:id/approve        (approves, status=Approved)
-//   Manager → PATCH /:id/reject         (rejects, status=Rejected)
-//   Cashier → PATCH /:id/settle         (partial/full settlement, recorded in ledger)
-//   GET /                               (all credits – cashier ledger)
-//   GET /pending-cashier                (credits waiting for cashier action)
-//   GET /pending-manager                (credits waiting for manager approval)
-//   GET /ledger                         (settled + partial credits with totals)
-// ═══════════════════════════════════════════════════════════════════════════
+
 
 import express from 'express';
 import pool    from '../db.js';
@@ -152,7 +139,7 @@ router.get('/pending-manager', async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT * FROM credits
-      WHERE status = 'PendingManager'
+      WHERE status IN ('PendingManager', 'PendingManagerApproval')
       ORDER BY forwarded_at DESC
     `);
     res.json(result.rows);
@@ -350,7 +337,7 @@ router.patch('/forward-by-table', async (req, res) => {
   try {
     const result = await pool.query(`
       UPDATE credits
-      SET status       = 'PendingManager',
+      SET status       = 'PendingManagerApproval',
           forwarded_by = $1,
           forwarded_at = NOW()
       WHERE UPPER(table_name) = UPPER($2)
@@ -389,7 +376,7 @@ router.patch('/:id/forward', async (req, res) => {
   try {
     const result = await pool.query(`
       UPDATE credits
-      SET status       = 'PendingManager',
+        SET status       = 'PendingManagerApproval',
           forwarded_by = $1,
           forwarded_at = NOW()
       WHERE id = $2 AND status = 'PendingCashier'
@@ -427,7 +414,7 @@ router.patch('/:id/approve', async (req, res) => {
       SET status      = 'Approved',
           approved_by = $1,
           approved_at = NOW()
-      WHERE id = $2 AND status = 'PendingManager'
+      WHERE id = $2 AND status IN ('PendingManager', 'PendingManagerApproval')
       RETURNING *
     `, [approved_by || 'Manager', id]);
 
@@ -493,7 +480,7 @@ router.patch('/:id/reject', async (req, res) => {
           rejected_by   = $1,
           rejected_at   = NOW(),
           reject_reason = $2
-      WHERE id = $3 AND status = 'PendingManager'
+      WHERE id = $3 AND status IN ('PendingManager', 'PendingManagerApproval')
       RETURNING *
     `, [rejected_by || 'Manager', reason || 'Rejected by manager', id]);
 

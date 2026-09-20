@@ -263,6 +263,7 @@ const StaffLogin = () => {
           CASHIER: '/cashier',
           BARISTA: '/barista',
           BARMAN: '/barman',
+          SHISHA: '/shisha',
           ACCOUNTANT: '/accountant',
           'CONTENT-MANAGER': '/content-creator',
           MANAGER: '/staff/manager',

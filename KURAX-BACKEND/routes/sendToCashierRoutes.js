@@ -486,6 +486,99 @@ router.patch("/cashier-queue/:id/request-approval", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/cashier-ops/cashier-queue/cancel-pending
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch("/cashier-queue/cancel-pending", async (req, res) => {
+  const { table_name, order_ids = [], item_name, canceled_by } = req.body || {};
+  const ids = parseOrderIds(order_ids);
+
+  try {
+    let base = `SELECT * FROM cashier_queue
+      WHERE status IN ('Pending', 'PendingManagerApproval')`;
+    const params = [];
+
+    if (table_name) {
+      params.push(String(table_name).trim());
+      base += ` AND table_name = $${params.length}`;
+    }
+
+    if (ids.length) {
+      params.push(ids);
+      base += ` AND order_ids::jsonb @> $${params.length}::jsonb`;
+    }
+
+    base += ` ORDER BY created_at DESC LIMIT 1`;
+
+    const qRes = await pool.query(base, params);
+    if (!qRes.rows.length) {
+      return res.json({ success: true, cancelled: false, message: "No pending request found" });
+    }
+
+    const q = qRes.rows[0];
+    const pendingIds = parseOrderIds(q.order_ids || []);
+
+    if (q.method === "Credit") {
+      await pool.query(
+        `UPDATE credits
+         SET status = 'PendingCashier', reject_reason = NULL, updated_at = NOW()
+         WHERE cashier_queue_id = $1
+           AND status IN ('PendingCashier', 'PendingManagerApproval')`,
+        [q.id]
+      );
+    }
+
+    if (pendingIds.length > 0) {
+      for (const orderId of pendingIds) {
+        const orderRes = await pool.query(`SELECT items FROM orders WHERE id = $1`, [orderId]);
+        if (!orderRes.rows.length) continue;
+
+        let items = orderRes.rows[0].items;
+        if (typeof items === "string") items = JSON.parse(items);
+        if (!Array.isArray(items)) continue;
+
+        const updatedItems = items.map(item => {
+          const matchesItemName = item_name && item.name && String(item.name).trim().toLowerCase() === String(item_name).trim().toLowerCase();
+          if (q.is_item && item_name && matchesItemName) {
+            return {
+              ...item,
+              paymentRequested: false,
+              creditRequested: false,
+            };
+          }
+
+          if (!q.is_item || !item_name) {
+            return {
+              ...item,
+              paymentRequested: false,
+              creditRequested: false,
+            };
+          }
+
+          return item;
+        });
+
+        await pool.query(
+          `UPDATE orders SET items = $1, sent_to_cashier = false, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify(updatedItems), orderId]
+        );
+      }
+    }
+
+    await pool.query(
+      `UPDATE cashier_queue
+       SET status = 'Cancelled', confirmed_by = $1, confirmed_at = NOW()
+       WHERE id = $2`,
+      [canceled_by || "Waiter", q.id]
+    );
+
+    res.json({ success: true, cancelled: true, queue_id: q.id });
+  } catch (err) {
+    console.error("cancel pending request failed:", err);
+    res.status(500).json({ error: "Failed to cancel pending cashier request" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/cashier-ops/cashier-queue/:id/reject
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch("/cashier-queue/:id/reject", async (req, res) => {
@@ -499,6 +592,13 @@ router.patch("/cashier-queue/:id/reject", async (req, res) => {
     );
     if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
     const q = qRes.rows[0];
+
+      if (q.method === "Credit") {
+        return res.status(403).json({
+          error: "Cashiers cannot reject credit requests. Forward to the manager for approval or rejection."
+        });
+      }
+
     const ids = q.order_ids || [];
 
     await pool.query(
