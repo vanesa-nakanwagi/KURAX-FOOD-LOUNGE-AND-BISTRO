@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Receipt, Calculator, CheckCircle2, X, LogOut,
-  RotateCcw, BookOpen, BarChart3, Wallet, Sparkles, Menu, FileText
+  RotateCcw, BookOpen, BarChart3, Wallet, Sparkles, Menu, FileText, CircleDollarSign
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
@@ -16,6 +16,7 @@ const DESKTOP_MENU_ITEMS = [
   { key: "MONTHLY_COSTS",     label: "Monthly Costs",      icon: Wallet },
   { key: "CREDITS",           label: "Credits",            icon: BookOpen },
   { key: "VIEW_SALES",        label: "View Sales",         icon: BarChart3 },
+  { key: "DEPARTMENT_REPORTS", label: "Department Reports", icon: CircleDollarSign },
  // { key: "REPORTS",           label: "Reports",            icon: FileText },   
   { key: "REOPEN_DAY",        label: "Reopen Day",         icon: RotateCcw },   
   { key: "END_OF_SHIFT",      label: "End of Shift",       icon: RotateCcw },
@@ -60,6 +61,10 @@ export default function SideBar({
   const handleLogout = () => {
     localStorage.removeItem('kurax_user');
     navigate('/staff/login');
+  };
+
+  const handleNavigation = (key) => {
+    setActiveSection(key);
   };
 
   const NavButton = ({ item, showLabel = true, onClick, isActive, badge }) => {
@@ -138,7 +143,7 @@ export default function SideBar({
                     item={item}
                     showLabel={true}
                     isActive={activeSection === item.key}
-                    onClick={() => { setActiveSection(item.key); setIsOpen(false); }}
+                    onClick={() => { handleNavigation(item.key); setIsOpen(false); }}
                     badge={badge}
                   />
                 );
@@ -228,7 +233,7 @@ export default function SideBar({
               item={item}
               showLabel={true}
               isActive={activeSection === item.key}
-              onClick={() => setActiveSection(item.key)}
+              onClick={() => handleNavigation(item.key)}
               badge={badge}
             />
           );

@@ -4,33 +4,17 @@ import {
   Flame, EyeOff, Crown, Zap
 } from "lucide-react";
 
-// ── Role config ───────────────────────────────────────────────────────────────
-const ROLE_CONFIG = {
-  DIRECTOR:          { color: "text-yellow-600",  bg: "bg-yellow-50 border-yellow-200",  dot: "bg-yellow-500"  },
-  MANAGER:           { color: "text-amber-600",   bg: "bg-amber-50 border-amber-200",   dot: "bg-amber-500"   },
-  SUPERVISOR:        { color: "text-orange-600",  bg: "bg-orange-50 border-orange-200",  dot: "bg-orange-500"  },
-  WAITER:            { color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500" },
-  CASHIER:           { color: "text-sky-600",     bg: "bg-sky-50 border-sky-200",     dot: "bg-sky-500"     },
-  CHEF:              { color: "text-indigo-600",  bg: "bg-indigo-50 border-indigo-200",  dot: "bg-indigo-500"  },
-  BARISTA:           { color: "text-purple-600",  bg: "bg-purple-50 border-purple-200",  dot: "bg-purple-500"  },
-  BARMAN:            { color: "text-rose-600",    bg: "bg-rose-50 border-rose-200",    dot: "bg-rose-500"    },
-  ACCOUNTANT:        { color: "text-pink-600",    bg: "bg-pink-50 border-pink-200",    dot: "bg-pink-500"    },
-  "CONTENT-MANAGER": { color: "text-fuchsia-600", bg: "bg-fuchsia-50 border-fuchsia-200", dot: "bg-fuchsia-500" },
-};
-const DEFAULT_ROLE = { color: "text-gray-500", bg: "bg-gray-50 border-gray-200", dot: "bg-gray-400" };
-
 // ── StaffRow ──────────────────────────────────────────────────────────────────
 function StaffRow({ staff, onTogglePermission, onDelete, onEdit }) {
   const role    = staff.role?.toUpperCase() || "";
-  const rc      = ROLE_CONFIG[role] || DEFAULT_ROLE;
   const isDir   = role === "DIRECTOR";
   const isMgmt  = ["MANAGER", "SUPERVISOR"].includes(role);
 
   return (
-    <tr className="group relative transition-all duration-150 border-b border-gray-100 hover:bg-yellow-50/60">
+    <tr className="group relative transition-all duration-150 border-b border-zinc-100 hover:bg-zinc-50">
       {/* Yellow left-accent on hover */}
       <td className="pl-0 pr-0 py-0 w-0">
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-0 rounded-r-full bg-yellow-500
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-0 rounded-r-full bg-amber-500
           transition-all duration-200 group-hover:h-[60%]" />
       </td>
 
@@ -61,8 +45,8 @@ function StaffRow({ staff, onTogglePermission, onDelete, onEdit }) {
 
       {/* ── Role ── */}
       <td className="px-4 py-3.5">
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[9px] font-black uppercase tracking-wider ${rc.bg} ${rc.color}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${rc.dot} opacity-80`} />
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[9px] font-black uppercase tracking-wider ${isDir ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-zinc-100 border-zinc-200 text-zinc-700'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${isDir ? 'bg-amber-500' : 'bg-zinc-400'} opacity-80`} />
           {staff.role}
         </span>
       </td>
@@ -159,121 +143,45 @@ export default function StaffSection({
   const HEADERS = ["Name", "Role", "Email", "Permission", "Actions"];
 
   return (
-    <div className="font-[Outfit]">
+    <div className="grid gap-5 font-[Outfit] xl:grid-cols-[340px_minmax(0,1fr)]">
+      <aside className="h-fit rounded-xl border border-zinc-200 bg-white p-5">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-900 text-amber-300"><Crown size={18} /></span>
+          <div><p className="text-xs font-black uppercase tracking-[0.18em] text-amber-700">Director control</p><h2 className="text-lg font-black text-zinc-900">Staff team</h2></div>
+        </div>
+        <p className="mt-4 text-sm text-zinc-500">Manage staff accounts, roles and access.</p>
+        <div className="my-5 grid grid-cols-2 gap-3">
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Accounts</p><p className="mt-1 text-xl font-black">{filtered.length}</p></div>
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Management</p><p className="mt-1 text-xl font-black">{filtered.filter(person => ["MANAGER", "SUPERVISOR"].includes(person.role?.toUpperCase())).length}</p></div>
+        </div>
+        <button onClick={onAdd} className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-3 text-sm font-bold text-zinc-950 transition hover:bg-amber-300">
+          <Plus size={16} strokeWidth={3} /> Add staff account
+        </button>
+      </aside>
 
-      {/* ── Card header ─────────────────────────────────────────────────── */}
-      <div className="px-0 pt-0 pb-5">
-
-        {/* Title + Add button */}
-        <div className="flex items-start justify-between gap-4 mb-5">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-1 h-5 rounded-full bg-yellow-500" />
-              <h3 className="text-base md:text-lg font-black uppercase tracking-tight text-gray-900">
-                Staff Ecosystem
-              </h3>
-            </div>
-            <p className="text-[9px] font-bold uppercase tracking-[0.18em] ml-3 text-gray-400">
-              Access Control & Roles · {filtered.length} member{filtered.length !== 1 ? "s" : ""}
-            </p>
+      <section className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white">
+        <header className="flex flex-col gap-4 border-b border-zinc-100 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div><h2 className="font-black text-zinc-900">Staff accounts</h2><p className="mt-1 text-xs text-zinc-500">{filtered.length} team member{filtered.length !== 1 ? "s" : ""}</p></div>
+          <div className="relative w-full sm:max-w-xs">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input type="text" placeholder="Search name, role or email" value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-zinc-200 bg-white py-2.5 pl-9 pr-3 text-sm text-zinc-900 outline-none transition focus:border-amber-500" />
           </div>
-
-          <button
-            onClick={onAdd}
-            className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600
-              text-black font-black uppercase text-[10px] tracking-wider
-              px-4 py-2.5 rounded-xl transition-all shadow-sm shadow-yellow-500/20 shrink-0"
-          >
-            <Plus size={12} strokeWidth={3} />
-            <span>Add Staff</span>
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search
-            size={13}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-          <input
-            type="text"
-            placeholder="Search name, role or email…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl text-[13px] font-medium border border-gray-200 outline-none transition-all bg-white text-gray-900 placeholder:text-gray-400 focus:border-yellow-400"
-          />
-        </div>
-      </div>
-
-      {/* ── Table ───────────────────────────────────────────────────────── */}
-      {sorted.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left relative">
-            <thead>
-              <tr>
-                {/* spacer for left-accent column */}
-                <th className="w-[3px] pl-0" />
-                {HEADERS.map(h => (
-                  <th
-                    key={h}
-                    className={`px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em]
-                      ${h === "Email" ? "hidden sm:table-cell" : ""}
-                      text-gray-400`}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map(staff => (
-                <StaffRow
-                  key={staff.id}
-                  staff={staff}
-                  onTogglePermission={onTogglePermission}
-                  onDelete={onTerminate}
-                  onEdit={onEdit}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        /* ── Empty state ── */
-        <div className="py-20 flex flex-col items-center justify-center gap-3 px-8">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-gray-100 border border-gray-200">
-            <Search size={22} className="text-gray-400" />
+        </header>
+        {sorted.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="relative w-full text-left">
+              <thead className="bg-zinc-50"><tr><th className="w-[3px] pl-0" />{HEADERS.map(header => <th key={header} className={`px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-zinc-500 ${header === "Email" ? "hidden sm:table-cell" : ""}`}>{header}</th>)}</tr></thead>
+              <tbody>{sorted.map(staff => <StaffRow key={staff.id} staff={staff} onTogglePermission={onTogglePermission} onDelete={onTerminate} onEdit={onEdit} />)}</tbody>
+            </table>
           </div>
-          <div className="text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-gray-400">
-              No staff members found
-            </p>
-            <p className="text-[9px] mt-1 text-gray-300">
-              Try a different search term
-            </p>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-3 px-8 py-20">
+            <div className="grid h-14 w-14 place-items-center rounded-xl border border-zinc-200 bg-zinc-50"><Search size={22} className="text-zinc-400" /></div>
+            <div className="text-center"><p className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500">No staff members found</p><p className="mt-1 text-xs text-zinc-400">Try a different search term</p></div>
           </div>
-        </div>
-      )}
-
-      {/* ── Footer count ─────────────────────────────────────────────────── */}
-      {sorted.length > 0 && (
-        <div className="pt-3 flex items-center justify-between">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
-            {sorted.filter(s => ["MANAGER","SUPERVISOR"].includes(s.role?.toUpperCase())).length} management
-            &nbsp;·&nbsp;
-            {sorted.filter(s => !["DIRECTOR","MANAGER","SUPERVISOR"].includes(s.role?.toUpperCase())).length} live staff
-          </p>
-          <div className="flex items-center gap-1.5">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-            </span>
-            <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-600">
-              All systems live
-            </p>
-          </div>
-        </div>
-      )}
+        )}
+        {sorted.length > 0 && <footer className="flex items-center justify-between border-t border-zinc-100 px-5 py-3"><p className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">{sorted.filter(person => ["MANAGER", "SUPERVISOR"].includes(person.role?.toUpperCase())).length} management · {sorted.filter(person => !["DIRECTOR", "MANAGER", "SUPERVISOR"].includes(person.role?.toUpperCase())).length} staff</p><div className="flex items-center gap-1.5"><span className="relative flex h-1.5 w-1.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" /></span><p className="text-[9px] font-bold uppercase tracking-wider text-emerald-700">All systems live</p></div></footer>}
+      </section>
     </div>
   );
 }

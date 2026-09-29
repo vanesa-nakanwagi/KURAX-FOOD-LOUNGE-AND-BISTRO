@@ -17,6 +17,7 @@ import ManagerCreditPanel from "./ManagerCreditPanel";
 import OrderHistory from "./ManageTables";
 import ReconciliationViewer from "../../Accountant/sections/ReconciliationViewer";
 import StaffSalesPerformance from "../../components/StaffSalesPerformance";
+import DepartmentHod from "../../DepartmentHod";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData }  from "../../../customer/components/context/DataContext";
@@ -83,6 +84,7 @@ export default function ManagerLayout() {
       case "history": return <PerformanceDashboard />;
       case "manage": return <OrderHistory />;
       case "reports": return <StaffSalesPerformance role="MANAGER" />;
+      case "department-reports": return <DepartmentHod department="all" embedded />;
       case "credits": return <ManagerCreditPanel managerName={currentStaffName} />; // REMOVED theme prop
       default:        return <NewOrder />;
     }

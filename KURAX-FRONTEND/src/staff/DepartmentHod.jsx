@@ -1,0 +1,234 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, Check, ChefHat, ClipboardList, CircleDollarSign, Coffee, LogOut, RefreshCw, Users, Wine } from 'lucide-react';
+import API_URL from '../config/api';
+
+const DEPARTMENTS = {
+  kitchen: { label: 'Kitchen', title: 'Kitchen station', role: 'KITCHEN_HOD', station: 'kitchen', workerRole: 'CHEF', icon: ChefHat },
+  bar: { label: 'Bar', title: 'Bar station', role: 'BAR_HOD', station: 'barman', workerRole: 'BARMAN', icon: Wine },
+  barista: { label: 'Barista', title: 'Barista station', role: 'BARISTA_HOD', station: 'barista', workerRole: 'BARISTA', icon: Coffee },
+};
+const PRESETS = ['Today', 'Yesterday', 'This Week', 'This Month', 'Custom'];
+
+function kampalaToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
+}
+
+function datesFor(preset) {
+  const today = kampalaToday();
+  const cursor = new Date(`${today}T12:00:00Z`);
+  if (preset === 'Yesterday') {
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    const yesterday = cursor.toISOString().slice(0, 10);
+    return [yesterday, yesterday];
+  }
+  if (preset === 'This Week') {
+    cursor.setUTCDate(cursor.getUTCDate() - ((cursor.getUTCDay() + 6) % 7));
+    return [cursor.toISOString().slice(0, 10), today];
+  }
+  if (preset === 'This Month') return [`${today.slice(0, 7)}-01`, today];
+  return [today, today];
+}
+
+function money(value) {
+  return `UGX ${Number(value || 0).toLocaleString()}`;
+}
+
+function readSession() {
+  try { return JSON.parse(localStorage.getItem('kurax_user') || 'null'); }
+  catch { return null; }
+}
+
+async function request(path, token, options = {}) {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: { Authorization: `Bearer ${token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Department request failed.');
+  return data;
+}
+
+export default function DepartmentHod({ department: departmentKey = 'all', embedded = false }) {
+  const navigate = useNavigate();
+  const [session] = useState(readSession);
+  const [staff, setStaff] = useState([]);
+  const [tickets, setTickets] = useState([]);
+  const [report, setReport] = useState(null);
+  const [preset, setPreset] = useState('Today');
+  const [[from, to], setRange] = useState(() => datesFor('Today'));
+  const [form, setForm] = useState({ name: '', email: '', pin: '' });
+  const [tab, setTab] = useState(departmentKey === 'all' ? 'reports' : 'orders');
+  const [ticketView, setTicketView] = useState('active');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [refreshCounter, setRefreshCounter] = useState(0);
+  const config = DEPARTMENTS[departmentKey];
+  const DepartmentIcon = config?.icon || ClipboardList;
+  const role = String(session?.role || '').toUpperCase();
+  const isManagement = departmentKey === 'all';
+  const allowed = isManagement
+    ? ['DIRECTOR', 'MANAGER', 'ACCOUNTANT'].includes(session?.role)
+    : session?.role === config?.role;
+
+  useEffect(() => {
+    if (!session?.token || !allowed) return undefined;
+    let mounted = true;
+    const load = async () => {
+      try {
+        const query = new URLSearchParams({ from, to });
+        if (isManagement) {
+          const data = await request(`/api/departments/reports/consolidated?${query}`, session.token);
+          if (mounted) setReport(data);
+        } else {
+          const [staffRows, reportData, response] = await Promise.all([
+            request(`/api/departments/${departmentKey}/staff`, session.token),
+            request(`/api/departments/${departmentKey}/reports?${query}`, session.token),
+            fetch(`${API_URL}/api/${config.station}/tickets?date=${kampalaToday()}`),
+          ]);
+          const ticketRows = response.ok ? await response.json() : [];
+          if (mounted) {
+            setStaff(staffRows);
+            setReport(reportData);
+            setTickets(Array.isArray(ticketRows) ? ticketRows : []);
+          }
+        }
+        if (mounted) setError('');
+      } catch (loadError) {
+        if (mounted) setError(loadError.message);
+      }
+    };
+    load();
+    const timer = window.setInterval(load, 12000);
+    return () => { mounted = false; window.clearInterval(timer); };
+  }, [session?.token, allowed, departmentKey, from, to, refreshCounter]);
+
+  function choosePreset(nextPreset) {
+    setPreset(nextPreset);
+    if (nextPreset !== 'Custom') setRange(datesFor(nextPreset));
+  }
+
+  async function addStaff(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await request(`/api/departments/${departmentKey}/staff`, session.token, { method: 'POST', body: form });
+      setForm({ name: '', email: '', pin: '' });
+      setMessage('Department account created.');
+      setStaff(await request(`/api/departments/${departmentKey}/staff`, session.token));
+    } catch (actionError) {
+      setError(actionError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleStaff(member) {
+    setBusy(true);
+    setError('');
+    try {
+      const updated = await request(`/api/departments/${departmentKey}/staff/${member.id}`, session.token, {
+        method: 'PATCH', body: { is_active: !member.is_active },
+      });
+      setStaff(rows => rows.map(row => row.id === updated.id ? updated : row));
+      setMessage(updated.is_active ? 'Account activated.' : 'Account deactivated.');
+    } catch (actionError) {
+      setError(actionError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function signOut() {
+    localStorage.removeItem('kurax_user');
+    navigate('/staff/login');
+  }
+
+  if (!session?.token) return <main className="min-h-screen bg-white p-8 text-black">Sign in to continue.</main>;
+  if (!allowed) return <main className="min-h-screen bg-white p-8 text-black">This account cannot access this department.</main>;
+
+  const departments = report?.departments || [];
+  const summary = report?.summary || {};
+  const activeTickets = tickets.filter(ticket => !['Served', 'Paid', 'Closed'].includes(ticket.status));
+  const visibleTickets = ticketView === 'completed'
+    ? tickets.filter(ticket => ['Ready', 'Served', 'Paid', 'Closed'].includes(ticket.status))
+    : activeTickets;
+  const tabs = isManagement ? [['reports', 'Department reports', CircleDollarSign]] : [
+    ['orders', 'Orders', ClipboardList], ['team', 'Team', Users], ['reports', 'Reports', CircleDollarSign],
+  ];
+
+  return (
+    <main className={`min-h-screen ${isManagement ? 'bg-white text-black' : 'bg-[#f4f3ef] text-zinc-900'}`}>
+      {!isManagement ? (
+        <header className="border-b border-zinc-200 bg-white">
+          <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-4 md:px-8">
+            <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-900 text-amber-300"><DepartmentIcon size={21} /></span><div><p className="text-xs font-black uppercase tracking-[0.18em]">Kurax · Internal</p><p className="text-xs text-zinc-500">{config.label} Department</p></div></div>
+            <div className="flex items-center gap-3"><span className="hidden text-right sm:block"><span className="block text-sm font-bold">{session.name}</span><span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{role.replaceAll('_', ' ')}</span></span><button onClick={() => setRefreshCounter(value => value + 1)} className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50"><RefreshCw size={15} /> Refresh</button><button onClick={signOut} className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50"><LogOut size={15} /> Sign out</button></div>
+          </div>
+        </header>
+      ) : (
+        <header className={`${embedded ? '' : 'sticky top-0 z-30'} border-b border-yellow-500 bg-yellow-400 text-black`}>
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
+            <div><p className="text-xs font-black uppercase tracking-[0.2em]">Kurax Operations</p><h1 className="mt-1 text-2xl font-black">Department reporting</h1></div>
+            <div className="flex items-center gap-3 text-sm"><span className="hidden sm:block">{session.name}</span>{!embedded && <button title="Sign out" onClick={signOut} className="rounded-md border border-black/20 p-2 hover:bg-black/10"><LogOut size={18} /></button>}</div>
+          </div>
+        </header>
+      )}
+      {!isManagement && <div className="mx-auto mb-6 flex max-w-[1440px] flex-col justify-between gap-4 px-5 pt-6 sm:flex-row sm:items-end md:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Department control</p><h1 className="mt-1 text-3xl font-black tracking-tight">{config.title}</h1></div><div className="text-xs font-medium text-zinc-500">Connected to restaurant orders and waiter updates</div></div>}
+      <div className={`mx-auto ${isManagement ? 'max-w-7xl px-5 py-6 sm:px-8' : 'max-w-[1440px] px-5 pb-8 md:px-8'}`}>
+        {!isManagement && <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-zinc-200" aria-label="Department workspace">
+          {tabs.map(([key, label, Icon]) => <button key={key} onClick={() => setTab(key)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition ${tab === key ? 'border-amber-600 text-zinc-950' : 'border-transparent text-zinc-500 hover:text-zinc-900'}`}><Icon size={16} /> {label}</button>)}
+        </nav>}
+        {(error || message) && <div className={`mb-5 rounded-lg border px-4 py-3 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : isManagement ? 'border-amber-200 bg-amber-50 text-zinc-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">{error || message}</div>}
+
+        {tab === 'orders' && !isManagement && <section>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">Incoming and active orders</h2><p className="text-sm text-zinc-500">Updates automatically every 12 seconds.</p></div><div className="flex gap-2"><button onClick={() => setTicketView('active')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'active' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Active</button><button onClick={() => setTicketView('completed')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'completed' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Completed</button><button onClick={() => navigate(`/${config.station}`)} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950 hover:bg-amber-300">Manage station <ArrowRight size={16} /></button></div></div>
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">{[
+            ['Open', activeTickets.length], ['Pending', activeTickets.filter(ticket => ticket.status === 'Pending').length], ['Preparing', activeTickets.filter(ticket => ticket.status === 'Preparing').length], ['Completed today', tickets.filter(ticket => ['Ready', 'Served', 'Paid'].includes(ticket.status)).length],
+          ].map(([label, value]) => <div key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-2 text-2xl font-black">{value}</p></div>)}</div>
+          <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-zinc-50 text-xs uppercase tracking-wider text-zinc-500"><tr><th className="p-3">Order</th><th className="p-3">Table</th><th className="p-3">Waiter</th><th className="p-3">Items / assignee</th><th className="p-3">Status</th><th className="p-3">Total</th></tr></thead><tbody>
+            {visibleTickets.map(ticket => <tr key={ticket.id} className="border-t border-zinc-100 align-top"><td className="p-3 font-bold">#{ticket.order_id}</td><td className="p-3">{ticket.table_name || 'Walk-in'}</td><td className="p-3">{ticket.staff_name || 'Staff'}</td><td className="p-3">{(ticket.items || []).map((item, index) => <div key={`${item.name}-${index}`}>{item.quantity || 1} × {item.name}{item.assignedTo ? <span className="text-zinc-500"> · {item.assignedTo}</span> : null}</div>)}</td><td className="p-3"><span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-900">{ticket.status}</span></td><td className="p-3 font-bold">{money(ticket.total)}</td></tr>)}
+            {!visibleTickets.length && <tr><td colSpan="6" className="p-8 text-center text-zinc-400">No {ticketView} department orders today.</td></tr>}
+          </tbody></table></div>
+        </section>}
+
+        {tab === 'team' && !isManagement && <section className="grid gap-5 xl:grid-cols-[340px_1fr]">
+          <form onSubmit={addStaff} className="h-fit rounded-xl border border-zinc-200 bg-white p-5"><h2 className="text-lg font-black">Add {config.label} staff</h2><p className="mb-4 mt-1 text-sm text-zinc-500">Separate department login and PIN.</p><div className="grid gap-3">
+            <input required placeholder="Full name" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-amber-500" />
+            <input required type="email" placeholder="Email address" value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-amber-500" />
+            <input required inputMode="numeric" minLength="4" maxLength="8" pattern="[0-9]{4,8}" placeholder="4-8 digit PIN" value={form.pin} onChange={event => setForm({ ...form, pin: event.target.value })} className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-amber-500" />
+            <button disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-zinc-950 hover:bg-amber-300 disabled:opacity-50"><Check size={16} /> Create {config.workerRole} account</button>
+          </div></form>
+          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-5 py-4"><h2 className="font-black">Department accounts</h2></div><div className="divide-y divide-zinc-100">
+            {staff.map(member => <div key={member.id} className="flex items-center justify-between gap-4 px-5 py-4"><div><p className="font-bold">{member.name}</p><p className="text-xs text-zinc-500">{member.email} · {member.role}</p></div><div className="flex items-center gap-3"><span className={`text-xs font-bold ${member.is_active ? 'text-emerald-700' : 'text-zinc-400'}`}>{member.is_active ? 'Active' : 'Inactive'}</span><button disabled={busy} onClick={() => toggleStaff(member)} className="text-xs font-bold text-amber-800 underline disabled:opacity-50">{member.is_active ? 'Deactivate' : 'Activate'}</button></div></div>)}
+            {!staff.length && <p className="px-5 py-8 text-center text-sm text-zinc-400">No department accounts yet.</p>}
+          </div></div>
+        </section>}
+
+        {tab === 'reports' && <section>
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-xl font-black">{isManagement ? 'Sales by department' : `${config.label} report`}</h2><p className="mt-1 text-sm text-stone-600">{from} to {to}</p></div><div className="flex flex-wrap gap-2" role="group" aria-label="Report date range">
+            {PRESETS.map(option => <button key={option} onClick={() => choosePreset(option)} className={`rounded-lg px-3 py-2 text-xs font-bold ${preset === option ? (isManagement ? 'bg-yellow-400 text-black' : 'bg-zinc-900 text-white') : 'border border-zinc-200 bg-white text-zinc-600'}`}>{option}</button>)}
+            {preset === 'Custom' && <><input aria-label="From date" type="date" value={from} onChange={event => setRange([event.target.value, to])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /><input aria-label="To date" type="date" value={to} onChange={event => setRange([from, event.target.value])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /></>}
+          </div></div>
+          {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr><th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th><th className="p-3">Collected</th><th className="p-3">Unpaid balance</th></tr></thead><tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200"><td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td><td className="p-3">{money(row.amount_collected)}</td><td className="p-3">{money(row.outstanding_balance)}</td></tr>)}</tbody><tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr><td className="p-3">All departments</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.total_orders || 0), 0)}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.total_sales || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.amount_collected || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_balance || 0), 0))}</td></tr></tfoot></table></div> : <>
+            <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Orders', summary.total_orders], ['Sales', money(summary.total_sales)], ['Collected', money(summary.amount_collected)], ['Outstanding', money(summary.outstanding_balance)]].map(([label, value]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-3 text-2xl font-black">{value}</p></article>)}</div>
+            <h3 className="mb-3 text-lg font-black">Staff performance</h3><div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white">{(report?.staff_performance || []).map(person => <div key={person.staff_name} className="flex justify-between gap-4 p-4 text-sm"><span className="font-bold">{person.staff_name}</span><span>{person.completed_items} completed · {person.items_assigned} assigned</span></div>)}{!report?.staff_performance?.length && <p className="p-5 text-sm text-zinc-400">No assignment activity in this period.</p>}</div>
+          </>}
+        </section>}
+        {tab === 'reports' && isManagement && <section className="mt-8">
+          <h3 className="mb-2 text-lg font-black">Staff performance by department</h3>
+          <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[600px] text-left text-sm">
+            <thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr><th className="p-3">Department</th><th className="p-3">Staff member</th><th className="p-3">Handled</th><th className="p-3">Completed</th></tr></thead>
+            <tbody>{departments.flatMap(row => (row.staff_performance || []).map(person => ({ ...person, departmentLabel: row.label, departmentKey: row.department }))).map(person => <tr key={`${person.departmentKey}-${person.staff_name}`} className="border-t border-stone-200"><td className="p-3">{person.departmentLabel}</td><td className="p-3 font-bold">{person.staff_name}</td><td className="p-3">{person.items_assigned}</td><td className="p-3">{person.completed_items}</td></tr>)}
+              {!departments.some(row => row.staff_performance?.length) && <tr><td colSpan="4" className="p-5 text-center text-stone-500">No department staff activity in this period.</td></tr>}
+            </tbody>
+          </table></div>
+        </section>}
+      </div>
+    </main>
+  );
+}

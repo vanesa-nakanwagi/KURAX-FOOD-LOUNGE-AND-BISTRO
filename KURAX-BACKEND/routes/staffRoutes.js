@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../db.js';
 import nodemailer from 'nodemailer';
+import { createSessionToken } from '../middleware/sessionTokens.js';
 
 const router = express.Router();
 
@@ -104,20 +105,24 @@ router.post('/login', async (req, res) => {
     }
 
     const foundUser = userResult.rows[0];
+    if (foundUser.is_active === false) {
+      return res.status(403).json({ error: "This staff account is inactive." });
+    }
     const inputPin = String(pin).trim();
     const storedPin = String(foundUser.pin).trim();
 
     if (inputPin === storedPin) {
-      return res.json({
-        message: "Login successful",
-        user: { 
+      const user = {
           id: foundUser.id, 
           name: foundUser.name, 
           role: foundUser.role, 
           is_permitted: foundUser.is_permitted,
           monthly_income_target: foundUser.monthly_income_target || 0,
           daily_order_target: foundUser.daily_order_target || 0
-        }
+      };
+      return res.json({
+        message: "Login successful",
+        user: { ...user, token: createSessionToken({ ...user, scope: 'restaurant' }) }
       });
     } else {
       return res.status(401).json({ error: "Invalid PIN" });
@@ -176,7 +181,7 @@ router.get("/performance-list", async (req, res) => {
          daily_order_target,
          is_permitted
        FROM staff 
-      WHERE role IN ('WAITER', 'MANAGER', 'SUPERVISOR', 'CHEF', 'BARISTA', 'BARMAN', 'SHISHA')
+      WHERE role IN ('WAITER', 'MANAGER', 'SUPERVISOR', 'CHEF', 'BARISTA', 'BARMAN')
        ORDER BY 
          CASE role 
            WHEN 'MANAGER' THEN 1 

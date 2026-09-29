@@ -15,6 +15,7 @@ import ViewSales from "./sections/ViewSales";
 import MonthlyCosts from "./MonthlyCosts";
 import ReportsPanel from "./ReportsPanel";
 import ReconciliationOverview from "./sections/ReconciliationOverview";
+import DepartmentHod from "../DepartmentHod";
 
 // Import modal components
 import ReopenDayModal from "./modals/ReopenDayModal";
@@ -916,6 +917,8 @@ export default function AccountantLayout() {
           {activeSection === "REPORTS" && (
             <ReportsPanel dark={false} />
           )}
+
+          {activeSection === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded />}
 
         </main>
         <Footer isDark={false} />

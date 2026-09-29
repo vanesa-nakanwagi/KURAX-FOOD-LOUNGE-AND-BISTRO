@@ -3,7 +3,8 @@ import { X, Mail, Eye, EyeOff, RefreshCcw } from "lucide-react";
 
 const ROLES = [
   "WAITER", "CASHIER", "CHEF", "MANAGER", "DIRECTOR",
-  "CONTENT-MANAGER", "ACCOUNTANT", "BARISTA", "BARMAN", "SHISHA", "SUPERVISOR",
+  "CONTENT-MANAGER", "ACCOUNTANT", "BARISTA", "BARMAN", "SUPERVISOR",
+  "KITCHEN_HOD", "BAR_HOD", "BARISTA_HOD", "SHISHA_HOD",
 ];
 
 export default function CreateStaffModal({ onClose, onSave, initialData, staffList }) {
@@ -93,7 +94,9 @@ export default function CreateStaffModal({ onClose, onSave, initialData, staffLi
             className="w-full bg-white border border-gray-300 p-3.5 rounded-xl text-sm font-bold focus:border-yellow-500 outline-none"
           >
             <option disabled value="SELECT ROLE">SELECT ROLE</option>
-            {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+            {ROLES.filter(r => !initialData || r !== "SHISHA_HOD").map(r => (
+              <option key={r} value={r}>{r === "SHISHA_HOD" ? "SHISHA HOD" : r}</option>
+            ))}
           </select>
 
           <div className="relative">
@@ -125,7 +128,9 @@ export default function CreateStaffModal({ onClose, onSave, initialData, staffLi
 
           {!initialData && (
             <p className="text-[9px] italic px-1 text-gray-500">
-              * Login details emailed on activation.
+              {form.role === "SHISHA_HOD"
+                ? "* This creates a separate Shisha HOD login at /shisha."
+                : "* Login details emailed on activation."}
             </p>
           )}
 

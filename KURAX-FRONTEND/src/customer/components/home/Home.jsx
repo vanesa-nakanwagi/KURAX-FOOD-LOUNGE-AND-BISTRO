@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import { 
   Plus, Sparkles, ArrowRight, Star, ChefHat, Calendar, 
-  Truck, Clock, CreditCard, UtensilsCrossed
+  Truck, Clock, CreditCard, UtensilsCrossed, ZoomIn
 } from "lucide-react";
 
 // Existing Utils & Components
@@ -13,6 +13,7 @@ import Navbar from "./Navbar.jsx";
 import API_URL from "../../../config/api";
 import { useCart } from "../context/CartContext.jsx";
 import CartModal from "../menu/cart/CartModal.jsx";
+import MenuImageViewer from "../menu/MenuImageViewer.jsx";
 import BookingModal from "../events/BookingModal.jsx";
 import EventCard from "../events/EventCard.jsx";
 import FooterGlobal from "../common/footer.jsx";
@@ -55,6 +56,7 @@ const staggerContainer = {
 // ========== DELIVERY SECTION ==========
 function DeliverySection() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const fadeInUpLocal = {
     hidden: { opacity: 0, y: 40 },
@@ -236,6 +238,7 @@ function ChefSection() {
 export default function Home() {
   const [current, setCurrent] = useState(0);
   const [dbMenus, setDbMenus] = useState([]);
+  const [selectedImage, setSelectedImage] = useState(null);
   const [dbEvents, setDbEvents] = useState([]);
   const [loadingMenus, setLoadingMenus] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
@@ -253,21 +256,37 @@ export default function Home() {
   const yContent = useTransform(scrollY, [0, 500], [0, -50]);
 
   useEffect(() => {
+    const targetId = decodeURIComponent(location.hash.slice(1));
+    if (!targetId) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [location.hash]);
+
+  useEffect(() => {
     const fetchRecentData = async () => {
-      try {
-        const [menuRes, eventRes] = await Promise.all([
+      const [menuResult, eventResult] = await Promise.allSettled([
           axios.get(`${API_URL}/api/menus`),
           axios.get(`${API_URL}/api/events`)
-        ]);
+      ]);
 
-        setDbMenus(menuRes.data.filter(i => i.status === 'live').slice(0, 4));
-        setDbEvents(eventRes.data.filter(e => e.status === 'live').slice(0, 3));
-      } catch (err) {
-        console.error("❌ FETCH ERROR:", err);
-      } finally {
-        setLoadingMenus(false);
-        setLoadingEvents(false);
+      if (menuResult.status === 'fulfilled') {
+        const menuItems = Array.isArray(menuResult.value.data) ? menuResult.value.data : [];
+        setDbMenus(menuItems.filter(item => item.status === 'live').slice(0, 4));
+      } else {
+        console.error("❌ MENU FETCH ERROR:", menuResult.reason);
       }
+
+      if (eventResult.status === 'fulfilled') {
+        const events = Array.isArray(eventResult.value.data) ? eventResult.value.data : [];
+        setDbEvents(events.filter(event => event.status === 'live').slice(0, 3));
+      } else {
+        console.error("❌ EVENT FETCH ERROR:", eventResult.reason);
+      }
+
+      setLoadingMenus(false);
+      setLoadingEvents(false);
     };
     fetchRecentData();
 
@@ -287,7 +306,7 @@ export default function Home() {
       <Navbar />
 
       {/* Hero Section */}
-      <section className="relative h-screen w-full flex items-center bg-black overflow-hidden">
+      <section id="hero" className="relative h-screen w-full flex items-center bg-black overflow-hidden">
         <div className="absolute inset-0 z-0">
           <AnimatePresence mode="wait">
             <motion.div
@@ -364,7 +383,12 @@ export default function Home() {
               [...Array(4)].map((_, i) => <div key={i} className="h-[400px] bg-zinc-100 rounded-3xl animate-pulse" />)
             ) : (
               dbMenus.map((item) => (
-                <HomeMenuCard key={item.id} item={item} onOrder={handleOrder} />
+                <HomeMenuCard
+                  key={item.id}
+                  item={item}
+                  onOrder={handleOrder}
+                  onViewImage={() => setSelectedImage({ src: getImageSrc(item.image_url), alt: item.name })}
+                />
               ))
             )}
           </motion.div>
@@ -372,7 +396,7 @@ export default function Home() {
       </section>
 
       {/* Upcoming Events Section */}
-      <section className="py-24 px-6 bg-[#FCFCFB] relative overflow-hidden">
+      <section id="events" className="scroll-mt-24 py-24 px-6 bg-[#FCFCFB] relative overflow-hidden">
         <motion.div 
           className="max-w-7xl mx-auto relative z-10"
           initial="hidden"
@@ -432,11 +456,11 @@ export default function Home() {
       <DeliverySection />
       <ChefSection />
 
-      <Services />
-      <About />
-      <Reserve />
-      <VisitUs />
-      <FooterGlobal />
+      <div id="services" className="scroll-mt-24"><Services /></div>
+      <div id="about" className="scroll-mt-24"><About /></div>
+      <div id="reservations" className="scroll-mt-24"><Reserve /></div>
+      <div id="visit" className="scroll-mt-24"><VisitUs /></div>
+      <div id="contact" className="scroll-mt-24"><FooterGlobal /></div>
 
       {/* Modals */}
       <CartModal 
@@ -455,12 +479,13 @@ export default function Home() {
           eventTitle={selectedEventTitle} 
         />
       )}
+      {selectedImage && <MenuImageViewer src={selectedImage.src} alt={selectedImage.alt} onClose={() => setSelectedImage(null)} />}
     </main>
   );
 }
 
 // Menu Card Helper
-function HomeMenuCard({ item, onOrder }) {
+function HomeMenuCard({ item, onOrder, onViewImage }) {
   const imageUrl = item.image_url?.startsWith('http') 
     ? item.image_url 
     : `${API_URL}${item.image_url}`;
@@ -472,12 +497,17 @@ function HomeMenuCard({ item, onOrder }) {
       className="group relative bg-white rounded-[1rem] font-outfit overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 transition-all duration-500"
     >
       <div className="relative h-56 overflow-hidden">
-        <motion.img
-          src={imageUrl}
-          alt={item.name}
-          className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
+        <button type="button" onClick={onViewImage} aria-label={`View full-size image of ${item.name}`} className="group/image relative block h-full w-full cursor-zoom-in text-left">
+          <motion.img
+            src={imageUrl}
+            alt={item.name}
+            className="w-full h-full object-cover transition-transform duration-1000 group-hover/image:scale-105"
+          />
+          <span className="absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-full bg-black/65 text-white opacity-0 transition group-hover/image:opacity-100 group-focus-visible/image:opacity-100">
+            <ZoomIn size={17} />
+          </span>
+        </button>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
         <div className="absolute top-4 left-4">
            <div className="bg-yellow-500 text-black text-[8px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest">
              <Sparkles size={8} /> New

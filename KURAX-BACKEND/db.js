@@ -43,20 +43,6 @@ export async function ensureDatabaseSchema() {
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'Cash';`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT false;`,
 
-    `CREATE TABLE IF NOT EXISTS public.shisha_tickets (
-      id SERIAL PRIMARY KEY,
-      order_id INTEGER NOT NULL UNIQUE REFERENCES public.orders(id) ON DELETE CASCADE,
-      table_name TEXT,
-      staff_name TEXT,
-      items JSONB DEFAULT '[]'::jsonb,
-      total NUMERIC DEFAULT 0,
-      status TEXT DEFAULT 'Pending',
-      ticket_date DATE DEFAULT CURRENT_DATE,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    );`,
-    `CREATE INDEX IF NOT EXISTS shisha_tickets_date_idx ON public.shisha_tickets(ticket_date);`,
-
     `ALTER TABLE IF EXISTS public.daily_summary ADD COLUMN IF NOT EXISTS total_settled_credits NUMERIC DEFAULT 0;`,
     `ALTER TABLE IF EXISTS public.daily_summary ADD COLUMN IF NOT EXISTS day_closed BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.daily_summary ADD COLUMN IF NOT EXISTS closed_by TEXT;`,

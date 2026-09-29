@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, BarChart3,
   History, Target, Bell, Menu, X, LogOut, Bike,
-  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet
+  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet, CircleDollarSign
 } from "lucide-react";
 
 // ── Local components ──────────────────────────────────────────────────────────
@@ -24,6 +24,7 @@ import Footer       from "../../customer/components/common/Foooter";
 import API_URL      from "../../config/api";
 import ReconciliationViewer from "../Accountant/sections/ReconciliationViewer";
 import StaffSalesPerformance from "../components/StaffSalesPerformance";
+import DepartmentHod from "../DepartmentHod";
 
 // ── CREDIT STATUS BADGE COMPONENT ────────────────────────────────────────────
 function CreditStatusBadge({ status }) {
@@ -57,6 +58,7 @@ const NAV = [
   { icon: <History size={18} />,         label: "History",    tab: "HISTORY"   },
   { icon: <Target size={18} />,          label: "Targets",    tab: "TARGETS"   },
   { icon: <Bike size={18} />,            label: "Riders",     tab: "RIDERS"    },
+  { icon: <CircleDollarSign size={18} />, label: "Department Reports", tab: "DEPARTMENT_REPORTS" },
 ];
 
 export default function DirectorDashboard() {
@@ -75,6 +77,12 @@ export default function DirectorDashboard() {
 
   // Get firstName from currentUser
   const firstName = currentUser?.name?.split(' ')[0] || 'Director';
+
+  const handleNavigation = (tab) => {
+    if (tab === "DEPARTMENT_REPORTS") setActiveTab(tab);
+    else setActiveTab(tab);
+    setSidebarOpen(false);
+  };
 
   // ── Auth ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -186,6 +194,33 @@ export default function DirectorDashboard() {
   // ── Staff actions ──────────────────────────────────────────────────────────
   const handleSaveStaff = async (payload) => {
     const isEdit = !!payload.id;
+    if (!isEdit && payload.role === "SHISHA_HOD") {
+      try {
+        const savedUser = JSON.parse(localStorage.getItem("kurax_user") || "{}");
+        const res = await fetch(`${API_URL}/api/shisha/staff`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${savedUser.token || ""}`,
+          },
+          body: JSON.stringify({ ...payload, role: "SHISHA_HOD" }),
+        });
+        const result = await res.json();
+        if (!res.ok) {
+          alert(result.error || "Failed to create Shisha HOD account.");
+          return;
+        }
+        setShowCreate(false);
+        setEditingStaff(null);
+        alert(result.emailSent
+          ? "Shisha HOD account created. The sign-in email and PIN were sent."
+          : "Shisha HOD account created, but the PIN email could not be sent. Check backend EMAIL_USER and EMAIL_PASS, then securely provide the PIN you set.");
+      } catch (e) {
+        console.error("Create Shisha HOD error:", e);
+        alert("Could not create the Shisha HOD account.");
+      }
+      return;
+    }
     const url    = isEdit ? `${API_URL}/api/staff/update/${payload.id}` : `${API_URL}/api/staff/activate`;
     try {
       const res    = await fetch(url, { method: isEdit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -260,7 +295,7 @@ export default function DirectorDashboard() {
         <nav className="flex flex-col gap-1.5">
           {NAV.map(({ icon, label, tab }) => (
             <button key={tab}
-              onClick={() => { setActiveTab(tab); setSidebarOpen(false); }}
+              onClick={() => handleNavigation(tab)}
               className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all w-full text-left
                 ${activeTab === tab 
                   ? "bg-yellow-500 text-black shadow-sm shadow-yellow-500/20" 
@@ -384,6 +419,8 @@ export default function DirectorDashboard() {
                 </div>
               </div>
             )}
+
+            {activeTab === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded />}
           </div>
           <Footer />
         </main>
@@ -392,7 +429,7 @@ export default function DirectorDashboard() {
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-gray-200 flex items-center justify-around px-1 py-1.5 bg-white/95 backdrop-blur-sm"
              style={{ paddingBottom: "env(safe-area-inset-bottom, 8px)" }}>
           {NAV.map(({ icon, label, tab }) => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
+            <button key={tab} onClick={() => handleNavigation(tab)}
               className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all flex-1
                 ${activeTab === tab ? "text-yellow-600" : "text-gray-500"}`}>
               <span className={`transition-transform ${activeTab === tab ? "scale-110" : ""}`}>{icon}</span>

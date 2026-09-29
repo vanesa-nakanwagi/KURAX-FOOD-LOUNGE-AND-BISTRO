@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
-import { Plus, Utensils, Cigarette, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles, Loader2 } from 'lucide-react'
+import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles, Loader2 } from 'lucide-react'
 import Footer from "../../../customer/components/common/Foooter";
 import { getImageSrc } from "../../../utils/imageHelper";
 import API_URL from "../../../config/api";
@@ -10,14 +10,13 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
 
-const CATEGORIES = ["Starters", "Local Foods", "Drinks & Cocktails", "Shisha"];
+const CATEGORIES = ["Starters", "Local Foods", "Drinks & Cocktails"];
 
 // Station routing options
 const STATIONS = [
   { id: 'Kitchen', label: 'Kitchen', icon: <Utensils className="w-3 h-3" /> },
   { id: 'Barista', label: 'Barista', icon: <Coffee className="w-3 h-3" /> },
-  { id: 'Barman', label: 'Bar', icon: <Wine className="w-3 h-3" /> },
-  { id: 'Shisha', label: 'Shisha', icon: <Cigarette className="w-3 h-3" /> }
+  { id: 'Barman', label: 'Bar', icon: <Wine className="w-3 h-3" /> }
 ];
 
 export default function Menus() {
@@ -53,8 +52,7 @@ export default function Menus() {
     } else {
       setFormData(prev => ({
         ...prev,
-        [name]: type === 'checkbox' ? checked : value,
-        ...(name === 'category' && value === 'Shisha' ? { station: 'Shisha' } : {})
+        [name]: type === 'checkbox' ? checked : value
       }))
     }
   }
@@ -104,6 +102,7 @@ export default function Menus() {
     data.append('station', formData.station);
     data.append('published', formData.published);
     data.append('customer_visible', formData.customer_visible);
+    data.append('image_url', formData.current_image_url || '');
 
     if (formData.image_file) {
       data.append('image', formData.image_file);
@@ -130,8 +129,8 @@ export default function Menus() {
         }
         resetForm();
       } else {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to save menu item')
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to save menu item');
       }
     } catch (err) {
       console.error("Database sync failed:", err);

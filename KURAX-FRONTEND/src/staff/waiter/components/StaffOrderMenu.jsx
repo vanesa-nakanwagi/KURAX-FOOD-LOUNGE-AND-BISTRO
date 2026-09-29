@@ -12,7 +12,7 @@ const getEffectiveCategory = (item) => {
   }
   // Otherwise use the original category (with fallback)
   const category = (item.category || "").trim();
-  if (category === "Starters" || category === "Local Foods" || category === "Drinks & Cocktails" || category === "Shisha") {
+  if (category === "Starters" || category === "Local Foods" || category === "Drinks & Cocktails") {
     return category;
   }
   return "Starters";
@@ -20,7 +20,7 @@ const getEffectiveCategory = (item) => {
 
 export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = "", activeCategory, setActiveCategory }) {
   const { theme } = useTheme();
-  const categories = ["Starters", "Local Foods", "Drinks & Cocktails", "Shisha"];
+  const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
 
   // --- DEBUG: collect raw station values from first few items ---
   const stationDebug = useMemo(() => {

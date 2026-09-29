@@ -254,6 +254,7 @@ const StaffLogin = () => {
       });
       const data = await response.json();
       if (response.ok) {
+        localStorage.removeItem('kurax_shisha_session');
         localStorage.setItem('kurax_user', JSON.stringify(data.user));
         setCurrentUser(data.user);
         const role = data.user.role.toUpperCase().trim();
@@ -263,12 +264,14 @@ const StaffLogin = () => {
           CASHIER: '/cashier',
           BARISTA: '/barista',
           BARMAN: '/barman',
-          SHISHA: '/shisha',
           ACCOUNTANT: '/accountant',
           'CONTENT-MANAGER': '/content-creator',
           MANAGER: '/staff/manager',
           SUPERVISOR: '/supervisor',
           CHEF: '/kitchen',
+          KITCHEN_HOD: '/kitchen/hod',
+          BAR_HOD: '/barman/hod',
+          BARISTA_HOD: '/barista/hod',
         };
         navigate(roleRoutes[role] || '/staff/dashboard');
       } else {
@@ -413,3 +416,4 @@ const StaffLogin = () => {
 };
 
 export default StaffLogin;
+export { EyeOpen, EyeClosed, EnvelopeIcon, LockIcon, ImageCarousel, UnderlineInput };

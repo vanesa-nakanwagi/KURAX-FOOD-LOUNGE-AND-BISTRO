@@ -13,18 +13,19 @@ import siteVisits from './routes/siteVisits.js';
 import managerRoutes from './routes/managerRoutes.js';
 import overviewRoutes from './routes/overviewRoutes.js';
 import weeklyRevenueRoutes from "./routes/weeklyRevenueRoutes.js";
-import sendToCashierRoutes from "./routes/sendToCashierRoutes.js";   // ✅ FIXED: matches actual filename
+import sendToCashierRoutes from "./routes/sendToCashierRoutes.js";
 import summaryRoutes from './routes/summaryRoutes.js';
 import accountantRoutes from './routes/accountantRoutes.js';
 import kitchenRoutes from "./routes/kitchenRoutes.js";
 import baristaRoutes from "./routes/baristaRoutes.js";
 import barmanRoutes from "./routes/barmanRoutes.js";
-import shishaRoutes from './routes/shishaRoutes.js';
 import waiterRoutes from './routes/waiterRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
 import deliveryRoutes from './routes/deliveryRoutes.js';
 import dayClosureRoutes from './routes/dayClosureRoutes.js';
 import creditRoutes, { initCreditTables } from './routes/creditRoutes.js';
+import shishaRoutes, { initShishaTables } from './routes/shishaRoutes.js';
+import departmentRoutes from './routes/departmentRoutes.js';
 
 dotenv.config();
 const app = express();
@@ -84,7 +85,7 @@ app.use('/api/visits', siteVisits);
 app.use('/api/menus', menuRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/cashier-ops', sendToCashierRoutes);      // ✅ now correctly mounted
+app.use('/api/cashier-ops', sendToCashierRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/manager', managerRoutes);
 app.use('/api/overview', overviewRoutes);
@@ -94,12 +95,13 @@ app.use('/api/accountant', accountantRoutes);
 app.use('/api/kitchen', kitchenRoutes);
 app.use('/api/barista', baristaRoutes);
 app.use('/api/barman', barmanRoutes);
-app.use('/api/shisha', shishaRoutes);
 app.use('/api/waiter', waiterRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/delivery', deliveryRoutes);
 app.use('/api/day-closure', dayClosureRoutes);
 app.use('/api/credits', creditRoutes);
+app.use('/api/shisha', shishaRoutes);
+app.use('/api/departments', departmentRoutes);
 
 // 6. HEALTH CHECK
 app.get('/api/health', (req, res) => {
@@ -119,6 +121,11 @@ const verifyDB = async () => {
     console.log('✅ Database schema verified/bootstrapped');
     await initCreditTables();
     console.log('✅ Credit tables verified/initialized');
+    await initShishaTables();
+    console.log('✅ Shisha department tables verified/initialized');
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.warn('⚠️ Shisha PIN email is disabled: configure EMAIL_USER and EMAIL_PASS in the backend environment.');
+    }
   } catch (err) {
     console.error('❌ DB/Init Error:', err.message);
   }

@@ -14,17 +14,32 @@ function kampalaDateStr(d = new Date()) {
     .toISOString().split("T")[0];
 }
 
+function formatMoney(value) {
+  return `UGX ${Number(value || 0).toLocaleString()}`;
+}
+
 // ─── ASSIGN MODAL ────────────────────────────────────────────────────────────
-function AssignModal({ assigningItem, onConfirm, onClose }) {
+function AssignModal({ assigningItem, onConfirm, onClose, department }) {
   const [name, setName] = useState("");
+  const [staff, setStaff] = useState([]);
+  useEffect(() => {
+    try {
+      const token = JSON.parse(localStorage.getItem("kurax_user") || "null")?.token;
+      if (!token) return;
+      fetch(`${API_URL}/api/departments/${department}/workers`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(response => response.ok ? response.json() : [])
+        .then(rows => setStaff(Array.isArray(rows) ? rows : []))
+        .catch(() => {});
+    } catch {}
+  }, [department]);
   const handleConfirm = () => { if (name.trim()) { onConfirm(name.trim()); setName(""); } };
 
   return (
-    <div className="fixed inset-0 z-[500] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-white/10 w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[500] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white border border-zinc-200 w-full max-w-sm rounded-xl p-6 shadow-2xl text-zinc-900" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3 text-orange-500">
-            <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
+          <div className="flex items-center gap-3 text-amber-700">
+            <div className="w-10 h-10 bg-amber-500/10 rounded-full flex items-center justify-center">
               <UserPlus size={20}/>
             </div>
             <div>
@@ -32,28 +47,28 @@ function AssignModal({ assigningItem, onConfirm, onClose }) {
               <p className="text-[10px] text-zinc-500 font-bold mt-0.5">{assigningItem.itemName}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-all">
-            <X size={14} className="text-zinc-400"/>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center hover:bg-zinc-200 transition-all">
+            <X size={14} className="text-zinc-600"/>
           </button>
         </div>
 
         <div className="space-y-4">
           <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest ml-1 block">Barista's Name</label>
-          <input
+          {staff.length ? <select autoFocus required value={name} onChange={e => setName(e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl py-3 px-4 text-sm font-semibold text-zinc-900 outline-none focus:border-amber-500"><option value="">Choose a barista</option>{staff.map(member => <option key={member.id} value={member.name}>{member.name}</option>)}</select> : <input
             autoFocus type="text" placeholder="e.g. Timo" autoComplete="off"
             value={name} onChange={e => setName(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleConfirm()}
-            className="w-full bg-black border border-white/10 rounded-2xl py-4 px-6 text-base font-bold text-white outline-none focus:border-orange-500 transition-all placeholder:opacity-20"
-          />
-          <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-3">
-            <ShieldAlert size={14} className="text-amber-400 shrink-0 mt-0.5"/>
-            <p className="text-[10px] text-amber-400/80 font-bold leading-relaxed">
+            className="w-full bg-white border border-zinc-200 rounded-xl py-3 px-4 text-sm font-semibold text-zinc-900 outline-none focus:border-amber-500 placeholder:text-zinc-400"
+          />}
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <ShieldAlert size={14} className="text-amber-700 shrink-0 mt-0.5"/>
+            <p className="text-[10px] text-amber-800 font-bold leading-relaxed">
               This barista will be held accountable for this drink. Their name is permanently recorded with the order.
             </p>
           </div>
           <div className="flex flex-col gap-2 pt-1">
             <button onClick={handleConfirm} disabled={!name.trim()}
-              className="w-full py-4 bg-orange-600 text-white font-black rounded-2xl uppercase italic text-xs active:scale-95 transition-all shadow-lg shadow-orange-600/10 disabled:opacity-40 disabled:cursor-not-allowed">
+              className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg uppercase text-xs active:scale-95 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
               Confirm Assignment
             </button>
             <button onClick={onClose} className="w-full py-3 text-zinc-500 font-bold text-[10px] uppercase tracking-widest hover:text-white transition-colors">
@@ -69,20 +84,20 @@ function AssignModal({ assigningItem, onConfirm, onClose }) {
 // ─── SHIFT SUMMARY MODAL ─────────────────────────────────────────────────────
 function ShiftSummaryModal({ stats, onConfirm, onClose }) {
   return (
-    <div className="fixed inset-0 z-[400] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 text-white">
-      <div className="bg-zinc-900 border border-white/10 w-full max-w-sm rounded-[3rem] p-8 text-center shadow-2xl">
-        <div className="w-16 h-16 bg-orange-600/10 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+    <div className="fixed inset-0 z-[400] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white border border-zinc-200 w-full max-w-sm rounded-xl p-6 text-center shadow-2xl text-zinc-900">
+        <div className="w-16 h-16 bg-amber-500/10 text-amber-700 rounded-full flex items-center justify-center mx-auto mb-4">
           <Trophy size={32}/>
         </div>
         <h2 className="text-xl font-black uppercase italic mb-1">Shift Recap</h2>
         <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-6 font-bold">End of Barista Shift</p>
 
         <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="bg-black/40 p-5 rounded-2xl border border-white/5">
+          <div className="bg-zinc-50 p-5 rounded-lg border border-zinc-200">
             <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Dockets</p>
             <p className="text-3xl font-black">{stats.totalOrders}</p>
           </div>
-          <div className="bg-black/40 p-5 rounded-2xl border border-white/5">
+          <div className="bg-zinc-50 p-5 rounded-lg border border-zinc-200">
             <p className="text-[9px] font-black text-zinc-500 uppercase mb-1">Cups</p>
             <p className="text-3xl font-black">{stats.totalBrewed}</p>
           </div>
@@ -93,14 +108,14 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
           <div className="mb-6 text-left space-y-2">
             <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-3">Barista Breakdown</p>
             {stats.baristas.map(b => (
-              <div key={b.barista} className="flex items-center justify-between bg-black/30 px-4 py-2.5 rounded-xl border border-white/5">
+              <div key={b.barista} className="flex items-center justify-between bg-zinc-50 px-4 py-2.5 rounded-lg border border-zinc-200">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-orange-500/10 text-orange-400 flex items-center justify-center text-[9px] font-black">
+                  <div className="w-6 h-6 rounded-full bg-amber-500/10 text-amber-700 flex items-center justify-center text-[9px] font-black">
                     {b.barista[0]}
                   </div>
                   <span className="font-black text-xs text-white uppercase">{b.barista}</span>
                 </div>
-                <span className="text-[10px] font-black text-orange-400">
+                <span className="text-[10px] font-black text-amber-700">
                   {b.drinks_made} drink{Number(b.drinks_made) !== 1 ? "s" : ""}
                 </span>
               </div>
@@ -110,7 +125,7 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 
         <div className="space-y-3">
           <button onClick={onConfirm}
-            className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl uppercase italic text-xs shadow-lg active:scale-95 transition-all">
+            className="w-full py-4 bg-amber-400 text-zinc-950 font-black rounded-lg uppercase text-xs shadow-sm active:scale-95 transition-all">
             Clear Feed &amp; End Shift
           </button>
           <button onClick={onClose} className="w-full py-4 text-zinc-500 font-bold uppercase tracking-widest text-[9px]">
@@ -125,44 +140,41 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
 function OrderCard({ order, onUpdateStatus, onAssignBarista }) {
   const minutesAgo  = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
+  const orderTotal = (order.items || []).reduce((total, item) => total + Number(item.price || item.unit_price || 0) * Number(item.quantity || 1), 0);
   const isCompleted = ["Served","Paid","Closed","Credit","Mixed"].includes(order.status);
   const isReady     = order.status === "Ready";
   const isPreparing = order.status === "Preparing";
   const isDelayed   = minutesAgo >= 12 && !isReady && !isCompleted;
 
-  const headerBg = isCompleted ? "bg-zinc-800/60"
-    : isReady   ? "bg-zinc-800"
-    : isDelayed ? "bg-orange-600"
-    : "bg-orange-950";
+  const headerBg = isCompleted || isReady ? "bg-zinc-50" : isDelayed ? "bg-rose-50" : "bg-zinc-50";
 
   return (
-    <div className={`flex flex-col rounded-[2.5rem] border-2 bg-zinc-900 transition-all duration-500 h-[460px] overflow-hidden shadow-xl
+    <div className={`flex flex-col rounded-xl border bg-white transition-all duration-300 h-[460px] overflow-hidden shadow-sm
       ${isCompleted ? "opacity-35 grayscale border-transparent"
         : isReady   ? "opacity-60 grayscale border-transparent"
-        : isDelayed ? "border-orange-600"
-        : "border-white/5"}`}>
+        : isDelayed ? "border-rose-300"
+        : "border-zinc-200"}`}>
 
       {/* Header */}
-      <div className={`p-5 shrink-0 ${headerBg} text-white`}>
+      <div className={`p-4 shrink-0 ${headerBg} border-b border-zinc-100`}>
         <div className="flex justify-between items-start mb-2">
-          <h2 className="text-2xl font-black italic tracking-tighter uppercase leading-none text-white">
-            T-{order.table_name || order.tableName}
-          </h2>
+          <div><p className="text-xs font-black uppercase tracking-widest text-amber-800">Order #{order.id} · Table {order.table_name || order.tableName}</p><h2 className="mt-1 text-xl font-black text-zinc-900">{formatMoney(orderTotal)}</h2></div>
           {isCompleted ? (
             <span className="text-[9px] font-black px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 uppercase tracking-widest border border-emerald-500/20">
               ✓ Collected
             </span>
           ) : (
             <span className={`text-sm font-black italic flex items-center gap-1.5 px-3 py-1 rounded-full
-              ${isDelayed ? "bg-white/20 text-white" : "bg-black/30 text-zinc-300"}`}>
+              ${isDelayed ? "bg-rose-100 text-rose-800" : "bg-white border border-zinc-200 text-zinc-600"}`}>
               <Clock size={12}/> {minutesAgo}m
             </span>
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-[10px] font-black uppercase text-white/50">
+          <p className="text-[10px] font-black uppercase text-zinc-500">
             {order.staff_name || order.waiterName || "Staff"}
           </p>
+          <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${isCompleted ? 'bg-emerald-100 text-emerald-800' : isPreparing ? 'bg-amber-100 text-amber-900' : isReady ? 'bg-zinc-100 text-zinc-600' : 'bg-zinc-100 text-zinc-600'}`}>{order.status}</span>
           {isDelayed && (
             <span className="ml-auto flex items-center gap-1 text-[9px] font-black text-white/70 uppercase">
               <AlertCircle size={10}/> Delayed
@@ -174,18 +186,16 @@ function OrderCard({ order, onUpdateStatus, onAssignBarista }) {
       {/* Items */}
       <div className="p-5 flex-grow overflow-y-auto space-y-3 custom-scrollbar">
         {order.items.map((item, idx) => (
-          <div key={idx} className="border-b border-white/5 pb-3 last:border-0">
+          <div key={idx} className="border-b border-zinc-100 pb-3 last:border-0">
             <div className="flex justify-between items-start gap-3">
               <div className="flex items-start gap-2 flex-1 min-w-0">
-                <span className="bg-orange-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded leading-none shrink-0 mt-0.5">
+                <span className="bg-amber-400 text-zinc-950 text-[10px] font-black px-1.5 py-0.5 rounded leading-none shrink-0 mt-0.5">
                   {item.quantity}x
                 </span>
-                <div className="min-w-0">
-                  <p className={`font-black text-sm uppercase leading-tight ${isReady || isCompleted ? "line-through text-zinc-500" : "text-white"}`}>
-                    {item.name}
-                  </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2"><p className={`font-black text-sm uppercase leading-tight ${isReady || isCompleted ? "line-through text-zinc-400" : "text-zinc-900"}`}>{item.name}</p><span className="shrink-0 text-xs font-semibold text-zinc-600">{formatMoney(Number(item.price || item.unit_price || 0) * Number(item.quantity || 1))}</span></div>
                   {item.note && (
-                    <p className="text-[10px] text-orange-400 italic font-bold mt-1 bg-orange-600/5 p-1.5 rounded-lg">
+                    <p className="text-[10px] text-amber-800 italic font-bold mt-1 bg-amber-50 p-1.5 rounded-lg">
                       "{item.note}"
                     </p>
                   )}
@@ -196,7 +206,7 @@ function OrderCard({ order, onUpdateStatus, onAssignBarista }) {
               <div className="shrink-0">
                 {item.assignedTo ? (
                   <div className="flex flex-col items-end gap-0.5">
-                    <span className="bg-emerald-500/10 text-emerald-400 text-[8px] font-black px-2 py-1 rounded-full border border-emerald-500/20 whitespace-nowrap">
+                    <span className="bg-amber-50 text-amber-800 text-[8px] font-black px-2 py-1 rounded-full border border-amber-200 whitespace-nowrap">
                       ☕ {item.assignedTo}
                     </span>
                     {item.assignedAt && (
@@ -208,7 +218,7 @@ function OrderCard({ order, onUpdateStatus, onAssignBarista }) {
                 ) : !isCompleted ? (
                   <button
                     onClick={() => onAssignBarista(order.id, order._ticketId, idx, item.name)}
-                    className="bg-zinc-800 text-zinc-400 text-[8px] font-black px-2 py-1 rounded-full border border-white/5 hover:bg-orange-600 hover:text-white transition-all whitespace-nowrap">
+                    className="bg-white text-zinc-600 text-[8px] font-black px-2 py-1 rounded-full border border-zinc-200 hover:bg-amber-400 hover:text-zinc-950 transition-all whitespace-nowrap">
                     + Barista
                   </button>
                 ) : null}
@@ -219,7 +229,7 @@ function OrderCard({ order, onUpdateStatus, onAssignBarista }) {
       </div>
 
       {/* Footer actions */}
-      <div className="p-4 bg-black/20 border-t border-white/5 shrink-0">
+      <div className="p-4 bg-zinc-50 border-t border-zinc-100 shrink-0">
         {isCompleted ? (
           <div className="py-3 flex items-center justify-center gap-2">
             <CheckCircle size={13} className="text-emerald-500"/>
@@ -227,17 +237,17 @@ function OrderCard({ order, onUpdateStatus, onAssignBarista }) {
           </div>
         ) : order.status === "Pending" ? (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
-            className="w-full py-4 bg-orange-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 text-[11px] uppercase italic active:scale-95 transition-all shadow-lg shadow-orange-600/10">
+            className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
             <Bean size={16}/> Start Brewing
           </button>
         ) : isPreparing ? (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Ready")}
-            className="w-full py-4 bg-emerald-500 text-black font-black rounded-2xl flex items-center justify-center gap-2 text-[11px] uppercase italic active:scale-95 transition-all shadow-lg shadow-emerald-500/10">
+            className="w-full py-3 bg-emerald-600 text-white font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
             <CheckCircle size={16}/> Order Ready — Notify Waiter
           </button>
         ) : isReady ? (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
-            className="w-full py-4 bg-zinc-800 text-zinc-400 font-black rounded-2xl flex items-center justify-center gap-2 text-[11px] uppercase italic active:scale-95 transition-all">
+            className="w-full py-3 bg-white text-zinc-600 border border-zinc-200 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all">
             <RotateCcw size={14}/> Return to Queue
           </button>
         ) : null}
@@ -473,21 +483,21 @@ export default function BaristaDisplay() {
   const readyCount     = filteredOrders.filter(o => o.status === "Ready").length;
 
   return (
-    <div className="h-screen bg-zinc-950 p-3 md:p-5 overflow-hidden flex flex-col font-[Outfit] relative text-white">
+    <div className="h-screen bg-[#f4f3ef] p-3 md:p-5 overflow-hidden flex flex-col font-[Outfit] relative text-zinc-900">
 
       {/* ── AUDIO GATE ── */}
       {!audioEnabled && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center">
           <div className="space-y-6">
-            <div className="w-24 h-24 bg-orange-600/10 rounded-full flex items-center justify-center mx-auto">
-              <Coffee size={48} className="text-orange-500 animate-pulse"/>
+            <div className="w-24 h-24 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto">
+              <Coffee size={48} className="text-amber-700 animate-pulse"/>
             </div>
             <div>
               <h2 className="text-2xl font-black uppercase italic tracking-tighter text-white">Barista Station</h2>
               <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mt-1">Kurax Lounge &amp; Bistro</p>
             </div>
             <button onClick={() => { setAudioEnabled(true); playChime(); }}
-              className="bg-orange-600 text-white px-12 py-5 rounded-2xl font-black uppercase italic hover:scale-105 transition-transform flex items-center gap-3 mx-auto shadow-2xl shadow-orange-600/20 active:scale-95">
+              className="bg-amber-400 text-zinc-950 px-8 py-4 rounded-lg font-black uppercase hover:bg-amber-300 transition-colors flex items-center gap-3 mx-auto shadow-sm active:scale-95">
               <Play fill="currentColor" size={20}/> Open Barista Station
             </button>
           </div>
@@ -495,35 +505,35 @@ export default function BaristaDisplay() {
       )}
 
       {assigningItem && (
-        <AssignModal assigningItem={assigningItem} onConfirm={handleAssignBarista} onClose={() => setAssigningItem(null)}/>
+        <AssignModal department="barista" assigningItem={assigningItem} onConfirm={handleAssignBarista} onClose={() => setAssigningItem(null)}/>
       )}
       {showSummary && (
         <ShiftSummaryModal stats={shiftStats} onConfirm={confirmEndShift} onClose={() => setShowSummary(false)}/>
       )}
 
       {/* ── HEADER ── */}
-      <header className="flex flex-col lg:flex-row justify-between items-center mb-4 bg-zinc-900 p-4 lg:px-6 rounded-[2rem] border border-white/5 shadow-2xl gap-3 shrink-0">
+      <header className="flex flex-col lg:flex-row justify-between items-center mb-4 bg-white p-4 lg:px-6 rounded-xl border border-zinc-200 shadow-sm gap-3 shrink-0">
         <div className="flex items-center gap-4 w-full lg:w-auto">
-          <div className="w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center text-white font-black text-lg border-b-4 border-orange-800 shrink-0">
+          <div className="w-12 h-12 bg-zinc-900 rounded-xl flex items-center justify-center text-amber-300 font-black text-lg shrink-0">
             {baristaInitials}
           </div>
           <div className="min-w-0">
-            <h1 className="text-lg font-black uppercase tracking-tighter leading-none italic truncate">{baristaName}</h1>
+            <h1 className="text-lg font-black uppercase tracking-tight leading-none truncate text-zinc-900">{baristaName}</h1>
             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">Active Barista Session</p>
           </div>
         </div>
 
         {/* Live stats */}
         <div className="flex items-center gap-2 flex-wrap justify-center">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-800 border border-white/5 text-[10px] font-black uppercase">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 border border-zinc-200 text-[10px] font-black uppercase">
             <span className="w-2 h-2 rounded-full bg-zinc-400"/>
             <span className="text-zinc-400">{pendingCount} Pending</span>
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-[10px] font-black uppercase">
-            <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse"/>
-            <span className="text-orange-400">{preparingCount} Brewing</span>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-black uppercase">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"/>
+            <span className="text-amber-800">{preparingCount} Brewing</span>
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-black uppercase">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-black uppercase">
             <span className="w-2 h-2 rounded-full bg-emerald-400"/>
             <span className="text-emerald-400">{readyCount} Ready</span>
           </div>
@@ -535,10 +545,10 @@ export default function BaristaDisplay() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={14}/>
             <input type="text" placeholder="Search table..." value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-950 border border-white/10 rounded-full py-2.5 pl-9 pr-4 text-xs font-bold text-white outline-none focus:border-orange-500 transition-all"/>
+              className="w-full bg-white border border-zinc-200 rounded-lg py-2.5 pl-9 pr-4 text-xs font-bold text-zinc-900 outline-none focus:border-amber-500 transition-all"/>
           </div>
           <button onClick={handleShiftReset}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-zinc-800 border border-white/5 text-zinc-400 hover:text-white transition-all text-[10px] font-black uppercase italic shrink-0">
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50 transition-all text-[10px] font-black uppercase shrink-0">
             <RotateCcw size={13}/> End Shift
           </button>
           <button onClick={handleLogout}

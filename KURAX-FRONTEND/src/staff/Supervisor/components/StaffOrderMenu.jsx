@@ -5,7 +5,7 @@ import { getImageSrc } from "../../../utils/imageHelper";
 
 export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = "", activeCategory, setActiveCategory }) {
   const { theme } = useTheme();
-  const categories = ["Starters", "Local Foods", "Drinks & Cocktails", "Shisha"];
+  const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
 
   const filteredMenus = items.filter((item) => {
     const query = searchQuery.toLowerCase();

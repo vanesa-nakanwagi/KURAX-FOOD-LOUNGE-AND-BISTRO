@@ -17,7 +17,7 @@ import AccountantRoutes from "./staff/routes/AccountantRoutes.jsx";
 import ManagerRoutes from "./staff/routes/ManagerRoutes.jsx";
 import BarmanRoutes from "./staff/routes/BarmanRoutes";
 import BaristaRoutes from "./staff/routes/BaristaRoutes"; 
-import ShishaRoutes from "./staff/routes/ShishaRoutes";
+import ShishaDepartment from "./staff/Shisha/ShishaDepartment.jsx";
 import SupervisorRoutes from "./staff/routes/SupervisorRoutes";
 import StaffRoutes from './staff/routes/StaffLoginRoutes';
 import NewOrder  from './staff/waiter/components/NewOrder.jsx';
@@ -169,7 +169,9 @@ export default function App() {
         <Route path="/kitchen/*" element={<KitchenRoutes />} />
         <Route path="/barman/*" element={<BarmanRoutes />} />
         <Route path="/barista/*" element={<BaristaRoutes />} />
-        <Route path="/shisha/*" element={<ShishaRoutes />} />
+        <Route path="/shisha/mixer/*" element={<ShishaDepartment requiredRole="SHISHA_CHEF" />} />
+        <Route path="/shisha/waiter/*" element={<ShishaDepartment requiredRole="SHISHA_WAITER" />} />
+        <Route path="/shisha/*" element={<ShishaDepartment />} />
         <Route path="/content-creator/*" element={<ContentCreatorRoutes />} />
 
         {/* --- FALLBACKS --- */}

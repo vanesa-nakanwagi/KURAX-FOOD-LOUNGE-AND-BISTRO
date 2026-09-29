@@ -15,7 +15,7 @@ export default function ManagerOrderMenu({
   isGranted = true 
 }) {
   const { theme } = useTheme();
-  const categories = ["Starters", "Local Foods", "Drinks & Cocktails", "Shisha"];
+  const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
 
   const filteredMenus = items.filter((item) => {
     const query = searchQuery.toLowerCase();

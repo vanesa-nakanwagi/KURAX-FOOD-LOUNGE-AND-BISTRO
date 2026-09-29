@@ -14,6 +14,7 @@ import {
   History,
   Table,
   WalletCards,
+  CircleDollarSign,
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData } from "../../../customer/components/context/DataContext";
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { id: "status",  label: "Order Status",      short: "Status",  icon: Clock },
   { id: "reports", label: "Staff Performance", short: "Reports", icon: BarChart3 },
   { id: "target",  label: "Set Target",        short: "Target",  icon: Target },
+  { id: "department-reports", label: "Department Reports", short: "Dept. Sales", icon: CircleDollarSign },
 ];
 
 export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 0 }) {

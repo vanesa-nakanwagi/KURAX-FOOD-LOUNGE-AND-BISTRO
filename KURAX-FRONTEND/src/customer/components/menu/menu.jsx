@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Sparkles, X } from "lucide-react";
+import { Plus, Sparkles, X, ZoomIn } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import CartModal from "./cart/CartModal.jsx";
 import TopSection from "../common/topSection.jsx";
@@ -7,11 +7,12 @@ import { useCart } from "../context/CartContext.jsx";
 import axios from "axios";
 import { getImageSrc } from "../../../utils/imageHelper.js";
 import API_URL from "../../../config/api";
+import MenuImageViewer from "./MenuImageViewer.jsx";
 
 /* =========================
    CONSISTENT MENU CARD COMPONENT
 ========================= */
-function MenuCard({ item, onOrder, isNew }) {
+function MenuCard({ item, onOrder, onViewImage, isNew }) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const imageUrl = item.image_url?.startsWith("http")
     ? item.image_url
@@ -31,15 +32,20 @@ function MenuCard({ item, onOrder, isNew }) {
         {!imgLoaded && (
           <div className="absolute inset-0 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
         )}
-        <img
-          src={imageUrl}
-          alt={item.name}
-          onLoad={() => setImgLoaded(true)}
-          className={`w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 ${
-            imgLoaded ? "opacity-100" : "opacity-0"
-          }`}
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
+        <button type="button" onClick={onViewImage} aria-label={`View full-size image of ${item.name}`} className="group/image relative block h-full w-full cursor-zoom-in text-left">
+          <img
+            src={imageUrl}
+            alt={item.name}
+            onLoad={() => setImgLoaded(true)}
+            className={`w-full h-full object-cover transition-transform duration-1000 group-hover/image:scale-105 ${
+              imgLoaded ? "opacity-100" : "opacity-0"
+            }`}
+          />
+          <span className="absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-full bg-black/65 text-white opacity-0 transition group-hover/image:opacity-100 group-focus-visible/image:opacity-100">
+            <ZoomIn size={17} />
+          </span>
+        </button>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
       </div>
 
       <div className="p-6 flex-1 flex flex-col justify-between">
@@ -85,6 +91,7 @@ export default function Menu() {
   const [selectedCategory, setSelectedCategory] = useState("Starters");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   const {
     cart, isCartOpen, setIsCartOpen, activeDish, setActiveDish,
@@ -156,8 +163,9 @@ export default function Menu() {
   // Filter menus based on search or category (using effective category)
   useEffect(() => {
     if (dbMenus.length === 0) return;
-    const customerVisibleMenus = dbMenus.filter(
-      (item) => item.category !== "Shisha" || item.customer_visible === true
+    const customerVisibleMenus = dbMenus.filter((item) =>
+      String(item.category || '').trim().toLowerCase() !== 'shisha' &&
+      String(item.station || '').trim().toLowerCase() !== 'shisha'
     );
     let results = [];
     if (isSearching && searchQuery) {
@@ -312,6 +320,7 @@ export default function Menu() {
                     key={item.id}
                     item={item}
                     isNew={isNew}
+                    onViewImage={() => setSelectedImage({ src: getImageSrc(item.image_url), alt: item.name })}
                     onOrder={(it) => {
                       setActiveDish({
                         ...it,
@@ -347,6 +356,7 @@ export default function Menu() {
           setCustomerDetails={setCustomerDetails}
         />
       )}
+      {selectedImage && <MenuImageViewer src={selectedImage.src} alt={selectedImage.alt} onClose={() => setSelectedImage(null)} />}
     </div>
   );
 }
