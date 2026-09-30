@@ -98,7 +98,11 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: "Email and PIN are required" });
     }
 
-    const userResult = await pool.query('SELECT * FROM staff WHERE email = $1', [email]);
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const userResult = await pool.query(
+      'SELECT * FROM staff WHERE lower(trim(email)) = $1',
+      [normalizedEmail]
+    );
     
     if (userResult.rows.length === 0) {
       return res.status(401).json({ error: "User not found" });
