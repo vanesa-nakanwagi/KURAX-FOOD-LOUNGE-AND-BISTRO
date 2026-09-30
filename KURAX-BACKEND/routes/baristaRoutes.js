@@ -146,6 +146,7 @@ router.patch('/tickets/:id/status', async (req, res) => {
   if (!allowed.includes(status)) return res.status(400).json({ error: `Invalid status: ${status}` });
 
   try {
+    //here we update the status and set ready_at if status is 'Ready'
     const result = await pool.query(
       `UPDATE barista_tickets
        SET status     = $1,
