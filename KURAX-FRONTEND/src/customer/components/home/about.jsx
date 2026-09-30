@@ -12,6 +12,7 @@ import img6 from "../../assets/images/kurax6.jpg";
 const heroImages = [img1, img2, img3, img4, img5, img6];
 
 // ─── Stat item ────────────────────────────────────────────────────────────────
+//start
 function StatItem({ value, label, delay }) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-60px" });
