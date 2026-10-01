@@ -19,6 +19,11 @@ function formatMoney(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
 }
 
+function isAssignedKitchenItem(item) {
+  const station = String(item.station || '').trim().toLowerCase();
+  return !['barman', 'barista', 'shisha'].includes(station) && Boolean(item.assignedTo);
+}
+
 // ─── CHEF ASSIGN MODAL ────────────────────────────────────────────────────────
 function AssignModal({ assigningItem, onConfirm, onClose, department }) {
   const [name, setName] = useState("");
@@ -138,7 +143,7 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 }
 
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
-function OrderCard({ order, onUpdateStatus, onAssignChef }) {
+function OrderCard({ order, onUpdateStatus, onAssignChef, canAssign }) {
   const minutesAgo = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
   const orderTotal = (order.items || []).reduce((total, item) => total + Number(item.price || item.unit_price || 0) * Number(item.quantity || 1), 0);
   const isDelayed   = minutesAgo >= 15 && order.status !== "Ready";
@@ -208,13 +213,13 @@ function OrderCard({ order, onUpdateStatus, onAssignChef }) {
                       </span>
                     )}
                   </div>
-                ) : (
+                ) : canAssign ? (
                   <button
                     onClick={() => onAssignChef(order.id, order._ticketId, idx, item.name)}
                     className="bg-white text-zinc-600 text-[8px] font-black px-2 py-1 rounded-full border border-zinc-200 hover:bg-amber-400 hover:text-zinc-950 transition-all whitespace-nowrap">
                     + Assign
                   </button>
-                )}
+                ) : null}
               </div>
             </div>
           </div>
@@ -255,6 +260,7 @@ export default function KitchenDisplay() {
     catch { return {}; }
   }, []);
   const chefName     = savedUser.name || "Head Chef";
+  const canAssign    = savedUser.role === "KITCHEN_HOD";
   const chefInitials = chefName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const handleLogout = () => { localStorage.removeItem("kurax_user"); navigate("/staff/login"); };
 
@@ -263,21 +269,30 @@ export default function KitchenDisplay() {
   const [showSummary,   setShowSummary]   = useState(false);
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalItems: 0, chefs: [] });
   const [assigningItem, setAssigningItem] = useState(null);
+  const [ticketOrderIds, setTicketOrderIds] = useState([]);
 
   const ticketMapRef = useRef({});
 
   // ── Load today's tickets on mount ─────────────────────────────────────────
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+    const loadTickets = async () => {
       try {
         const res = await fetch(`${API_URL}/api/kitchen/tickets?date=${kampalaDateStr()}`);
-        if (res.ok) {
-          const rows = await res.json();
-          rows.forEach(t => { ticketMapRef.current[t.order_id] = t.id; });
-        }
+        if (!res.ok) return;
+        const rows = await res.json();
+        if (!mounted) return;
+        ticketMapRef.current = Object.fromEntries(rows.map(ticket => [ticket.order_id, ticket.id]));
+        setTicketOrderIds(rows.map(ticket => Number(ticket.order_id)));
       } catch (e) { console.error("Load existing tickets:", e); }
-    })();
+    };
+    loadTickets();
+    const timer = setInterval(loadTickets, 10000);
+    return () => { mounted = false; clearInterval(timer); };
   }, []);
+
+  const isVisibleKitchenItem = item =>
+    isAssignedKitchenItem(item) && (canAssign || item.assignedTo === chefName);
 
   // ── Filter: only kitchen-relevant, non-cleared, non-day-closed orders ──────
   // FIX: added day_cleared and shift_cleared checks so accountant close-day
@@ -286,7 +301,9 @@ export default function KitchenDisplay() {
     (orders || [])
       .filter(order => {
         // ── Status gate: only active kitchen statuses ──────────────────────
-        if (!["Pending", "Preparing", "Ready"].includes(order.status)) return false;
+        const kitchenStatus = order.kitchen_ticket_status || "Pending";
+        if (!["Pending", "Preparing"].includes(kitchenStatus)) return false;
+        if (!ticketOrderIds.includes(Number(order.id))) return false;
 
         // ── FIX 1: hide orders cleared by accountant end-of-day ───────────
         const dayCleared =
@@ -302,7 +319,7 @@ export default function KitchenDisplay() {
         if (dayCleared || shiftCleared || kitchenCleared) return false;
 
         // ── Kitchen-only items (no barman / barista items = skip) ──────────
-        if (!(order.items || []).some(i => !["Barman", "Barista"].includes(i.station))) return false;
+        if (!(order.items || []).some(isVisibleKitchenItem)) return false;
 
         // ── Search filter ──────────────────────────────────────────────────
         if (searchQuery.trim()) {
@@ -315,43 +332,15 @@ export default function KitchenDisplay() {
       })
       .map(order => ({
         ...order,
+        status: order.kitchen_ticket_status || "Pending",
         _ticketId: ticketMapRef.current[order.id] || null,
-        items: (order.items || []).filter(i => !["Barman", "Barista"].includes(i.station)),
+        items: (order.items || []).filter(isVisibleKitchenItem),
       }))
       .sort((a, b) => {
         const p = { Pending: 0, Preparing: 1, Ready: 2 };
         return (p[a.status] ?? 3) - (p[b.status] ?? 3);
       }),
-  [orders, searchQuery]);
-
-  // ── Auto-upsert tickets to kitchen_tickets DB ─────────────────────────────
-  const upsertedRef = useRef(new Set());
-  useEffect(() => {
-    filteredOrders.forEach(async order => {
-      if (upsertedRef.current.has(order.id)) return;
-      upsertedRef.current.add(order.id);
-      try {
-        const waiterName = order.staff_name || order.waiterName || "Staff";
-        const waiterRole = order.staff_role || "WAITER";
-        const res = await fetch(`${API_URL}/api/kitchen/tickets`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            order_id:   order.id,
-            table_name: order.table_name || order.tableName || "WALK-IN",
-            staff_name: waiterName,
-            staff_role: waiterRole,
-            items:      order.items,
-            total:      order.total || 0,
-            status:     order.status,
-          }),
-        });
-        if (res.ok) {
-          const ticket = await res.json();
-          ticketMapRef.current[order.id] = ticket.id;
-        }
-      } catch (e) { console.error("Upsert ticket:", e); }
-    });
-  }, [filteredOrders]);
+  [orders, searchQuery, ticketOrderIds, isVisibleKitchenItem]);
 
   // ── Audio: ding on new kitchen order ─────────────────────────────────────
   const prevLen = useRef(orders.length);
@@ -370,19 +359,17 @@ export default function KitchenDisplay() {
 
   // ── Update status ─────────────────────────────────────────────────────────
   const updateStatus = useCallback(async (orderId, ticketId, newStatus) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, kitchen_ticket_status: newStatus } : o));
     try {
-      await fetch(`${API_URL}/api/orders/${orderId}/status`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
       const tId = ticketId || ticketMapRef.current[orderId];
       if (tId) {
-        await fetch(`${API_URL}/api/kitchen/tickets/${tId}/status`, {
+        const response = await fetch(`${API_URL}/api/kitchen/tickets/${tId}/status`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: newStatus }),
         });
+        if (!response.ok) throw new Error("Could not update Kitchen ticket status.");
       }
+      refreshData?.();
     } catch (err) {
       console.error("Status update failed:", err);
       refreshData?.();
@@ -447,18 +434,19 @@ export default function KitchenDisplay() {
 
     setOrders(prev => prev.map(order => {
       const isKitchenActive =
-        ["Pending", "Preparing", "Ready"].includes(order.status) &&
-        (order.items || []).some(i => !["Barman", "Barista"].includes(i.station));
+        ticketOrderIds.includes(Number(order.id)) &&
+        ["Pending", "Preparing", "Ready"].includes(order.kitchen_ticket_status || "Pending") &&
+        (order.items || []).some(isVisibleKitchenItem);
       return isKitchenActive ? { ...order, clearedByKitchen: true } : order;
     }));
 
     setShowSummary(false);
-    upsertedRef.current.clear();
   };
 
   const pendingCount   = filteredOrders.filter(o => o.status === "Pending").length;
   const preparingCount = filteredOrders.filter(o => o.status === "Preparing").length;
-  const readyCount     = filteredOrders.filter(o => o.status === "Ready").length;
+  const readyCount     = orders.filter(order => ticketOrderIds.includes(Number(order.id)) &&
+    order.kitchen_ticket_status === "Ready" && (order.items || []).some(isVisibleKitchenItem)).length;
 
   return (
     <div className="h-screen bg-[#f4f3ef] p-3 md:p-5 overflow-hidden flex flex-col font-[Outfit] relative text-zinc-900">
@@ -547,6 +535,7 @@ export default function KitchenDisplay() {
               key={order.id}
               order={order}
               onUpdateStatus={updateStatus}
+              canAssign={canAssign}
               onAssignChef={(orderId, ticketId, itemIdx, itemName) =>
                 setAssigningItem({ orderId, ticketId, itemIdx, itemName })
               }

@@ -223,10 +223,12 @@ export default function DirectorDashboard() {
     }
     const url    = isEdit ? `${API_URL}/api/staff/update/${payload.id}` : `${API_URL}/api/staff/activate`;
     try {
-      const res    = await fetch(url, { method: isEdit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res    = await fetch(url, { method: isEdit ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const result = await res.json();
       if (res.ok && result.staff) {
-        setStaffList(prev => isEdit ? prev.map(s => s.id === result.staff.id ? result.staff : s) : [...prev, result.staff]);
+        setStaffList(prev => isEdit
+          ? prev.map(s => s.id === result.staff.id ? { ...s, ...result.staff, pin: payload.pin || s.pin } : s)
+          : [...prev, result.staff]);
         setShowCreate(false);
         setEditingStaff(null);
       } else { alert(result.error || "Failed to save."); }

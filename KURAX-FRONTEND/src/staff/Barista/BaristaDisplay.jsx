@@ -138,7 +138,7 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 }
 
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
-function OrderCard({ order, onUpdateStatus, onAssignBarista }) {
+function OrderCard({ order, onUpdateStatus, onAssignBarista, canAssign }) {
   const minutesAgo  = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
   const orderTotal = (order.items || []).reduce((total, item) => total + Number(item.price || item.unit_price || 0) * Number(item.quantity || 1), 0);
   const isCompleted = ["Served","Paid","Closed","Credit","Mixed"].includes(order.status);
@@ -215,7 +215,7 @@ function OrderCard({ order, onUpdateStatus, onAssignBarista }) {
                       </span>
                     )}
                   </div>
-                ) : !isCompleted ? (
+                ) : !isCompleted && canAssign ? (
                   <button
                     onClick={() => onAssignBarista(order.id, order._ticketId, idx, item.name)}
                     className="bg-white text-zinc-600 text-[8px] font-black px-2 py-1 rounded-full border border-zinc-200 hover:bg-amber-400 hover:text-zinc-950 transition-all whitespace-nowrap">
@@ -266,6 +266,7 @@ export default function BaristaDisplay() {
     catch { return {}; }
   }, []);
   const baristaName     = savedUser.name || "Head Barista";
+  const canAssign       = savedUser.role === "BARISTA_HOD";
   const baristaInitials = baristaName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const handleLogout    = () => { localStorage.removeItem("kurax_user"); navigate("/staff/login"); };
 
@@ -283,43 +284,46 @@ export default function BaristaDisplay() {
 
   // ── On mount: load today's barista tickets from DB ────────────────────────
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+    const loadTickets = async () => {
       try {
         const res = await fetch(`${API_URL}/api/barista/tickets?date=${kampalaDateStr()}`);
         if (res.ok) {
           const rows = await res.json();
-          const ids = [];
-          rows.forEach(t => {
-            if (t.order_id) {
-              ticketMapRef.current[t.order_id] = t.id;
-              ids.push(Number(t.order_id));
-            }
-          });
-          if (ids.length > 0) setSeenOrderIds(ids);
+          if (!mounted) return;
+          ticketMapRef.current = Object.fromEntries(rows.map(ticket => [ticket.order_id, ticket.id]));
+          setSeenOrderIds(rows.map(ticket => Number(ticket.order_id)));
         }
       } catch (e) { console.error("Load barista tickets:", e); }
-    })();
+    };
+    loadTickets();
+    const timer = setInterval(loadTickets, 10000);
+    return () => { mounted = false; clearInterval(timer); };
   }, []);
 
   // ── Filter helpers — FIXED: ONLY station === 'barista' ─────────────────────
   const isBaristaItem = (item) =>
     item.station?.toLowerCase() === "barista";
+  const isVisibleBaristaItem = item =>
+    isBaristaItem(item) && Boolean(item.assignedTo) && (canAssign || item.assignedTo === baristaName);
 
   const filteredOrders = useMemo(() => {
-    const active    = ["Pending", "Preparing", "Ready"];
+    const active    = ["Pending", "Preparing"];
     const completed = ["Served", "Paid", "Closed", "Credit", "Mixed"];
     const seenSet   = new Set(seenOrderIds); // convert array → Set inside memo for O(1) lookup
 
     return (orders || [])
       .filter(order => {
         if (order.clearedByBarista) return false;
-        if (!(order.items || []).some(isBaristaItem)) return false;
+        if (!seenSet.has(Number(order.id))) return false;
+        if (!(order.items || []).some(isVisibleBaristaItem)) return false;
+        const baristaStatus = order.barista_ticket_status || "Pending";
 
         // Always show orders currently active at the barista station
-        if (active.includes(order.status)) return true;
+        if (active.includes(baristaStatus)) return true;
 
         // Show completed orders that were already logged as barista tickets today
-        if (completed.includes(order.status) && seenSet.has(Number(order.id))) return true;
+        if (completed.includes(baristaStatus) && seenSet.has(Number(order.id))) return true;
 
         return false;
       })
@@ -331,8 +335,9 @@ export default function BaristaDisplay() {
       })
       .map(order => ({
         ...order,
+        status: order.barista_ticket_status || "Pending",
         _ticketId: ticketMapRef.current[order.id] || null,
-        items: (order.items || []).filter(isBaristaItem),
+        items: (order.items || []).filter(isVisibleBaristaItem),
       }))
       .sort((a, b) => {
         const p  = { Pending: 0, Preparing: 1, Ready: 2 };
@@ -341,37 +346,7 @@ export default function BaristaDisplay() {
         if (aP !== bP) return aP - bP;
         return new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at);
       });
-  }, [orders, searchQuery, seenOrderIds]);
-
-  // ── Auto-upsert: every new barista order gets a ticket row in the DB ──────
-  const upsertedRef = useRef(new Set());
-  useEffect(() => {
-    filteredOrders.forEach(async order => {
-      if (upsertedRef.current.has(order.id)) return;
-      upsertedRef.current.add(order.id);
-      try {
-        const res = await fetch(`${API_URL}/api/barista/tickets`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            order_id:   order.id,
-            table_name: order.table_name || order.tableName || "WALK-IN",
-            staff_name: order.staff_name || order.waiterName || null,
-            items:      order.items,
-            total:      order.total || 0,
-            status:     order.status,
-          }),
-        });
-        if (res.ok) {
-          const ticket = await res.json();
-          ticketMapRef.current[order.id] = ticket.id;
-          // Add to seenOrderIds so this order stays visible after Served/Paid
-          setSeenOrderIds(prev =>
-            prev.includes(Number(order.id)) ? prev : [...prev, Number(order.id)]
-          );
-        }
-      } catch (e) { console.error("Upsert barista ticket:", e); }
-    });
-  }, [filteredOrders]);
+  }, [orders, searchQuery, seenOrderIds, isVisibleBaristaItem]);
 
   // ── Audio ─────────────────────────────────────────────────────────────────
   const prevLen = useRef(orders.length);
@@ -390,19 +365,16 @@ export default function BaristaDisplay() {
 
   // ── Update status ─────────────────────────────────────────────────────────
   const updateStatus = useCallback(async (orderId, ticketId, newStatus) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, barista_ticket_status: newStatus } : o));
     try {
-      await fetch(`${API_URL}/api/orders/${orderId}/status`, {
+      const tId = ticketId || ticketMapRef.current[orderId];
+      if (!tId) throw new Error("The HOD-dispatched Barista ticket is not available yet.");
+      const response = await fetch(`${API_URL}/api/barista/tickets/${tId}/status`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      const tId = ticketId || ticketMapRef.current[orderId];
-      if (tId) {
-        await fetch(`${API_URL}/api/barista/tickets/${tId}/status`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: newStatus }),
-        });
-      }
+      if (!response.ok) throw new Error("Could not update Barista ticket status.");
+      refreshData?.();
     } catch (err) {
       console.error("Status update failed:", err);
       refreshData?.();
@@ -468,19 +440,19 @@ export default function BaristaDisplay() {
     } catch (err) { console.error("Clear barista shift:", err); }
 
     setOrders(prev => prev.map(order => {
-      const isActive = ["Pending","Preparing","Ready"].includes(order.status) &&
-        (order.items || []).some(isBaristaItem);
+      const isActive = ["Pending","Preparing","Ready"].includes(order.barista_ticket_status || "Pending") &&
+        seenOrderIds.includes(Number(order.id)) && (order.items || []).some(isVisibleBaristaItem);
       return isActive ? { ...order, clearedByBarista: true } : order;
     }));
 
     setShowSummary(false);
-    upsertedRef.current.clear();
     setSeenOrderIds([]);
   };
 
   const pendingCount   = filteredOrders.filter(o => o.status === "Pending").length;
   const preparingCount = filteredOrders.filter(o => o.status === "Preparing").length;
-  const readyCount     = filteredOrders.filter(o => o.status === "Ready").length;
+  const readyCount     = orders.filter(order => seenOrderIds.includes(Number(order.id)) &&
+    order.barista_ticket_status === "Ready" && (order.items || []).some(isVisibleBaristaItem)).length;
 
   return (
     <div className="h-screen bg-[#f4f3ef] p-3 md:p-5 overflow-hidden flex flex-col font-[Outfit] relative text-zinc-900">
@@ -571,6 +543,7 @@ export default function BaristaDisplay() {
               key={order.id}
               order={order}
               onUpdateStatus={updateStatus}
+              canAssign={canAssign}
               onAssignBarista={(orderId, ticketId, itemIdx, itemName) =>
                 setAssigningItem({ orderId, ticketId, itemIdx, itemName })
               }

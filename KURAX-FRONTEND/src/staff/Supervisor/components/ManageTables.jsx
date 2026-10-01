@@ -40,7 +40,7 @@ function getCreditStatusDisplay(credit) {
 }
 
 // ─── SUPERVISOR ORDER CARD (read‑only) ─────────────────────────────────────
-function SupervisorOrderCard({ order, theme }) {
+function SupervisorOrderCard({ order, theme, onServeItem }) {
   const [expanded, setExpanded] = useState(false);
   const isDark = theme === "dark";
 
@@ -49,6 +49,11 @@ function SupervisorOrderCard({ order, theme }) {
   const nonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
   const allItemsPaid = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
   const hasAnyPaidItems = nonVoidedItems.some(item => item._rowPaid === true);
+  const allItemsServed = nonVoidedItems.length > 0 && nonVoidedItems.every(item =>
+    item.served === true || item.status === "Paid" || item._rowPaid === true
+  );
+  const hasServedItems = nonVoidedItems.some(item => item.served === true);
+  const hasReadyItems = nonVoidedItems.some(item => item.readyForService && !item.served);
   const hasPendingVoid = (order.items || []).some(item => item.voidRequested === true && item.voidProcessed !== true);
   const hasPendingPayment = (order.items || []).some(item => item.paymentRequested === true && !item._rowPaid);
 
@@ -73,12 +78,17 @@ function SupervisorOrderCard({ order, theme }) {
     displayColor = "text-yellow-400";
     displayBg = "bg-yellow-500/10 border-yellow-500/20";
     statusIcon = <Hourglass size={10} className="animate-pulse" />;
-  } else if (order.status === "Served") {
+  } else if (allItemsServed) {
     displayStatus = "Served";
     displayColor = "text-blue-400";
     displayBg = "bg-blue-500/10 border-blue-500/20";
     statusIcon = <Utensils size={10} />;
-  } else if (order.status === "Ready") {
+  } else if (hasServedItems) {
+    displayStatus = "Partially Served";
+    displayColor = "text-blue-400";
+    displayBg = "bg-blue-500/10 border-blue-500/20";
+    statusIcon = <Utensils size={10} />;
+  } else if (hasReadyItems) {
     displayStatus = "Ready";
     displayColor = "text-yellow-900";
     displayBg = "bg-yellow-400/10 border-yellow-400/30";
@@ -115,7 +125,7 @@ function SupervisorOrderCard({ order, theme }) {
       {expanded && (
         <div className="px-3 sm:px-4 pb-3 space-y-2 border-t border-black/5 pt-3">
           {nonVoidedItems.map((item, i) => {
-            const isPaid = item._rowPaid === true;
+            const isPaid = item._rowPaid === true || item.status === "Paid";
             const isPendingPayment = item.paymentRequested === true && !isPaid;
             const isCreditRequested = item.creditRequested === true;
             const isVoidRequested = item.voidRequested && !item.voidProcessed;
@@ -139,6 +149,15 @@ function SupervisorOrderCard({ order, theme }) {
                         ×{item.quantity || 1} · {fmtUGX(item.price || 0)}
                       </p>
                     </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {item.served && <span className="px-2 py-1 bg-blue-500/10 text-blue-500 rounded-lg text-[8px] font-black uppercase">Served</span>}
+                    {item.readyForService && !item.served && !isPaid && !isVoidRequested && item.status !== "VOIDED" && !item.voidProcessed && (
+                      <button onClick={() => onServeItem && onServeItem(item)}
+                        className="px-2 py-1 bg-emerald-500/10 text-emerald-600 rounded-lg hover:bg-emerald-500/20 text-[8px] font-black uppercase" title="Serve this ready item">
+                        Serve
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -440,6 +459,24 @@ export default function SupervisorDashboard() {
     }
   };
 
+  const handleServeItem = async (item) => {
+    try {
+      const response = await fetch(`${API_URL}/api/orders/${item._orderId}/items/${item._orderItemIndex}/serve`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        alert(result.error || "Could not serve this item.");
+        return;
+      }
+      refreshData?.();
+    } catch (err) {
+      alert(`Could not serve item: ${err.message}`);
+    }
+  };
+
   // ── Group all orders by table (no staff filter) ──
   const groupedTableOrders = useMemo(() => {
     const groups = {};
@@ -497,8 +534,10 @@ export default function SupervisorDashboard() {
       const allPaid = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
       const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
-      const isLive = !hasAnyPaid && !hasCreditItems && nonVoided.length > 0;
-      const isServed = g.status === "Served" && !allPaid && nonVoided.length > 0;
+      const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
+        item.served === true || item.status === "Paid" || item._rowPaid === true
+      );
+      const isLive = !hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed;
       let matchTab = false;
       switch (activeTab) {
         case "Live": matchTab = isLive && nonVoided.length > 0; break;
@@ -530,8 +569,10 @@ export default function SupervisorDashboard() {
       const allPaid = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
       const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
-      const isLive = !hasAnyPaid && !hasCreditItems && nonVoided.length > 0;
-      const isServed = g.status === "Served" && !allPaid && nonVoided.length > 0;
+      const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
+        item.served === true || item.status === "Paid" || item._rowPaid === true
+      );
+      const isLive = !hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed;
       if (isLive && nonVoided.length > 0) acc.Live++;
       if (isServed) acc.Served++;
     });
@@ -630,7 +671,7 @@ export default function SupervisorDashboard() {
             {(activeTab === "Live" || activeTab === "Served") && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
                 {filteredOrders.map(order => (
-                  <SupervisorOrderCard key={order.tableName} order={order} theme={theme} />
+                  <SupervisorOrderCard key={order.tableName} order={order} theme={theme} onServeItem={handleServeItem} />
                 ))}
                 {filteredOrders.length === 0 && (
                   <div className="col-span-full py-20 sm:py-32 text-center opacity-30">

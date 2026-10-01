@@ -26,12 +26,22 @@ router.post('/tickets', async (req, res) => {
   const { order_id, table_name, staff_name, staff_role, items = [], total = 0, status = 'Pending' } = req.body;
 
   try {
+    const orderResult = await pool.query('SELECT items FROM public.orders WHERE id=$1', [order_id]);
+    if (!orderResult.rows.length) return res.status(404).json({ error: 'Order not found.' });
+    const orderItems = Array.isArray(orderResult.rows[0].items) ? orderResult.rows[0].items : [];
+    const stationItems = orderItems.filter(item => !['barman', 'barista', 'shisha'].includes(String(item.station || '').toLowerCase()));
+    const assignedItems = stationItems.filter(item => item.assignedTo || item.assigned_to);
+    if (!assignedItems.length || assignedItems.length !== stationItems.length) {
+      return res.status(409).json({ error: 'Kitchen HOD assignment is required before sending this order.' });
+    }
+    const ticketTotal = assignedItems.reduce((sum, item) => sum +
+      (Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1), 0);
     const result = await pool.query(
       `INSERT INTO kitchen_tickets (order_id, table_name, staff_name, staff_role, items, total, status, ticket_date)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (order_id) DO UPDATE SET items = EXCLUDED.items, status = EXCLUDED.status, staff_name = EXCLUDED.staff_name, updated_at = NOW()
+      ON CONFLICT (order_id) DO UPDATE SET items = EXCLUDED.items, staff_name = EXCLUDED.staff_name, updated_at = NOW()
        RETURNING *`,
-      [order_id, table_name, staff_name || 'System', staff_role || 'WAITER', JSON.stringify(items), Number(total), status, kampalaDate()]
+      [order_id, table_name, staff_name || 'System', staff_role || 'WAITER', JSON.stringify(assignedItems), ticketTotal || Number(total), status, kampalaDate()]
     );
 
     await logActivity(pool, {

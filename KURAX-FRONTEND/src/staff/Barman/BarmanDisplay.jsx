@@ -138,7 +138,7 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 }
 
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
-function OrderCard({ order, onUpdateStatus, onAssignBarman }) {
+function OrderCard({ order, onUpdateStatus, onAssignBarman, canAssign }) {
   const minutesAgo  = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
   const orderTotal = (order.items || []).reduce((total, item) => total + Number(item.price || item.unit_price || 0) * Number(item.quantity || 1), 0);
   const isCompleted = ["Served","Paid","Closed","Credit","Mixed"].includes(order.status);
@@ -215,7 +215,7 @@ function OrderCard({ order, onUpdateStatus, onAssignBarman }) {
                       </span>
                     )}
                   </div>
-                ) : !isCompleted ? (
+                ) : !isCompleted && canAssign ? (
                   <button
                     onClick={() => onAssignBarman(order.id, order._ticketId, idx, item.name)}
                     className="bg-white text-zinc-600 text-[8px] font-black px-2 py-1 rounded-full border border-zinc-200 hover:bg-amber-400 hover:text-zinc-950 transition-all whitespace-nowrap">
@@ -266,6 +266,7 @@ export default function BarmanDisplay() {
     catch { return {}; }
   }, []);
   const barmanName     = savedUser.name || "Head Barman";
+  const canAssign      = savedUser.role === "BAR_HOD";
   const barmanInitials = barmanName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const handleLogout   = () => { localStorage.removeItem("kurax_user"); navigate("/staff/login"); };
 
@@ -279,40 +280,43 @@ export default function BarmanDisplay() {
   const [seenOrderIds, setSeenOrderIds] = useState([]);
 
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+    const loadTickets = async () => {
       try {
         const res = await fetch(`${API_URL}/api/barman/tickets?date=${kampalaDateStr()}`);
         if (res.ok) {
           const rows = await res.json();
-          const ids = [];
-          rows.forEach(t => {
-            if (t.order_id) {
-              ticketMapRef.current[t.order_id] = t.id;
-              ids.push(Number(t.order_id));
-            }
-          });
-          if (ids.length > 0) setSeenOrderIds(ids);
+          if (!mounted) return;
+          ticketMapRef.current = Object.fromEntries(rows.map(ticket => [ticket.order_id, ticket.id]));
+          setSeenOrderIds(rows.map(ticket => Number(ticket.order_id)));
         }
       } catch (e) { console.error("Load barman tickets:", e); }
-    })();
+    };
+    loadTickets();
+    const timer = setInterval(loadTickets, 10000);
+    return () => { mounted = false; clearInterval(timer); };
   }, []);
 
   // ✅ FIXED: only barman station, no category fallbacks
   const isBarmanItem = (item) =>
     item.station?.toLowerCase() === "barman";
+  const isVisibleBarmanItem = item =>
+    isBarmanItem(item) && Boolean(item.assignedTo) && (canAssign || item.assignedTo === barmanName);
 
   const filteredOrders = useMemo(() => {
-    const active    = ["Pending", "Preparing", "Ready"];
+    const active    = ["Pending", "Preparing"];
     const completed = ["Served", "Paid", "Closed", "Credit", "Mixed"];
     const seenSet   = new Set(seenOrderIds);
 
     return (orders || [])
       .filter(order => {
         if (order.clearedByBarman) return false;
-        if (!(order.items || []).some(isBarmanItem)) return false;
+        if (!seenSet.has(Number(order.id))) return false;
+        if (!(order.items || []).some(isVisibleBarmanItem)) return false;
+        const barmanStatus = order.barman_ticket_status || "Pending";
 
-        if (active.includes(order.status)) return true;
-        if (completed.includes(order.status) && seenSet.has(Number(order.id))) return true;
+        if (active.includes(barmanStatus)) return true;
+        if (completed.includes(barmanStatus) && seenSet.has(Number(order.id))) return true;
         return false;
       })
       .filter(order => {
@@ -323,8 +327,9 @@ export default function BarmanDisplay() {
       })
       .map(order => ({
         ...order,
+        status: order.barman_ticket_status || "Pending",
         _ticketId: ticketMapRef.current[order.id] || null,
-        items: (order.items || []).filter(isBarmanItem),
+        items: (order.items || []).filter(isVisibleBarmanItem),
       }))
       .sort((a, b) => {
         const p  = { Pending: 0, Preparing: 1, Ready: 2 };
@@ -333,35 +338,7 @@ export default function BarmanDisplay() {
         if (aP !== bP) return aP - bP;
         return new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at);
       });
-  }, [orders, searchQuery, seenOrderIds]);
-
-  const upsertedRef = useRef(new Set());
-  useEffect(() => {
-    filteredOrders.forEach(async order => {
-      if (upsertedRef.current.has(order.id)) return;
-      upsertedRef.current.add(order.id);
-      try {
-        const res = await fetch(`${API_URL}/api/barman/tickets`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            order_id:   order.id,
-            table_name: order.table_name || order.tableName || "WALK-IN",
-            staff_name: order.staff_name || order.waiterName || null,
-            items:      order.items,
-            total:      order.total || 0,
-            status:     order.status,
-          }),
-        });
-        if (res.ok) {
-          const ticket = await res.json();
-          ticketMapRef.current[order.id] = ticket.id;
-          setSeenOrderIds(prev =>
-            prev.includes(Number(order.id)) ? prev : [...prev, Number(order.id)]
-          );
-        }
-      } catch (e) { console.error("Upsert barman ticket:", e); }
-    });
-  }, [filteredOrders]);
+  }, [orders, searchQuery, seenOrderIds, isVisibleBarmanItem]);
 
   const prevLen = useRef(orders.length);
   const playChime = () => {
@@ -378,19 +355,16 @@ export default function BarmanDisplay() {
   }, [orders, audioEnabled]);
 
   const updateStatus = useCallback(async (orderId, ticketId, newStatus) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, barman_ticket_status: newStatus } : o));
     try {
-      await fetch(`${API_URL}/api/orders/${orderId}/status`, {
+      const tId = ticketId || ticketMapRef.current[orderId];
+      if (!tId) throw new Error("The HOD-dispatched Barman ticket is not available yet.");
+      const response = await fetch(`${API_URL}/api/barman/tickets/${tId}/status`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      const tId = ticketId || ticketMapRef.current[orderId];
-      if (tId) {
-        await fetch(`${API_URL}/api/barman/tickets/${tId}/status`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: newStatus }),
-        });
-      }
+      if (!response.ok) throw new Error("Could not update Barman ticket status.");
+      refreshData?.();
     } catch (err) {
       console.error("Status update failed:", err);
       refreshData?.();
@@ -452,19 +426,19 @@ export default function BarmanDisplay() {
     } catch (err) { console.error("Clear barman shift:", err); }
 
     setOrders(prev => prev.map(order => {
-      const isActive = ["Pending","Preparing","Ready"].includes(order.status) &&
-        (order.items || []).some(isBarmanItem);
+      const isActive = ["Pending","Preparing","Ready"].includes(order.barman_ticket_status || "Pending") &&
+        seenOrderIds.includes(Number(order.id)) && (order.items || []).some(isVisibleBarmanItem);
       return isActive ? { ...order, clearedByBarman: true } : order;
     }));
 
     setShowSummary(false);
-    upsertedRef.current.clear();
     setSeenOrderIds([]);
   };
 
   const pendingCount   = filteredOrders.filter(o => o.status === "Pending").length;
   const preparingCount = filteredOrders.filter(o => o.status === "Preparing").length;
-  const readyCount     = filteredOrders.filter(o => o.status === "Ready").length;
+  const readyCount     = orders.filter(order => seenOrderIds.includes(Number(order.id)) &&
+    order.barman_ticket_status === "Ready" && (order.items || []).some(isVisibleBarmanItem)).length;
 
   return (
     <div className="h-screen bg-[#f4f3ef] p-3 md:p-5 overflow-hidden flex flex-col font-[Outfit] relative text-zinc-900">
@@ -550,6 +524,7 @@ export default function BarmanDisplay() {
               key={order.id}
               order={order}
               onUpdateStatus={updateStatus}
+              canAssign={canAssign}
               onAssignBarman={(orderId, ticketId, itemIdx, itemName) =>
                 setAssigningItem({ orderId, ticketId, itemIdx, itemName })
               }

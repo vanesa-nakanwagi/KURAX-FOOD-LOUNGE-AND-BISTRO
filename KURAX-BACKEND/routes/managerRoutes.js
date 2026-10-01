@@ -396,7 +396,8 @@ router.get("/staff-sales-performance", async (req, res) => {
     };
     const orderConditions = [
       `COALESCE(o.timestamp, o.created_at) IS NOT NULL`,
-      `COALESCE(o.is_archived, false) = false`,
+      `COALESCE(o.original_order_ids, '[]'::jsonb) = '[]'::jsonb`,
+      `LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')`,
       `COALESCE(s.role, 'WAITER') IN ('WAITER', 'MANAGER', 'SUPERVISOR')`
     ];
 
@@ -411,14 +412,6 @@ router.get("/staff-sales-performance", async (req, res) => {
       orderConditions.push(`s.role = ${addParam(role.toUpperCase())}`);
     }
 
-    if (paymentStatus === 'paid') {
-      orderConditions.push(`o.payment_confirmed = true AND LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'served')`);
-    } else if (paymentStatus === 'credit') {
-      orderConditions.push(`(UPPER(COALESCE(o.payment_method, '')) LIKE '%CREDIT%' OR LOWER(o.status) = 'credit')`);
-    } else if (paymentStatus === 'pending') {
-      orderConditions.push(`COALESCE(o.payment_confirmed, false) = false AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')`);
-    }
-
     const whereClause = orderConditions.join(' AND ');
     const orderRows = await pool.query(`
       SELECT
@@ -426,6 +419,7 @@ router.get("/staff-sales-performance", async (req, res) => {
         s.id AS staff_id,
         ${STAFF_NAME_EXPR} AS staff_name,
         COALESCE(s.role, 'WAITER') AS role,
+        o.items,
         o.total,
         o.status,
         o.payment_method,
@@ -464,6 +458,44 @@ router.get("/staff-sales-performance", async (req, res) => {
     const paymentTotals = {};
 
     orderRows.rows.forEach(order => {
+      let items = order.items;
+      if (typeof items === 'string') {
+        try { items = JSON.parse(items); } catch { items = []; }
+      }
+      if (!Array.isArray(items) || !items.length) {
+        items = [{ _reportAmount: Number(order.total) || 0 }];
+      }
+
+      const orderStatus = String(order.status || '').toLowerCase();
+      const isCompletedOrder = ['served', 'paid', 'closed', 'confirmed', 'credit', 'mixed', 'partially_paid', 'partially paid', 'partiallypaid'].includes(orderStatus);
+      const matchedItems = items.flatMap(item => {
+        if (item.status === 'VOIDED' || item.voidProcessed === true) return [];
+        const amount = item._reportAmount !== undefined
+          ? Number(item._reportAmount) || 0
+          : Number(item.line_total ?? item.lineTotal) ||
+            (Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1);
+        if (amount <= 0) return [];
+
+        const method = String(item.payment_method || order.payment_method || '').toLowerCase();
+        const isCredit = item.creditRequested === true || method.includes('credit') || orderStatus === 'credit';
+        const isPaid = item._rowPaid === true || item.payment_confirmed === true ||
+          item.status === 'Paid' || order.payment_confirmed === true ||
+          ['paid', 'closed', 'confirmed'].includes(orderStatus);
+        const isServed = item.served === true || isCompletedOrder;
+        const isOutstanding = isCredit || (isServed && !isPaid);
+        const included = paymentStatus === 'paid'
+          ? isPaid
+          : paymentStatus === 'credit'
+            ? isCredit && !isPaid
+            : paymentStatus === 'pending'
+              ? isServed && !isPaid && !isCredit
+              : isPaid || isServed || isCredit;
+        if (!included) return [];
+
+        return [{ amount, payment: isPaid ? (method || 'paid') : isCredit ? 'credit' : 'Pending', isOutstanding }];
+      });
+      if (!matchedItems.length) return;
+
       const key = String(order.staff_id || order.staff_name);
       if (!staffMap.has(key)) {
         staffMap.set(key, {
@@ -475,13 +507,14 @@ router.get("/staff-sales-performance", async (req, res) => {
           payment_breakdown: {}
         });
       }
-      const amount = Number(order.total || 0);
-      const payment = order.payment_method || (order.payment_confirmed ? 'Paid' : 'Pending');
+      const amount = matchedItems.reduce((sum, item) => sum + item.amount, 0);
       const staff = staffMap.get(key);
       staff.orders_count += 1;
       staff.total_sales += amount;
-      staff.payment_breakdown[payment] = (staff.payment_breakdown[payment] || 0) + 1;
-      paymentTotals[payment] = (paymentTotals[payment] || 0) + 1;
+      matchedItems.forEach(item => {
+        staff.payment_breakdown[item.payment] = (staff.payment_breakdown[item.payment] || 0) + 1;
+        paymentTotals[item.payment] = (paymentTotals[item.payment] || 0) + 1;
+      });
 
       const day = new Date(order.order_date).toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
       const dayRow = dailyMap.get(day) || { date: day, orders_count: 0, total_sales: 0, staff: {} };

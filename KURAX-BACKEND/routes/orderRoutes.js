@@ -19,7 +19,10 @@ function kampalaDate() {
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT o.*, s.name as staff_name, s.role as staff_role_name
+            `SELECT o.*, s.name as staff_name, s.role as staff_role_name,
+              (SELECT status FROM kitchen_tickets WHERE order_id = o.id ORDER BY id DESC LIMIT 1) AS kitchen_ticket_status,
+              (SELECT status FROM barman_tickets WHERE order_id = o.id ORDER BY id DESC LIMIT 1) AS barman_ticket_status,
+              (SELECT status FROM barista_tickets WHERE order_id = o.id ORDER BY id DESC LIMIT 1) AS barista_ticket_status
        FROM orders o
        LEFT JOIN staff s ON o.staff_id = s.id
        ORDER BY o.id DESC 
@@ -36,7 +39,21 @@ router.get('/', async (req, res) => {
           items = [];
         }
       }
-      return { ...order, items };
+      const parsedItems = Array.isArray(items) ? items.map((item, index) => {
+        const station = String(item.station || '').toLowerCase();
+        const ticketStatus = station === 'barista'
+          ? order.barista_ticket_status
+          : station === 'barman'
+            ? order.barman_ticket_status
+            : order.kitchen_ticket_status;
+        return {
+          ...item,
+          _orderItemIndex: index,
+          served: item.served === true || order.status === 'Served',
+          readyForService: ticketStatus === 'Ready',
+        };
+      }) : [];
+      return { ...order, items: parsedItems };
     });
     
     res.json(parsedOrders);
@@ -557,6 +574,89 @@ router.patch('/:id/status', async (req, res) => {
   } catch (err) {
     console.error('Update Status Error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/:id/items/:itemIndex/serve', async (req, res) => {
+  const orderId = Number(req.params.id);
+  const itemIndex = Number(req.params.itemIndex);
+  if (!Number.isInteger(orderId) || !Number.isInteger(itemIndex) || itemIndex < 0) {
+    return res.status(400).json({ error: 'A valid order and item index are required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const orderResult = await client.query(
+      'SELECT id, items, status FROM orders WHERE id = $1 FOR UPDATE',
+      [orderId]
+    );
+    if (!orderResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = orderResult.rows[0];
+    const items = Array.isArray(order.items) ? order.items : [];
+    const item = items[itemIndex];
+    if (!item) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Item not found.' });
+    }
+    if (item.status === 'VOIDED' || item.voidProcessed) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Voided items cannot be served.' });
+    }
+    if (item.status === 'Paid' || item._rowPaid === true) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Paid items cannot be served.' });
+    }
+    if (item.served === true) {
+      await client.query('ROLLBACK');
+      return res.json({ success: true, served: true });
+    }
+
+    const station = String(item.station || '').toLowerCase();
+    const ticketTable = station === 'barista'
+      ? 'barista_tickets'
+      : station === 'barman'
+        ? 'barman_tickets'
+        : 'kitchen_tickets';
+    const ticketResult = await client.query(
+      `SELECT status, items FROM ${ticketTable} WHERE order_id = $1 ORDER BY id DESC LIMIT 1`,
+      [orderId]
+    );
+    const ticket = ticketResult.rows[0];
+    let ticketItems = ticket?.items;
+    if (typeof ticketItems === 'string') {
+      try { ticketItems = JSON.parse(ticketItems); } catch { ticketItems = []; }
+    }
+    const itemIsOnTicket = Array.isArray(ticketItems) && ticketItems.some(ticketItem =>
+      String(ticketItem.name || '').trim().toLowerCase() === String(item.name || '').trim().toLowerCase()
+    );
+    if (!ticket || ticket.status !== 'Ready' || !itemIsOnTicket) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This item is not ready to serve yet.' });
+    }
+
+    items[itemIndex] = { ...item, served: true, served_at: new Date().toISOString() };
+    const activeItems = items.filter(line => line.status !== 'VOIDED' && !line.voidProcessed);
+    const allItemsServed = activeItems.length > 0 && activeItems.every(line =>
+      line.served === true || line.status === 'Paid' || line._rowPaid === true
+    );
+    const nextStatus = allItemsServed ? 'Served' : order.status;
+    const updatedResult = await client.query(
+      'UPDATE orders SET items = $1, status = $2, updated_at = NOW() WHERE id = $3 RETURNING *',
+      [JSON.stringify(items), nextStatus, orderId]
+    );
+    await client.query('COMMIT');
+    return res.json({ success: true, order: updatedResult.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Serve order item error:', err.message);
+    return res.status(500).json({ error: 'Could not mark item served.' });
+  } finally {
+    client.release();
   }
 });
 

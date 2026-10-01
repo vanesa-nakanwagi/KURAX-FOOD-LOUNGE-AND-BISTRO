@@ -46,7 +46,7 @@ async function request(path, token, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Department request failed.');
+  if (!response.ok) throw new Error(data.error || `${response.status} ${response.statusText || 'HTTP error'} for ${path}`);
   return data;
 }
 
@@ -55,6 +55,10 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   const [session] = useState(readSession);
   const [staff, setStaff] = useState([]);
   const [tickets, setTickets] = useState([]);
+  const [assignmentQueue, setAssignmentQueue] = useState([]);
+  const [assignmentQueueError, setAssignmentQueueError] = useState('');
+  const [assignmentSelections, setAssignmentSelections] = useState({});
+  const [assigningOrderId, setAssigningOrderId] = useState(null);
   const [report, setReport] = useState(null);
   const [preset, setPreset] = useState('Today');
   const [[from, to], setRange] = useState(() => datesFor('Today'));
@@ -83,15 +87,20 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           const data = await request(`/api/departments/reports/consolidated?${query}`, session.token);
           if (mounted) setReport(data);
         } else {
-          const [staffRows, reportData, response] = await Promise.all([
+          const [staffRows, reportData, queueResult, ticketResponse] = await Promise.all([
             request(`/api/departments/${departmentKey}/staff`, session.token),
             request(`/api/departments/${departmentKey}/reports?${query}`, session.token),
+            request(`/api/departments/${departmentKey}/assignment-queue`, session.token)
+              .then(data => ({ data, error: '' }))
+              .catch(queueError => ({ data: [], error: queueError.message })),
             fetch(`${API_URL}/api/${config.station}/tickets?date=${kampalaToday()}`),
           ]);
-          const ticketRows = response.ok ? await response.json() : [];
+          const ticketRows = ticketResponse.ok ? await ticketResponse.json() : [];
           if (mounted) {
             setStaff(staffRows);
             setReport(reportData);
+            setAssignmentQueue(queueResult.data);
+            setAssignmentQueueError(queueResult.error);
             setTickets(Array.isArray(ticketRows) ? ticketRows : []);
           }
         }
@@ -143,6 +152,29 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     }
   }
 
+  async function assignOrder(order) {
+    const staffId = assignmentSelections[order.id];
+    if (!staffId) {
+      setError(`Select a ${config.workerRole} before dispatching this order.`);
+      return;
+    }
+    setAssigningOrderId(order.id);
+    setError('');
+    setMessage('');
+    try {
+      const result = await request(`/api/departments/${departmentKey}/orders/${order.id}/assign`, session.token, {
+        method: 'POST', body: { staff_id: Number(staffId) },
+      });
+      setMessage(`Order #${order.id} assigned to ${result.assigned_to} and sent to ${config.label}.`);
+      setAssignmentSelections(current => ({ ...current, [order.id]: '' }));
+      setRefreshCounter(value => value + 1);
+    } catch (assignError) {
+      setError(assignError.message);
+    } finally {
+      setAssigningOrderId(null);
+    }
+  }
+
   function signOut() {
     localStorage.removeItem('kurax_user');
     navigate('/staff/login');
@@ -153,9 +185,10 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
 
   const departments = report?.departments || [];
   const summary = report?.summary || {};
-  const activeTickets = tickets.filter(ticket => !['Served', 'Paid', 'Closed'].includes(ticket.status));
+  const assignedTickets = tickets.filter(ticket => (ticket.items || []).some(item => item.assignedTo));
+  const activeTickets = assignedTickets.filter(ticket => !['Ready', 'Served', 'Paid', 'Closed'].includes(ticket.status));
   const visibleTickets = ticketView === 'completed'
-    ? tickets.filter(ticket => ['Ready', 'Served', 'Paid', 'Closed'].includes(ticket.status))
+    ? assignedTickets.filter(ticket => ['Ready', 'Served', 'Paid', 'Closed'].includes(ticket.status))
     : activeTickets;
   const tabs = isManagement ? [['reports', 'Department reports', CircleDollarSign]] : [
     ['orders', 'Orders', ClipboardList], ['team', 'Team', Users], ['reports', 'Reports', CircleDollarSign],
@@ -187,8 +220,20 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
 
         {tab === 'orders' && !isManagement && <section>
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">Incoming and active orders</h2><p className="text-sm text-zinc-500">Updates automatically every 12 seconds.</p></div><div className="flex gap-2"><button onClick={() => setTicketView('active')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'active' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Active</button><button onClick={() => setTicketView('completed')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'completed' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Completed</button><button onClick={() => navigate(`/${config.station}`)} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950 hover:bg-amber-300">Manage station <ArrowRight size={16} /></button></div></div>
+          <div className="mb-6 overflow-hidden rounded-xl border border-amber-200 bg-white">
+            <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3"><div><h3 className="font-black">Waiting for HOD assignment</h3><p className="text-xs text-zinc-500">Orders appear at the station only after you assign them.</p></div><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900">{assignmentQueue.length}</span></div>
+            {assignmentQueueError ? <p role="alert" className="px-4 py-6 text-sm text-rose-700">{assignmentQueueError}. The assignment API must be deployed/restarted before HOD dispatch is available.</p> : assignmentQueue.length ? <div className="divide-y divide-zinc-100">
+              {assignmentQueue.map(order => <div key={order.id} className="grid gap-4 p-4 lg:grid-cols-[1fr_340px] lg:items-center">
+                <div><p className="text-sm font-black">Order #{order.id} · {order.table_name || 'Walk-in'}</p><p className="mt-0.5 text-xs text-zinc-500">Waiter: {order.staff_name || 'Staff'}</p><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">{order.items.map((item, index) => <span key={`${item.name}-${index}`} className="text-zinc-700">{item.quantity || 1} × {item.name}</span>)}</div></div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <select aria-label={`Assign order ${order.id} to ${config.workerRole}`} value={assignmentSelections[order.id] || ''} onChange={event => setAssignmentSelections(current => ({ ...current, [order.id]: event.target.value }))} className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-amber-500"><option value="">Choose {config.workerRole.toLowerCase()}</option>{staff.filter(member => member.is_active).map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select>
+                  <button type="button" disabled={assigningOrderId === order.id || !assignmentSelections[order.id]} onClick={() => assignOrder(order)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-zinc-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"><Check size={15} /> {assigningOrderId === order.id ? 'Assigning' : 'Assign & send'}</button>
+                </div>
+              </div>)}
+            </div> : <p className="px-4 py-8 text-center text-sm text-zinc-400">No orders are waiting for assignment.</p>}
+          </div>
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">{[
-            ['Open', activeTickets.length], ['Pending', activeTickets.filter(ticket => ticket.status === 'Pending').length], ['Preparing', activeTickets.filter(ticket => ticket.status === 'Preparing').length], ['Completed today', tickets.filter(ticket => ['Ready', 'Served', 'Paid'].includes(ticket.status)).length],
+            ['Open', activeTickets.length], ['Pending', activeTickets.filter(ticket => ticket.status === 'Pending').length], ['Preparing', activeTickets.filter(ticket => ticket.status === 'Preparing').length], ['Completed today', assignedTickets.filter(ticket => ['Ready', 'Served', 'Paid'].includes(ticket.status)).length],
           ].map(([label, value]) => <div key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-2 text-2xl font-black">{value}</p></div>)}</div>
           <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-zinc-50 text-xs uppercase tracking-wider text-zinc-500"><tr><th className="p-3">Order</th><th className="p-3">Table</th><th className="p-3">Waiter</th><th className="p-3">Items / assignee</th><th className="p-3">Status</th><th className="p-3">Total</th></tr></thead><tbody>
             {visibleTickets.map(ticket => <tr key={ticket.id} className="border-t border-zinc-100 align-top"><td className="p-3 font-bold">#{ticket.order_id}</td><td className="p-3">{ticket.table_name || 'Walk-in'}</td><td className="p-3">{ticket.staff_name || 'Staff'}</td><td className="p-3">{(ticket.items || []).map((item, index) => <div key={`${item.name}-${index}`}>{item.quantity || 1} × {item.name}{item.assignedTo ? <span className="text-zinc-500"> · {item.assignedTo}</span> : null}</div>)}</td><td className="p-3"><span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-900">{ticket.status}</span></td><td className="p-3 font-bold">{money(ticket.total)}</td></tr>)}

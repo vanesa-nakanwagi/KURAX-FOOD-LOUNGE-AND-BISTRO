@@ -105,7 +105,7 @@ export default function PettyCashPanel({
       setTotalOut(outSum);
       setTotalIn(inSum);
 
-      if (onTotalChange) onTotalChange(outSum);
+      if (onTotalChange) onTotalChange(outSum, inSum);
       
     } catch (e) {
       setError("Could not load petty cash data.");

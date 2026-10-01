@@ -44,6 +44,29 @@ function departmentFor(value) {
   return DEPARTMENTS[String(value || '').toLowerCase()];
 }
 
+function itemBelongsToDepartment(item, departmentKey) {
+  const station = String(item.station || '').trim().toLowerCase();
+  if (departmentKey === 'kitchen') return !['barman', 'barista', 'shisha'].includes(station);
+  if (departmentKey === 'bar') return station === 'barman';
+  if (departmentKey === 'barista') return station === 'barista';
+  return false;
+}
+
+function parseOrderItems(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  }
+  return [];
+}
+
+function itemTotal(item) {
+  return (Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1);
+}
+
 function requireDepartmentHod(req, res, next) {
   const department = departmentFor(req.params.department);
   if (!department) return fail(res, 404, 'Department not found.');
@@ -74,6 +97,117 @@ router.get('/:department/staff', requireDepartmentHod, async (req, res) => {
   } catch (error) {
     console.error('Department staff list error:', error.message);
     return fail(res, 500, 'Could not load department staff.');
+  }
+});
+
+router.get('/:department/assignment-queue', requireDepartmentHod, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, table_name, staff_name, items, status, created_at
+       FROM public.orders
+       WHERE status NOT IN ('Paid','Closed','Voided','Cancelled')
+         AND COALESCE(day_cleared, false) = false
+         AND COALESCE(shift_cleared, false) = false
+       ORDER BY created_at DESC
+       LIMIT 200`
+    );
+    const queue = result.rows.flatMap(order => {
+      const items = parseOrderItems(order.items);
+      const unassignedItems = items
+        .map((item, itemIndex) => ({ ...item, _orderItemIndex: itemIndex }))
+        .filter(item => itemBelongsToDepartment(item, req.params.department))
+        .filter(item => !item.assignedTo && !item.assigned_to && item.served !== true &&
+          item.status !== 'Paid' && item.status !== 'VOIDED' && !item.voidProcessed);
+      if (!unassignedItems.length) return [];
+      return [{ ...order, items: unassignedItems }];
+    });
+    return res.json(queue);
+  } catch (error) {
+    console.error('Department assignment queue error:', error.message);
+    return fail(res, 500, 'Could not load orders waiting for assignment.');
+  }
+});
+
+router.post('/:department/orders/:orderId/assign', requireDepartmentHod, async (req, res) => {
+  const staffId = Number(req.body.staff_id);
+  if (!Number.isInteger(staffId) || staffId <= 0) return fail(res, 400, 'Select an active department worker.');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const staffResult = await client.query(
+      'SELECT id, name FROM public.staff WHERE id=$1 AND role=$2 AND is_active=true',
+      [staffId, req.department.staffRole]
+    );
+    const assignee = staffResult.rows[0];
+    if (!assignee) {
+      await client.query('ROLLBACK');
+      return fail(res, 400, 'That worker is not active in this department.');
+    }
+
+    const orderResult = await client.query(
+      `SELECT id, table_name, staff_name, staff_role, items, status
+       FROM public.orders
+       WHERE id=$1 AND status NOT IN ('Paid','Closed','Voided','Cancelled')
+         AND COALESCE(day_cleared, false)=false AND COALESCE(shift_cleared, false)=false
+       FOR UPDATE`,
+      [req.params.orderId]
+    );
+    const order = orderResult.rows[0];
+    if (!order) {
+      await client.query('ROLLBACK');
+      return fail(res, 404, 'Active order not found.');
+    }
+
+    const items = parseOrderItems(order.items);
+    const assignedAt = new Date().toISOString();
+    const assignedIndexes = [];
+    const updatedItems = items.map((item, index) => {
+      const available = itemBelongsToDepartment(item, req.params.department) &&
+        !item.assignedTo && !item.assigned_to && item.served !== true &&
+        item.status !== 'Paid' && item.status !== 'VOIDED' && !item.voidProcessed;
+      if (!available) return item;
+      assignedIndexes.push(index);
+      return { ...item, assignedTo: assignee.name, assignedAt, assignedByHod: req.actor.name };
+    });
+    if (!assignedIndexes.length) {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'This order has no unassigned items for this department.');
+    }
+
+    const ticketItems = updatedItems.filter(item => itemBelongsToDepartment(item, req.params.department));
+    const total = ticketItems.reduce((sum, item) => sum + itemTotal(item), 0);
+    const ticketResult = await client.query(
+      `INSERT INTO public.${req.department.table}
+         (order_id, table_name, staff_name, staff_role, items, total, status, ticket_date)
+       VALUES ($1, $2, $3, $4, $5, $6, 'Pending', (NOW() AT TIME ZONE 'Africa/Kampala')::date)
+       ON CONFLICT (order_id) DO UPDATE SET
+         items=EXCLUDED.items, total=EXCLUDED.total, status='Pending', updated_at=NOW()
+       RETURNING *`,
+      [order.id, order.table_name, order.staff_name || 'Staff', order.staff_role || 'WAITER', JSON.stringify(ticketItems), total]
+    );
+    const ticket = ticketResult.rows[0];
+
+    for (const index of assignedIndexes) {
+      await client.query(
+        `INSERT INTO public.${req.department.assignments}
+           (order_id, ticket_id, item_name, assigned_to, assigned_by, assigned_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [order.id, ticket.id, updatedItems[index].name, assignee.name, req.actor.name, assignedAt]
+      );
+    }
+    await client.query(
+      'UPDATE public.orders SET items=$1, updated_at=NOW() WHERE id=$2',
+      [JSON.stringify(updatedItems), order.id]
+    );
+    await client.query('COMMIT');
+    return res.status(201).json({ ticket, assigned_to: assignee.name });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Department HOD assignment error:', error.message);
+    return fail(res, 500, 'Could not assign this order to a department worker.');
+  } finally {
+    client.release();
   }
 });
 

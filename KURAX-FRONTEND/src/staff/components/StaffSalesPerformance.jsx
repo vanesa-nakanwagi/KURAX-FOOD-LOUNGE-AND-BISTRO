@@ -196,7 +196,7 @@ export default function StaffSalesPerformance({ role: roleProp }) {
             <select value={staffRole} onChange={event => setStaffRole(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal">{STAFF_ROLES.map(value => <option key={value} value={value}>{value || "All roles"}</option>)}</select>
           </label>
           <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Payment status
-            <select value={paymentStatus} onChange={event => setPaymentStatus(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal"><option value="all">All statuses</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="credit">Credit</option></select>
+            <select value={paymentStatus} onChange={event => setPaymentStatus(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal"><option value="all">All payment statuses</option><option value="paid">Paid</option><option value="pending">Pending payment</option><option value="credit">Credit</option></select>
           </label>
         </section>
 

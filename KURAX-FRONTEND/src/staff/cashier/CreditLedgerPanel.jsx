@@ -239,15 +239,14 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
 
 // ─── Forward confirmation ─────────────────────────────────────────────────────
 async function forwardCreditToManager(creditId, cashierName) {
-  //const res = await fetch(`${API_URL}/api/credits/${creditId}/forward`, {
-  const res = await fetch(`${API_URL}/api/cashier-ops/credits/${creditId}/forward`, {
+  const res = await fetch(`${API_URL}/api/credits/${creditId}/forward`, {
     method:  "PATCH",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ forwarded_by: cashierName }),
   });
   if (!res.ok) {
-    const e = await res.json();
-    throw new Error(e.error || "Forward failed");
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.error || `Forward failed (${res.status})`);
   }
   return res.json();
 }
