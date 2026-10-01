@@ -145,7 +145,7 @@ export default function Events() {
         </div>
       </header>
 
-      {/* ── EVENTS GRID ── */}
+      {/* ──------- EVENTS GRID ── */}
       <section className="relative pt-0 pb-0 px-5 md:px-12 max-w-7xl mx-auto z-10">
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
