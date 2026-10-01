@@ -217,14 +217,14 @@ export default function Menu() {
       so nothing is hidden underneath them.
       ────────────────────────────────────────────────────────────────────────────
     */
-    <div className="font-['Outfit'] bg-[#F9F9F7] dark:bg-[#080808] text-zinc-900 dark:text-white h-screen flex flex-col overflow-hidden transition-colors duration-500">
+    <div className="font-['Outfit'] bg-[#f4f3ef] text-zinc-900 h-screen flex flex-col overflow-hidden">
 
       {/* ── 1. TOPSECTION (renders its own fixed bar + spacer internally) ── */}
       <TopSection searchPlaceholder="Search flavors..." />
 
       {/* ── 2. CATEGORY TABS — fixed strip right below TopSection ── */}
       {!isSearching && (
-        <div className="flex-shrink-0 bg-[#F9F9F7]/95 dark:bg-[#080808]/95 backdrop-blur-xl border-b border-zinc-200/50 dark:border-zinc-800/50 z-40">
+        <div className="flex-shrink-0 bg-[#f4f3ef]/95 backdrop-blur-xl border-b border-zinc-200 z-40">
           <div className="w-full flex justify-center overflow-x-auto no-scrollbar">
             <div className="flex justify-start sm:justify-center gap-4 md:gap-8 lg:gap-16 px-4 md:px-6 py-3 md:py-4 min-w-max mx-auto">
               {categories.map((cat) => (

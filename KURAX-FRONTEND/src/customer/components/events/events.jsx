@@ -113,7 +113,7 @@ export default function Events() {
   };
 
   return (
-    <div className="bg-[#FCFCFB] dark:bg-[#050505] text-zinc-900 dark:text-white font-['Outfit'] transition-colors duration-700 selection:bg-yellow-500/30 overflow-x-hidden">
+    <div className="bg-[#f4f3ef] text-zinc-900 font-['Outfit'] selection:bg-yellow-500/30 overflow-x-hidden">
       
       <TopSection searchPlaceholder="Search upcoming experiences..." />
 

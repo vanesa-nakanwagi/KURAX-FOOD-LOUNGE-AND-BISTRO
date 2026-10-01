@@ -4,7 +4,7 @@ import Events from "../components/events/events.jsx";
 
 export default function EventsPage() {
   return (
-    <div className="bg-black font-[Outfit]">
+    <div className="bg-[#f4f3ef] font-[Outfit]">
       
       <Events/>
       <FooterGlobal />

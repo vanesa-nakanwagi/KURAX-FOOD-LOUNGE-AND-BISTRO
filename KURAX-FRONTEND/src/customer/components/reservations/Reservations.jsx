@@ -91,7 +91,7 @@ export default function ReservationsPage() {
   };
 
   return (
-    <div className="min-h-screen font-[Outfit] flex flex-col bg-white text-black dark:bg-black dark:text-white transition-colors duration-300">
+    <div className="min-h-screen font-[Outfit] flex flex-col bg-[#f4f3ef] text-black">
       <TopSection searchPlaceholder="Search menu items..." />
 
       <section className="flex-grow px-4 md:px-16 py-12">

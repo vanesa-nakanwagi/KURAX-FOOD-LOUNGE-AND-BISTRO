@@ -68,7 +68,7 @@ function DeliverySection() {
   };
 
   return (
-    <section className="py-16 px-6 bg-white border-b border-zinc-100">
+    <section className="py-16 px-6 bg-[#f4f3ef] border-b border-zinc-200">
       <div className="max-w-7xl mx-auto">
         <motion.div
           initial="hidden"
@@ -164,7 +164,7 @@ function ChefSection() {
   };
 
   return (
-    <section className="py-16 px-6 bg-[#FCFCFB] border-b border-zinc-100">
+    <section className="py-16 px-6 bg-[#f4f3ef] border-b border-zinc-200">
       <div className="max-w-7xl mx-auto">
         <motion.div
           initial="hidden"
@@ -302,7 +302,7 @@ export default function Home() {
   };
 
   return (
-    <main className="bg-white text-black font-['Outfit'] overflow-x-hidden">
+    <main className="bg-[#f4f3ef] text-black font-['Outfit'] overflow-x-hidden">
       <Navbar />
 
       {/* Hero Section */}
@@ -353,7 +353,7 @@ export default function Home() {
       </section>
 
       {/* Signature Dishes Section */}
-      <section id="menus" className="py-24 px-6 bg-white border-b border-zinc-100">
+      <section id="menus" className="py-24 px-6 bg-[#f4f3ef] border-b border-zinc-200">
         <motion.div 
           className="max-w-7xl mx-auto"
           initial="hidden"
@@ -396,7 +396,7 @@ export default function Home() {
       </section>
 
       {/* Upcoming Events Section */}
-      <section id="events" className="scroll-mt-24 py-24 px-6 bg-[#FCFCFB] relative overflow-hidden">
+      <section id="events" className="scroll-mt-24 py-24 px-6 bg-[#f4f3ef] relative overflow-hidden">
         <motion.div 
           className="max-w-7xl mx-auto relative z-10"
           initial="hidden"
