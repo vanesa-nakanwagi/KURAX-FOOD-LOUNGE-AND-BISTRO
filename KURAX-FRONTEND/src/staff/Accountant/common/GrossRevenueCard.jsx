@@ -3,7 +3,6 @@ import { Sparkles, Zap, ArrowUpRight, CircleDollarSign, AlertTriangle } from "lu
 import { formatCurrencyCompact } from "../utils/helpers";
 
 export default function GrossRevenueCard({ grossSales, settledCredits, pendingCredits }) {
-  const combinedTotal = grossSales + settledCredits;
   const hasSettledCredits = settledCredits > 0;
   const hasPendingCredits = pendingCredits > 0;
 
@@ -39,13 +38,13 @@ export default function GrossRevenueCard({ grossSales, settledCredits, pendingCr
         <div className="mb-3">
           <div className="flex items-center gap-1.5 mb-1">
             <div className="w-1 h-3 bg-black/30 rounded-full" />
-            <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em]">Gross Revenue</p>
+            <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em]">Gross Sales</p>
           </div>
           <h3 className="text-xl sm:text-2xl font-black text-black tracking-tighter leading-tight">
             {formatCurrencyCompact(grossSales)}
           </h3>
           <p className="text-[7px] font-bold text-black/40 uppercase tracking-wider mt-1">
-            Cash + Card + Mobile Money (Gross Sales + Credit Settlements)
+            Cash + Card + Mobile Money; credit settlements are separate
           </p>
         </div>
         

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BarChart3, CalendarDays, RefreshCw, ShieldAlert, Users } from "lucide-react";
+import { BarChart3, CalendarDays, Download, Loader2, RefreshCw, ShieldAlert, Users } from "lucide-react";
 import { useData } from "../../customer/components/context/DataContext";
 import API_URL from "../../config/api";
 
-const REPORT_ROLES = ["DIRECTOR", "MANAGER", "SUPERVISOR"];
+const REPORT_ROLES = ["DIRECTOR", "MANAGER", "SUPERVISOR", "ACCOUNTANT"];
 const STAFF_ROLES = ["", "MANAGER", "SUPERVISOR", "WAITER"];
 
 function dateString(date) {
@@ -29,6 +29,12 @@ function getRange(preset) {
     return { startDate: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`, endDate: todayString };
   }
   return { startDate: todayString, endDate: todayString };
+}
+
+function getMonthRange(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = String(new Date(year, monthNumber, 0).getDate()).padStart(2, "0");
+  return { startDate: `${month}-01`, endDate: `${month}-${lastDay}` };
 }
 
 function formatMoney(value) {
@@ -69,25 +75,35 @@ function BarList({ title, rows, valueKey, formatter }) {
   );
 }
 
-export default function StaffSalesPerformance({ role: roleProp }) {
+export default function StaffSalesPerformance({ role: roleProp, initialRange, historicalMode = false, timeRange = {}, onDateRangeChange }) {
   const { currentUser } = useData();
   const role = (roleProp || currentUser?.role || JSON.parse(localStorage.getItem("kurax_user") || "{}").role || "").toUpperCase();
-  const [preset, setPreset] = useState("today");
-  const [customStart, setCustomStart] = useState(dateString(new Date()));
-  const [customEnd, setCustomEnd] = useState(dateString(new Date()));
+  const [preset, setPreset] = useState(() => initialRange ? "custom" : "today");
+  const [reportMonth, setReportMonth] = useState(() => dateString(new Date()).slice(0, 7));
+  const [customStart, setCustomStart] = useState(() => initialRange?.start || dateString(new Date()));
+  const [customEnd, setCustomEnd] = useState(() => initialRange?.end || dateString(new Date()));
   const [staffId, setStaffId] = useState("");
   const [staffRole, setStaffRole] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("all");
   const [staffDirectory, setStaffDirectory] = useState([]);
   const [report, setReport] = useState(null);
   const [today, setToday] = useState(null);
-  const [month, setMonth] = useState(null);
+  const [monthlyReport, setMonthlyReport] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isGeneratingStaffPDF, setIsGeneratingStaffPDF] = useState(false);
   const [error, setError] = useState("");
 
   const range = useMemo(() => preset === "custom"
     ? { startDate: customStart, endDate: customEnd }
-    : getRange(preset), [preset, customStart, customEnd]);
+    : preset === "month" ? getMonthRange(reportMonth) : getRange(preset),
+  [preset, customStart, customEnd, reportMonth]);
+
+  useEffect(() => {
+    if (!initialRange?.start || !initialRange?.end) return;
+    setPreset("custom");
+    setCustomStart(initialRange.start);
+    setCustomEnd(initialRange.end);
+  }, [initialRange?.start, initialRange?.end]);
 
   useEffect(() => {
     if (!REPORT_ROLES.includes(role)) return;
@@ -105,21 +121,25 @@ export default function StaffSalesPerformance({ role: roleProp }) {
       setLoading(true);
       setError("");
       try {
-        const currentMonth = getRange("month");
+        const selectedMonthRange = getMonthRange(reportMonth);
         const selectedFilters = { ...range, staffId, role: staffRole, paymentStatus };
+        if (timeRange.start) selectedFilters.startTime = timeRange.start;
+        if (timeRange.end) selectedFilters.endTime = timeRange.end;
         const [selectedResponse, todayResponse, monthResponse] = await Promise.all([
           fetch(`${API_URL}/api/manager/staff-sales-performance?${query(selectedFilters)}`),
-          fetch(`${API_URL}/api/manager/staff-sales-performance?${query({ ...getRange("today"), paymentStatus })}`),
-          fetch(`${API_URL}/api/manager/staff-sales-performance?${query({ ...currentMonth, paymentStatus })}`)
+          historicalMode ? Promise.resolve(null) : fetch(`${API_URL}/api/manager/staff-sales-performance?${query({ ...getRange("today"), paymentStatus })}`),
+          historicalMode ? Promise.resolve(null) : fetch(`${API_URL}/api/manager/staff-sales-performance?${query({ ...selectedMonthRange, paymentStatus })}`)
         ]);
-        if (!selectedResponse.ok || !todayResponse.ok || !monthResponse.ok) throw new Error("Unable to load performance data");
+        if (!selectedResponse.ok || (todayResponse && !todayResponse.ok) || (monthResponse && !monthResponse.ok)) throw new Error("Unable to load performance data");
         const [selectedData, todayData, monthData] = await Promise.all([
-          selectedResponse.json(), todayResponse.json(), monthResponse.json()
+          selectedResponse.json(),
+          todayResponse ? todayResponse.json() : Promise.resolve(null),
+          monthResponse ? monthResponse.json() : Promise.resolve(null),
         ]);
         if (!cancelled) {
           setReport(selectedData);
-          setToday(todayData);
-          setMonth(monthData);
+          setToday(historicalMode ? selectedData : todayData);
+          setMonthlyReport(monthData);
         }
       } catch (loadError) {
         if (!cancelled) setError(loadError.message);
@@ -129,7 +149,38 @@ export default function StaffSalesPerformance({ role: roleProp }) {
     };
     load();
     return () => { cancelled = true; };
-  }, [role, range, staffId, staffRole, paymentStatus]);
+  }, [role, range, reportMonth, staffId, staffRole, paymentStatus, historicalMode, timeRange.start, timeRange.end]);
+
+  const generateStaffPerformancePDF = async () => {
+    if (!monthlyReport?.staff?.length) {
+      alert("No staff performance data available.");
+      return;
+    }
+    const monthKey = reportMonth;
+    setIsGeneratingStaffPDF(true);
+    try {
+      const response = await fetch(`${API_URL}/api/manager/export-staff-pdf?month=${monthKey}`);
+      if (response.ok) {
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = `Kurax_Staff_Performance_${monthKey}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(downloadUrl);
+      } else {
+        const responseError = await response.json().catch(() => ({ error: "Unknown error" }));
+        alert(responseError.error || "Failed to generate staff report");
+      }
+    } catch (downloadError) {
+      console.error("Staff PDF Error:", downloadError);
+      alert("Network error during PDF generation.");
+    } finally {
+      setIsGeneratingStaffPDF(false);
+    }
+  };
 
   if (!REPORT_ROLES.includes(role)) {
     return (
@@ -163,31 +214,45 @@ export default function StaffSalesPerformance({ role: roleProp }) {
           </div>
           <p className="text-sm text-zinc-500">Sales and orders handled by Managers, Supervisors, and Waiters.</p>
         </div>
-        <button onClick={() => window.location.reload()} className="flex items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-zinc-700">
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {!historicalMode && <button onClick={generateStaffPerformancePDF} disabled={isGeneratingStaffPDF || loading} className="flex items-center justify-center gap-2 rounded-xl bg-yellow-500 px-4 py-2.5 text-xs font-bold text-zinc-950 hover:bg-yellow-400 disabled:opacity-50">
+            {isGeneratingStaffPDF ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {isGeneratingStaffPDF ? "Generating..." : "Staff Report"}
+          </button>}
+          <button onClick={() => window.location.reload()} className="flex items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-zinc-700">
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </header>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {loading && <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">Loading staff performance...</div>}
 
       {!loading && report && <>
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${historicalMode ? "lg:grid-cols-2" : "lg:grid-cols-4"}`}>
+          {historicalMode ? <>
+            <MetricCard label="Orders in selected period" value={report?.summary?.total_orders || 0} accent="border-yellow-200 bg-yellow-50 text-yellow-950" />
+            <MetricCard label="Sales in selected period" value={formatMoney(report?.summary?.total_sales)} accent="border-emerald-200 bg-emerald-50 text-emerald-950" />
+          </> : <>
           <MetricCard label="Today's orders" value={today?.summary?.total_orders || 0} accent="border-yellow-200 bg-yellow-50 text-yellow-950" />
           <MetricCard label="Today's sales" value={formatMoney(today?.summary?.total_sales)} accent="border-emerald-200 bg-emerald-50 text-emerald-950" />
-          <MetricCard label="Monthly orders" value={month?.summary?.total_orders || 0} accent="border-blue-200 bg-blue-50 text-blue-950" />
-          <MetricCard label="Monthly sales" value={formatMoney(month?.summary?.total_sales)} accent="border-orange-200 bg-orange-50 text-orange-950" />
+          <MetricCard label="Monthly orders" value={monthlyReport?.summary?.total_orders || 0} accent="border-blue-200 bg-blue-50 text-blue-950" />
+          <MetricCard label="Monthly sales" value={formatMoney(monthlyReport?.summary?.total_sales)} accent="border-orange-200 bg-orange-50 text-orange-950" />
+          </>}
         </section>
 
-        <section className="grid grid-cols-1 gap-3 rounded-2xl border border-black/5 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-5">
-          <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Period
-            <select value={preset} onChange={event => setPreset(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal outline-none focus:border-yellow-500">
+        <section className="grid grid-cols-1 gap-3 rounded-2xl border border-black/5 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-6">
+          <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{historicalMode ? "Selected business range" : "Period"}
+            <select disabled={historicalMode} value={preset} onChange={event => setPreset(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal outline-none focus:border-yellow-500 disabled:bg-zinc-50">
               <option value="today">Today</option><option value="yesterday">Yesterday</option><option value="week">This week</option><option value="month">This month</option><option value="custom">Custom range</option>
             </select>
           </label>
+          {!historicalMode && <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Report month
+            <input type="month" value={reportMonth} onChange={event => { if (event.target.value) setReportMonth(event.target.value); }} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal outline-none focus:border-yellow-500" />
+          </label>}
           {preset === "custom" && <>
-            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Start date<input type="date" value={customStart} onChange={event => setCustomStart(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm normal-case tracking-normal" /></label>
-            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">End date<input type="date" value={customEnd} onChange={event => setCustomEnd(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm normal-case tracking-normal" /></label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Start date<input type="date" max={customEnd} value={customStart} onChange={event => { setCustomStart(event.target.value); if (historicalMode) onDateRangeChange?.({ start: event.target.value, end: customEnd }); }} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm normal-case tracking-normal" /></label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">End date<input type="date" min={customStart} value={customEnd} onChange={event => { setCustomEnd(event.target.value); if (historicalMode) onDateRangeChange?.({ start: customStart, end: event.target.value }); }} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm normal-case tracking-normal" /></label>
           </>}
           <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Staff member
             <select value={staffId} onChange={event => setStaffId(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal"><option value="">All staff</option>{staffDirectory.map(staff => <option key={staff.id} value={staff.id}>{staff.name}</option>)}</select>
@@ -202,8 +267,8 @@ export default function StaffSalesPerformance({ role: roleProp }) {
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <BarList title="Daily sales by staff" rows={dailyStaffRows} valueKey="total_sales" formatter={formatMoney} />
-          <BarList title="Monthly sales by staff" rows={month?.staff || []} valueKey="total_sales" formatter={formatMoney} />
-          <BarList title="Orders handled by staff" rows={month?.staff || []} valueKey="orders_count" formatter={value => Number(value || 0).toLocaleString()} />
+          <BarList title="Monthly sales by staff" rows={monthlyReport?.staff || []} valueKey="total_sales" formatter={formatMoney} />
+          <BarList title="Orders handled by staff" rows={monthlyReport?.staff || []} valueKey="orders_count" formatter={value => Number(value || 0).toLocaleString()} />
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">

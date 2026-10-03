@@ -93,8 +93,8 @@ await logActivity(pool, {
   type:    'PETTY',
   actor:   logged_by,
   role:    'CASHIER',
-  message: `Petty cash ${direction === 'OUT' ? 'expense' : 'cash in'} — ${category} · UGX ${amount?.toLocaleString()} (${description})`,
-  meta:    { amount, direction, category, description },
+  message: `Petty expense — ${category} · UGX ${amount?.toLocaleString()} (${description})`,
+  meta:    { amount, category, description },
 });
 
 

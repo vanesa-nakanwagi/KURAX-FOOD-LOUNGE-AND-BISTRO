@@ -26,6 +26,23 @@ CREATE TABLE IF NOT EXISTS staff (
   updated_at            TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.notification_devices (
+  id SERIAL PRIMARY KEY,
+  user_scope TEXT NOT NULL CHECK (user_scope IN ('restaurant', 'shisha')),
+  user_id INTEGER NOT NULL,
+  firebase_installation_id TEXT NOT NULL UNIQUE,
+  fcm_token TEXT NOT NULL,
+  platform TEXT NOT NULL CHECK (platform IN ('web', 'android', 'ios')),
+  user_agent TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS notification_devices_user_active_idx
+  ON public.notification_devices (user_scope, user_id) WHERE is_active = true;
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 2. MENUS
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -388,7 +405,7 @@ CREATE TABLE IF NOT EXISTS petty_cash (
   id          SERIAL PRIMARY KEY,
   entry_date  DATE        NOT NULL,
   amount      NUMERIC     NOT NULL DEFAULT 0,
-  direction   TEXT        NOT NULL DEFAULT 'OUT',   -- IN | OUT
+  direction   TEXT        NOT NULL DEFAULT 'OUT' CHECK (direction = 'OUT'),
   category    TEXT        NOT NULL DEFAULT 'General',
   description TEXT        NOT NULL,
   logged_by   TEXT,
@@ -408,9 +425,27 @@ CREATE TABLE IF NOT EXISTS monthly_expenses (
   amount      NUMERIC     NOT NULL DEFAULT 0,
   description TEXT,
   entered_by  TEXT,
+  payment_method TEXT NOT NULL DEFAULT 'Cash',
   updated_at  TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (month, category)
 );
+
+CREATE TABLE IF NOT EXISTS public.notification_devices (
+  id SERIAL PRIMARY KEY,
+  user_scope TEXT NOT NULL CHECK (user_scope IN ('restaurant', 'shisha')),
+  user_id INTEGER NOT NULL,
+  firebase_installation_id TEXT NOT NULL UNIQUE,
+  fcm_token TEXT NOT NULL,
+  platform TEXT NOT NULL CHECK (platform IN ('web', 'android', 'ios')),
+  user_agent TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS notification_devices_user_active_idx
+  ON public.notification_devices (user_scope, user_id) WHERE is_active = true;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 20. MONTHLY TARGETS  — director sets revenue targets per month

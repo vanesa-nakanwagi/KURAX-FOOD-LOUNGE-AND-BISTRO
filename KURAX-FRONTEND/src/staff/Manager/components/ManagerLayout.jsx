@@ -18,13 +18,14 @@ import OrderHistory from "./ManageTables";
 import ReconciliationViewer from "../../Accountant/sections/ReconciliationViewer";
 import StaffSalesPerformance from "../../components/StaffSalesPerformance";
 import DepartmentHod from "../../DepartmentHod";
+import AccountingAuditTrail from "../../components/AccountingAuditTrail";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData }  from "../../../customer/components/context/DataContext";
 import API_URL      from "../../../config/api";
 
 export default function ManagerLayout() {
-  const [activeTab, setActiveTab] = useState("order");
+  const [activeTab, setActiveTab] = useState("target");
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isArchiving,      setIsArchiving]      = useState(false);
@@ -85,6 +86,7 @@ export default function ManagerLayout() {
       case "manage": return <OrderHistory />;
       case "reports": return <StaffSalesPerformance role="MANAGER" />;
       case "department-reports": return <DepartmentHod department="all" embedded />;
+        case "audit-trail": return <AccountingAuditTrail dark={isDark} />;
       case "credits": return <ManagerCreditPanel managerName={currentStaffName} />; // REMOVED theme prop
       default:        return <NewOrder />;
     }

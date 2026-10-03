@@ -17,9 +17,7 @@ export default function PhysicalCount({
   setPhysCard,
   physNotes,
   setPhysNotes,
-  pettyCashIn,
   sys,
-  adjustedPhysCash,
   varCash,
   varMTN,
   varAirtel,
@@ -49,20 +47,6 @@ export default function PhysicalCount({
         </div>
       )}
 
-      {pettyCashIn > 0 && !dayClosed && (
-        <div className="flex items-start gap-3 bg-yellow-50 border border-yellow-200 rounded-2xl p-4">
-          <Zap size={16} className="text-yellow-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-[10px] font-black uppercase text-yellow-700 tracking-widest">Petty Cash Replenishment Active</p>
-            <p className="text-[11px] text-gray-600 mt-1">
-              UGX {fmt(pettyCashIn)} was added to the drawer as replenishment today.
-              This is automatically deducted from your physical cash before calculating the variance,
-              since it is not sales revenue.
-            </p>
-          </div>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* PHYSICAL CASH ENTRY */}
         <div className={`p-8 rounded-2xl transition-all duration-300 ${cardBgClass}`}>
@@ -73,7 +57,7 @@ export default function PhysicalCount({
             <div className="h-40 animate-pulse bg-gray-100 rounded-2xl"/>
           ) : (
             <>
-              <PhysInput label="Cash on Hand (including replenishment)" value={physCash} onChange={setPhysCash} color="text-emerald-600"/>
+              <PhysInput label="Cash on Hand" value={physCash} onChange={setPhysCash} color="text-emerald-600"/>
               <PhysInput label="MTN Momo" value={physMomoMTN} onChange={setPhysMomoMTN} color="text-yellow-600"/>
               <PhysInput label="Airtel Momo" value={physMomoAirtel} onChange={setPhysMomoAirtel} color="text-red-600"/>
               <PhysInput label="Card / POS" value={physCard} onChange={setPhysCard} color="text-blue-600"/>
@@ -141,9 +125,9 @@ export default function PhysicalCount({
           <>
             <div className="space-y-1">
               <VarianceRow
-                label={pettyCashIn > 0 ? `Cash (adj. −UGX ${fmt(pettyCashIn)} replenishment)` : "System Cash"}
+                label="System Cash After Petty Expenses"
                 system={sys.cash}
-                physical={adjustedPhysCash}
+                physical={physCash}
                 variance={varCash}
               />
               <VarianceRow label="System MTN" system={sys.mtn} physical={physMomoMTN} variance={varMTN}/>
@@ -175,12 +159,6 @@ export default function PhysicalCount({
                   </div>
                 ))}
               </div>
-              {pettyCashIn > 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
-                  <p className="text-[8px] font-black uppercase text-yellow-700 tracking-widest">Replenishment netted from cash</p>
-                  <p className="text-yellow-700 font-black text-sm mt-0.5">−UGX {fmt(pettyCashIn)}</p>
-                </div>
-              )}
             </div>
           </>
         )}

@@ -2,6 +2,9 @@ import express      from 'express';
 import pool         from '../db.js';
 import logActivity  from '../utils/logsActivity.js';
 import PDFDocument  from 'pdfkit';
+import { createPettyExpense, getCounterCash, updatePettyExpense } from '../helpers/pettyCash.js';
+import { getMonthlyFinancials } from '../helpers/monthlyFinancials.js';
+import { createExpenseJournalEntry, createReceivableSettlementJournalEntry } from '../helpers/accounting.js';
 
 const router = express.Router();
 
@@ -134,12 +137,29 @@ router.get('/petty-cash', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
     const result = await pool.query(
-      `SELECT * FROM petty_cash WHERE entry_date = $1 ORDER BY created_at DESC`,
+      `SELECT * FROM petty_cash WHERE entry_date = $1 AND direction = 'OUT' ORDER BY created_at DESC`,
       [date]
     );
-    const total_in  = result.rows.filter(r => r.direction === 'IN' ).reduce((s, r) => s + Number(r.amount), 0);
-    const total_out = result.rows.filter(r => r.direction === 'OUT').reduce((s, r) => s + Number(r.amount), 0);
-    res.json({ date, total_in, total_out, net: total_in - total_out, entries: result.rows });
+    const total_out = result.rows.reduce((sum, row) => sum + Number(row.amount), 0);
+    const { cashOnCounter } = await getCounterCash(pool, date);
+    res.json({ date, total_out, cash_on_counter: cashOnCounter, entries: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/petty-cash/range', async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'from and to dates are required' });
+  try {
+    const result = await pool.query(
+      `SELECT * FROM petty_cash
+       WHERE entry_date BETWEEN $1 AND $2 AND direction = 'OUT'
+       ORDER BY created_at DESC`,
+      [from, to]
+    );
+    const total_out = result.rows.reduce((sum, row) => sum + Number(row.amount), 0);
+    res.json({ from, to, total_out, entries: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -147,33 +167,48 @@ router.get('/petty-cash', async (req, res) => {
 
 router.post('/petty-cash', async (req, res) => {
   const { amount, direction, description, logged_by, entry_date, category } = req.body;
+  const expenseAmount = Number(amount);
+  if (!Number.isFinite(expenseAmount) || expenseAmount <= 0 || !description?.trim()) {
+    return res.status(400).json({ error: 'A positive amount and description are required' });
+  }
+  if (direction && direction !== 'OUT') {
+    return res.status(400).json({ error: 'Petty cash entries must be expenses' });
+  }
   try {
-    const result = await pool.query(
-      `INSERT INTO petty_cash (entry_date, amount, direction, category, description, logged_by)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [entry_date || kampalaDate(), Number(amount), direction, category || 'General', description, logged_by]
-    );
+    const saved = await createPettyExpense(pool, {
+      entry_date: entry_date || kampalaDate(),
+      amount: expenseAmount,
+      category: category || 'General',
+      description: description.trim(),
+      logged_by,
+    });
 
     await logActivity(pool, {
       type: 'PETTY',
       actor: logged_by,
       role: 'ACCOUNTANT',
-      message: `Petty ${direction}: UGX ${Number(amount).toLocaleString()} (${description})`,
+      message: `Petty expense: UGX ${expenseAmount.toLocaleString()} (${description.trim()})`,
     });
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json({ ...saved.entry, cash_before: saved.cashBefore, cash_after: saved.cashAfter });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
 router.delete('/petty-cash/:id', async (req, res) => {
   try {
     const result = await pool.query(
-      `DELETE FROM petty_cash WHERE id = $1 RETURNING *`,
+      `DELETE FROM petty_cash WHERE id = $1 AND direction = 'OUT' RETURNING *`,
       [req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Petty cash entry not found' });
+    await logActivity(pool, {
+      type: 'PETTY',
+      actor: req.body?.logged_by || 'Accountant',
+      role: 'ACCOUNTANT',
+      message: `Petty expense deleted: UGX ${Number(result.rows[0].amount).toLocaleString()}`,
+    });
     res.json({ success: true, entry: result.rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -183,19 +218,30 @@ router.delete('/petty-cash/:id', async (req, res) => {
 router.put('/petty-cash/:id', async (req, res) => {
   const { id } = req.params;
   const { amount, direction, category, description, logged_by } = req.body;
+  const expenseAmount = Number(amount);
+  if (!Number.isFinite(expenseAmount) || expenseAmount <= 0 || !description?.trim()) {
+    return res.status(400).json({ error: 'A positive amount and description are required' });
+  }
+  if (direction && direction !== 'OUT') {
+    return res.status(400).json({ error: 'Petty cash entries must be expenses' });
+  }
   try {
-    const result = await pool.query(
-      `UPDATE petty_cash
-       SET amount = $1, direction = $2, category = $3, description = $4, logged_by = $5
-       WHERE id = $6
-       RETURNING *`,
-      [amount, direction, category, description, logged_by, id]
-    );
-    if (!result.rows.length) return res.status(404).json({ error: 'Entry not found' });
-    res.json(result.rows[0]);
+    const saved = await updatePettyExpense(pool, id, {
+      amount: expenseAmount,
+      category: category || 'General',
+      description: description.trim(),
+      logged_by,
+    });
+    await logActivity(pool, {
+      type: 'PETTY',
+      actor: logged_by || 'Accountant',
+      role: 'ACCOUNTANT',
+      message: `Petty expense updated: UGX ${expenseAmount.toLocaleString()} (${description.trim()})`,
+    });
+    res.json({ ...saved.entry, cash_before: saved.cashBefore, cash_after: saved.cashAfter });
   } catch (err) {
     console.error('Petty cash update error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -217,16 +263,38 @@ router.get('/monthly-expenses', async (req, res) => {
 
 router.post('/monthly-expenses', async (req, res) => {
   const { month, category, amount, description, entered_by } = req.body;
+  const paymentMethod = String(req.body.payment_method || 'Cash').trim();
+  const paymentAccounts = {
+    Cash: '1001',
+    'Momo-MTN': '1003',
+    'Momo-Airtel': '1003',
+    Card: '1002',
+  };
+  if (!Object.hasOwn(paymentAccounts, paymentMethod)) {
+    return res.status(400).json({ error: 'Choose a valid payment source.' });
+  }
   try {
+    const numericAmount = Number(amount);
     const result = await pool.query(
-      `INSERT INTO monthly_expenses (month, category, amount, description, entered_by, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+      `INSERT INTO monthly_expenses (month, category, amount, description, entered_by, payment_method, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
        ON CONFLICT (month, category)
-       DO UPDATE SET amount = $3, description = $4, entered_by = $5, updated_at = NOW()
+       DO UPDATE SET amount = $3, description = $4, entered_by = $5, payment_method = $6, updated_at = NOW()
        RETURNING *`,
-      [month, category, Number(amount), description, entered_by]
+      [month, category, numericAmount, description, entered_by, paymentMethod]
     );
-    res.status(201).json(result.rows[0]);
+
+    const journal = await createExpenseJournalEntry({
+      amount: numericAmount,
+      category: category || 'General',
+      description: description || `Expense - ${category || 'General'}`,
+      paymentAccountCode: paymentAccounts[paymentMethod],
+      sourceTransaction: `monthly_expense:${month}`,
+      postedBy: entered_by || 'Accountant',
+      entryDate: month ? `${month}-01` : kampalaDate(),
+    });
+
+    res.status(201).json({ ...result.rows[0], journal_entry: journal.reference });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -306,6 +374,14 @@ router.patch('/credits/:id/settle', async (req, res) => {
       [id, amount_paid, method, transaction_id || null, settled_by]
     );
 
+    await createReceivableSettlementJournalEntry({
+      amount: paidAmt,
+      paymentMethod: method,
+      sourceTransaction: `credit_settlement:${id}`,
+      postedBy: settled_by || 'Cashier',
+      entryDate: kampalaDate(),
+    });
+
     const today   = kampalaDate();
     const payCol  = methodToColumn(method);
     const paidAmt = Number(amount_paid);
@@ -378,88 +454,32 @@ router.get('/monthly-profit', async (req, res) => {
   console.log(`🔵 Monthly profit requested for: ${month}`);
 
   try {
-    // ── 1. NEW SALES (CASH, CARD, MOBILE MONEY) from ORDERS only ─────────────
-    // Use LOWER() to handle mixed case, and do NOT exclude orders that have a credit record.
-    const salesResult = await pool.query(`
-      SELECT
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) = 'cash' THEN total ELSE 0 END), 0) AS cash,
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) = 'card' THEN total ELSE 0 END), 0) AS card,
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) IN ('mtn', 'momo-mtn') THEN total ELSE 0 END), 0) AS mtn,
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) IN ('airtel', 'momo-airtel') THEN total ELSE 0 END), 0) AS airtel,
-        COUNT(*) AS order_count
-      FROM orders
-      WHERE status IN ('Paid', 'Confirmed', 'Closed', 'Served')
-        AND payment_method IS NOT NULL
-        AND LOWER(payment_method) != 'credit'
-        AND TO_CHAR((created_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
-    `, [month]);
-
-    const newCash = Number(salesResult.rows[0].cash);
-    const newCard = Number(salesResult.rows[0].card);
-    const newMtn  = Number(salesResult.rows[0].mtn);
-    const newAirtel = Number(salesResult.rows[0].airtel);
-    const newMobileMoney = newMtn + newAirtel;
-    const newSalesTotal  = newCash + newCard + newMobileMoney;
-    const orderCount     = Number(salesResult.rows[0].order_count);
-
-    // ── 2. CREDIT SETTLEMENTS (old credits repaid this month) ──────────────
-    const settlementsRes = await pool.query(`
-      SELECT
-        COALESCE(SUM(amount_paid), 0)                                                       AS total_settled,
-        COALESCE(SUM(CASE WHEN LOWER(settle_method) = 'cash' THEN amount_paid ELSE 0 END), 0) AS settled_cash,
-        COALESCE(SUM(CASE WHEN LOWER(settle_method) = 'card' THEN amount_paid ELSE 0 END), 0) AS settled_card,
-        COALESCE(SUM(CASE WHEN LOWER(settle_method) IN ('mtn', 'momo-mtn') THEN amount_paid ELSE 0 END), 0) AS settled_mtn,
-        COALESCE(SUM(CASE WHEN LOWER(settle_method) IN ('airtel', 'momo-airtel') THEN amount_paid ELSE 0 END), 0) AS settled_airtel,
-        COUNT(*) AS settlement_count
-      FROM credits
-      WHERE status IN ('FullySettled', 'PartiallySettled')
-        AND TO_CHAR((paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
-    `, [month]);
-
-    const settlements = settlementsRes.rows[0];
-    const totalSettled = Number(settlements.total_settled);
-
-    // ── 3. EXPENSES ────────────────────────────────────────────────────────
-    const pettyRes = await pool.query(`
-      SELECT COALESCE(SUM(amount), 0) AS petty_out
-      FROM petty_cash
-      WHERE direction = 'OUT'
-        AND TO_CHAR(entry_date, 'YYYY-MM') = $1
-    `, [month]);
-
-    const expRes = await pool.query(
-      `SELECT * FROM monthly_expenses WHERE month = $1`,
-      [month]
-    );
-
-    const pettyOut   = Number(pettyRes.rows[0].petty_out);
-    const fixedTotal = expRes.rows.reduce((s, r) => s + Number(r.amount), 0);
-
-    // ── 4. REVENUE & PROFIT ─────────────────────────────────────────────────
-    const totalRevenue = newSalesTotal + totalSettled;
-    const totalCosts   = pettyOut + fixedTotal;
-    const netProfit    = totalRevenue - totalCosts;
-    const marginPct    = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0';
+    const financials = await getMonthlyFinancials(pool, month);
+    const marginPct = financials.totalCollected > 0
+      ? ((financials.currentCash / financials.totalCollected) * 100).toFixed(1)
+      : '0';
 
     res.json({
       month,
+      ...financials,
       sales: {
-        from_paid_orders:          newSalesTotal,
-        from_credit_settlements:   totalSettled,
-        total_gross:               totalRevenue,
-        cash:                      newCash,
-        card:                      newCard,
-        mobile_money:              newMobileMoney,
-        order_count:               orderCount,
-        settlement_count:          Number(settlements.settlement_count),
+        from_paid_orders:          financials.grossSales,
+        from_credit_settlements:   financials.creditSettlements,
+        total_gross:               financials.grossSales,
+        total_collected:           financials.totalCollected,
+        cash:                      financials.salesBreakdown.cash,
+        card:                      financials.salesBreakdown.card,
+        mobile_money:              financials.salesBreakdown.mtn + financials.salesBreakdown.airtel,
+        order_count:               financials.orderCount,
+        settlement_count:          financials.settlementCount,
       },
       costs: {
-        petty_out:   pettyOut,
-        fixed_total: fixedTotal,
-        fixed_items: expRes.rows,
-        total:       totalCosts,
+        petty_out:   financials.pettyOut,
+        fixed_total: financials.fixedTotal,
+        fixed_items: financials.fixedItems,
+        total:       financials.expenses,
       },
-      net_profit:  netProfit,
+      net_profit:  financials.currentCash,
       margin_pct:  marginPct,
     });
   } catch (err) {
@@ -708,33 +728,7 @@ router.get('/export-pdf', async (req, res) => {
   if (!month) return res.status(400).send('Month is required');
 
   try {
-    // New sales (case‑insensitive)
-    const salesData = await pool.query(`
-      SELECT
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) = 'cash' THEN total ELSE 0 END), 0) AS total_cash,
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) = 'card' THEN total ELSE 0 END), 0) AS total_card,
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) IN ('mtn', 'momo-mtn') THEN total ELSE 0 END), 0) AS total_mtn,
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) IN ('airtel', 'momo-airtel') THEN total ELSE 0 END), 0) AS total_airtel,
-        COUNT(*) AS order_count
-      FROM orders
-      WHERE status IN ('Paid','Confirmed','Closed','Served')
-        AND payment_method IS NOT NULL
-        AND LOWER(payment_method) != 'credit'
-        AND TO_CHAR((created_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
-    `, [month]);
-
-    const creditData = await pool.query(`
-      SELECT
-        COALESCE(SUM(amount_paid), 0)                                                        AS total_settled,
-        COALESCE(SUM(CASE WHEN LOWER(settle_method) = 'cash' THEN amount_paid ELSE 0 END), 0) AS settled_cash,
-        COALESCE(SUM(CASE WHEN LOWER(settle_method) = 'card' THEN amount_paid ELSE 0 END), 0) AS settled_card,
-        COALESCE(SUM(CASE WHEN LOWER(settle_method) IN ('mtn', 'momo-mtn') THEN amount_paid ELSE 0 END), 0) AS settled_mtn,
-        COALESCE(SUM(CASE WHEN LOWER(settle_method) IN ('airtel', 'momo-airtel') THEN amount_paid ELSE 0 END), 0) AS settled_airtel,
-        COUNT(*) AS settlement_count
-      FROM credits
-      WHERE status IN ('FullySettled','PartiallySettled')
-        AND TO_CHAR((paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
-    `, [month]);
+    const financials = await getMonthlyFinancials(pool, month);
 
     const creditsLedger = await pool.query(`
       SELECT id, table_name, client_name, client_phone,
@@ -745,29 +739,11 @@ router.get('/export-pdf', async (req, res) => {
       ORDER BY created_at DESC
     `, [month]);
 
-    const pettyData = await pool.query(`
-      SELECT COALESCE(SUM(amount), 0) AS petty_out
-      FROM petty_cash
-      WHERE direction = 'OUT'
-        AND TO_CHAR(entry_date, 'YYYY-MM') = $1
-    `, [month]);
-
-    const expenses = await pool.query(
-      `SELECT * FROM monthly_expenses WHERE month = $1`,
-      [month]
-    );
-
-    const sales      = salesData.rows[0];
-    const credits    = creditData.rows[0];
-    const pettyOut   = Number(pettyData.rows[0].petty_out);
-    const fixedTotal = expenses.rows.reduce((s, r) => s + Number(r.amount), 0);
-
-    const totalNewSales = Number(sales.total_cash) + Number(sales.total_card) + Number(sales.total_mtn) + Number(sales.total_airtel);
-    const totalSettled  = Number(credits.total_settled);
-    const totalRevenue  = totalNewSales + totalSettled;
-    const totalExpenses = pettyOut + fixedTotal;
-    const netProfit     = totalRevenue - totalExpenses;
-    const margin        = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0';
+    const sales = financials.salesBreakdown;
+    const credits = financials.settlementBreakdown;
+    const margin = financials.totalCollected > 0
+      ? ((financials.currentCash / financials.totalCollected) * 100).toFixed(1)
+      : '0';
 
     const doc = new PDFDocument({ margin: 50 });
     res.setHeader('Content-Type', 'application/pdf');
@@ -796,41 +772,40 @@ router.get('/export-pdf', async (req, res) => {
     doc.rect(50, 50, 500, 200).fill('#f9f9f9').stroke('#eeeeee');
     doc.fillColor('#000000').fontSize(14).font('Helvetica-Bold').text('Executive Summary', 70, 65);
 
-    doc.fontSize(10).font('Helvetica-Bold').text('Total Revenue:', 70, 95);
-    doc.fillColor('#EAB308').font('Helvetica-Bold').text(`UGX ${totalRevenue.toLocaleString()}`, 280, 95);
+    doc.fontSize(10).font('Helvetica-Bold').text('Gross Sales:', 70, 95);
+    doc.fillColor('#EAB308').font('Helvetica-Bold').text(`UGX ${financials.grossSales.toLocaleString()}`, 280, 95);
     doc.fillColor('#000000').font('Helvetica')
-      .text(`  • From New Sales: UGX ${totalNewSales.toLocaleString()}`, 80, 115)
-      .text(`  • From Credit Settlements: UGX ${totalSettled.toLocaleString()}`, 80, 130)
-      .text('Breakdown of New Sales:', 70, 155)
-      .text(`  • Cash: UGX ${Number(sales.total_cash).toLocaleString()}`, 80, 170)
-      .text(`  • Card: UGX ${Number(sales.total_card).toLocaleString()}`, 80, 185)
-      .text(`  • MTN Mobile Money: UGX ${Number(sales.total_mtn).toLocaleString()}`, 80, 200)
-      .text(`  • Airtel Money: UGX ${Number(sales.total_airtel).toLocaleString()}`, 80, 215);
+      .text(`Credit Settlements: UGX ${financials.creditSettlements.toLocaleString()}`, 70, 115)
+      .text('Breakdown of Gross Sales:', 70, 145)
+      .text(`  • Cash: UGX ${sales.cash.toLocaleString()}`, 80, 165)
+      .text(`  • Card: UGX ${sales.card.toLocaleString()}`, 80, 180)
+      .text(`  • MTN Mobile Money: UGX ${sales.mtn.toLocaleString()}`, 80, 195)
+      .text(`  • Airtel Money: UGX ${sales.airtel.toLocaleString()}`, 80, 210);
 
-    if (totalSettled > 0) {
+    if (financials.creditSettlements > 0) {
       doc.text('Credit Settlements Breakdown:', 70, 240);
       let cy = 255;
-      if (Number(credits.settled_cash)   > 0) { doc.text(`  • Cash: UGX ${Number(credits.settled_cash).toLocaleString()}`,   80, cy); cy += 15; }
-      if (Number(credits.settled_card)   > 0) { doc.text(`  • Card: UGX ${Number(credits.settled_card).toLocaleString()}`,   80, cy); cy += 15; }
-      if (Number(credits.settled_mtn)    > 0) { doc.text(`  • MTN: UGX ${Number(credits.settled_mtn).toLocaleString()}`,     80, cy); cy += 15; }
-      if (Number(credits.settled_airtel) > 0) { doc.text(`  • Airtel: UGX ${Number(credits.settled_airtel).toLocaleString()}`, 80, cy); }
+      if (credits.cash > 0) { doc.text(`  • Cash: UGX ${credits.cash.toLocaleString()}`, 80, cy); cy += 15; }
+      if (credits.card > 0) { doc.text(`  • Card: UGX ${credits.card.toLocaleString()}`, 80, cy); cy += 15; }
+      if (credits.mtn > 0) { doc.text(`  • MTN: UGX ${credits.mtn.toLocaleString()}`, 80, cy); cy += 15; }
+      if (credits.airtel > 0) { doc.text(`  • Airtel: UGX ${credits.airtel.toLocaleString()}`, 80, cy); }
     }
 
     const newY = Math.max(50 + 200 + 20, doc.y + 20);
     doc.rect(50, newY, 500, 120).fill('#f9f9f9').stroke('#eeeeee');
-    doc.fillColor('#000000').fontSize(12).font('Helvetica-Bold').text('Expenses & Profit', 70, newY + 15);
+    doc.fillColor('#000000').fontSize(12).font('Helvetica-Bold').text('Monthly Cash Summary', 70, newY + 15);
     doc.fontSize(10).font('Helvetica-Bold').text('Total Expenses:', 70, newY + 45);
-    doc.fillColor('#DC2626').text(`UGX ${totalExpenses.toLocaleString()}`, 280, newY + 45);
+    doc.fillColor('#DC2626').text(`UGX ${financials.expenses.toLocaleString()}`, 280, newY + 45);
     doc.fillColor('#000000').font('Helvetica')
-      .text(`  • Petty Cash: UGX ${pettyOut.toLocaleString()}`, 80, newY + 65)
-      .text(`  • Fixed Expenses: UGX ${fixedTotal.toLocaleString()}`, 80, newY + 80);
-    doc.font('Helvetica-Bold').text('Net Profit:', 70, newY + 110);
-    doc.fillColor(netProfit >= 0 ? '#10B981' : '#DC2626')
-      .font('Helvetica-Bold').text(`UGX ${netProfit.toLocaleString()}`, 280, newY + 110);
-    if (netProfit >= 0) {
-      doc.fillColor('#10B981').text(`✓ Profitable month with ${margin}% margin`, 70, newY + 135);
+      .text(`  • Petty Cash: UGX ${financials.pettyOut.toLocaleString()}`, 80, newY + 65)
+      .text(`  • Fixed Expenses: UGX ${financials.fixedTotal.toLocaleString()}`, 80, newY + 80);
+    doc.font('Helvetica-Bold').text('Current Cash:', 70, newY + 110);
+    doc.fillColor(financials.currentCash >= 0 ? '#10B981' : '#DC2626')
+      .font('Helvetica-Bold').text(`UGX ${financials.currentCash.toLocaleString()}`, 280, newY + 110);
+    if (financials.currentCash >= 0) {
+      doc.fillColor('#10B981').text(`Cash after expenses: ${margin}% of collected funds`, 70, newY + 135);
     } else {
-      doc.fillColor('#DC2626').text(`⚠ Operating at a loss of ${Math.abs(margin)}%`, 70, newY + 135);
+      doc.fillColor('#DC2626').text(`Cash deficit: ${Math.abs(margin)}% of collected funds`, 70, newY + 135);
     }
 
     // Credit Ledger page (if any)

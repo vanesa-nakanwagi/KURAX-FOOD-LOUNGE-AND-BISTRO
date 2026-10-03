@@ -15,6 +15,11 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
   const { orders = [], setOrders, menus = [], currentUser } = useData() || { setOrders: () => {}, orders: [], menus: [] };
   const { theme } = useTheme();
   const navigate = useNavigate();
+  const savedUser = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("kurax_user") || "null"); }
+    catch { return null; }
+  }, []);
+  const staffUser = currentUser?.id != null ? currentUser : savedUser;
   
   // --- 1. STATE ---
   const [tableName, setTableName]           = useState(() => localStorage.getItem("kurax_table_name") || "");
@@ -93,10 +98,13 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
   const handleProcessOrder = async () => {
     if (!tableName) return alert("Please assign a table name.");
     if (cart.length === 0) return alert("Cart is empty.");
+    const staffId = Number(staffUser?.id);
+    if (!Number.isInteger(staffId) || staffId <= 0) return alert("Your staff account could not be identified. Sign in again before placing an order.");
 
     const orderData = {
-      staffId:   currentUser?.id   || 1,
-      staffName: currentUser?.name || "Waiter",
+      staffId,
+      staffName: staffUser?.name || "Supervisor",
+      staffRole: (staffUser?.role || "SUPERVISOR").toUpperCase(),
       tableName: tableName.toUpperCase(),
       items:     cart,
       total:     cartTotal,

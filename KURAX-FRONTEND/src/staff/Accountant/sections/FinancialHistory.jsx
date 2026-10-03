@@ -96,7 +96,7 @@ export default function FinancialHistory({
               </p>
               <p className={`text-[9px] ${isDark ? 'text-zinc-600' : 'text-gray-600'}`}>
                 UGX {sys.pending_credits.toLocaleString()} in credit requests waiting for approval. 
-                These will be added to gross revenue when approved AND settled.
+                Credit settlements are tracked separately and do not change Gross Sales.
               </p>
             </div>
           </div>

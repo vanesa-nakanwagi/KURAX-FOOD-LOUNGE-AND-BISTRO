@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Check, ChefHat, CircleDollarSign, ClipboardList, Eye, EyeOff, Flame, LogOut,
-  Package, Plus, RefreshCw, Users, Wallet,
+  Download, Package, Plus, RefreshCw, Users, Wallet,
 } from 'lucide-react';
 import API_URL from '../../config/api';
+import { downloadReportPdf } from '../reportExport';
 import kuraxLogo from '../../customer/assets/images/logo.jpeg';
 import { EyeOpen, EyeClosed, EnvelopeIcon, LockIcon, ImageCarousel, UnderlineInput } from '../StaffLogin.jsx';
 
@@ -65,6 +66,12 @@ function rangeFor(mode) {
   return [today, today];
 }
 
+function rangeForMonth(month) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const lastDay = String(new Date(year, monthNumber, 0).getDate()).padStart(2, '0');
+  return [`${month}-01`, `${month}-${lastDay}`];
+}
+
 function Button({ children, onClick, disabled, tone = 'dark', type = 'button' }) {
   const toneClass = tone === 'accent'
     ? 'bg-amber-400 text-zinc-950 hover:bg-amber-300'
@@ -102,6 +109,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const [paymentRequests, setPaymentRequests] = useState([]);
   const [report, setReport] = useState(null);
   const [reportMode, setReportMode] = useState('today');
+  const [reportMonth, setReportMonth] = useState(() => todayInKampala().slice(0, 7));
   const [reportFrom, setReportFrom] = useState(todayInKampala);
   const [reportTo, setReportTo] = useState(todayInKampala);
   const [cart, setCart] = useState([]);
@@ -287,10 +295,51 @@ export default function ShishaDepartment({ requiredRole = null }) {
   function chooseReportMode(mode) {
     setReportMode(mode);
     if (mode !== 'custom') {
-      const [from, to] = rangeFor(mode);
+      const [from, to] = mode === 'specific-month' ? rangeForMonth(reportMonth) : rangeFor(mode);
       setReportFrom(from);
       setReportTo(to);
     }
+  }
+
+  function downloadShishaReport() {
+    if (!report || report.from !== reportFrom || report.to !== reportTo) return;
+    const summary = report.summary || {};
+    downloadReportPdf({
+      filename: `shisha-report-${reportFrom}-to-${reportTo}.pdf`,
+      title: 'Shisha Sales & Finance Report',
+      from: report.from,
+      to: report.to,
+      sections: [
+        {
+          title: 'Summary',
+          columns: ['Metric', 'Value'],
+          rows: [
+            ['Orders', summary.total_orders ?? 0],
+            ['Total sales', money(summary.total_sales)],
+            ['Collected', money(summary.amount_collected)],
+            ['Outstanding', money(summary.total_outstanding)],
+            ['Partially paid amount', money(summary.partially_paid_amount)],
+            ['Partially paid orders', summary.partially_paid_orders ?? 0],
+            ['Fully settled orders', summary.fully_settled_orders ?? 0],
+          ],
+        },
+        {
+          title: 'Sales by Shisha waiter',
+          columns: ['Waiter', 'Orders', 'Sales', 'Collected', 'Outstanding'],
+          rows: (report.by_waiter || []).map(row => [row.waiter_name, row.total_orders, money(row.total_sales), money(row.amount_collected), money(row.outstanding)]),
+        },
+        {
+          title: 'Sales by Shisha mixer',
+          columns: ['Mixer', 'Orders', 'Sales'],
+          rows: (report.by_mixer || []).map(row => [row.mixer_name, row.total_orders, money(row.total_sales)]),
+        },
+        {
+          title: 'Collected by payment method',
+          columns: ['Payment method', 'Confirmed payments', 'Amount'],
+          rows: (report.by_payment_method || []).map(row => [row.payment_method, row.payment_count, money(row.amount)]),
+        },
+      ],
+    });
   }
 
   const activePackages = packages.filter(item => item.published && item.is_available);
@@ -424,7 +473,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
 
         {tab === 'setup' && isDirector && <section className="max-w-2xl rounded-xl border border-zinc-200 bg-white p-6"><h2 className="text-xl font-black">Establish Shisha HOD access</h2><p className="my-2 text-sm text-zinc-500">Create the initial department administrator. The HOD will manage waiter and mixer accounts.</p><form onSubmit={saveStaff} className="mt-5 grid gap-4 sm:grid-cols-2"><Field label="Full name" value={staffForm.name} onChange={event => setStaffForm({ ...staffForm, name: event.target.value, role: 'SHISHA_HOD' })} required /><Field label="Email" type="email" value={staffForm.email} onChange={event => setStaffForm({ ...staffForm, email: event.target.value, role: 'SHISHA_HOD' })} required /><Field label="4-8 digit PIN" inputMode="numeric" pattern="[0-9]{4,8}" value={staffForm.pin} onChange={event => setStaffForm({ ...staffForm, pin: event.target.value, role: 'SHISHA_HOD' })} required /><div className="flex items-end"><Button type="submit" tone="accent" disabled={busy}>Create HOD account <ArrowRight size={16} /></Button></div></form></section>}
 
-        {tab === 'reports' && canReport && <ReportsPanel report={report} mode={reportMode} setMode={chooseReportMode} from={reportFrom} to={reportTo} setFrom={setReportFrom} setTo={setReportTo} />}
+        {tab === 'reports' && canReport && <ReportsPanel report={report} mode={reportMode} setMode={chooseReportMode} from={reportFrom} to={reportTo} setFrom={setReportFrom} setTo={setReportTo} reportMonth={reportMonth} setReportMonth={value => { if (!value) return; setReportMonth(value); const [from, to] = rangeForMonth(value); setReportFrom(from); setReportTo(to); }} onDownload={downloadShishaReport} />}
       </div>
     </main>
   );
@@ -479,7 +528,7 @@ function PaymentPanel({ requests, token, inputs, setInputs, runAction, busy }) {
   );
 }
 
-function ReportsPanel({ report, mode, setMode, from, to, setFrom, setTo }) {
+function ReportsPanel({ report, mode, setMode, from, to, setFrom, setTo, reportMonth, setReportMonth, onDownload }) {
   const summary = report?.summary || {};
   const stats = [
     ['Orders', summary.total_orders, ClipboardList],
@@ -490,7 +539,8 @@ function ReportsPanel({ report, mode, setMode, from, to, setFrom, setTo }) {
     ['Fully settled', summary.fully_settled_orders, Check],
   ];
   return (
-    <section><div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><h2 className="text-lg font-black">Shisha sales & finance</h2><p className="text-sm text-zinc-500">Shisha department totals only; restaurant cashier data is not included.</p></div><div className="flex flex-wrap gap-2">{[['today', 'Today'], ['yesterday', 'Yesterday'], ['week', 'This week'], ['month', 'This month'], ['custom', 'Custom']].map(([value, label]) => <button key={value} onClick={() => setMode(value)} className={`rounded-lg px-3 py-2 text-xs font-bold ${mode === value ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>{label}</button>)}</div></div>
+    <section><div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><h2 className="text-lg font-black">Shisha sales & finance</h2><p className="text-sm text-zinc-500">Shisha department totals only; restaurant cashier data is not included.</p></div><div className="flex flex-wrap gap-2">{[['today', 'Today'], ['yesterday', 'Yesterday'], ['week', 'This week'], ['month', 'This month'], ['specific-month', 'Select month'], ['custom', 'Custom']].map(([value, label]) => <button key={value} onClick={() => setMode(value)} className={`rounded-lg px-3 py-2 text-xs font-bold ${mode === value ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>{label}</button>)}<button type="button" onClick={onDownload} disabled={!report || report.from !== from || report.to !== to} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-zinc-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"><Download size={15} /> Download PDF</button></div></div>
+      {mode === 'specific-month' && <div className="mb-4 max-w-xs"><Field label="Report month" type="month" value={reportMonth} onChange={event => setReportMonth(event.target.value)} /></div>}
       {mode === 'custom' && <div className="mb-4 flex flex-wrap gap-3"><Field label="From" type="date" value={from} onChange={event => setFrom(event.target.value)} /><Field label="To" type="date" value={to} onChange={event => setTo(event.target.value)} /></div>}
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{stats.map(([label, value, Icon]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><div className="flex items-center justify-between"><span className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</span><Icon size={16} className="text-amber-700" /></div><p className="mt-3 text-2xl font-black">{value ?? 0}</p></article>)}</div>
       <div className="grid gap-5 xl:grid-cols-2"><div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Sales by Shisha waiter</h3></div>{(report?.by_waiter || []).map(row => <div key={row.waiter_id} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.waiter_name}</p><p className="text-xs text-zinc-500">{row.total_orders} orders · {money(row.amount_collected)} collected</p></div><p className="text-sm font-black">{money(row.total_sales)}</p></div>)}{!report?.by_waiter?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No orders in this date range.</p>}</div>

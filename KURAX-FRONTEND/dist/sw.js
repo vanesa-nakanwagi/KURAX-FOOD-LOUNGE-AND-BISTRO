@@ -1,4 +1,25 @@
 const CACHE_NAME = 'kurax-v1';
+try {
+  importScripts('/firebase-config.js');
+  const config = self.KURAX_FIREBASE_CONFIG;
+  if (config?.apiKey && config?.projectId && config?.messagingSenderId && config?.appId) {
+    importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js');
+    importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js');
+    firebase.initializeApp(config);
+    firebase.messaging().onBackgroundMessage((payload) => {
+      const data = payload.data || {};
+      self.registration.showNotification(data.title || 'Kurax staff alert', {
+        body: data.body || 'A staff update needs your attention.',
+        icon: '/icons/icon-192x192.png',
+        tag: `${data.type || 'staff'}-${data.referenceId || data.createdAt || Date.now()}`,
+        data: { link: data.link || '/' },
+      });
+    });
+  }
+} catch (error) {
+  console.error('Firebase background notifications are unavailable:', error);
+}
+
 const urlsToCache = [
   '/',
   '/index.html',
@@ -32,4 +53,17 @@ self.addEventListener('activate', event => {
       );
     }).then(() => self.clients.claim())
   );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const link = event.notification.data?.link;
+  if (typeof link !== 'string' || !link.startsWith('/') || link.startsWith('//')) return;
+
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    const target = new URL(link, self.location.origin).href;
+    const existing = clients.find((client) => new URL(client.url).origin === self.location.origin);
+    if (existing) return existing.navigate(target).then(() => existing.focus());
+    return self.clients.openWindow(target);
+  }));
 });

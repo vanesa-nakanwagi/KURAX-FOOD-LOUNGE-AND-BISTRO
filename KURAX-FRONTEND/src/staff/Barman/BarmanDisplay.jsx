@@ -360,7 +360,7 @@ export default function BarmanDisplay() {
       const tId = ticketId || ticketMapRef.current[orderId];
       if (!tId) throw new Error("The HOD-dispatched Barman ticket is not available yet.");
       const response = await fetch(`${API_URL}/api/barman/tickets/${tId}/status`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${savedUser.token || ""}` },
         body: JSON.stringify({ status: newStatus }),
       });
       if (!response.ok) throw new Error("Could not update Barman ticket status.");
@@ -369,7 +369,7 @@ export default function BarmanDisplay() {
       console.error("Status update failed:", err);
       refreshData?.();
     }
-  }, [setOrders, refreshData]);
+  }, [setOrders, refreshData, savedUser.token]);
 
   const handleAssignBarman = useCallback(async (nameInput) => {
     if (!nameInput || !assigningItem) return;

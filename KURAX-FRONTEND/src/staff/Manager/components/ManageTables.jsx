@@ -18,6 +18,10 @@ function toLocalDateStr(date) {
     .toISOString().split("T")[0];
 }
 function getTodayLocal() { return toLocalDateStr(new Date()); }
+function getStaffToken() {
+  try { return JSON.parse(localStorage.getItem("kurax_user") || "{}").token || ""; }
+  catch { return ""; }
+}
 
 // ✅ Full amount formatter (no abbreviations)
 function fmtUGX(n) {
@@ -1121,7 +1125,7 @@ export default function OrderHistory({ onAddItems }) {
       };
       const res = await fetch(`${API_URL}/api/cashier-ops/send-to-cashier`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken()}` },
         body: JSON.stringify(requestBody),
       });
       if (res.ok) {

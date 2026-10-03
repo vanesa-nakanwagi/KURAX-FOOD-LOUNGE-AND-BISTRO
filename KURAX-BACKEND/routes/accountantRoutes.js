@@ -1,8 +1,27 @@
 import express from 'express';
 import pool from '../db.js';
-import { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
+import logActivity, { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
+import { createPettyExpense, getCounterCash } from '../helpers/pettyCash.js';
+import {
+  createExpenseJournalEntry,
+  createSalesJournalEntry,
+  ensureAccountingDataModel,
+  getAuditTrail,
+  getBalanceSheet,
+  getCashFlowStatement,
+  getGeneralLedger,
+  getIncomeStatement,
+  getJournalEntries,
+  getTrialBalance,
+  listAccounts,
+  postBackdatedExpense,
+  reverseJournalEntry,
+} from '../helpers/accounting.js';
 
 const router = express.Router();
+ensureAccountingDataModel().catch((error) => {
+  console.error('Accounting schema bootstrap warning:', error.message);
+});
 
 // ─── HELPER: Kampala date (YYYY-MM-DD) ──────────────────────────────────────
 function kampalaDate(date = new Date()) {
@@ -45,19 +64,27 @@ router.get('/summary', async (req, res) => {
 
 // ─── 2. TODAY'S STAT-CARD SUMMARY ───────────────────────────────────────────
 router.get('/today', async (req, res) => {
-  const today = kampalaDate();
-  console.log(`🔵 /today endpoint called for date: ${today}`);
+  const businessDate = String(req.query.date || kampalaDate());
+  const parsedBusinessDate = new Date(`${businessDate}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)
+    || !Number.isFinite(parsedBusinessDate.getTime())
+    || parsedBusinessDate.toISOString().slice(0, 10) !== businessDate) {
+    return res.status(400).json({ error: 'A valid business date is required.' });
+  }
+  const isLiveDate = businessDate === kampalaDate();
+  console.log(`🔵 /today endpoint called for date: ${businessDate}`);
   
   try {
-    // Ensure today's row exists
-    await pool.query(
-      `INSERT INTO daily_summary 
-        (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, 
-         total_credit, total_mixed, order_count, total_settled_credits, day_closed, created_at, updated_at)
-       VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
-       ON CONFLICT (summary_date) DO NOTHING`,
-      [today]
-    );
+    if (isLiveDate) {
+      await pool.query(
+        `INSERT INTO daily_summary
+          (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel,
+           total_credit, total_mixed, order_count, total_settled_credits, day_closed, created_at, updated_at)
+         VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, NOW(), NOW())
+         ON CONFLICT (summary_date) DO NOTHING`,
+        [businessDate]
+      );
+    }
 
     const summaryRes = await pool.query(
       `SELECT
@@ -67,21 +94,26 @@ router.get('/today', async (req, res) => {
          COALESCE(total_mtn, 0) AS total_mtn,
          COALESCE(total_airtel, 0) AS total_airtel,
          COALESCE(order_count, 0) AS order_count,
-         COALESCE(total_settled_credits, 0) AS total_settled_credits
+         COALESCE(total_settled_credits, 0) AS total_settled_credits,
+         COALESCE(day_closed, false) AS day_closed
        FROM daily_summary
        WHERE summary_date = $1`,
-      [today]
+      [businessDate]
     );
 
     const daily = summaryRes.rows[0] || {};
+    const { cashOnCounter } = await getCounterCash(pool, businessDate);
     const response = {
+      summary_date: businessDate,
       total_gross: Number(daily.total_gross) || 0,
       total_cash: Number(daily.total_cash) || 0,
+      cash_on_counter: cashOnCounter,
       total_card: Number(daily.total_card) || 0,
       total_mtn: Number(daily.total_mtn) || 0,
       total_airtel: Number(daily.total_airtel) || 0,
       order_count: Number(daily.order_count) || 0,
       total_settled_credits: Number(daily.total_settled_credits) || 0,
+      day_closed: Boolean(daily.day_closed),
     };
     
     res.json(response);
@@ -305,19 +337,18 @@ router.get('/petty-cash', async (req, res) => {
     const result = await pool.query(
       `SELECT *
        FROM petty_cash
-       WHERE entry_date = $1
+      WHERE entry_date = $1 AND direction = 'OUT'
        ORDER BY created_at DESC`,
       [today]
     );
 
     const entries   = result.rows;
-    const total_out = entries.filter(e => e.direction === 'OUT').reduce((s, e) => s + Number(e.amount), 0);
-    const total_in  = entries.filter(e => e.direction === 'IN' ).reduce((s, e) => s + Number(e.amount), 0);
+    const total_out = entries.reduce((sum, entry) => sum + Number(entry.amount), 0);
+    const { cashOnCounter } = await getCounterCash(pool, today);
 
     res.json({
       total_out,
-      total_in,
-      net: total_in - total_out,
+      cash_on_counter: cashOnCounter,
       entries,
     });
   } catch (err) {
@@ -329,25 +360,45 @@ router.get('/petty-cash', async (req, res) => {
 // ─── 9. PETTY CASH — POST new entry ──────────────────────────────────────────
 router.post('/petty-cash', async (req, res) => {
   const { amount, direction, category, description, logged_by } = req.body;
-  if (!amount || !direction || !description) {
-    return res.status(400).json({ error: 'amount, direction, and description are required' });
+  const expenseAmount = Number(amount);
+  if (!Number.isFinite(expenseAmount) || expenseAmount <= 0 || !description?.trim()) {
+    return res.status(400).json({ error: 'A positive amount and description are required' });
   }
-  if (!['IN', 'OUT'].includes(direction)) {
-    return res.status(400).json({ error: 'direction must be IN or OUT' });
+  if (direction && direction !== 'OUT') {
+    return res.status(400).json({ error: 'Petty cash entries must be expenses' });
   }
 
   const today = kampalaDate();
   try {
-    const result = await pool.query(
-      `INSERT INTO petty_cash (amount, direction, category, description, logged_by, entry_date)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [Number(amount), direction, category || 'General', description.trim(), logged_by || 'Director', today]
-    );
-    res.status(201).json(result.rows[0]);
+    const saved = await createPettyExpense(pool, {
+      amount: expenseAmount,
+      category: category || 'General',
+      description: description.trim(),
+      logged_by: logged_by || 'Director',
+      entry_date: today,
+    });
+
+    const journal = await createExpenseJournalEntry({
+      amount: expenseAmount,
+      category: category || 'Petty Expenses',
+      description: description.trim(),
+      paymentAccountCode: '1001',
+      sourceTransaction: `petty_cash:${saved.entry.id}`,
+      postedBy: logged_by || 'Director',
+      entryDate: today,
+    });
+
+    await logActivity(pool, {
+      type: 'PETTY',
+      actor: logged_by || 'Director',
+      role: 'ACCOUNTANT',
+      message: `Petty expense: UGX ${expenseAmount.toLocaleString()} (${description.trim()})`,
+      meta: { journal_entry: journal.reference, cash_after: saved.cashAfter },
+    });
+    res.status(201).json({ ...saved.entry, cash_before: saved.cashBefore, cash_after: saved.cashAfter, journal_entry: journal.reference });
   } catch (err) {
     console.error('❌ Petty Cash POST Error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -355,7 +406,17 @@ router.post('/petty-cash', async (req, res) => {
 router.delete('/petty-cash/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    await pool.query('DELETE FROM petty_cash WHERE id = $1', [id]);
+    const result = await pool.query(
+      "DELETE FROM petty_cash WHERE id = $1 AND direction = 'OUT' RETURNING amount",
+      [id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Petty expense not found' });
+    await logActivity(pool, {
+      type: 'PETTY',
+      actor: 'Accountant',
+      role: 'ACCOUNTANT',
+      message: `Petty expense deleted: UGX ${Number(result.rows[0].amount).toLocaleString()}`,
+    });
     res.json({ success: true });
   } catch (err) {
     console.error('❌ Petty Cash DELETE Error:', err.message);
@@ -624,101 +685,497 @@ router.get('/inventory-snapshots', async (req, res) => {
 
 // ─── 18. REPORT: INCOME STATEMENT ───────────────────────────────────────────
 router.post('/reports/income-statement', async (req, res) => {
-  const { startDate, endDate } = req.body;
+  const { startDate, endDate, startTime, endTime } = req.body;
   if (!startDate || !endDate) {
     return res.status(400).json({ error: 'startDate and endDate are required' });
   }
   try {
-    // Beginning inventory (latest snapshot before startDate)
-    const beginningRes = await pool.query(
-      `SELECT total_value FROM inventory_snapshots
-       WHERE snapshot_date < $1
-       ORDER BY snapshot_date DESC LIMIT 1`,
-      [startDate]
-    );
-    const beginning = Number(beginningRes.rows[0]?.total_value) || 0;
-
-    // Ending inventory (latest snapshot on or before endDate)
-    const endingRes = await pool.query(
-      `SELECT total_value FROM inventory_snapshots
-       WHERE snapshot_date <= $1
-       ORDER BY snapshot_date DESC LIMIT 1`,
-      [endDate]
-    );
-    const ending = Number(endingRes.rows[0]?.total_value) || 0;
-
-    // Sum of purchases in period
-    const purchasesRes = await pool.query(
-      `SELECT COALESCE(SUM(total_amount), 0) AS total
-       FROM purchases
-       WHERE purchase_date BETWEEN $1 AND $2`,
-      [startDate, endDate]
-    );
-    const purchases = Number(purchasesRes.rows[0].total);
-
-    const cogs = beginning + purchases - ending;
-
-    // Total revenue from daily_summary (gross sales + credit settlements)
-    const revenueRes = await pool.query(
-      `SELECT COALESCE(SUM(total_gross), 0) AS total_revenue
-       FROM daily_summary
-       WHERE summary_date BETWEEN $1 AND $2`,
-      [startDate, endDate]
-    );
-    const totalRevenue = Number(revenueRes.rows[0].total_revenue);
-
-    const grossProfit = totalRevenue - cogs;
-    const netIncome = grossProfit; // you can subtract other expenses later
-
-    res.json({
-      revenue: totalRevenue,
-      cogs: cogs,
-      grossProfit: grossProfit,
-      netIncome: netIncome,
-      beginning_inventory: beginning,
-      purchases: purchases,
-      ending_inventory: ending,
-    });
+    const report = await getIncomeStatement(startDate, endDate, startTime || null, endTime || null);
+    res.json(report);
   } catch (err) {
     console.error('❌ POST /reports/income-statement error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── 19. REPORT: BALANCE SHEET (simplified) ─────────────────────────────────
+// ─── 19. REPORT: BALANCE SHEET ───────────────────────────────────────────────
 router.post('/reports/balance-sheet', async (req, res) => {
-  const { asOfDate } = req.body;
+  const { asOfDate, startTime, endTime } = req.body;
   if (!asOfDate) {
     return res.status(400).json({ error: 'asOfDate is required' });
   }
   try {
-    // Inventory asset
-    const inventoryRes = await pool.query(
-      `SELECT total_value FROM inventory_snapshots
-       WHERE snapshot_date <= $1
-       ORDER BY snapshot_date DESC LIMIT 1`,
-      [asOfDate]
-    );
-    const inventory = Number(inventoryRes.rows[0]?.total_value) || 0;
-
-    // You can add more asset/liability queries here (e.g., cash from daily_summary)
-    // For now, return a simple structure.
-    res.json({
-      assets: {
-        inventory: inventory,
-        cash: 0,           // TODO: sum of daily cash on asOfDate
-        receivables: 0,    // TODO: outstanding credits as of asOfDate
-        total_assets: inventory,
-      },
-      liabilities: {
-        total_liabilities: 0,
-      },
-      equity: {
-        total_equity: inventory, // placeholder – should be assets - liabilities
-      },
-    });
+    const report = await getBalanceSheet(asOfDate, startTime || null, endTime || null);
+    res.json(report);
   } catch (err) {
     console.error('❌ POST /reports/balance-sheet error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 20. ACCOUNTING FOUNDATION ROUTES ───────────────────────────────────────
+router.get('/accounting/overview', async (req, res) => {
+  try {
+    const today = kampalaDate();
+    const [trial, income, cashFlow, accounts] = await Promise.all([
+      getTrialBalance(today, today),
+      getIncomeStatement('2000-01-01', today),
+      getCashFlowStatement('2000-01-01', today),
+      listAccounts(),
+    ]);
+
+    const accountMap = Object.fromEntries(accounts.map((account) => [account.code, account]));
+    const cashAccount = accountMap['1001'];
+    const revenueTotal = income.totalRevenue || 0;
+    const expenseTotal = income.totalExpenses || 0;
+
+    res.json({
+      accounts: accounts.length,
+      cash_account: cashAccount,
+      total_revenue: revenueTotal,
+      total_expenses: expenseTotal,
+      net_profit: revenueTotal - expenseTotal,
+      trial_balance: trial,
+      cash_flow: cashFlow,
+    });
+  } catch (err) {
+    console.error('Accounting overview error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/chart-of-accounts', async (req, res) => {
+  try {
+    const accounts = await listAccounts();
+    res.json({ accounts });
+  } catch (err) {
+    console.error('Chart of accounts error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/accounting/chart-of-accounts', async (req, res) => {
+  const { code, name, category, account_type, normal_balance, description, created_by } = req.body;
+  if (!code || !name || !category) {
+    return res.status(400).json({ error: 'code, name, and category are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO chart_of_accounts (code, name, category, account_type, normal_balance, description, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (code) DO UPDATE SET
+         name = EXCLUDED.name,
+         category = EXCLUDED.category,
+         account_type = COALESCE(EXCLUDED.account_type, chart_of_accounts.account_type),
+         normal_balance = COALESCE(EXCLUDED.normal_balance, chart_of_accounts.normal_balance),
+         description = EXCLUDED.description,
+         updated_at = NOW()
+       RETURNING *`,
+      [
+        String(code),
+        String(name),
+        String(category),
+        account_type || 'General',
+        normal_balance || 'Debit',
+        description || '',
+        created_by || 'Accountant',
+      ]
+    );
+    res.status(201).json({ account: result.rows[0] });
+  } catch (err) {
+    console.error('Create account error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/general-ledger', async (req, res) => {
+  const { startDate, endDate, startTime, endTime } = req.query;
+  try {
+    const entries = await getGeneralLedger(startDate || null, endDate || null, startTime || null, endTime || null);
+    res.json({ entries });
+  } catch (err) {
+    console.error('General ledger error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/journal-entries', async (req, res) => {
+  const { startDate, endDate, startTime, endTime, limit } = req.query;
+  try {
+    const journal = await getJournalEntries({ startDate: startDate || null, endDate: endDate || null, startTime: startTime || null, endTime: endTime || null, limit: limit ? Number(limit) : null });
+    res.json({ entries: journal });
+  } catch (err) {
+    console.error('Journal entry fetch error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/historical-summary', async (req, res) => {
+  const { startDate, endDate, startTime, endTime } = req.query;
+  const validDate = (value) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return false;
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  };
+  const validTime = (value) => !value || /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+  if (!validDate(startDate) || !validDate(endDate) || startDate > endDate
+    || !validTime(startTime) || !validTime(endTime) || (startTime && endTime && startTime > endTime)) {
+    return res.status(400).json({ error: 'A valid startDate and endDate range is required.' });
+  }
+
+  try {
+    const [dailyResult, expenseResult, pettyResult, journalEntries, cashFlow, ordersResult, creditsResult, settlementsResult, ticketsResult, shishaResult] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) AS business_days,
+                COALESCE(SUM(total_gross), 0) AS total_gross,
+                COALESCE(SUM(total_cash), 0) AS total_cash,
+                COALESCE(SUM(total_card), 0) AS total_card,
+                COALESCE(SUM(total_mtn), 0) AS total_mtn,
+                COALESCE(SUM(total_airtel), 0) AS total_airtel,
+                COALESCE(SUM(total_credit), 0) AS total_credit,
+                COALESCE(SUM(total_settled_credits), 0) AS credit_settlements,
+                COALESCE(SUM(order_count), 0) AS order_count
+         FROM public.daily_summary WHERE summary_date BETWEEN $1 AND $2`,
+        [startDate, endDate]
+      ),
+      pool.query(
+        `SELECT gl.account_code, gl.account_name,
+                COALESCE(SUM(gl.debit - gl.credit), 0) AS amount
+         FROM public.general_ledger gl
+         JOIN public.chart_of_accounts coa ON coa.code = gl.account_code
+         WHERE coa.category = 'Expense' AND gl.entry_date BETWEEN $1 AND $2
+           AND ($3::time IS NULL OR gl.business_time >= $3::time)
+           AND ($4::time IS NULL OR gl.business_time <= $4::time)
+         GROUP BY gl.account_code, gl.account_name ORDER BY gl.account_code`,
+        [startDate, endDate, startTime || null, endTime || null]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total_out
+         FROM public.petty_cash
+         WHERE direction = 'OUT' AND entry_date BETWEEN $1 AND $2
+           AND ($3::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)`,
+        [startDate, endDate, startTime || null, endTime || null]
+      ),
+      getJournalEntries({ startDate, endDate, startTime, endTime, limit: 500 }),
+      getCashFlowStatement(startDate, endDate, startTime || null, endTime || null),
+      pool.query(
+        `SELECT o.id, o.table_name, o.staff_name, o.items, o.total, o.status,
+                o.payment_method, o.payment_confirmed,
+                COALESCE(o.timestamp, o.created_at) AS transaction_at
+         FROM public.orders o
+         WHERE COALESCE(o.timestamp, o.created_at) >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+           AND COALESCE(o.timestamp, o.created_at) < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+           AND ($3::time IS NULL OR (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         ORDER BY transaction_at DESC LIMIT 500`,
+        [startDate, endDate, startTime || null, endTime || null]
+      ),
+      pool.query(
+        `SELECT id, client_name, amount, amount_paid, status, created_at, paid_at, pay_by
+         FROM public.credits
+         WHERE (created_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1 AND $2
+           AND ($3::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         ORDER BY created_at DESC LIMIT 500`,
+        [startDate, endDate, startTime || null, endTime || null]
+      ),
+      pool.query(
+        `SELECT cs.id, cs.credit_id, cs.amount_paid, cs.method, cs.created_at, c.client_name
+         FROM public.credit_settlements cs
+         JOIN public.credits c ON c.id = cs.credit_id
+         WHERE (cs.created_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1 AND $2
+           AND ($3::time IS NULL OR (cs.created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (cs.created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         ORDER BY cs.created_at DESC LIMIT 500`,
+        [startDate, endDate, startTime || null, endTime || null]
+      ),
+      pool.query(
+        `SELECT 'Kitchen' AS station, id, order_id, table_name, staff_name, total, status, created_at
+         FROM public.kitchen_tickets WHERE ticket_date BETWEEN $1 AND $2
+           AND ($3::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         UNION ALL
+         SELECT 'Bar' AS station, id, order_id, table_name, staff_name, total, status, created_at
+         FROM public.barman_tickets WHERE ticket_date BETWEEN $1 AND $2
+           AND ($3::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         UNION ALL
+         SELECT 'Barista' AS station, id, order_id, table_name, staff_name, total, status, created_at
+         FROM public.barista_tickets WHERE ticket_date BETWEEN $1 AND $2
+           AND ($3::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         ORDER BY created_at DESC LIMIT 500`,
+        [startDate, endDate, startTime || null, endTime || null]
+      ),
+      pool.query(
+        `SELECT id, total_amount, amount_paid, outstanding_amount, order_status, created_at,
+                shisha_waiter_id, assigned_chef_id
+         FROM public.shisha_orders
+         WHERE (created_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1 AND $2
+           AND ($3::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         ORDER BY created_at DESC LIMIT 500`,
+        [startDate, endDate, startTime || null, endTime || null]
+      ),
+    ]);
+
+    const daily = dailyResult.rows[0] || {};
+    res.json({
+      startDate,
+      endDate,
+      startTime: startTime || null,
+      endTime: endTime || null,
+      business_days: Number(daily.business_days || 0),
+      sales: {
+        total_gross: Number(daily.total_gross || 0),
+        cash: Number(daily.total_cash || 0),
+        card: Number(daily.total_card || 0),
+        mtn: Number(daily.total_mtn || 0),
+        airtel: Number(daily.total_airtel || 0),
+        credit: Number(daily.total_credit || 0),
+        credit_settlements: Number(daily.credit_settlements || 0),
+        order_count: Number(daily.order_count || 0),
+      },
+      expenses: expenseResult.rows.map((row) => ({ ...row, amount: Number(row.amount || 0) })),
+      petty_cash_out: Number(pettyResult.rows[0]?.total_out || 0),
+      cash_flow: cashFlow,
+      journal_entries: journalEntries,
+      orders: ordersResult.rows,
+      credits: creditsResult.rows,
+      credit_settlements: settlementsResult.rows,
+      station_tickets: ticketsResult.rows,
+      shisha_orders: shishaResult.rows,
+    });
+  } catch (err) {
+    console.error('Historical accounting summary error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/accounting/journal-entries/:id/reverse', async (req, res) => {
+  const journalEntryId = Number(req.params.id);
+  const { reversalDate, reason, actor } = req.body || {};
+  if (!Number.isInteger(journalEntryId) || journalEntryId < 1) {
+    return res.status(400).json({ error: 'A valid journal entry ID is required.' });
+  }
+
+  try {
+    const result = await reverseJournalEntry({
+      journalEntryId,
+      reversalDate,
+      reason,
+      actor: req.user?.name || actor || 'Accountant',
+    });
+    res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    console.error('Journal reversal error:', err.message);
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+router.post('/accounting/backdated-expenses', async (req, res) => {
+  const { amount, category, description, paymentAccountCode, transactionDate, businessTime, reason, postedBy } = req.body || {};
+  try {
+    const result = await postBackdatedExpense({
+      amount,
+      category,
+      description,
+      paymentAccountCode,
+      transactionDate,
+      businessTime,
+      reason,
+      actor: req.user?.name || postedBy || 'Accountant',
+    });
+    res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    console.error('Backdated expense posting error:', err.message);
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/trial-balance', async (req, res) => {
+  const { startDate, endDate, startTime, endTime } = req.query;
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
+  }
+
+  try {
+    const trialBalance = await getTrialBalance(startDate, endDate, startTime || null, endTime || null);
+    const totalDebits = trialBalance.reduce((sum, row) => sum + row.total_debit, 0);
+    const totalCredits = trialBalance.reduce((sum, row) => sum + row.total_credit, 0);
+    res.json({ startDate, endDate, trial_balance: trialBalance, total_debits: totalDebits, total_credits: totalCredits, imbalance: totalDebits - totalCredits });
+  } catch (err) {
+    console.error('Trial balance error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/income-statement', async (req, res) => {
+  const { startDate, endDate, startTime, endTime } = req.query;
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
+  }
+  try {
+    const report = await getIncomeStatement(startDate, endDate, startTime || null, endTime || null);
+    res.json(report);
+  } catch (err) {
+    console.error('Income statement error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/balance-sheet', async (req, res) => {
+  const { asOfDate, startTime, endTime } = req.query;
+  if (!asOfDate) {
+    return res.status(400).json({ error: 'asOfDate is required' });
+  }
+  try {
+    const report = await getBalanceSheet(asOfDate, startTime || null, endTime || null);
+    res.json(report);
+  } catch (err) {
+    console.error('Balance sheet error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/cash-flow', async (req, res) => {
+  const { startDate, endDate, startTime, endTime } = req.query;
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
+  }
+  try {
+    const report = await getCashFlowStatement(startDate, endDate, startTime || null, endTime || null);
+    res.json(report);
+  } catch (err) {
+    console.error('Cash flow statement error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/accounts-receivable', async (req, res) => {
+  const { startDate, endDate } = req.query;
+  try {
+    const params = [];
+    const dateFilter = startDate && endDate ? ` AND c.created_at::date BETWEEN $1 AND $2` : '';
+    if (startDate && endDate) params.push(startDate, endDate);
+    const rows = await pool.query(
+      `SELECT
+         COALESCE(c.cashier_queue_id::text, 'CREDIT-' || c.id::text) AS reference,
+         c.client_name AS customer_name,
+         c.amount,
+         COALESCE(c.amount_paid, 0) AS amount_paid,
+         GREATEST(c.amount - COALESCE(c.amount_paid, 0), 0) AS outstanding_balance,
+         CASE
+           WHEN c.amount - COALESCE(c.amount_paid, 0) <= 0 THEN 'Fully Settled'
+           WHEN COALESCE(c.amount_paid, 0) > 0 THEN 'Partially Paid'
+           ELSE 'Outstanding'
+         END AS status,
+         c.pay_by AS due_date,
+         c.created_at
+       FROM public.credits c
+       WHERE c.status IN ('Approved', 'PartiallySettled', 'FullySettled')
+       ${dateFilter}
+       ORDER BY c.created_at DESC`,
+      params
+    );
+    res.json({ entries: rows.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/accounts-payable', async (req, res) => {
+  const { startDate, endDate } = req.query;
+  try {
+    const params = [];
+    const dateFilter = startDate && endDate ? `WHERE c.created_at::date BETWEEN $1 AND $2` : '';
+    if (startDate && endDate) params.push(startDate, endDate);
+    const rows = await pool.query(
+      `SELECT c.* FROM public.accounts_payable c ${dateFilter} ORDER BY c.created_at DESC`,
+      params
+    );
+    res.json({ entries: rows.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/periods', async (req, res) => {
+  try {
+    const rows = await pool.query(`SELECT * FROM accounting_periods ORDER BY start_date DESC`);
+    res.json({ periods: rows.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/accounting/periods', async (req, res) => {
+  const { period_name, start_date, end_date, status = 'Open', created_by = 'Accountant' } = req.body;
+  if (!period_name || !start_date || !end_date) {
+    return res.status(400).json({ error: 'period_name, start_date, and end_date are required' });
+  }
+  if (!['Open', 'Closed'].includes(status)) {
+    return res.status(400).json({ error: "Period status must be 'Open' or 'Closed'." });
+  }
+  try {
+    const existing = await pool.query(
+      `SELECT id, status FROM accounting_periods WHERE period_name = $1 LIMIT 1`,
+      [period_name]
+    );
+    if (existing.rows[0]?.status === 'Closed') {
+      return res.status(409).json({ error: 'Closed accounting periods cannot be edited or reopened through this endpoint. A controlled, authorized reopening process is required.' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO accounting_periods (period_name, start_date, end_date, status, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (period_name) DO UPDATE SET
+         start_date = EXCLUDED.start_date,
+         end_date = EXCLUDED.end_date,
+         status = EXCLUDED.status,
+         created_by = EXCLUDED.created_by
+       RETURNING *`,
+      [period_name, start_date, end_date, status, created_by]
+    );
+    await pool.query(
+      `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
+       VALUES ('accounting_period', $1, $2, $3, $4)`,
+      [result.rows[0].id, existing.rows.length ? 'period_updated' : 'period_created', created_by || 'Accountant', JSON.stringify({ period_name, start_date, end_date, status })]
+    );
+    res.status(201).json({ period: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/audit-trail', async (req, res) => {
+  try {
+    const rows = await getAuditTrail();
+    res.json({ entries: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/accounting/sales', async (req, res) => {
+  const { amount, paymentMethod = 'Cash', description, sourceTransaction, postedBy, entryDate } = req.body;
+  if (!amount || Number(amount) <= 0) {
+    return res.status(400).json({ error: 'Valid sale amount is required' });
+  }
+  try {
+    const entry = await createSalesJournalEntry({
+      amount,
+      paymentMethod,
+      description,
+      sourceTransaction,
+      postedBy,
+      entryDate,
+    });
+    res.status(201).json({ success: true, entry });
+  } catch (err) {
+    console.error('Accounting sale sync error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

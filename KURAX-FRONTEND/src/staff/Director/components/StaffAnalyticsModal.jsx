@@ -139,7 +139,7 @@ export default function StaffAnalyticsModal({ staff, orders, onClose, shiftEnded
               <StatRow label="Card"          value={ugx(totalCard)}    color="text-blue-600"/>
             </div>
             <div className="mx-3 mb-3 rounded-xl px-4 py-3 bg-yellow-50 border border-yellow-200">
-              <StatRow label="Gross Revenue" value={ugx(totalGross)} color="text-yellow-600" large noBorder/>
+              <StatRow label="Gross Sales" value={ugx(totalGross)} color="text-yellow-600" large noBorder/>
             </div>
           </>
         )}
@@ -172,7 +172,7 @@ export default function StaffAnalyticsModal({ staff, orders, onClose, shiftEnded
                   <StatRow label="Total Orders"  value={totalOrders}       color="text-gray-900"/>
                   <StatRow label="Cash"          value={ugx(totalCash)}    color="text-emerald-600"/>
                   <StatRow label="Total Momo"    value={ugx(totalMomo)}    color="text-orange-600"/>
-                  <StatRow label="Gross Revenue" value={ugx(totalGross)}   color="text-yellow-600" large/>
+                  <StatRow label="Gross Sales" value={ugx(totalGross)}   color="text-yellow-600" large/>
                 </div>
               </div>
             )}

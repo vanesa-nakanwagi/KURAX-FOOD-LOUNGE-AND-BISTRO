@@ -370,7 +370,7 @@ export default function BaristaDisplay() {
       const tId = ticketId || ticketMapRef.current[orderId];
       if (!tId) throw new Error("The HOD-dispatched Barista ticket is not available yet.");
       const response = await fetch(`${API_URL}/api/barista/tickets/${tId}/status`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${savedUser.token || ""}` },
         body: JSON.stringify({ status: newStatus }),
       });
       if (!response.ok) throw new Error("Could not update Barista ticket status.");
@@ -379,7 +379,7 @@ export default function BaristaDisplay() {
       console.error("Status update failed:", err);
       refreshData?.();
     }
-  }, [setOrders, refreshData]);
+  }, [setOrders, refreshData, savedUser.token]);
 
   // ── Assign barista ────────────────────────────────────────────────────────
   const handleAssignBarista = useCallback(async (nameInput) => {

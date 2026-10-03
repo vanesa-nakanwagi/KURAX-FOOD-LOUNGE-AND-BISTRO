@@ -266,6 +266,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
     });
     return count;
   }, [staffOrders]);
+  const dailyStaffOrdersCount = staffOrders.length;
 
   // ─── Fetch targets, credits, monthly income (still direct API calls) ─────
   const loadTargets = useCallback(async () => {
@@ -421,7 +422,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
   }, [credits]);
 
   const orderTarget = staffTargets.daily_order_target || 0;
-  const orderProgress = orderTarget > 0 ? Math.min((dailyStaffItemsCount / orderTarget) * 100, 100) : 0;
+  const orderProgress = orderTarget > 0 ? Math.min((dailyStaffOrdersCount / orderTarget) * 100, 100) : 0;
   const revenueProgress = revenueTarget > 0 ? Math.min((monthlyRevenue / revenueTarget) * 100, 100) : 0;
   const currentMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
   const todayDisplay = new Date().toLocaleDateString("en-GB", { year: 'numeric', month: 'long', day: 'numeric' });
@@ -478,12 +479,15 @@ export default function PerformanceDashboard({ theme = "light" }) {
           <StatCard
             icon={<ClipboardList size={16} />}
             iconBg="bg-orange-500/10" iconColor="text-orange-500"
-            badge="Today" label="Items Sold"
-            value={dailyStaffItemsCount}
-            sub={`/ ${orderTarget || "—"} target`}
+            badge="Today" label="Daily Performance"
             progress={orderProgress}
             progressColor={getProgressColor(orderProgress)}
-          />
+          >
+            <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+              <div><p className="text-[8px] font-bold uppercase text-zinc-400">Orders / target</p><p className="text-lg sm:text-xl font-black text-zinc-900">{dailyStaffOrdersCount}<span className="text-zinc-400">/{orderTarget || "—"}</span></p></div>
+              <div className="text-right"><p className="text-[8px] font-bold uppercase text-zinc-400">Items sold</p><p className="text-lg sm:text-xl font-black text-zinc-900">{dailyStaffItemsCount}</p></div>
+            </div>
+          </StatCard>
           <StatCard
             icon={<TrendingUp size={16} />}
             iconBg="bg-yellow-500/10" iconColor="text-yellow-500"
@@ -604,7 +608,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
           <div className="flex items-center gap-2 mb-4"><div className="p-2 rounded-xl bg-purple-500/10"><Award size={15} className="text-purple-500" /></div><h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Performance Insights</h3></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
-              { icon: <Target size={13} className="text-yellow-500" />, label: "Daily Target", color: "text-yellow-600", bg: "bg-yellow-50", text: dailyStaffItemsCount >= orderTarget && orderTarget > 0 ? "Daily item target achieved!" : orderTarget > 0 ? `${orderTarget - dailyStaffItemsCount} more item${orderTarget - dailyStaffItemsCount !== 1 ? "s" : ""} to reach today's target` : "No daily target set" },
+              { icon: <Target size={13} className="text-yellow-500" />, label: "Daily Target", color: "text-yellow-600", bg: "bg-yellow-50", text: dailyStaffOrdersCount >= orderTarget && orderTarget > 0 ? "Daily order target achieved!" : orderTarget > 0 ? `${orderTarget - dailyStaffOrdersCount} more order${orderTarget - dailyStaffOrdersCount !== 1 ? "s" : ""} to reach today's target` : "No daily target set" },
               { icon: <TrendingUp size={13} className="text-emerald-500" />, label: "Monthly Revenue", color: "text-emerald-600", bg: "bg-emerald-50", text: monthlyRevenue >= revenueTarget && revenueTarget > 0 ? "Monthly revenue target exceeded!" : revenueTarget > 0 ? `${Math.round(revenueProgress)}% of monthly target reached` : "No monthly target set" },
               { icon: <Calendar size={13} className="text-blue-500" />, label: "Daily Average Needed", color: "text-blue-600", bg: "bg-blue-50", text: revenueTarget > 0 ? `Aim for ${fmtUGX(Math.ceil(revenueTarget / 30))} per day` : "Set a monthly target to see daily recommendations" },
               { icon: <BookOpen size={13} className="text-purple-500" />, label: "Credit Summary", color: "text-purple-600", bg: "bg-purple-50", text: creditStats.total > 0 ? `${creditStats.settled.count} settled · ${creditStats.outstanding.count} outstanding` : "No credit records for today" },

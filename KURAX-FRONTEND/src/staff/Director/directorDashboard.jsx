@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, Users, BarChart3,
+  LayoutDashboard, Users, BarChart3, CreditCard,
   History, Target, Bell, Menu, X, LogOut, Bike,
-  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet, CircleDollarSign
+  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet, CircleDollarSign, ClipboardList
 } from "lucide-react";
 
 // ── Local components ──────────────────────────────────────────────────────────
@@ -25,6 +25,7 @@ import API_URL      from "../../config/api";
 import ReconciliationViewer from "../Accountant/sections/ReconciliationViewer";
 import StaffSalesPerformance from "../components/StaffSalesPerformance";
 import DepartmentHod from "../DepartmentHod";
+import AccountingAuditTrail from "../components/AccountingAuditTrail";
 
 // ── CREDIT STATUS BADGE COMPONENT ────────────────────────────────────────────
 function CreditStatusBadge({ status }) {
@@ -50,20 +51,20 @@ function CreditStatusBadge({ status }) {
 }
 
 const NAV = [
-  { icon: <LayoutDashboard size={18} />, label: "Dashboard",  tab: "OVERVIEW"  },
+  { icon: <LayoutDashboard size={18} />, label: "Dashboard",  tab: "TARGETS"  },
   { icon: <Wallet size={18} />,       label: "Reconciliation", tab: "RECONCILIATION" },
   { icon: <Users size={18} />,           label: "Staff",      tab: "STAFF"     },
-  { icon: <BarChart3 size={18} />,       label: "Finances & Credits",  tab: "FINANCES"  },
+  { icon: <CreditCard size={18} />,      label: "Finances & Credits",  tab: "FINANCES"  },
   { icon: <BarChart3 size={18} />,       label: "Staff Performance",   tab: "PERFORMANCE" },
   { icon: <History size={18} />,         label: "History",    tab: "HISTORY"   },
-  { icon: <Target size={18} />,          label: "Targets",    tab: "TARGETS"   },
   { icon: <Bike size={18} />,            label: "Riders",     tab: "RIDERS"    },
   { icon: <CircleDollarSign size={18} />, label: "Department Reports", tab: "DEPARTMENT_REPORTS" },
+  { icon: <ClipboardList size={18} />, label: "Audit Trail", tab: "AUDIT_TRAIL" },
 ];
 
 export default function DirectorDashboard() {
   const navigate = useNavigate();
-  const [activeTab,       setActiveTab]   = useState("OVERVIEW");
+  const [activeTab,       setActiveTab]   = useState("TARGETS");
   const [isSidebarOpen,   setSidebarOpen] = useState(false);
   const [currentUser,     setCurrentUser] = useState(null);
   const [editingStaff,    setEditingStaff]   = useState(null);
@@ -423,6 +424,7 @@ export default function DirectorDashboard() {
             )}
 
             {activeTab === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded />}
+                      {activeTab === "AUDIT_TRAIL" && <AccountingAuditTrail />}
           </div>
           <Footer />
         </main>

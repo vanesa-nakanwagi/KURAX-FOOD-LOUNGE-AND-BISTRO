@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ClipboardList,
-  Target,
   LayoutDashboard,
   BarChart3,
   LogOut,
@@ -21,6 +20,7 @@ import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 
 const NAV_ITEMS = [
+  { id: "target", label: "Dashboard", short: "Home", icon: LayoutDashboard },
   { id: "order",   label: "Take Order",       short: "Order",   icon: ClipboardList },
   { id: "reconciliation", label: "Payment Reconciliation", short: "Reconcile", icon: WalletCards },
   { id: "history", label: "Manage Orders",     short: "History", icon: History },
@@ -28,8 +28,8 @@ const NAV_ITEMS = [
   { id: "tables",  label: "All Floor",         short: "Floor",   icon: LayoutDashboard },
   { id: "status",  label: "Order Status",      short: "Status",  icon: Clock },
   { id: "reports", label: "Staff Performance", short: "Reports", icon: BarChart3 },
-  { id: "target",  label: "Set Target",        short: "Target",  icon: Target },
   { id: "department-reports", label: "Department Reports", short: "Dept. Sales", icon: CircleDollarSign },
+  { id: "audit-trail", label: "Audit Trail", short: "Audit", icon: ClipboardList },
 ];
 
 export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 0 }) {

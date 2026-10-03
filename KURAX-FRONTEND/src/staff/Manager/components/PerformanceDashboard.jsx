@@ -402,6 +402,9 @@ export default function PerformanceDashboard({ theme = "light" }) {
     });
     return count;
   }, [orders, currentDayDate]);
+  const dailyStaffOrdersCount = useMemo(() => orders.filter(order =>
+    formatOrderDate(order.created_at || order.timestamp) === currentDayDate
+  ).length, [orders, currentDayDate]);
 
   const monthlyRevenue = monthlyIncomeData?.monthly_income || 0;
   const revenueTarget = staffTargets.monthly_income_target || monthlyIncomeData?.monthly_target || 0;
@@ -456,7 +459,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
   }, [credits]);
 
   const orderTarget = staffTargets.daily_order_target || 0;
-  const orderProgress = orderTarget > 0 ? Math.min((dailyStaffItemsCount / orderTarget) * 100, 100) : 0;
+  const orderProgress = orderTarget > 0 ? Math.min((dailyStaffOrdersCount / orderTarget) * 100, 100) : 0;
   const revenueProgress = revenueTarget > 0 ? Math.min((monthlyRevenue / revenueTarget) * 100, 100) : 0;
   const currentMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 
@@ -542,16 +545,19 @@ export default function PerformanceDashboard({ theme = "light" }) {
         {/* ── STAT CARDS ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
 
-          {/* Items Sold */}
+          {/* Orders */}
           <StatCard
             icon={<ClipboardList size={16} />}
             iconBg="bg-orange-500/10" iconColor="text-orange-500"
-            badge="Today" label="Items Sold"
-            value={dailyStaffItemsCount}
-            sub={`/ ${orderTarget || "—"} target`}
+            badge="Today" label="Daily Performance"
             progress={orderProgress}
             progressColor={getProgressColor(orderProgress)}
-          />
+          >
+            <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+              <div><p className="text-[8px] font-bold uppercase text-zinc-400">Orders / target</p><p className="text-lg sm:text-xl font-black text-zinc-900">{dailyStaffOrdersCount}<span className="text-zinc-400">/{orderTarget || "—"}</span></p></div>
+              <div className="text-right"><p className="text-[8px] font-bold uppercase text-zinc-400">Items sold</p><p className="text-lg sm:text-xl font-black text-zinc-900">{dailyStaffItemsCount}</p></div>
+            </div>
+          </StatCard>
 
           {/* Revenue Today */}
           <StatCard
@@ -717,10 +723,10 @@ export default function PerformanceDashboard({ theme = "light" }) {
               {
                 icon: <Target size={13} className="text-yellow-500" />,
                 label: "Daily Target", color: "text-yellow-600", bg: "bg-yellow-50",
-                text: dailyStaffItemsCount >= orderTarget && orderTarget > 0
-                  ? "🎉 Daily item target achieved!"
+                text: dailyStaffOrdersCount >= orderTarget && orderTarget > 0
+                  ? "🎉 Daily order target achieved!"
                   : orderTarget > 0
-                    ? `📋 ${orderTarget - dailyStaffItemsCount} more item${orderTarget - dailyStaffItemsCount !== 1 ? "s" : ""} to reach today's target`
+                    ? `📋 ${orderTarget - dailyStaffOrdersCount} more order${orderTarget - dailyStaffOrdersCount !== 1 ? "s" : ""} to reach today's target`
                     : "📋 No daily target set",
               },
               {

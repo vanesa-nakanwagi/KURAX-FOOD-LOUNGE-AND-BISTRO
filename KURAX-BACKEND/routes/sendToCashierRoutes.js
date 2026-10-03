@@ -2,6 +2,9 @@ import express from "express";
 import pool from "../db.js";
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import logActivity from '../utils/logsActivity.js';
+import { createSalesJournalEntry } from '../helpers/accounting.js';
+import notificationService from '../helpers/notificationService.js';
+import { resolveNotificationUser } from '../middleware/notificationAuth.js';
 
 const router = express.Router();
 
@@ -180,6 +183,17 @@ router.post("/send-to-cashier", async (req, res) => {
 
     const newQueueId = result.rows[0].id;
     console.log(`🔵 Created cashier_queue entry #${newQueueId} for ${method} payment of UGX ${amount}`);
+    const actor = await resolveNotificationUser(req);
+    if (actor?.scope === 'restaurant' && ['WAITER', 'SUPERVISOR', 'MANAGER', 'DIRECTOR'].includes(actor.role)) {
+      void notificationService.sendToRoles(['CASHIER'], {
+        type: method === 'Credit' ? 'CREDIT_CONFIRMATION' : 'PAYMENT_CONFIRMATION',
+        title: method === 'Credit' ? 'Credit Requires Confirmation' : 'Payment Requires Confirmation',
+        body: `A ${String(method).toLowerCase()} payment at ${table_name} is waiting for confirmation.`,
+        department: 'Cashier',
+        referenceId: newQueueId,
+        link: `/cashier?queue=${newQueueId}`,
+      });
+    }
 
     if (formattedOrderIds.length) {
       await pool.query(
@@ -396,6 +410,19 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
     }
 
     await updateDailySummary({ amount: q.amount, method: paymentMethod, orderCount: 0 });
+
+    try {
+      await createSalesJournalEntry({
+        amount: q.amount,
+        paymentMethod: q.method,
+        description: `Sales recorded from ${q.table_name || 'walk-in customer'}`,
+        sourceTransaction: `cashier_queue:${id}`,
+        postedBy: confirmed_by || 'Cashier',
+        entryDate: new Date().toISOString().slice(0, 10),
+      });
+    } catch (journalError) {
+      console.error('Accounting sync failed for sale:', journalError.message);
+    }
 
     await logActivity(pool, 'SALE',
       `${q.table_name || 'Table'} — UGX ${Number(q.amount).toLocaleString()} ${q.method} confirmed by ${confirmed_by || 'Cashier'}`,

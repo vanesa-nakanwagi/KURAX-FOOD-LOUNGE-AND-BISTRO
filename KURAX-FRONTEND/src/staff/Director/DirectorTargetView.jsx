@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { useData } from "../../customer/components/context/DataContext";
+import React, { useState, useEffect } from "react";
 import { useTheme } from "../../customer/components/context/ThemeContext";
+import MonthlyFinancialBreakdown from "../components/MonthlyFinancialBreakdown";
 import API_URL from "../../config/api";
 import {
   Target, TrendingUp, Zap, Calendar, Activity,
-  ChevronLeft, ChevronRight, BarChart3, Clock, AlertCircle, CheckCircle2, Lock, Info
+  ChevronLeft, ChevronRight, BarChart3, Clock, AlertCircle, CheckCircle2, Lock
 } from "lucide-react";
 
 // ✅ FULL NUMBER FORMATTER (no abbreviation)
@@ -15,67 +15,50 @@ function formatFullAmount(n) {
 
 export default function DirectorTargetView() {
   const { theme } = useTheme();
-  const { allOrders = [], monthlyTargets = {}, refreshData } = useData();
   const dark = theme === "dark";
 
   const [viewDate, setViewDate] = useState(new Date());
   const monthKey = viewDate.toISOString().substring(0, 7);
   const monthLabel = viewDate.toLocaleString("default", { month: "long", year: "numeric" }).toUpperCase();
 
-  const targetRevenue = monthlyTargets?.[monthKey]?.revenue || 0;
-
-  const [creditSettlements, setCreditSettlements] = useState(0);
-  const [loadingCredits, setLoadingCredits] = useState(false);
+  const [targetSummary, setTargetSummary] = useState({
+    target: 7000000,
+    grossSales: 0,
+    creditSettlements: 0,
+    expenses: 0,
+    currentCash: 0,
+    remaining: 7000000,
+    percentage: 0,
+  });
 
   useEffect(() => {
-    const fetchCreditSettlements = async () => {
-      setLoadingCredits(true);
+    const fetchTargetSummary = async () => {
       try {
-        const url = `${API_URL}/api/manager/credits-summary?period=monthly&month=${monthKey}`;
-        const res = await fetch(url);
+        const res = await fetch(`${API_URL}/api/manager/target-progress?month=${monthKey}`);
         if (res.ok) {
-          const data = await res.json();
-          setCreditSettlements(Number(data.settled_amount) || 0);
+          setTargetSummary(await res.json());
         }
       } catch (err) {
-        console.error("Failed to fetch credit settlements:", err);
-      } finally {
-        setLoadingCredits(false);
+        console.error("Failed to fetch monthly target summary:", err);
       }
     };
-    fetchCreditSettlements();
+    fetchTargetSummary();
   }, [monthKey]);
 
-  // Filter orders using allOrders – only by date and valid payment method/status
-  const filteredOrders = useMemo(() => {
-    return (allOrders || []).filter(o => {
-      const orderDate = o.date || o.timestamp;
-      if (!orderDate) return false;
-      const isCorrectMonth = orderDate.toString().startsWith(monthKey);
-      const isSuccessful = o.is_archived === true || 
-                           o.status === "Paid" || 
-                           o.status === "CLOSED" ||
-                           o.status === "Served";
-      const hasValidPaymentMethod = (o.payment_method && o.payment_method.trim() !== '') ||
-                                     o.status?.toLowerCase() === 'credit';
-      return isCorrectMonth && isSuccessful && hasValidPaymentMethod;
-    });
-  }, [allOrders, monthKey]);
-
-  const grossSales = useMemo(() => {
-    return filteredOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-  }, [filteredOrders]);
-
-  const totalRevenue = grossSales + creditSettlements;
+  const monthlyTarget = Number(targetSummary.target ?? 7000000);
+  const grossSales = Number(targetSummary.grossSales) || 0;
+  const creditSettlements = Number(targetSummary.creditSettlements) || 0;
+  const expenses = Number(targetSummary.expenses) || 0;
+  const currentCash = Number(targetSummary.currentCash) || 0;
 
   const isCurrentMonth = monthKey === new Date().toISOString().substring(0, 7);
   const totalDays = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
   const elapsedDays = isCurrentMonth ? new Date().getDate() : totalDays;
   const dailyAvg = grossSales / (elapsedDays || 1);
   const projectedRevenue = dailyAvg * totalDays;
-  const progress = targetRevenue > 0 ? Math.min((totalRevenue / targetRevenue) * 100, 100) : 0;
-  const dailyPaceNeeded = totalDays - elapsedDays > 0 ? (targetRevenue - totalRevenue) / (totalDays - elapsedDays) : 0;
-  const isOnTrack = projectedRevenue >= targetRevenue;
+  const progress = Number(targetSummary.percentage) || 0;
+  const dailyPaceNeeded = totalDays - elapsedDays > 0 ? (monthlyTarget - grossSales) / (totalDays - elapsedDays) : 0;
+  const isOnTrack = projectedRevenue >= monthlyTarget;
 
   const handleMonthChange = (offset) => {
     const d = new Date(viewDate);
@@ -108,12 +91,13 @@ export default function DirectorTargetView() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-2">
       <div className={`rounded-2xl border relative overflow-hidden transition-all duration-300 hover:shadow-xl ${cardBg}`}>
         <Lock className="absolute -right-4 -top-4 text-white/5 w-24 h-24 rotate-12" />
         <div className="flex justify-between items-start p-6 relative z-10">
           <div>
             <p className={`text-[10px] font-black uppercase tracking-widest ${subtextClass}`}>Monthly Target</p>
-            <h3 className="text-2xl font-black tracking-tighter italic break-words">{formatFullAmount(targetRevenue)}</h3>
+            <h3 className="text-2xl font-black tracking-tighter italic break-words">{formatFullAmount(monthlyTarget)}</h3>
           </div>
           <div className="flex items-center gap-2"><Calendar size={14} className={subtextClass} /><span className="text-[9px] font-black">{monthKey}</span></div>
         </div>
@@ -130,25 +114,41 @@ export default function DirectorTargetView() {
               <span className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>done</span>
             </div>
           </div>
-          <div className="flex-1 flex flex-col gap-2 min-w-0">
+              <div className="flex-1 flex flex-col gap-2 min-w-0">
             <div className={`p-3 rounded-xl border-l-2 border-emerald-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
-              <div className="flex items-center justify-between">
-                <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Current Revenue</p>
-                <span className="text-[7px] text-gray-400 flex items-center gap-1 cursor-help" title="Gross Sales + Credit Settlements collected this month"><Info size={8} /> info</span>
-              </div>
-              <p className="text-sm font-black italic text-emerald-500 break-words">{formatFullAmount(totalRevenue)}</p>
-              <p className="text-[7px] font-bold text-gray-500 mt-0.5 break-words">{formatFullAmount(grossSales)} + {formatFullAmount(creditSettlements)} (credits)</p>
+              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Gross Sales</p>
+              <p className="text-sm font-black italic text-emerald-500 break-words">{formatFullAmount(grossSales)}</p>
+            </div>
+            <div className={`p-3 rounded-xl border-l-2 border-purple-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
+              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Credit Settlements</p>
+              <p className="text-sm font-black italic text-purple-500 break-words">{formatFullAmount(creditSettlements)}</p>
+            </div>
+            <div className={`p-3 rounded-xl border-l-2 border-rose-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
+              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Expenses</p>
+              <p className="text-sm font-black italic text-rose-500 break-words">{formatFullAmount(expenses)}</p>
             </div>
             <div className={`p-3 rounded-xl border-l-2 border-yellow-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
-              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Target</p>
-              <p className="text-sm font-black italic text-yellow-500 break-words">{formatFullAmount(targetRevenue)}</p>
+              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Current Cash</p>
+              <p className="text-sm font-black italic text-yellow-500 break-words">{formatFullAmount(currentCash)}</p>
             </div>
-            <div className={`p-3 rounded-xl border-l-2 ${dark ? "border-white/20 bg-white/5" : "border-black/20 bg-black/[0.03]"}`}>
+            <div className={`p-3 rounded-xl border-l-2 border-emerald-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
               <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Remaining</p>
-              <p className={`text-sm font-black italic ${subtextClass} break-words`}>{formatFullAmount(Math.max(targetRevenue - totalRevenue, 0))}</p>
+              <p className="text-sm font-black italic text-emerald-500 break-words">{formatFullAmount(Number(targetSummary.remaining) || 0)}</p>
             </div>
           </div>
         </div>
+      </div>
+      <MonthlyFinancialBreakdown
+        month={monthKey}
+        target={monthlyTarget}
+        grossSales={grossSales}
+        creditSettlements={creditSettlements}
+        expenses={expenses}
+        currentCash={currentCash}
+        remaining={Number(targetSummary.remaining) || 0}
+        percentage={progress}
+        isDark={dark}
+      />
       </div>
 
       <div className={`rounded-2xl border p-6 transition-all duration-300 hover:shadow-xl ${cardBg}`}>
@@ -163,7 +163,7 @@ export default function DirectorTargetView() {
           </div>
         </div>
         <p className={`text-[9px] mt-4 ${subtextClass}`}>
-          Based on current daily average of {formatFullAmount(dailyAvg)} over {elapsedDays} days (gross sales only). Credit settlements add {formatFullAmount(creditSettlements)} to total revenue.
+          Based on current daily average of {formatFullAmount(dailyAvg)} over {elapsedDays} days. Credit settlements and expenses are shown separately and do not change sales-target progress.
         </p>
       </div>
 
@@ -175,7 +175,7 @@ export default function DirectorTargetView() {
         </div>
         <div className={`p-5 rounded-2xl border transition-all duration-300 hover:border-yellow-500/30 hover:shadow-lg ${miniCardBg}`}>
           <TrendingUp size={16} className="text-yellow-500 mb-2" />
-          <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${subtextClass}`}>Required / Day (incl. credits)</p>
+          <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${subtextClass}`}>Required Gross Sales / Day</p>
           <p className={`text-xl font-black italic ${textClass} break-words`}>{formatFullAmount(Math.max(0, dailyPaceNeeded))}</p>
         </div>
         <div className={`p-5 rounded-2xl border transition-all duration-300 hover:border-yellow-500/30 hover:shadow-lg ${miniCardBg}`}>
@@ -190,11 +190,11 @@ export default function DirectorTargetView() {
         </div>
       </div>
 
-      {targetRevenue === 0 && (
+      {monthlyTarget === 0 && (
         <div className={`p-4 rounded-2xl border flex items-center gap-3 ${dark ? "bg-yellow-500/10 border-yellow-500/20" : "bg-yellow-50 border-yellow-200"}`}>
           <AlertCircle size={16} className="text-yellow-500" />
           <p className={`text-[10px] font-black uppercase tracking-widest ${dark ? "text-yellow-400" : "text-yellow-700"}`}>
-            No revenue target set for {monthLabel}. Please ask the manager to set a target.
+            No monthly sales target set for {monthLabel}. Please ask the manager to set a target.
           </p>
         </div>
       )}

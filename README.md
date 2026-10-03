@@ -41,3 +41,14 @@ MENU_IMAGE_BUCKET=menu-images
 The backend creates the public `menu-images` bucket on the first upload if it does not exist. Keep the service-role key only in the backend environment; never expose it through a `VITE_` variable or frontend code. Existing `/uploads/...` menu URLs remain readable only while their original backend files exist; they must be re-uploaded if those files have already disappeared.
 
 Set the frontend production `VITE_API_URL` to the publicly reachable HTTPS backend URL. The checked-in `.env.production` currently points at a private `10.x` address, which browsers outside that local network cannot reach.
+
+## Internal Staff Push Notifications
+
+Staff push notifications use the existing React/Vite staff application, Express API, PostgreSQL, and Firebase Cloud Messaging. They are limited to restaurant and Shisha staff; no customer devices or customer-order events are registered.
+
+1. Create a Firebase project and register a Web App. Enable Firebase Cloud Messaging and generate a Web Push certificate key pair. Use the Web App config and public VAPID key in `KURAX-FRONTEND/.env` (start with `.env.example`). The Vite variables are public web-app settings, not service-account credentials.
+2. Configure `FIREBASE_PROJECT_ID` and either `FIREBASE_SERVICE_ACCOUNT_JSON` or Application Default Credentials in the backend environment. Keep the service-account private key only in the backend secret store. Use the same Firebase project on both sides.
+3. Keep a stable `JWT_SECRET` configured for all backend instances. The backend creates the notification-device table during its normal schema initialization.
+4. Rebuild/redeploy the frontend after setting its Firebase variables and restart/redeploy the backend after setting its credentials. Push permission requires HTTPS in production. On iPhone/iPad, install the site to the Home Screen and enable notifications from an authenticated staff page.
+
+Each device registers its Firebase Installation ID and FCM delivery token against the authenticated restaurant or Shisha staff JWT. The Admin SDK sends to FCM tokens; installation IDs identify and deactivate the corresponding device. Department ticket events target their HOD/operator roles, ready events target the originating waiter, cashier requests target cashiers, and Shisha events target Shisha roles. Notification payloads contain internal route/reference metadata, not customer contact or payment details.

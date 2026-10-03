@@ -6,16 +6,17 @@ import Footer from "../../customer/components/common/Foooter";
 import API_URL from "../../config/api";
 
 // Import all section components
-import FinancialHistory from "./sections/FinancialHistory";
 import PhysicalCount from "./sections/PhysicalCount";
 import EndOfShift from "./sections/EndOfShift";
 import LiveAudit from "./sections/LiveAudit";
 import Credits from "./sections/Credits";
-import ViewSales from "./sections/ViewSales";
 import MonthlyCosts from "./MonthlyCosts";
-import ReportsPanel from "./ReportsPanel";
+import AccountingCenter from "./AccountingCenter";
 import ReconciliationOverview from "./sections/ReconciliationOverview";
 import DepartmentHod from "../DepartmentHod";
+import StaffSalesPerformance from "../components/StaffSalesPerformance";
+import SystemConfiguration from "./SystemConfiguration";
+import HistoricalBusinessOverview from "./HistoricalBusinessOverview";
 
 // Import modal components
 import ReopenDayModal from "./modals/ReopenDayModal";
@@ -23,9 +24,19 @@ import StartNewDayModal from "./modals/StartNewDayModal";
 
 import { kampalaDate, fmt, toLocalDateStr, formatCurrencyCompact, getCreditStatus, forceHardRefresh } from "./utils/helpers";
 
+function getBusinessSettingsKey() {
+  try {
+    const user = JSON.parse(localStorage.getItem("kurax_user") || "{}");
+    return `kurax_accounting_business_context_${user.id || user.name || "accountant"}`;
+  } catch {
+    return "kurax_accounting_business_context_accountant";
+  }
+}
+
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function AccountantLayout() {
   const { todaySummary, orders = [], refreshData } = useData() || {};
+  const businessSettingsKey = getBusinessSettingsKey();
 
   const [activeSection, setActiveSection] = useState("DASHBOARD");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -33,6 +44,23 @@ export default function AccountantLayout() {
   const [dayClosed, setDayClosed] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [clockNow, setClockNow] = useState(() => new Date());
+  const [businessSettings, setBusinessSettings] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(businessSettingsKey) || "{}");
+      const today = kampalaDate();
+      return {
+        mode: saved.mode || "LIVE",
+        businessDate: saved.businessDate || today,
+        businessTime: saved.businessTime || "",
+        dateRange: saved.dateRange || { start: `${today.slice(0, 7)}-01`, end: today },
+        timeRange: saved.timeRange || { start: "", end: "" },
+      };
+    } catch {
+      const today = kampalaDate();
+      return { mode: "LIVE", businessDate: today, businessTime: "", dateRange: { start: `${today.slice(0, 7)}-01`, end: today }, timeRange: { start: "", end: "" } };
+    }
+  });
 
   // ── Get logged in user ─────────────────────────────────────────────────────
   const loggedInUser = useMemo(() => {
@@ -47,6 +75,31 @@ export default function AccountantLayout() {
   const userName = loggedInUser?.name || "Accountant";
   const firstName = userName.split(" ")[0];
   const userRole = loggedInUser?.role || "Accountant";
+  const liveDate = kampalaDate(clockNow);
+  const liveTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Kampala", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(clockNow);
+  const businessDate = businessSettings.mode === "LIVE" ? liveDate : businessSettings.businessDate;
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(businessSettingsKey, JSON.stringify(businessSettings));
+  }, [businessSettingsKey, businessSettings]);
+
+  const setHistoricalBusinessDate = (date) => {
+    if (!date) return;
+    setBusinessSettings((current) => ({ ...current, mode: date < liveDate ? "HISTORICAL" : "LIVE", businessDate: date, dateRange: { start: date, end: date } }));
+  };
+
+  const setReportingRange = (dateRange) => {
+    setBusinessSettings((current) => ({ ...current, dateRange, businessDate: dateRange.end || current.businessDate, mode: dateRange.end && dateRange.end < liveDate ? "HISTORICAL" : "LIVE" }));
+  };
+
+  const returnToLive = () => {
+    setBusinessSettings((current) => ({ ...current, mode: "LIVE", businessDate: liveDate, businessTime: "", dateRange: { start: `${liveDate.slice(0, 7)}-01`, end: liveDate }, timeRange: { start: "", end: "" } }));
+  };
 
   // ── Reopen Day State ────────────────────────────────────────────────────────
   const [showReopenModal, setShowReopenModal] = useState(false);
@@ -77,7 +130,7 @@ export default function AccountantLayout() {
   const [creditOutstandingToday, setCreditOutstandingToday] = useState(0);
 
   // ── Today's petty cash ─────────────────────────────────────────────────────
-  const [pettyCashToday, setPettyCashToday] = useState({ total_in: 0, total_out: 0 });
+  const [pettyCashToday, setPettyCashToday] = useState({ total_out: 0 });
 
   // ── Credits ───────────────────────────────────────────────────────────────
   const [creditsLedger, setCreditsLedger] = useState([]);
@@ -91,11 +144,6 @@ export default function AccountantLayout() {
   const [voidHistoryLoading, setVoidHistoryLoading] = useState(false);
 
   // ── Station sales ─────────────────────────────────────────────────────────
-  const [kitchenSummary, setKitchenSummary] = useState(null);
-  const [baristaSummary, setBaristaSummary] = useState(null);
-  const [barmanSummary, setBarmanSummary] = useState(null);
-  const [salesLoading, setSalesLoading] = useState(false);
-  const [salesDate, setSalesDate] = useState(kampalaDate());
 
   // ── Monthly profit / expenses ─────────────────────────────────────────────
   const [profitData, setProfitData] = useState(null);
@@ -108,13 +156,13 @@ export default function AccountantLayout() {
   // ── FETCH LIVE SUMMARY ──────────────────────────────────────────────────────
   const fetchLiveSummary = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/accountant/today?t=${Date.now()}`);
+      const res = await fetch(`${API_URL}/api/accountant/today?date=${encodeURIComponent(businessDate)}&t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
         setLiveSummary(data);
       }
     } catch (e) { console.error("live summary error:", e); }
-  }, []);
+  }, [businessDate]);
 
   useEffect(() => {
     fetchLiveSummary();
@@ -123,15 +171,15 @@ export default function AccountantLayout() {
   }, [fetchLiveSummary]);
 
   const fetchPettyCashToday = useCallback(async () => {
-    if (dayClosed) {
-      setPettyCashToday({ total_in: 0, total_out: 0 });
+    if (dayClosed && businessSettings.mode !== "HISTORICAL") {
+      setPettyCashToday({ total_out: 0 });
       return;
     }
     try {
-      const res = await fetch(`${API_URL}/api/accountant/petty-cash?date=${kampalaDate()}`);
+      const res = await fetch(`${API_URL}/api/accountant/petty-cash?date=${encodeURIComponent(businessDate)}`);
       if (res.ok) setPettyCashToday(await res.json());
     } catch (e) { console.error("petty cash today:", e); }
-  }, [dayClosed]);
+  }, [businessDate, businessSettings.mode, dayClosed]);
 
   useEffect(() => {
     fetchPettyCashToday();
@@ -290,7 +338,7 @@ export default function AccountantLayout() {
       setShowReopenModal(true);
       setTimeout(() => {
         if (activeSection === "REOPEN_DAY") {
-          setActiveSection("FINANCIAL_HISTORY");
+          setActiveSection("DASHBOARD");
         }
       }, 100);
     }
@@ -327,6 +375,20 @@ export default function AccountantLayout() {
   }, [selectedMonth]);
 
   useEffect(() => { fetchMonthlyData(); }, [fetchMonthlyData]);
+
+  useEffect(() => {
+    const events = new EventSource(`${API_URL}/api/accountant/stream`);
+    events.onmessage = (event) => {
+      try {
+        if (JSON.parse(event.data).type === "PETTY") {
+          fetchPettyCashToday();
+          fetchLiveSummary();
+          fetchMonthlyData();
+        }
+      } catch {}
+    };
+    return () => events.close();
+  }, [fetchLiveSummary, fetchMonthlyData, fetchPettyCashToday]);
 
   const loadVoidHistory = useCallback(async () => {
     setVoidHistoryLoading(true);
@@ -376,6 +438,7 @@ export default function AccountantLayout() {
 
   // ─── SAVE PHYSICAL COUNT + CREDIT SUMMARY ─────────────────────────────────
   const savePhysicalCount = async () => {
+    if (businessSettings.mode === "HISTORICAL") return;
     setPhysSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("kurax_user") || "{}");
@@ -434,29 +497,6 @@ export default function AccountantLayout() {
     return () => clearInterval(id);
   }, []);
 
-  const loadSales = useCallback(async (date) => {
-    setSalesLoading(true);
-    const d = date || salesDate;
-    try {
-      const [kRes, brRes, bmRes] = await Promise.allSettled([
-        fetch(`${API_URL}/api/kitchen/tickets/summary?date=${d}`),
-        fetch(`${API_URL}/api/barista/tickets/summary?date=${d}`),
-        fetch(`${API_URL}/api/barman/tickets/summary?date=${d}`),
-      ]);
-      if (kRes.status === "fulfilled" && kRes.value.ok) setKitchenSummary(await kRes.value.json());
-      else setKitchenSummary(null);
-      if (brRes.status === "fulfilled" && brRes.value.ok) setBaristaSummary(await brRes.value.json());
-      else setBaristaSummary(null);
-      if (bmRes.status === "fulfilled" && bmRes.value.ok) setBarmanSummary(await bmRes.value.json());
-      else setBarmanSummary(null);
-    } catch (e) { console.error("sales:", e); }
-    setSalesLoading(false);
-  }, [salesDate]);
-
-  useEffect(() => {
-    if (activeSection === "VIEW_SALES") loadSales(salesDate);
-  }, [activeSection, salesDate, loadSales]);
-
   // ── Derived values ────────────────────────────────────────────────────────
   const src = liveSummary || todaySummary || {};
   const sys = {
@@ -471,10 +511,10 @@ export default function AccountantLayout() {
   };
 
   const totalMobileMoney = sys.mtn + sys.airtel;
-  const pettyCashIn = Number(pettyCashToday.total_in) || 0;
-  const adjustedPhysCash = physCash - pettyCashIn;
+  const pettyExpenses = Number(pettyCashToday.total_out) || 0;
+  const counterSys = { ...sys, cash: Number(src.cash_on_counter ?? (sys.cash - pettyExpenses)) };
 
-  const varCash = adjustedPhysCash - sys.cash;
+  const varCash = physCash - counterSys.cash;
   const varMTN = physMomoMTN - sys.mtn;
   const varAirtel = physMomoAirtel - sys.airtel;
   const varCard = physCard - sys.card;
@@ -531,6 +571,10 @@ export default function AccountantLayout() {
   };
 
   const handleDayClosure = async () => {
+    if (businessSettings.mode === "HISTORICAL") {
+      setError("Return to live mode before closing the current business day.");
+      return;
+    }
     if (!hasPhysicalCount) {
       alert("⚠️ Please enter the physical count first before closing the day!\n\nGo to PHYSICAL COUNT section and enter all cash, mobile money, and card totals.");
       setActiveSection("PHYSICAL_COUNT");
@@ -590,9 +634,6 @@ export default function AccountantLayout() {
       setLiveSummary({ total_cash: 0, total_card: 0, total_mtn: 0, total_airtel: 0, total_gross: 0, order_count: 0, pending_credit_requests_amount: 0, credit_settlements_today: 0 });
       setVoidRequests([]);
       setVoidHistory([]);
-      setKitchenSummary(null);
-      setBaristaSummary(null);
-      setBarmanSummary(null);
       setProfitData(null);
       
       setPhysCash(0);
@@ -601,7 +642,7 @@ export default function AccountantLayout() {
       setPhysCard(0);
       setPhysNotes("");
       setHasPhysicalCount(false);
-      setPettyCashToday({ total_in: 0, total_out: 0 });
+      setPettyCashToday({ total_out: 0 });
       
       window.dispatchEvent(new CustomEvent('dayClosed', { detail: data }));
       window.dispatchEvent(new Event('refresh'));
@@ -642,7 +683,7 @@ export default function AccountantLayout() {
       setPhysMomoAirtel(0);
       setPhysCard(0);
       setHasPhysicalCount(false);
-      setPettyCashToday({ total_in: 0, total_out: 0 });
+      setPettyCashToday({ total_out: 0 });
       if (typeof refreshData === "function") refreshData();
       fetchLiveSummary();
       loadPhysicalCount();
@@ -676,7 +717,7 @@ export default function AccountantLayout() {
             setPhysMomoAirtel(0);
             setPhysCard(0);
             setHasPhysicalCount(false);
-            setPettyCashToday({ total_in: 0, total_out: 0 });
+            setPettyCashToday({ total_out: 0 });
           }
         }
       } catch (e) {
@@ -699,12 +740,18 @@ export default function AccountantLayout() {
           isDark={false}
           voidCount={voidRequests.length}
           creditCount={creditCount}
+          historicalMode={businessSettings.mode === "HISTORICAL"}
         />
       </div>
 
       {/* Main content area - This scrolls */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto h-screen">
         <main className="p-4 md:p-10 space-y-8 flex-1 overflow-y-auto">
+          {businessSettings.mode === "HISTORICAL" && (
+            <div role="alert" className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-l-4 border-amber-600 bg-amber-100 px-4 py-3 text-sm font-black text-amber-950 shadow-sm">
+              <AlertTriangle size={17} /> HISTORICAL BUSINESS DATE: {businessDate}
+            </div>
+          )}
           
           {/* Welcome Header Section */}
           <div className="mb-8 flex justify-between items-end">
@@ -732,7 +779,7 @@ export default function AccountantLayout() {
             </div>
           </div>
 
-          {dayClosed && (
+          {dayClosed && businessSettings.mode !== "HISTORICAL" && (
             <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-center animate-in fade-in duration-500">
               <div className="flex items-center justify-center gap-2">
                 <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">
@@ -742,15 +789,23 @@ export default function AccountantLayout() {
             </div>
           )}
 
-          {activeSection === "DASHBOARD" && (
+          {activeSection === "DASHBOARD" && businessSettings.mode === "HISTORICAL" && (
+            <HistoricalBusinessOverview
+              API_URL={API_URL}
+              dateRange={businessSettings.dateRange}
+              timeRange={businessSettings.timeRange}
+              onOpenReports={() => setActiveSection("REPORTS")}
+            />
+          )}
+
+          {activeSection === "DASHBOARD" && businessSettings.mode !== "HISTORICAL" && (
             <ReconciliationOverview
               dayClosed={dayClosed}
-              sys={sys}
+              sys={counterSys}
               physCash={physCash}
               physMomoMTN={physMomoMTN}
               physMomoAirtel={physMomoAirtel}
               physCard={physCard}
-              pettyCashIn={pettyCashIn}
               pettyCashToday={pettyCashToday}
               varCash={varCash}
               varMTN={varMTN}
@@ -784,24 +839,7 @@ export default function AccountantLayout() {
             />
           )}
 
-          {activeSection === "FINANCIAL_HISTORY" && (
-            <FinancialHistory
-              dayClosed={dayClosed}
-              sys={sys}
-              totalMobileMoney={totalMobileMoney}
-              totalSettledToday={totalSettledToday}
-              selectedMonth={selectedMonth}
-              profitData={profitData}
-              profitLoad={profitLoad}
-              fetchMonthlyData={fetchMonthlyData}
-              API_URL={API_URL}
-              isDark={false}
-              hasPhysicalCount={hasPhysicalCount}
-              setActiveSection={setActiveSection}
-            />
-          )}
-
-          {activeSection === "PHYSICAL_COUNT" && (
+          {activeSection === "PHYSICAL_COUNT" && businessSettings.mode === "LIVE" && (
             <PhysicalCount
               dayClosed={dayClosed}
               physLoading={physLoading}
@@ -815,9 +853,7 @@ export default function AccountantLayout() {
               setPhysCard={setPhysCard}
               physNotes={physNotes}
               setPhysNotes={setPhysNotes}
-              pettyCashIn={pettyCashIn}
-              sys={sys}
-              adjustedPhysCash={adjustedPhysCash}
+              sys={counterSys}
               varCash={varCash}
               varMTN={varMTN}
               varAirtel={varAirtel}
@@ -836,7 +872,7 @@ export default function AccountantLayout() {
             />
           )}
 
-          {activeSection === "END_OF_SHIFT" && (
+          {activeSection === "END_OF_SHIFT" && businessSettings.mode === "LIVE" && (
             <EndOfShift
               dayClosed={dayClosed}
               hasPhysicalCount={hasPhysicalCount}
@@ -887,20 +923,6 @@ export default function AccountantLayout() {
             />
           )}
 
-          {activeSection === "VIEW_SALES" && (
-            <ViewSales
-              salesDate={salesDate}
-              setSalesDate={setSalesDate}
-              salesLoading={salesLoading}
-              kitchenSummary={kitchenSummary}
-              baristaSummary={baristaSummary}
-              barmanSummary={barmanSummary}
-              loadSales={loadSales}
-              isDark={false}
-              textClass={textClass}
-            />
-          )}
-
           {activeSection === "MONTHLY_COSTS" && (
             <MonthlyCosts
               month={selectedMonth}
@@ -910,15 +932,49 @@ export default function AccountantLayout() {
               onRefresh={fetchMonthlyData}
               dark={false}
               API_URL={API_URL}
+              historicalMode={businessSettings.mode === "HISTORICAL"}
             />
           )}
 
-          {/* NEW: Reports Section */}
           {activeSection === "REPORTS" && (
-            <ReportsPanel dark={false} />
+            <AccountingCenter
+              setActiveSection={setActiveSection}
+              initialDateRange={businessSettings.dateRange}
+              timeRange={businessSettings.timeRange}
+              onDateRangeChange={setReportingRange}
+            />
           )}
 
-          {activeSection === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded />}
+          {activeSection === "STAFF_PERFORMANCE" && (
+            <StaffSalesPerformance
+              role="ACCOUNTANT"
+              initialRange={businessSettings.dateRange}
+              timeRange={businessSettings.timeRange}
+              historicalMode={businessSettings.mode === "HISTORICAL"}
+              onDateRangeChange={setReportingRange}
+            />
+          )}
+
+          {activeSection === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded initialRange={businessSettings.dateRange} />}
+
+          {activeSection === "SYSTEM_CONFIGURATION" && (
+            <SystemConfiguration
+              API_URL={API_URL}
+              userName={userName}
+              liveDate={liveDate}
+              liveTime={liveTime}
+              mode={businessSettings.mode}
+              businessDate={businessDate}
+              onBusinessDateChange={setHistoricalBusinessDate}
+              businessTime={businessSettings.businessTime}
+              onBusinessTimeChange={(businessTime) => setBusinessSettings((current) => ({ ...current, businessTime }))}
+              dateRange={businessSettings.dateRange}
+              onDateRangeChange={setReportingRange}
+              timeRange={businessSettings.timeRange}
+              onTimeRangeChange={(timeRange) => setBusinessSettings((current) => ({ ...current, timeRange }))}
+              onReturnToLive={returnToLive}
+            />
+          )}
 
         </main>
         <Footer isDark={false} />

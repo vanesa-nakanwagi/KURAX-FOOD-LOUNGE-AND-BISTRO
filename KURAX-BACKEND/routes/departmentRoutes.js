@@ -302,15 +302,30 @@ router.get('/reports/consolidated', async (req, res) => {
         [range.from, range.to]
         ),
         pool.query(
-          `SELECT a.assigned_to AS staff_name, COUNT(*)::int AS items_assigned,
-            COUNT(*) FILTER (WHERE t.status IN ('Ready','Served','Paid'))::int AS completed_items
-           FROM public.${department.assignments} a JOIN public.${department.table} t ON t.id=a.ticket_id
+          `SELECT COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) AS staff_name,
+            COUNT(*)::int AS items_assigned,
+            COUNT(*) FILTER (WHERE t.status IN ('Ready','Served','Paid'))::int AS completed_items,
+            COALESCE(SUM(COALESCE(
+              NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
+              COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
+                * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
+            )),0) AS total_sales
+           FROM public.${department.table} t
+           CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
            WHERE t.ticket_date BETWEEN $1::date AND $2::date
-           GROUP BY a.assigned_to ORDER BY items_assigned DESC, staff_name`,
+             AND COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) IS NOT NULL
+             AND ${department.paidItemFilter}
+           GROUP BY COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to',''))
+           ORDER BY total_sales DESC, 1`,
           [range.from, range.to]
         ),
       ]);
-      return { department: key, label: department.label, ...result.rows[0], staff_performance: performance.rows };
+      return {
+        department: key,
+        label: department.label,
+        ...result.rows[0],
+        staff_performance: performance.rows.map(person => ({ ...person, worker_role: department.staffRole })),
+      };
     }));
     const shisha = await pool.query(
       `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(total_amount),0) AS total_sales,
@@ -321,8 +336,11 @@ router.get('/reports/consolidated', async (req, res) => {
       [range.from, range.to]
     );
     const shishaPerformance = await pool.query(
-      `SELECT s.name AS staff_name, COUNT(o.id)::int AS items_assigned,
-        COUNT(o.id) FILTER (WHERE o.order_status IN ('READY','SERVED','FULLY_PAID','PARTIALLY_PAID'))::int AS completed_items
+      `SELECT s.name AS staff_name,
+        CASE WHEN s.role='SHISHA_CHEF' THEN 'MIXER' ELSE 'SHISHA_WAITER' END AS worker_role,
+        COUNT(o.id)::int AS items_assigned,
+        COUNT(o.id) FILTER (WHERE o.order_status IN ('READY','SERVED','FULLY_PAID','PARTIALLY_PAID'))::int AS completed_items,
+        COALESCE(SUM(o.total_amount),0) AS total_sales
        FROM public.shisha_staff s
        LEFT JOIN public.shisha_orders o ON
          ((s.role='SHISHA_WAITER' AND o.shisha_waiter_id=s.id) OR
@@ -387,12 +405,21 @@ router.get('/:department/reports', async (req, res) => {
         [range.from, range.to]
       ),
       pool.query(
-        `SELECT a.assigned_to AS staff_name, COUNT(*)::int AS items_assigned,
-          COUNT(*) FILTER (WHERE t.status IN ('Ready','Served','Paid'))::int AS completed_items
-         FROM public.${department.assignments} a
-         JOIN public.${department.table} t ON t.id=a.ticket_id
+        `SELECT COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) AS staff_name,
+          COUNT(*)::int AS items_assigned,
+          COUNT(*) FILTER (WHERE t.status IN ('Ready','Served','Paid'))::int AS completed_items,
+          COALESCE(SUM(COALESCE(
+            NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
+            COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
+              * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
+          )),0) AS total_sales
+         FROM public.${department.table} t
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
          WHERE t.ticket_date BETWEEN $1::date AND $2::date
-         GROUP BY a.assigned_to ORDER BY items_assigned DESC, staff_name`,
+           AND COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) IS NOT NULL
+           AND ${department.paidItemFilter}
+         GROUP BY COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to',''))
+         ORDER BY total_sales DESC, 1`,
         [range.from, range.to]
       ),
     ]);

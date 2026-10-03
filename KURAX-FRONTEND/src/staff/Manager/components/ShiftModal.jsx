@@ -156,7 +156,7 @@ export default function ShiftReportModal({
                 )}
 
                 <div className="bg-yellow-500 p-5 rounded-2xl text-black text-center mb-4">
-                  <p className="text-[9px] font-black uppercase opacity-60">Gross Revenue</p>
+                  <p className="text-[9px] font-black uppercase opacity-60">Gross Sales</p>
                   <p className="text-3xl font-black">UGX {totals.all.toLocaleString()}</p>
                 </div>
               </>

@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../db.js';
-import { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
+import logActivity, { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
+import { createPettyExpense, getCounterCash } from '../helpers/pettyCash.js';
 
 const router = express.Router();
 
@@ -343,20 +344,19 @@ router.get('/petty-cash', async (req, res) => {
     const result = await pool.query(
       `SELECT *
        FROM petty_cash
-       WHERE entry_date = $1
+      WHERE entry_date = $1 AND direction = 'OUT'
        ORDER BY created_at DESC`,
       [today]
     );
 
     const entries   = result.rows;
-    const total_out = entries.filter(e => e.direction === 'OUT').reduce((s, e) => s + Number(e.amount), 0);
-    const total_in  = entries.filter(e => e.direction === 'IN' ).reduce((s, e) => s + Number(e.amount), 0);
+    const total_out = entries.reduce((sum, entry) => sum + Number(entry.amount), 0);
+    const { cashOnCounter } = await getCounterCash(pool, today);
 
-    console.log(`✅ Petty cash: IN=${total_in}, OUT=${total_out}, Net=${total_in - total_out}`);
+    console.log(`✅ Petty expenses: OUT=${total_out}`);
     res.json({
       total_out,
-      total_in,
-      net: total_in - total_out,
+      cash_on_counter: cashOnCounter,
       entries,
     });
   } catch (err) {
@@ -370,26 +370,34 @@ router.post('/petty-cash', async (req, res) => {
   const { amount, direction, category, description, logged_by } = req.body;
   console.log(`🔵 /petty-cash POST: ${direction} UGX ${amount} - ${description}`);
 
-  if (!amount || !direction || !description) {
-    return res.status(400).json({ error: 'amount, direction, and description are required' });
+  const expenseAmount = Number(amount);
+  if (!Number.isFinite(expenseAmount) || expenseAmount <= 0 || !description?.trim()) {
+    return res.status(400).json({ error: 'A positive amount and description are required' });
   }
-  if (!['IN', 'OUT'].includes(direction)) {
-    return res.status(400).json({ error: 'direction must be IN or OUT' });
+  if (direction && direction !== 'OUT') {
+    return res.status(400).json({ error: 'Petty cash entries must be expenses' });
   }
 
   const today = kampalaDate();
   try {
-    const result = await pool.query(
-      `INSERT INTO petty_cash (amount, direction, category, description, logged_by, entry_date)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [Number(amount), direction, category || 'General', description.trim(), logged_by || 'Director', today]
-    );
-    console.log(`✅ Petty cash entry created: ID ${result.rows[0].id}`);
-    res.status(201).json(result.rows[0]);
+    const saved = await createPettyExpense(pool, {
+      amount: expenseAmount,
+      category: category || 'General',
+      description: description.trim(),
+      logged_by: logged_by || 'Director',
+      entry_date: today,
+    });
+    await logActivity(pool, {
+      type: 'PETTY',
+      actor: logged_by || 'Director',
+      role: 'ACCOUNTANT',
+      message: `Petty expense: UGX ${expenseAmount.toLocaleString()} (${description.trim()})`,
+    });
+    console.log(`✅ Petty expense created: ID ${saved.entry.id}`);
+    res.status(201).json({ ...saved.entry, cash_before: saved.cashBefore, cash_after: saved.cashAfter });
   } catch (err) {
     console.error('❌ Petty Cash POST Error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -398,7 +406,17 @@ router.delete('/petty-cash/:id', async (req, res) => {
   const { id } = req.params;
   console.log(`🔵 /petty-cash DELETE id: ${id}`);
   try {
-    await pool.query('DELETE FROM petty_cash WHERE id = $1', [id]);
+    const result = await pool.query(
+      "DELETE FROM petty_cash WHERE id = $1 AND direction = 'OUT' RETURNING amount",
+      [id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Petty expense not found' });
+    await logActivity(pool, {
+      type: 'PETTY',
+      actor: 'Director',
+      role: 'ACCOUNTANT',
+      message: `Petty expense deleted: UGX ${Number(result.rows[0].amount).toLocaleString()}`,
+    });
     console.log(`✅ Petty cash entry ${id} deleted`);
     res.json({ success: true });
   } catch (err) {

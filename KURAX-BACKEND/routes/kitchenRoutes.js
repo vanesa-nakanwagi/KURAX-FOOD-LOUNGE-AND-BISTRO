@@ -9,6 +9,8 @@
 import express from 'express';
 import pool    from '../db.js';
 import logActivity from '../utils/logsActivity.js';
+import notificationService from '../helpers/notificationService.js';
+import { resolveNotificationUser } from '../middleware/notificationAuth.js';
 
 const router = express.Router();
 
@@ -43,6 +45,17 @@ router.post('/tickets', async (req, res) => {
        RETURNING *`,
       [order_id, table_name, staff_name || 'System', staff_role || 'WAITER', JSON.stringify(assignedItems), ticketTotal || Number(total), status, kampalaDate()]
     );
+    const actor = await resolveNotificationUser(req);
+    if (actor?.scope === 'restaurant' && ['WAITER', 'SUPERVISOR', 'MANAGER', 'DIRECTOR', 'KITCHEN_HOD'].includes(actor.role)) {
+      void notificationService.sendToRoles(['KITCHEN_HOD', 'CHEF'], {
+        type: 'KITCHEN_ORDER',
+        title: 'New Kitchen Order',
+        body: `Order #${order_id} requires preparation.`,
+        department: 'Kitchen',
+        referenceId: order_id,
+        link: `/kitchen?order=${order_id}`,
+      });
+    }
 
     await logActivity(pool, {
       type: 'ORDER',
@@ -126,7 +139,23 @@ router.patch('/tickets/:id/status', async (req, res) => {
     );
     const ticket = result.rows[0];
 
-    if (status === 'Ready') {
+    const actor = status === 'Ready' ? await resolveNotificationUser(req) : null;
+    if (status === 'Ready' && actor?.scope === 'restaurant' && ['CHEF', 'KITCHEN_HOD'].includes(actor.role)) {
+      try {
+        const orderResult = await pool.query('SELECT staff_id FROM public.orders WHERE id = $1', [ticket.order_id]);
+        if (orderResult.rows[0]?.staff_id) {
+          void notificationService.sendToUser(orderResult.rows[0].staff_id, {
+            type: 'ORDER_READY',
+            title: 'Kitchen Order Ready',
+            body: `Order #${ticket.order_id} is ready for service.`,
+            department: 'Kitchen',
+            referenceId: ticket.order_id,
+            link: `/staff/waiter?order=${ticket.order_id}`,
+          });
+        }
+      } catch (notificationError) {
+        console.error('Kitchen ready notification lookup failed:', notificationError.message);
+      }
       await logActivity(pool, {
         type: 'ORDER',
         actor: chef_name || 'Kitchen',

@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Check, ChefHat, ClipboardList, CircleDollarSign, Coffee, LogOut, RefreshCw, Users, Wine } from 'lucide-react';
+import { ArrowRight, Check, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Users, Wine } from 'lucide-react';
 import API_URL from '../config/api';
+import { downloadReportPdf } from './reportExport';
 
 const DEPARTMENTS = {
   kitchen: { label: 'Kitchen', title: 'Kitchen station', role: 'KITCHEN_HOD', station: 'kitchen', workerRole: 'CHEF', icon: ChefHat },
   bar: { label: 'Bar', title: 'Bar station', role: 'BAR_HOD', station: 'barman', workerRole: 'BARMAN', icon: Wine },
   barista: { label: 'Barista', title: 'Barista station', role: 'BARISTA_HOD', station: 'barista', workerRole: 'BARISTA', icon: Coffee },
 };
-const PRESETS = ['Today', 'Yesterday', 'This Week', 'This Month', 'Custom'];
+const PRESETS = ['Today', 'Yesterday', 'This Week', 'This Month', 'Select Month', 'Custom'];
 
 function kampalaToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
@@ -28,6 +29,12 @@ function datesFor(preset) {
   }
   if (preset === 'This Month') return [`${today.slice(0, 7)}-01`, today];
   return [today, today];
+}
+
+function datesForMonth(month) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const lastDay = String(new Date(year, monthNumber, 0).getDate()).padStart(2, '0');
+  return [`${month}-01`, `${month}-${lastDay}`];
 }
 
 function money(value) {
@@ -50,7 +57,7 @@ async function request(path, token, options = {}) {
   return data;
 }
 
-export default function DepartmentHod({ department: departmentKey = 'all', embedded = false }) {
+export default function DepartmentHod({ department: departmentKey = 'all', embedded = false, initialRange = null }) {
   const navigate = useNavigate();
   const [session] = useState(readSession);
   const [staff, setStaff] = useState([]);
@@ -60,8 +67,9 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   const [assignmentSelections, setAssignmentSelections] = useState({});
   const [assigningOrderId, setAssigningOrderId] = useState(null);
   const [report, setReport] = useState(null);
-  const [preset, setPreset] = useState('Today');
-  const [[from, to], setRange] = useState(() => datesFor('Today'));
+  const [preset, setPreset] = useState(() => initialRange ? 'Custom' : 'Today');
+  const [reportMonth, setReportMonth] = useState(() => kampalaToday().slice(0, 7));
+  const [[from, to], setRange] = useState(() => initialRange?.start && initialRange?.end ? [initialRange.start, initialRange.end] : datesFor('Today'));
   const [form, setForm] = useState({ name: '', email: '', pin: '' });
   const [tab, setTab] = useState(departmentKey === 'all' ? 'reports' : 'orders');
   const [ticketView, setTicketView] = useState('active');
@@ -69,6 +77,13 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
+
+  useEffect(() => {
+    if (initialRange?.start && initialRange?.end) {
+      setRange([initialRange.start, initialRange.end]);
+      setPreset('Custom');
+    }
+  }, [initialRange?.start, initialRange?.end]);
   const config = DEPARTMENTS[departmentKey];
   const DepartmentIcon = config?.icon || ClipboardList;
   const role = String(session?.role || '').toUpperCase();
@@ -116,7 +131,76 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
 
   function choosePreset(nextPreset) {
     setPreset(nextPreset);
-    if (nextPreset !== 'Custom') setRange(datesFor(nextPreset));
+    if (nextPreset === 'Select Month') setRange(datesForMonth(reportMonth));
+    else if (nextPreset !== 'Custom') setRange(datesFor(nextPreset));
+  }
+
+  function downloadDepartmentReport() {
+    if (!report || report.from !== from || report.to !== to) return;
+    downloadReportPdf({
+      filename: `${departmentKey}-report-${from}-to-${to}.pdf`,
+      title: `${config.label} Department Report`,
+      from: report.from,
+      to: report.to,
+      sections: [
+        {
+          title: 'Summary',
+          columns: ['Metric', 'Value'],
+          rows: [
+            ['Orders', report.summary?.total_orders ?? 0],
+            ['Sales', money(report.summary?.total_sales)],
+            ['Collected', money(report.summary?.amount_collected)],
+            ['Outstanding', money(report.summary?.outstanding_balance)],
+          ],
+        },
+        {
+          title: `Sales by ${config.workerRole.toLowerCase()}`,
+          columns: ['Staff member', 'Items assigned', 'Completed items', 'Sales'],
+          rows: (report.staff_performance || []).map(person => [person.staff_name, person.items_assigned, person.completed_items, money(person.total_sales)]),
+        },
+      ],
+    });
+  }
+
+  function downloadConsolidatedReport() {
+    if (!report || report.from !== from || report.to !== to) return;
+    const departments = report.departments || [];
+    const totals = departments.reduce((result, department) => ({
+      orders: result.orders + Number(department.total_orders || 0),
+      sales: result.sales + Number(department.total_sales || 0),
+      collected: result.collected + Number(department.amount_collected || 0),
+      outstanding: result.outstanding + Number(department.outstanding_balance || 0),
+    }), { orders: 0, sales: 0, collected: 0, outstanding: 0 });
+    const staffPerformance = departments.flatMap(department => (department.staff_performance || []).map(person => [
+      department.label,
+      String(person.worker_role || '').replaceAll('_', ' '),
+      person.staff_name,
+      person.items_assigned,
+      person.completed_items,
+      money(person.total_sales),
+    ]));
+
+    downloadReportPdf({
+      filename: `department-report-${from}-to-${to}.pdf`,
+      title: 'Department Sales Report',
+      from: report.from,
+      to: report.to,
+      sections: [
+        {
+          title: 'Sales by department',
+          columns: ['Department', 'Orders', 'Sales', 'Collected', 'Unpaid balance'],
+          rows: [
+            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), money(department.amount_collected), money(department.outstanding_balance)]),
+            ['All departments', totals.orders, money(totals.sales), money(totals.collected), money(totals.outstanding)],
+          ],
+        },
+        {
+          title: 'Sales by department staff',
+          columns: ['Department', 'Role', 'Staff member', 'Handled', 'Completed', 'Sales'],
+          rows: staffPerformance,
+        },
+      ],
+    });
   }
 
   async function addStaff(event) {
@@ -204,15 +288,15 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           </div>
         </header>
       ) : (
-        <header className={`${embedded ? '' : 'sticky top-0 z-30'} border-b border-yellow-500 bg-yellow-400 text-black`}>
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
+        <header className={`${embedded ? '' : 'sticky top-0 z-30'} border-b border-yellow-500 bg-yellow-500 text-black`}>
+          <div className="mx-auto flex w-full items-center justify-between gap-4 px-5 py-4 sm:px-8">
             <div><p className="text-xs font-black uppercase tracking-[0.2em]">Kurax Operations</p><h1 className="mt-1 text-2xl font-black">Department reporting</h1></div>
             <div className="flex items-center gap-3 text-sm"><span className="hidden sm:block">{session.name}</span>{!embedded && <button title="Sign out" onClick={signOut} className="rounded-md border border-black/20 p-2 hover:bg-black/10"><LogOut size={18} /></button>}</div>
           </div>
         </header>
       )}
       {!isManagement && <div className="mx-auto mb-6 flex max-w-[1440px] flex-col justify-between gap-4 px-5 pt-6 sm:flex-row sm:items-end md:px-8"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Department control</p><h1 className="mt-1 text-3xl font-black tracking-tight">{config.title}</h1></div><div className="text-xs font-medium text-zinc-500">Connected to restaurant orders and waiter updates</div></div>}
-      <div className={`mx-auto ${isManagement ? 'max-w-7xl px-5 py-6 sm:px-8' : 'max-w-[1440px] px-5 pb-8 md:px-8'}`}>
+      <div className={`mx-auto ${isManagement ? 'w-full px-5 py-6 sm:px-8' : 'max-w-[1440px] px-5 pb-8 md:px-8'}`}>
         {!isManagement && <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-zinc-200" aria-label="Department workspace">
           {tabs.map(([key, label, Icon]) => <button key={key} onClick={() => setTab(key)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition ${tab === key ? 'border-amber-600 text-zinc-950' : 'border-transparent text-zinc-500 hover:text-zinc-900'}`}><Icon size={16} /> {label}</button>)}
         </nav>}
@@ -256,8 +340,10 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
 
         {tab === 'reports' && <section>
           <div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-xl font-black">{isManagement ? 'Sales by department' : `${config.label} report`}</h2><p className="mt-1 text-sm text-stone-600">{from} to {to}</p></div><div className="flex flex-wrap gap-2" role="group" aria-label="Report date range">
-            {PRESETS.map(option => <button key={option} onClick={() => choosePreset(option)} className={`rounded-lg px-3 py-2 text-xs font-bold ${preset === option ? (isManagement ? 'bg-yellow-400 text-black' : 'bg-zinc-900 text-white') : 'border border-zinc-200 bg-white text-zinc-600'}`}>{option}</button>)}
+            {PRESETS.map(option => <button key={option} onClick={() => choosePreset(option)} className={`rounded-lg px-3 py-2 text-xs font-bold ${preset === option ? (isManagement ? 'bg-yellow-500 text-black' : 'bg-zinc-900 text-white') : 'border border-zinc-200 bg-white text-zinc-600'}`}>{option}</button>)}
+            {preset === 'Select Month' && <input aria-label="Report month" type="month" value={reportMonth} onChange={event => { if (!event.target.value) return; setReportMonth(event.target.value); setRange(datesForMonth(event.target.value)); }} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" />}
             {preset === 'Custom' && <><input aria-label="From date" type="date" value={from} onChange={event => setRange([event.target.value, to])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /><input aria-label="To date" type="date" value={to} onChange={event => setRange([from, event.target.value])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /></>}
+            <button type="button" onClick={isManagement ? downloadConsolidatedReport : downloadDepartmentReport} disabled={!report || report.from !== from || report.to !== to} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 ${isManagement ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-amber-400 hover:bg-amber-300'}`}><Download size={15} /> Download PDF</button>
           </div></div>
           {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr><th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th><th className="p-3">Collected</th><th className="p-3">Unpaid balance</th></tr></thead><tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200"><td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td><td className="p-3">{money(row.amount_collected)}</td><td className="p-3">{money(row.outstanding_balance)}</td></tr>)}</tbody><tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr><td className="p-3">All departments</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.total_orders || 0), 0)}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.total_sales || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.amount_collected || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_balance || 0), 0))}</td></tr></tfoot></table></div> : <>
             <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Orders', summary.total_orders], ['Sales', money(summary.total_sales)], ['Collected', money(summary.amount_collected)], ['Outstanding', money(summary.outstanding_balance)]].map(([label, value]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-3 text-2xl font-black">{value}</p></article>)}</div>

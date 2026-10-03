@@ -1,6 +1,8 @@
 import express from 'express';
 import pool from '../db.js';
 import PDFDocument from 'pdfkit';
+import { getCounterCash } from '../helpers/pettyCash.js';
+import { calculateMonthlyFinancials, getMonthlyFinancials } from '../helpers/monthlyFinancials.js';
 
 const router = express.Router();
 
@@ -86,37 +88,16 @@ router.get('/target-progress', async (req, res) => {
   try {
     const monthKey = req.query.month || new Date().toISOString().substring(0, 7);
 
-    const revenueResult = await pool.query(`
-      SELECT COALESCE(SUM(o.total), 0) AS current_total
-      FROM orders o
-      WHERE TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
-        AND (
-          o.is_archived = true
-          OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'credit', 'served')
-        )
-        AND o.payment_confirmed = true
-        AND UPPER(COALESCE(o.payment_method,'')) NOT LIKE '%CREDIT%'
-    `, [monthKey]);
-
-    const creditResult = await pool.query(`
-      SELECT COALESCE(SUM(cs.amount_paid), 0) AS credit_settled
-      FROM credit_settlements cs
-      JOIN credits c ON cs.credit_id = c.id
-      WHERE TO_CHAR(cs.created_at AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
-        AND c.status IN ('FullySettled', 'PartiallySettled')
-    `, [monthKey]);
-
-    const currentTotal  = parseFloat(revenueResult.rows[0].current_total || 0);
-    const creditSettled = parseFloat(creditResult.rows[0].credit_settled  || 0);
-    const totalWithCredits = currentTotal + creditSettled;
+    const financials = await getMonthlyFinancials(pool, monthKey);
 
     const targetResult = await pool.query(
       `SELECT revenue_goal FROM business_targets WHERE month_key = $1`, [monthKey]
     );
-    const targetGoal = parseFloat(targetResult.rows[0]?.revenue_goal || 6000000);
+    const targetGoal = parseFloat(targetResult.rows[0]?.revenue_goal || 7000000);
     const percentage = targetGoal > 0
-      ? parseFloat(((totalWithCredits / targetGoal) * 100).toFixed(2))
+      ? Math.min(parseFloat(((financials.grossSales / targetGoal) * 100).toFixed(2)), 100)
       : 0;
+    const remaining = Math.max(targetGoal - financials.grossSales, 0);
 
     const todayResult = await pool.query(`
       SELECT COALESCE(SUM(CASE 
@@ -141,8 +122,18 @@ router.get('/target-progress', async (req, res) => {
     const todayRevenue =
       parseFloat(todayResult.rows[0].cash_revenue || 0) +
       parseFloat(todayCreditResult.rows[0].credit_settled || 0);
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Nairobi' }).format(new Date());
+    const { cashOnCounter } = await getCounterCash(pool, today);
 
-    res.json({ target: targetGoal, current: totalWithCredits, percentage, todayRevenue });
+    res.json({
+      target: targetGoal,
+      ...financials,
+      total_collected: financials.totalCollected,
+      remaining,
+      percentage,
+      todayRevenue,
+      cash_on_counter: cashOnCounter,
+    });
   } catch (err) {
     console.error("Target Progress Error:", err.message);
     res.status(500).json({ error: err.message });
@@ -384,6 +375,8 @@ router.get("/staff-sales-performance", async (req, res) => {
     const {
       startDate,
       endDate,
+      startTime,
+      endTime,
       staffId,
       role,
       paymentStatus = "all"
@@ -406,6 +399,12 @@ router.get("/staff-sales-performance", async (req, res) => {
     }
     if (endDate) {
       orderConditions.push(`DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') <= ${addParam(endDate)}`);
+    }
+    if (startTime) {
+      orderConditions.push(`(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')::time >= ${addParam(startTime)}::time`);
+    }
+    if (endTime) {
+      orderConditions.push(`(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')::time <= ${addParam(endTime)}::time`);
     }
     if (staffId) orderConditions.push(`s.id = ${addParam(staffId)}`);
     if (role && ['WAITER', 'MANAGER', 'SUPERVISOR'].includes(role.toUpperCase())) {
@@ -640,14 +639,15 @@ router.get('/staff-performance/monthly', async (req, res) => {
     });
 
     const staffData = Array.from(staffMap.values()).map(staff => {
-      const total_revenue = staff.gross_revenue + staff.settled_credits;
+      const total_collected = staff.gross_revenue + staff.settled_credits;
       return {
         ...staff,
-        total_revenue,
-        progress: staff.individual_target > 0 ? (total_revenue / staff.individual_target) * 100 : 0
+        total_revenue: total_collected,
+        total_collected,
+        progress: staff.individual_target > 0 ? (staff.gross_revenue / staff.individual_target) * 100 : 0
       };
     });
-    staffData.sort((a, b) => b.total_revenue - a.total_revenue);
+    staffData.sort((a, b) => b.gross_revenue - a.gross_revenue);
 
     let totalGross = 0, totalSettledCredits = 0;
     staffData.forEach(s => {
@@ -659,18 +659,19 @@ router.get('/staff-performance/monthly', async (req, res) => {
     const targetResult = await pool.query(
       `SELECT revenue_goal FROM business_targets WHERE month_key = $1`, [targetMonth]
     );
-    const monthlyTarget = parseFloat(targetResult.rows[0]?.revenue_goal || 6000000);
+    const monthlyTarget = parseFloat(targetResult.rows[0]?.revenue_goal || 7000000);
 
     res.json({
       staff: staffData,
       summary: {
         total_revenue: totalRevenue,
+        total_collected: totalRevenue,
         total_gross: totalGross,
         total_credit_settled: totalSettledCredits,
         total_orders: staffData.reduce((sum, s) => sum + s.orders_count, 0),
         active_staff: staffData.length,
         monthly_target: monthlyTarget,
-        progress_percentage: monthlyTarget > 0 ? (totalRevenue / monthlyTarget) * 100 : 0
+        progress_percentage: monthlyTarget > 0 ? (totalGross / monthlyTarget) * 100 : 0
       },
       month: targetMonth
     });
@@ -689,7 +690,7 @@ router.get('/petty-cash-summary', async (req, res) => {
     let dateCondition, params;
 
     if      (period === "daily"   && date)                { dateCondition = "DATE(created_at) = $1";                     params = [date]; }
-    else if (period === "weekly"  && startDate && endDate) { dateCondition = "DATE(created_at) BETWEEN $1 AND $2";       params = [startDate, endDate]; }
+    else if (["weekly", "custom"].includes(period) && startDate && endDate) { dateCondition = "DATE(created_at) BETWEEN $1 AND $2"; params = [startDate, endDate]; }
     else if (period === "monthly" && month)                { dateCondition = "TO_CHAR(created_at, 'YYYY-MM') = $1";      params = [month]; }
     else                                                   { dateCondition = "DATE(created_at) = CURRENT_DATE";          params = []; }
 
@@ -697,19 +698,14 @@ router.get('/petty-cash-summary', async (req, res) => {
     const query = `
       SELECT 
         COALESCE(SUM(CASE WHEN UPPER(direction) = 'OUT' THEN amount ELSE 0 END), 0) AS total_out,
-        COALESCE(SUM(CASE WHEN UPPER(direction) = 'IN'  THEN amount ELSE 0 END), 0) AS total_in,
-        COUNT(CASE WHEN UPPER(direction) = 'OUT' THEN 1 END) AS out_count,
-        COUNT(CASE WHEN UPPER(direction) = 'IN'  THEN 1 END) AS in_count
+        COUNT(CASE WHEN UPPER(direction) = 'OUT' THEN 1 END) AS out_count
       FROM petty_cash WHERE ${dateCondition} ${timeFilter}
     `;
     const result = params.length > 0 ? await pool.query(query, params) : await pool.query(query);
     const row = result.rows[0];
     res.json({
       total_out: parseFloat(row.total_out || 0),
-      total_in:  parseFloat(row.total_in  || 0),
-      net:       parseFloat(row.total_in  || 0) - parseFloat(row.total_out || 0),
-      out_count: parseInt(row.out_count   || 0),
-      in_count:  parseInt(row.in_count    || 0)
+      out_count: parseInt(row.out_count || 0)
     });
   } catch (err) {
     console.error("Petty Cash Summary Error:", err.message);
@@ -722,15 +718,13 @@ router.get('/petty-cash', async (req, res) => {
     const targetDate = req.query.date || new Date().toISOString().split('T')[0];
     const result = await pool.query(`
       SELECT 
-        COALESCE(SUM(CASE WHEN UPPER(direction) = 'OUT' THEN amount ELSE 0 END), 0) AS total_out,
-        COALESCE(SUM(CASE WHEN UPPER(direction) = 'IN'  THEN amount ELSE 0 END), 0) AS total_in
+        COALESCE(SUM(CASE WHEN UPPER(direction) = 'OUT' THEN amount ELSE 0 END), 0) AS total_out
       FROM petty_cash WHERE DATE(created_at) = $1
     `, [targetDate]);
     const row = result.rows[0];
     res.json({
       total_petty_cash: parseFloat(row.total_out || 0),
-      total_out:        parseFloat(row.total_out || 0),
-      total_in:         parseFloat(row.total_in  || 0)
+      total_out:        parseFloat(row.total_out || 0)
     });
   } catch (err) {
     console.error("Petty Cash Error:", err.message);
@@ -937,7 +931,7 @@ router.get('/credits-summary', async (req, res) => {
     let dateCondition, params;
 
     if      (period === "daily"   && date)                { dateCondition = "DATE(created_at) = $1";                     params = [date]; }
-    else if (period === "weekly"  && startDate && endDate) { dateCondition = "DATE(created_at) BETWEEN $1 AND $2";       params = [startDate, endDate]; }
+    else if (["weekly", "custom"].includes(period) && startDate && endDate) { dateCondition = "DATE(created_at) BETWEEN $1 AND $2"; params = [startDate, endDate]; }
     else if (period === "monthly" && month)                { dateCondition = "TO_CHAR(created_at, 'YYYY-MM') = $1";      params = [month]; }
     else                                                   { dateCondition = "DATE(created_at) = CURRENT_DATE";          params = []; }
 
@@ -1133,6 +1127,17 @@ router.get('/export-pdf', async (req, res) => {
       title      = "MONTHLY TRANSACTION REPORT";
       periodText = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
       filename   = `Kurax_Monthly_Report_${month}${start_time ? `_${start_time.replace(':', '-')}` : ''}${end_time ? `_to_${end_time.replace(':', '-')}` : ''}.pdf`;
+    } else if (reportType === "custom" && req.query.startDate && req.query.endDate) {
+      const { startDate, endDate } = req.query;
+      dateCondition    = "DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2";
+      params           = [startDate, endDate];
+      creditsCondition = "DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2";
+      creditsParams    = [startDate, endDate];
+      pettyCondition   = "DATE(created_at AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2";
+      pettyParams      = [startDate, endDate];
+      title      = "CUSTOM TRANSACTION REPORT";
+      periodText = `${new Date(`${startDate}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} - ${new Date(`${endDate}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+      filename   = `Kurax_Custom_Report_${startDate}_to_${endDate}${start_time ? `_${start_time.replace(':', '-')}` : ''}${end_time ? `_to_${end_time.replace(':', '-')}` : ''}.pdf`;
     } else {
       return res.status(400).json({ error: "Invalid parameters." });
     }
@@ -1328,13 +1333,19 @@ router.get('/export-pdf', async (req, res) => {
     const pettyResult = await pool.query(`
       SELECT 
         COALESCE(SUM(CASE WHEN UPPER(direction) = 'OUT' THEN amount ELSE 0 END), 0) AS total_out,
-        COALESCE(SUM(CASE WHEN UPPER(direction) = 'IN'  THEN amount ELSE 0 END), 0) AS total_in,
-        COUNT(CASE WHEN UPPER(direction) = 'OUT' THEN 1 END) AS out_count,
-        COUNT(CASE WHEN UPPER(direction) = 'IN'  THEN 1 END) AS in_count
+        COUNT(CASE WHEN UPPER(direction) = 'OUT' THEN 1 END) AS out_count
       FROM petty_cash WHERE ${pettyCondition}
         ${pettyTimeFilter}
     `, pettyParams);
     const petty = pettyResult.rows[0];
+    const monthlyFinancials = reportType === 'monthly' && !start_time && !end_time
+      ? await getMonthlyFinancials(pool, month)
+      : null;
+    const financials = monthlyFinancials || calculateMonthlyFinancials({
+      grossSales: summaryResult.rows[0].total_revenue,
+      creditSettlements: totalSettled,
+      expenses: petty.total_out,
+    });
 
     // PDF generation (same as before – uses kitchenCount, baristaCount, barmanCount, allDetails)
     const doc = new PDFDocument({ margin: 50, size: 'A4', autoFirstPage: true });
@@ -1346,26 +1357,32 @@ router.get('/export-pdf', async (req, res) => {
     const margin       = 50;
     const contentWidth = pageW - 2 * margin;
 
-    doc.rect(0, 0, pageW, 5).fill('#EAB308');
-    doc.font('Helvetica-Bold').fontSize(20).fillColor('#1a1a2e').text('KURAX FOOD LOUNGE & BISTRO', pageW / 2, 45, { align: 'center' });
-    doc.font('Helvetica').fontSize(9).fillColor('#d97706').text('Luxury Dining & Rooftop Vibes', pageW / 2, 68, { align: 'center' });
-    doc.font('Helvetica-Bold').fontSize(14).fillColor('#EAB308').text(title, pageW / 2, 95, { align: 'center' });
-    doc.strokeColor('#E5E7EB').lineWidth(1).moveTo(margin, 115).lineTo(pageW - margin, 115).stroke();
-    doc.font('Helvetica').fontSize(9).fillColor('#6B7280')
+    doc.rect(0, 0, pageW, 5).fill('#000000');
+    doc.font('Helvetica-Bold').fontSize(20).fillColor('#000000').text('KURAX FOOD LOUNGE & BISTRO', pageW / 2, 45, { align: 'center' });
+    doc.font('Helvetica').fontSize(9).fillColor('#444444').text('Luxury Dining & Rooftop Vibes', pageW / 2, 68, { align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(14).fillColor('#000000').text(title, pageW / 2, 95, { align: 'center' });
+    doc.strokeColor('#BFBFBF').lineWidth(1).moveTo(margin, 115).lineTo(pageW - margin, 115).stroke();
+    doc.font('Helvetica').fontSize(9).fillColor('#444444')
       .text(`Period: ${periodText}${start_time ? ` | Time: ${start_time} - ${end_time || '23:59'}` : ''}`, pageW / 2, 130, { align: 'center' })
       .text(`Generated: ${new Date().toLocaleString()}`, pageW / 2, 143, { align: 'center' });
 
     let currentY = 170;
     const summary = summaryResult.rows[0];
-    const totalRevenue = Number(summary.total_revenue) + totalSettled;
+    const grossSales = monthlyFinancials?.grossSales ?? Number(summary.total_revenue);
+    const creditSettlements = monthlyFinancials?.creditSettlements ?? totalSettled;
+    const totalExpenses = monthlyFinancials?.expenses ?? Number(petty.total_out);
+    const cashSummaryLabel = monthlyFinancials ? 'Current Cash' : 'Net Cash After Petty Expenses';
 
     // Executive Summary (unchanged)
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a2e').text('EXECUTIVE SUMMARY', margin, currentY);
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text('EXECUTIVE SUMMARY', margin, currentY);
     currentY += 20;
     const summaryHeaders = ['Metric', 'Value'];
     const summaryData = [
       ['Total Orders',   summary.total_transactions.toString()],
-      ['Total Revenue',  `UGX ${totalRevenue.toLocaleString()}`],
+      ['Gross Sales', `UGX ${grossSales.toLocaleString()}`],
+      ['Credit Settlements', `UGX ${creditSettlements.toLocaleString()}`],
+      ['Expenses', `UGX ${totalExpenses.toLocaleString()}`],
+      [cashSummaryLabel, `UGX ${financials.currentCash.toLocaleString()}`],
       ['Cash',           `UGX ${Number(summary.total_cash).toLocaleString()}`],
       ['MTN Momo',       `UGX ${Number(summary.total_mtn).toLocaleString()}`],
       ['Airtel',         `UGX ${Number(summary.total_airtel).toLocaleString()}`],
@@ -1373,15 +1390,15 @@ router.get('/export-pdf', async (req, res) => {
     ];
     const colWidthsSum = [contentWidth * 0.3, contentWidth * 0.7];
     let tableY = currentY;
-    doc.rect(margin, tableY, contentWidth, 20).fill('#F3F4F6').stroke('#D1D5DB');
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#374151');
+    doc.rect(margin, tableY, contentWidth, 20).fill('#E5E5E5').stroke('#808080');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#111111');
     let hx = margin;
     summaryHeaders.forEach((h, i) => { doc.text(h, hx + 5, tableY + 5); hx += colWidthsSum[i]; });
     tableY += 20;
     summaryData.forEach((row, idx) => {
-      if (idx % 2 === 0) doc.rect(margin, tableY, contentWidth, 16).fill('#F9FAFB').stroke('#E5E7EB');
-      else doc.rect(margin, tableY, contentWidth, 16).stroke('#E5E7EB');
-      doc.font('Helvetica').fontSize(8).fillColor('#1F2937');
+      if (idx % 2 === 0) doc.rect(margin, tableY, contentWidth, 16).fill('#F5F5F5').stroke('#BFBFBF');
+      else doc.rect(margin, tableY, contentWidth, 16).stroke('#BFBFBF');
+      doc.font('Helvetica').fontSize(8).fillColor('#000000');
       let dx = margin;
       row.forEach((cell, i) => { doc.text(cell, dx + 5, tableY + 4); dx += colWidthsSum[i]; });
       tableY += 16;
@@ -1389,11 +1406,11 @@ router.get('/export-pdf', async (req, res) => {
     currentY = tableY + 15;
 
     // Credits Summary (unchanged)
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a2e').text('CREDITS SUMMARY', margin, currentY);
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text('CREDITS SUMMARY', margin, currentY);
     currentY += 20;
     const creditHeaders = ['Status', 'Amount', 'Count'];
     const creditData = [
-      ['Credits Settled',  `UGX ${totalSettled.toLocaleString()}`,     String(Number(credits.settled_count) + Number(credits.partially_count))],
+      ['Credits Settled', `UGX ${creditSettlements.toLocaleString()}`, String(monthlyFinancials?.settlementCount ?? (Number(credits.settled_count) + Number(credits.partially_count)))],
       ['Outstanding',      `UGX ${totalOutstanding.toLocaleString()}`, String(Number(credits.approved_count)+Number(credits.pending_count)+Number(credits.partially_count))],
       ['Approved',         `UGX ${Number(credits.total_approved).toLocaleString()}`, String(credits.approved_count)],
       ['Pending Approval', `UGX ${Number(credits.total_pending).toLocaleString()}`,  String(credits.pending_count)],
@@ -1401,42 +1418,41 @@ router.get('/export-pdf', async (req, res) => {
     ];
     const colWidthsCred = [contentWidth * 0.4, contentWidth * 0.35, contentWidth * 0.25];
     let credY = currentY;
-    doc.rect(margin, credY, contentWidth, 20).fill('#F3F4F6').stroke('#D1D5DB');
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#374151');
+    doc.rect(margin, credY, contentWidth, 20).fill('#E5E5E5').stroke('#808080');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#111111');
     let cx = margin;
     creditHeaders.forEach((h, i) => { doc.text(h, cx + 5, credY + 5); cx += colWidthsCred[i]; });
     credY += 20;
     creditData.forEach((row, idx) => {
-      if (idx % 2 === 0) doc.rect(margin, credY, contentWidth, 16).fill('#F9FAFB').stroke('#E5E7EB');
-      else doc.rect(margin, credY, contentWidth, 16).stroke('#E5E7EB');
-      doc.font('Helvetica').fontSize(8).fillColor('#1F2937');
+      if (idx % 2 === 0) doc.rect(margin, credY, contentWidth, 16).fill('#F5F5F5').stroke('#BFBFBF');
+      else doc.rect(margin, credY, contentWidth, 16).stroke('#BFBFBF');
+      doc.font('Helvetica').fontSize(8).fillColor('#000000');
       let dx = margin;
       row.forEach((cell, i) => { doc.text(cell, dx + 5, credY + 4); dx += colWidthsCred[i]; });
       credY += 16;
     });
     currentY = credY + 15;
 
-    // Petty Cash (unchanged)
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a2e').text('PETTY CASH SUMMARY', margin, currentY);
+    // Expense and cash detail
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text('EXPENSES AND CASH SUMMARY', margin, currentY);
     currentY += 20;
     const pettyHeaders = ['Category', 'Amount', 'Transactions'];
-    const netPetty = Number(petty.total_in) - Number(petty.total_out);
     const pettyData = [
-      ['Expenses (OUT)',      `UGX ${Number(petty.total_out).toLocaleString()}`, `${petty.out_count || 0} OUT`],
-      ['Replenishment (IN)',  `UGX ${Number(petty.total_in).toLocaleString()}`,  `${petty.in_count  || 0} IN`],
-      ['Net Position',        `UGX ${netPetty.toLocaleString()}`,                `${(petty.out_count || 0)+(petty.in_count || 0)} transactions`],
+      ['Petty Cash Expenses', `UGX ${Number(petty.total_out).toLocaleString()}`, `${petty.out_count || 0} transactions`],
+      ...(monthlyFinancials ? [['Fixed Monthly Expenses', `UGX ${monthlyFinancials.fixedTotal.toLocaleString()}`, `${monthlyFinancials.fixedItems.length} entries`]] : []),
+      [cashSummaryLabel, `UGX ${financials.currentCash.toLocaleString()}`, 'After listed expenses'],
     ];
     const colWidthsPetty = [contentWidth * 0.4, contentWidth * 0.35, contentWidth * 0.25];
     let pettyY = currentY;
-    doc.rect(margin, pettyY, contentWidth, 20).fill('#F3F4F6').stroke('#D1D5DB');
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#374151');
+    doc.rect(margin, pettyY, contentWidth, 20).fill('#E5E5E5').stroke('#808080');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#111111');
     let px = margin;
     pettyHeaders.forEach((h, i) => { doc.text(h, px + 5, pettyY + 5); px += colWidthsPetty[i]; });
     pettyY += 20;
     pettyData.forEach((row, idx) => {
-      if (idx % 2 === 0) doc.rect(margin, pettyY, contentWidth, 16).fill('#F9FAFB').stroke('#E5E7EB');
-      else doc.rect(margin, pettyY, contentWidth, 16).stroke('#E5E7EB');
-      doc.font('Helvetica').fontSize(8).fillColor('#1F2937');
+      if (idx % 2 === 0) doc.rect(margin, pettyY, contentWidth, 16).fill('#F5F5F5').stroke('#BFBFBF');
+      else doc.rect(margin, pettyY, contentWidth, 16).stroke('#BFBFBF');
+      doc.font('Helvetica').fontSize(8).fillColor('#000000');
       let dx = margin;
       row.forEach((cell, i) => { doc.text(cell, dx + 5, pettyY + 4); dx += colWidthsPetty[i]; });
       pettyY += 16;
@@ -1444,7 +1460,7 @@ router.get('/export-pdf', async (req, res) => {
     currentY = pettyY + 15;
 
     // Station Breakdown (now will show correct count)
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a2e').text('STATION BREAKDOWN', margin, currentY);
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text('STATION BREAKDOWN', margin, currentY);
     currentY += 20;
     const stationHeaders = ['Station', 'Items Count'];
     const stationData = [
@@ -1454,15 +1470,15 @@ router.get('/export-pdf', async (req, res) => {
     ];
     const colWidthsStation = [contentWidth * 0.6, contentWidth * 0.4];
     let stationY = currentY;
-    doc.rect(margin, stationY, contentWidth, 20).fill('#F3F4F6').stroke('#D1D5DB');
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#374151');
+    doc.rect(margin, stationY, contentWidth, 20).fill('#E5E5E5').stroke('#808080');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#111111');
     let sx = margin;
     stationHeaders.forEach((h, i) => { doc.text(h, sx + 5, stationY + 5); sx += colWidthsStation[i]; });
     stationY += 20;
     stationData.forEach((row, idx) => {
-      if (idx % 2 === 0) doc.rect(margin, stationY, contentWidth, 16).fill('#F9FAFB').stroke('#E5E7EB');
-      else doc.rect(margin, stationY, contentWidth, 16).stroke('#E5E7EB');
-      doc.font('Helvetica').fontSize(8).fillColor('#1F2937');
+      if (idx % 2 === 0) doc.rect(margin, stationY, contentWidth, 16).fill('#F5F5F5').stroke('#BFBFBF');
+      else doc.rect(margin, stationY, contentWidth, 16).stroke('#BFBFBF');
+      doc.font('Helvetica').fontSize(8).fillColor('#000000');
       let dx = margin;
       doc.text(String(row[0]), dx + 5, stationY + 4); dx += colWidthsStation[0];
       doc.text(String(row[1]), dx + 5, stationY + 4);
@@ -1473,7 +1489,7 @@ router.get('/export-pdf', async (req, res) => {
     // Order Details (using allDetails)
     if (allDetails.length > 0) {
       if (currentY > 700) { doc.addPage(); currentY = 50; }
-      doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a2e').text('ORDER DETAILS', margin, currentY);
+      doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text('ORDER DETAILS', margin, currentY);
       currentY += 20;
 
       const headers   = ['Order ID', 'Table', 'Staff', 'Amount', 'Method', 'Time'];
@@ -1481,8 +1497,8 @@ router.get('/export-pdf', async (req, res) => {
       const tableWidth = colWidths.reduce((a, b) => a + b, 0);
       const startX = margin;
 
-      doc.rect(startX, currentY, tableWidth, 20).fill('#F3F4F6').stroke('#D1D5DB');
-      doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151');
+      doc.rect(startX, currentY, tableWidth, 20).fill('#E5E5E5').stroke('#808080');
+      doc.font('Helvetica-Bold').fontSize(8).fillColor('#111111');
       let hdX = startX;
       headers.forEach((h, i) => { doc.text(h, hdX + 5, currentY + 6); hdX += colWidths[i]; });
       currentY += 20;
@@ -1491,19 +1507,19 @@ router.get('/export-pdf', async (req, res) => {
         if (currentY > 750) {
           doc.addPage();
           currentY = 50;
-          doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a2e').text('ORDER DETAILS (continued)', margin, currentY);
+          doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text('ORDER DETAILS (continued)', margin, currentY);
           currentY += 20;
-          doc.rect(startX, currentY, tableWidth, 20).fill('#F3F4F6').stroke('#D1D5DB');
-          doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151');
+          doc.rect(startX, currentY, tableWidth, 20).fill('#E5E5E5').stroke('#808080');
+          doc.font('Helvetica-Bold').fontSize(8).fillColor('#111111');
           hdX = startX;
           headers.forEach((h, i) => { doc.text(h, hdX + 5, currentY + 6); hdX += colWidths[i]; });
           currentY += 20;
         }
 
-        if (idx % 2 === 0) doc.rect(startX, currentY, tableWidth, 16).fill('#F9FAFB').stroke('#E5E7EB');
-        else doc.rect(startX, currentY, tableWidth, 16).stroke('#E5E7EB');
+        if (idx % 2 === 0) doc.rect(startX, currentY, tableWidth, 16).fill('#F5F5F5').stroke('#BFBFBF');
+        else doc.rect(startX, currentY, tableWidth, 16).stroke('#BFBFBF');
 
-        doc.font('Helvetica').fontSize(8).fillColor('#1F2937');
+        doc.font('Helvetica').fontSize(8).fillColor('#000000');
         let displayMethod = (item.method || "—");
         if      (displayMethod === 'credit/cash')   displayMethod = 'Cr/Cash';
         else if (displayMethod === 'credit/card')   displayMethod = 'Cr/Card';
@@ -1526,7 +1542,7 @@ router.get('/export-pdf', async (req, res) => {
     const totalPages = doc.bufferedPageRange().count;
     for (let i = 0; i < totalPages; i++) {
       doc.switchToPage(i);
-      doc.font('Helvetica').fontSize(8).fillColor('#9CA3AF')
+      doc.font('Helvetica').fontSize(8).fillColor('#555555')
         .text(`KURAX FOOD LOUNGE & BISTRO  ·  Page ${i + 1} of ${totalPages}`, pageW / 2, doc.page.height - 30, { align: 'center' });
     }
 
@@ -1632,14 +1648,14 @@ router.get('/export-staff-pdf', async (req, res) => {
     });
 
     let staffData = Array.from(staffMap.values()).map(staff => {
-      const total_revenue = staff.gross_revenue + staff.settled_credits;
+      const total_collected = staff.gross_revenue + staff.settled_credits;
       return {
         ...staff,
-        total_revenue,
-        progress: staff.monthly_target > 0 ? (total_revenue / staff.monthly_target) * 100 : 0,
+        total_collected,
+        progress: staff.monthly_target > 0 ? (staff.gross_revenue / staff.monthly_target) * 100 : 0,
       };
     });
-    staffData.sort((a, b) => b.total_revenue - a.total_revenue);
+    staffData.sort((a, b) => b.gross_revenue - a.gross_revenue);
 
     let totalGross = 0, totalSettledCredits = 0;
     staffData.forEach(s => {
@@ -1666,43 +1682,43 @@ router.get('/export-staff-pdf', async (req, res) => {
     const margin       = 50;
     const contentWidth = pageW - 2 * margin;
 
-    doc.rect(0, 0, pageW, 5).fill('#EAB308');
-    doc.font('Helvetica-Bold').fontSize(20).fillColor('#1a1a2e').text('KURAX FOOD LOUNGE & BISTRO', pageW / 2, 45, { align: 'center' });
-    doc.font('Helvetica').fontSize(9).fillColor('#d97706').text('Luxury Dining & Rooftop Vibes', pageW / 2, 68, { align: 'center' });
-    doc.font('Helvetica-Bold').fontSize(14).fillColor('#EAB308').text('STAFF PERFORMANCE REPORT', pageW / 2, 95, { align: 'center' });
-    doc.strokeColor('#E5E7EB').lineWidth(1).moveTo(margin, 115).lineTo(pageW - margin, 115).stroke();
-    doc.font('Helvetica').fontSize(9).fillColor('#6B7280')
+    doc.rect(0, 0, pageW, 5).fill('#000000');
+    doc.font('Helvetica-Bold').fontSize(20).fillColor('#000000').text('KURAX FOOD LOUNGE & BISTRO', pageW / 2, 45, { align: 'center' });
+    doc.font('Helvetica').fontSize(9).fillColor('#444444').text('Luxury Dining & Rooftop Vibes', pageW / 2, 68, { align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(14).fillColor('#000000').text('STAFF PERFORMANCE REPORT', pageW / 2, 95, { align: 'center' });
+    doc.strokeColor('#BFBFBF').lineWidth(1).moveTo(margin, 115).lineTo(pageW - margin, 115).stroke();
+    doc.font('Helvetica').fontSize(9).fillColor('#444444')
       .text(`Period: ${monthName}${start_time ? ` | Time: ${start_time} - ${end_time || '23:59'}` : ''}`, pageW / 2, 130, { align: 'center' })
       .text(`Generated: ${new Date().toLocaleString()}`, pageW / 2, 143, { align: 'center' });
 
     let currentY = 180;
 
     // Executive Summary
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a2e').text('EXECUTIVE SUMMARY', margin, currentY);
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text('EXECUTIVE SUMMARY', margin, currentY);
     currentY += 20;
     const summaryHeaders = ['Metric', 'Value'];
     const summaryData = [
-      ['Total Revenue (Gross + Credit)', `UGX ${totalRevenue.toLocaleString()}`],
+      ['Collected Before Expenses',     `UGX ${totalRevenue.toLocaleString()}`],
       ['Gross Sales',                    `UGX ${totalGross.toLocaleString()}`],
       ['Credit Settlements',             `UGX ${totalSettledCredits.toLocaleString()}`],
     ];
     if (monthlyTarget > 0) {
       summaryData.push(['Monthly Target',    `UGX ${monthlyTarget.toLocaleString()}`]);
-      summaryData.push(['Overall Progress',  `${((totalRevenue / monthlyTarget) * 100).toFixed(1)}%`]);
+      summaryData.push(['Gross Sales Progress',  `${((totalGross / monthlyTarget) * 100).toFixed(1)}%`]);
     }
     summaryData.push(['Active Staff', staffData.length.toString()]);
 
     const colWidthsSum = [contentWidth * 0.4, contentWidth * 0.6];
     let tableY = currentY;
-    doc.rect(margin, tableY, contentWidth, 20).fill('#F3F4F6').stroke('#D1D5DB');
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#374151');
+    doc.rect(margin, tableY, contentWidth, 20).fill('#E5E5E5').stroke('#808080');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#111111');
     let hx = margin;
     summaryHeaders.forEach((h, i) => { doc.text(h, hx + 5, tableY + 5); hx += colWidthsSum[i]; });
     tableY += 20;
     summaryData.forEach((row, idx) => {
-      if (idx % 2 === 0) doc.rect(margin, tableY, contentWidth, 16).fill('#F9FAFB').stroke('#E5E7EB');
-      else doc.rect(margin, tableY, contentWidth, 16).stroke('#E5E7EB');
-      doc.font('Helvetica').fontSize(8).fillColor('#1F2937');
+      if (idx % 2 === 0) doc.rect(margin, tableY, contentWidth, 16).fill('#F5F5F5').stroke('#BFBFBF');
+      else doc.rect(margin, tableY, contentWidth, 16).stroke('#BFBFBF');
+      doc.font('Helvetica').fontSize(8).fillColor('#000000');
       let dx = margin;
       row.forEach((cell, i) => { doc.text(cell, dx + 5, tableY + 4); dx += colWidthsSum[i]; });
       tableY += 16;
@@ -1711,18 +1727,18 @@ router.get('/export-staff-pdf', async (req, res) => {
 
     // Staff Breakdown Table
     if (staffData.length === 0) {
-      doc.font('Helvetica').fontSize(10).fillColor('#9CA3AF').text('No staff performance data for this period.', margin, currentY);
+      doc.font('Helvetica').fontSize(10).fillColor('#555555').text('No staff performance data for this period.', margin, currentY);
     } else {
-      doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a2e').text('STAFF BREAKDOWN', margin, currentY);
+      doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text('STAFF BREAKDOWN', margin, currentY);
       currentY += 20;
 
-      const headers   = ['Staff Name', 'Role', 'Orders', 'Gross Sales', 'Credits Settled', 'Total Revenue', 'Monthly Target', 'Daily Order Goal', 'Progress'];
+      const headers   = ['Staff Name', 'Role', 'Orders', 'Gross Sales', 'Credits Settled', 'Collected', 'Monthly Target', 'Daily Order Goal', 'Progress'];
       const colWidths = [60, 35, 30, 55, 55, 60, 65, 45, 45];
       const tableWidth = colWidths.reduce((a, b) => a + b, 0);
       const startX = margin;
 
-      doc.rect(startX, currentY, tableWidth, 20).fill('#F3F4F6').stroke('#D1D5DB');
-      doc.font('Helvetica-Bold').fontSize(6).fillColor('#374151');
+      doc.rect(startX, currentY, tableWidth, 20).fill('#E5E5E5').stroke('#808080');
+      doc.font('Helvetica-Bold').fontSize(6).fillColor('#111111');
       let hdX = startX;
       headers.forEach((h, i) => { doc.text(h, hdX + 2, currentY + 6); hdX += colWidths[i]; });
       currentY += 20;
@@ -1731,19 +1747,19 @@ router.get('/export-staff-pdf', async (req, res) => {
         if (currentY > 750) {
           doc.addPage();
           currentY = 50;
-          doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a2e').text('STAFF BREAKDOWN (continued)', margin, currentY);
+          doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text('STAFF BREAKDOWN (continued)', margin, currentY);
           currentY += 20;
-          doc.rect(startX, currentY, tableWidth, 20).fill('#F3F4F6').stroke('#D1D5DB');
-          doc.font('Helvetica-Bold').fontSize(6).fillColor('#374151');
+          doc.rect(startX, currentY, tableWidth, 20).fill('#E5E5E5').stroke('#808080');
+          doc.font('Helvetica-Bold').fontSize(6).fillColor('#111111');
           hdX = startX;
           headers.forEach((h, i) => { doc.text(h, hdX + 2, currentY + 6); hdX += colWidths[i]; });
           currentY += 20;
         }
 
-        if (idx % 2 === 0) doc.rect(startX, currentY, tableWidth, 16).fill('#F9FAFB').stroke('#E5E7EB');
-        else doc.rect(startX, currentY, tableWidth, 16).stroke('#E5E7EB');
+        if (idx % 2 === 0) doc.rect(startX, currentY, tableWidth, 16).fill('#F5F5F5').stroke('#BFBFBF');
+        else doc.rect(startX, currentY, tableWidth, 16).stroke('#BFBFBF');
 
-        doc.font('Helvetica').fontSize(6).fillColor('#1F2937');
+        doc.font('Helvetica').fontSize(6).fillColor('#000000');
         const monthlyTargetDisplay = staff.monthly_target > 0 ? `UGX ${staff.monthly_target.toLocaleString()}` : 'Not set';
         const dailyGoalDisplay     = staff.daily_order_goal > 0 ? staff.daily_order_goal.toString() : 'Not set';
         const row = [
@@ -1752,7 +1768,7 @@ router.get('/export-staff-pdf', async (req, res) => {
           staff.orders_count.toString(),
           `UGX ${staff.gross_revenue.toLocaleString()}`,
           `UGX ${staff.settled_credits.toLocaleString()}`,
-          `UGX ${staff.total_revenue.toLocaleString()}`,
+          `UGX ${staff.total_collected.toLocaleString()}`,
           monthlyTargetDisplay,
           dailyGoalDisplay,
           `${staff.progress.toFixed(1)}%`
@@ -1766,7 +1782,7 @@ router.get('/export-staff-pdf', async (req, res) => {
     const totalPages = doc.bufferedPageRange().count;
     for (let i = 0; i < totalPages; i++) {
       doc.switchToPage(i);
-      doc.font('Helvetica').fontSize(8).fillColor('#9CA3AF')
+      doc.font('Helvetica').fontSize(8).fillColor('#555555')
         .text(`KURAX FOOD LOUNGE & BISTRO  ·  Page ${i + 1} of ${totalPages}`, pageW / 2, doc.page.height - 30, { align: 'center' });
     }
 

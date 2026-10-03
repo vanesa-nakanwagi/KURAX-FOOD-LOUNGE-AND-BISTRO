@@ -73,18 +73,19 @@ export default function ReconciliationViewer({ userName = "Staff", dark = false,
   const physMomoMTN = Number(physical?.mtn) || 0;
   const physMomoAirtel = Number(physical?.airtel) || 0;
   const physCard = Number(physical?.card) || 0;
-  const pettyCashIn = Number(pettyCash?.total_in) || 0;
-  const adjustedCash = physCash - pettyCashIn;
+  const pettyExpenses = Number(pettyCash?.total_out) || 0;
+  const systemCash = Number(summary?.cash_on_counter ?? (sys.cash - pettyExpenses));
+  const varCash = physCash - systemCash;
 
   if (onlyReconciliation) {
     return (
       <PaymentReconciliationSection
-        sys={sys}
+        sys={{ ...sys, cash: systemCash }}
         physCash={physCash}
         physMomoMTN={physMomoMTN}
         physMomoAirtel={physMomoAirtel}
         physCard={physCard}
-        varCash={adjustedCash - sys.cash}
+        varCash={varCash}
         varMTN={physMomoMTN - sys.mtn}
         varAirtel={physMomoAirtel - sys.airtel}
         varCard={physCard - sys.card}
@@ -99,18 +100,17 @@ export default function ReconciliationViewer({ userName = "Staff", dark = false,
   return (
     <ReconciliationOverview
       dayClosed={dayClosed}
-      sys={sys}
+      sys={{ ...sys, cash: systemCash }}
       physCash={physCash}
       physMomoMTN={physMomoMTN}
       physMomoAirtel={physMomoAirtel}
       physCard={physCard}
-      pettyCashIn={pettyCashIn}
       pettyCashToday={pettyCash}
-      varCash={adjustedCash - sys.cash}
+      varCash={varCash}
       varMTN={physMomoMTN - sys.mtn}
       varAirtel={physMomoAirtel - sys.airtel}
       varCard={physCard - sys.card}
-      varTotal={(adjustedCash - sys.cash) + (physMomoMTN - sys.mtn) + (physMomoAirtel - sys.airtel) + (physCard - sys.card)}
+      varTotal={varCash + (physMomoMTN - sys.mtn) + (physMomoAirtel - sys.airtel) + (physCard - sys.card)}
       hasPhysicalCount={Boolean(physical) && !loading}
       creditsLedger={credits}
       creditsLoading={loading}

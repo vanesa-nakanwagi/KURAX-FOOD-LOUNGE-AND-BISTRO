@@ -1,1 +1,6 @@
 .copilot-specs-cache/
+node_modules
+/KURAX-FRONTEND/.env.local
+*firebase-adminsdk*.json
+*firebase-service-account*.json
+*service-account*.json

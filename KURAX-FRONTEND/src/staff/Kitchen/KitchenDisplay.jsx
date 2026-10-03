@@ -364,7 +364,7 @@ export default function KitchenDisplay() {
       const tId = ticketId || ticketMapRef.current[orderId];
       if (tId) {
         const response = await fetch(`${API_URL}/api/kitchen/tickets/${tId}/status`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
+          method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${savedUser.token || ""}` },
           body: JSON.stringify({ status: newStatus }),
         });
         if (!response.ok) throw new Error("Could not update Kitchen ticket status.");
@@ -374,7 +374,7 @@ export default function KitchenDisplay() {
       console.error("Status update failed:", err);
       refreshData?.();
     }
-  }, [setOrders, refreshData]);
+  }, [setOrders, refreshData, savedUser.token]);
 
   // ── Assign chef ───────────────────────────────────────────────────────────
   const handleAssignChef = useCallback(async (chefInput) => {

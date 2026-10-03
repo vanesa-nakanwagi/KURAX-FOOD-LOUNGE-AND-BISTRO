@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import ScrollToHash from "./customer/components/home/ScrollToHash";
 import { useState, useEffect } from "react";
 // Public Pages
@@ -21,6 +21,14 @@ import ShishaDepartment from "./staff/Shisha/ShishaDepartment.jsx";
 import SupervisorRoutes from "./staff/routes/SupervisorRoutes";
 import StaffRoutes from './staff/routes/StaffLoginRoutes';
 import NewOrder  from './staff/waiter/components/NewOrder.jsx';
+import StaffNotificationControl from './staff/components/StaffNotificationControl.jsx';
+
+function InternalStaffNotifications() {
+  const { pathname } = useLocation();
+  const isShisha = pathname.startsWith('/shisha');
+  const isStaffRoute = /^\/(director|cashier|staff\/(waiter|manager)|supervisor|accountant|kitchen|barman|barista|shisha)(\/|$)/.test(pathname);
+  return isStaffRoute ? <StaffNotificationControl isShisha={isShisha} /> : null;
+}
 
 //  PWA Install Prompt Component
 function PWAInstallPrompt() {
@@ -194,6 +202,7 @@ export default function App() {
       
       {/*  PWA Install Prompt - Shows on all pages */}
       <PWAInstallPrompt />
+      <InternalStaffNotifications />
     </>
   );
 }

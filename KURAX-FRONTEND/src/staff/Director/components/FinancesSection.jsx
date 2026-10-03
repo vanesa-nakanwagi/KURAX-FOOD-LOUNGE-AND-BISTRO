@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BookOpen, User, Phone, Calendar,
-  RefreshCw, ChevronLeft, ChevronRight, FileText, CheckCircle2,
+  RefreshCw, FileText, CheckCircle2,
   Hourglass, Clock, XCircle, Search, TrendingUp, TrendingDown, Wallet,
   Banknote, CreditCard, Smartphone
 } from "lucide-react";
@@ -100,9 +100,7 @@ function Divider() {
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function FinancesSection({ creditsData = [], creditStats = {}, CreditStatusBadge: ExternalBadge }) {
-  const [monthOffset, setMonthOffset] = useState(0);
-  const month = kampalaMonth(monthOffset);
-  const [selectedMonthYear, setSelectedMonthYear] = useState(month);
+  const [month, setMonth] = useState(() => kampalaMonth());
 
   const [profit,      setProfit]      = useState(null);
   const [profitLoad,  setProfitLoad]  = useState(true);
@@ -121,9 +119,9 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
       const creditDate = credit.created_at || credit.confirmed_at;
       if (!creditDate) return false;
       const creditMonth = creditDate.substring(0, 7);
-      return creditMonth === selectedMonthYear;
+      return creditMonth === month;
     });
-  }, [creditsData, selectedMonthYear]);
+  }, [creditsData, month]);
 
   // Calculate month-specific stats
   const monthStats = useMemo(() => {
@@ -149,11 +147,6 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
     
     return { total, settled, totalSettled, totalOutstanding };
   }, [filteredByMonthCredits]);
-
-  // Update selected month when month changes
-  useEffect(() => {
-    setSelectedMonthYear(month);
-  }, [month]);
 
   // ── fetch profit data ──
   const fetchProfit = useCallback(async () => {
@@ -226,18 +219,12 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
   const rawCard        = Number(sales.card || sales.total_card || 0);
   const mobileMoney    = Number(sales.mobile_money || 0);
 
-  // Gross Sales = new sales only (cash + card + mobile money)
-  const grossSales = rawCash + rawCard + mobileMoney;
-
-  // ✅ FIX: Use monthStats.totalSettled instead of sales.from_credit_settlements
-  const creditSettled = monthStats.totalSettled;
-
-  // Total Revenue = Gross Sales + credit settlements (old credit repaid)
-  const totalRevenue = grossSales + creditSettled;
-
-  const expenses   = Number(costs.total || 0);
-  const net        = Number(profit?.net_profit || 0);
-  const marginPct  = grossSales > 0 ? (net / grossSales) * 100 : 0;
+  const grossSales = Number(profit?.grossSales ?? profit?.sales?.from_paid_orders ?? (rawCash + rawCard + mobileMoney));
+  const creditSettled = Number(profit?.creditSettlements ?? profit?.sales?.from_credit_settlements ?? monthStats.totalSettled);
+  const totalCollected = grossSales + creditSettled;
+  const expenses = Number(profit?.expenses ?? costs.total ?? 0);
+  const currentCash = Number(profit?.currentCash ?? profit?.net_profit ?? 0);
+  const marginPct = totalCollected > 0 ? (currentCash / totalCollected) * 100 : 0;
 
   // Percentages for payment method rings (relative to gross sales)
   const cashPct = grossSales > 0 ? (rawCash / grossSales) * 100 : 0;
@@ -260,23 +247,17 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
 
       {/* ══ 1. CONTROL BAR ════════════════════════════════════════════════ */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-6">
-        <div className="flex items-center gap-1 rounded-xl border border-gray-200 overflow-hidden">
-          <button
-            onClick={() => setMonthOffset(o => o - 1)}
-            className="px-3 py-2.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 transition-all"
-          >
-            <ChevronLeft size={15} />
-          </button>
-          <span className="px-4 text-[11px] font-black uppercase tracking-widest text-gray-800 min-w-[130px] text-center">
-            {monthLabel(month)}
-          </span>
-          <button
-            onClick={() => setMonthOffset(o => Math.min(o + 1, 0))}
-            disabled={monthOffset >= 0}
-            className="px-3 py-2.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 transition-all disabled:opacity-20"
-          >
-            <ChevronRight size={15} />
-          </button>
+        <div className="flex items-center gap-3">
+          <label htmlFor="finance-report-month" className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+            Report month
+          </label>
+          <input
+            id="finance-report-month"
+            type="month"
+            value={month}
+            onChange={event => setMonth(event.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-800"
+          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -317,7 +298,7 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
                 stroke={8}
                 color={marginPct >= 0 ? "#22c55e" : "#ef4444"}
                 label="Net Margin"
-                sub={formatFullAmount(net)}
+                sub={formatFullAmount(currentCash)}
               />
             </div>
 
@@ -338,16 +319,16 @@ export default function FinancesSection({ creditsData = [], creditStats = {}, Cr
             </div>
           </div>
 
-          {/* KPI Tiles: Total Revenue, Total Expenses, Net Profit */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-6">
-            <KpiTile label="Total Revenue"  value={formatFullAmount(totalRevenue)}   accent="text-gray-900" />
-            <KpiTile label="Total Expenses" value={formatFullAmount(expenses)} accent="text-red-600" />
+          {/* Monthly financial components */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+            <KpiTile label="Gross Sales" value={formatFullAmount(grossSales)} accent="text-gray-900" />
+            <KpiTile label="Credit Settlements" value={formatFullAmount(creditSettled)} accent="text-purple-600" />
+            <KpiTile label="Expenses" value={formatFullAmount(expenses)} accent="text-red-600" />
             <KpiTile
-              label="Net Profit"
-              value={formatFullAmount(Math.abs(net))}
-              accent={net >= 0 ? "text-emerald-600" : "text-red-600"}
-              icon={net >= 0 ? <TrendingUp size={12}/> : <TrendingDown size={12}/>}
-              className="col-span-2 md:col-span-1"
+              label="Current Cash"
+              value={formatFullAmount(Math.abs(currentCash))}
+              accent={currentCash >= 0 ? "text-emerald-600" : "text-red-600"}
+              icon={currentCash >= 0 ? <TrendingUp size={12}/> : <TrendingDown size={12}/>}
             />
           </div>
         </>

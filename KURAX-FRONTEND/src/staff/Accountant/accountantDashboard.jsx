@@ -118,7 +118,7 @@ function GrossRevenueCard({ grossSales, settledCredits }) {
         <div className="mb-3">
           <div className="flex items-center gap-1.5 mb-1">
             <div className="w-1 h-3 bg-black/30 rounded-full" />
-            <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em]">Gross Revenue</p>
+            <p className="text-[8px] font-black uppercase text-black/60 tracking-[0.2em]">Gross Sales</p>
           </div>
           <h3 className="text-xl sm:text-2xl font-black text-black break-words whitespace-normal">
             UGX {fmt(grossSales)}
@@ -639,7 +639,7 @@ export default function AccountantDashboard() {
   const [physLoading, setPhysLoading] = useState(false);
   const [hasPhysicalCount, setHasPhysicalCount] = useState(false);
 
-  const [pettyCashToday, setPettyCashToday] = useState({ total_in: 0, total_out: 0 });
+  const [pettyCashToday, setPettyCashToday] = useState({ total_out: 0 });
 
   const fetchPettyCashToday = useCallback(async () => {
     try {
@@ -854,6 +854,20 @@ export default function AccountantDashboard() {
 
   useEffect(() => { fetchMonthlyData(); }, [fetchMonthlyData]);
 
+  useEffect(() => {
+    const events = new EventSource(`${API_URL}/api/accountant/stream`);
+    events.onmessage = (event) => {
+      try {
+        if (JSON.parse(event.data).type === "PETTY") {
+          fetchPettyCashToday();
+          fetchLiveSummary();
+          fetchMonthlyData();
+        }
+      } catch {}
+    };
+    return () => events.close();
+  }, [fetchLiveSummary, fetchMonthlyData, fetchPettyCashToday]);
+
   const loadVoidHistory = useCallback(async () => {
     setVoidHistoryLoading(true);
     try {
@@ -1013,9 +1027,9 @@ export default function AccountantDashboard() {
     : creditFilter === "rejected"  ? creditsLedger.filter(c => getCreditStatus(c) === "rejected")
     : creditsLedger;
 
-  const pettyCashIn      = Number(pettyCashToday.total_in) || 0;
-  const adjustedPhysCash = physCash - pettyCashIn;
-  const varCash          = adjustedPhysCash - sys.cash;
+  const pettyExpenses    = Number(pettyCashToday.total_out) || 0;
+  const systemCash       = Number(src.cash_on_counter ?? (sys.cash - pettyExpenses));
+  const varCash          = physCash - systemCash;
   const varMTN           = physMomoMTN    - sys.mtn;
   const varAirtel        = physMomoAirtel - sys.airtel;
   const varCard          = physCard       - sys.card;
@@ -1112,7 +1126,7 @@ export default function AccountantDashboard() {
       setPhysCard(0);
       setPhysNotes("");
       setHasPhysicalCount(false);
-      setPettyCashToday({ total_in: 0, total_out: 0 });
+      setPettyCashToday({ total_out: 0 });
 
       window.dispatchEvent(new CustomEvent("dayClosed", { detail: data }));
       window.dispatchEvent(new Event("refresh"));
@@ -1140,7 +1154,7 @@ export default function AccountantDashboard() {
       setPhysMomoAirtel(0);
       setPhysCard(0);
       setHasPhysicalCount(false);
-      setPettyCashToday({ total_in: 0, total_out: 0 });
+      setPettyCashToday({ total_out: 0 });
       if (typeof refreshData === "function") refreshData();
       fetchLiveSummary();
       loadPhysicalCount();
@@ -1329,18 +1343,6 @@ export default function AccountantDashboard() {
                 </div>
               )}
 
-              {pettyCashIn > 0 && !dayClosed && (
-                <div className="flex items-start gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-4">
-                  <Zap size={16} className="text-yellow-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-yellow-400 tracking-widest">Petty Cash Replenishment Active</p>
-                    <p className="text-[11px] text-zinc-400 mt-1">
-                      UGX {fmt(pettyCashIn)} was added to the drawer as replenishment today. This is automatically deducted from physical cash before calculating the variance.
-                    </p>
-                  </div>
-                </div>
-              )}
-
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className={`p-8 rounded-2xl ${cardBgClass}`}>
                   <h3 className="text-[10px] font-black uppercase text-yellow-500 tracking-widest flex items-center gap-2 mb-5">
@@ -1350,7 +1352,7 @@ export default function AccountantDashboard() {
                     <div className="h-40 animate-pulse bg-zinc-800/30 rounded-2xl" />
                   ) : (
                     <>
-                      <PhysInput label="Cash on Hand (including replenishment)" value={physCash} onChange={setPhysCash} color="text-emerald-400" />
+                      <PhysInput label="Cash on Hand" value={physCash} onChange={setPhysCash} color="text-emerald-400" />
                       <PhysInput label="MTN Momo" value={physMomoMTN} onChange={setPhysMomoMTN} color="text-yellow-400" />
                       <PhysInput label="Airtel Momo" value={physMomoAirtel} onChange={setPhysMomoAirtel} color="text-red-400" />
                       <PhysInput label="Card / POS" value={physCard} onChange={setPhysCard} color="text-blue-400" />
@@ -1395,9 +1397,9 @@ export default function AccountantDashboard() {
                     <>
                       <div className="space-y-1">
                         <VarianceRow
-                          label={pettyCashIn > 0 ? `Cash (adj. −UGX ${fmt(pettyCashIn)} replenishment)` : "System Cash"}
-                          system={sys.cash}
-                          physical={adjustedPhysCash}
+                          label="System Cash After Petty Expenses"
+                          system={systemCash}
+                          physical={physCash}
                           variance={varCash}
                         />
                         <VarianceRow label="System MTN"    system={sys.mtn}    physical={physMomoMTN}    variance={varMTN} />
@@ -1428,12 +1430,6 @@ export default function AccountantDashboard() {
                             </div>
                           ))}
                         </div>
-                        {pettyCashIn > 0 && (
-                          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
-                            <p className="text-[8px] font-black uppercase text-yellow-500 tracking-widest">Replenishment netted from cash</p>
-                            <p className="text-yellow-400 font-black text-sm mt-0.5">−UGX {fmt(pettyCashIn)}</p>
-                          </div>
-                        )}
                       </div>
                     </>
                   )}

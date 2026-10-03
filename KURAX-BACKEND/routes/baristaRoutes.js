@@ -17,6 +17,8 @@
 
 import express from 'express';
 import pool    from '../db.js';
+import notificationService from '../helpers/notificationService.js';
+import { resolveNotificationUser } from '../middleware/notificationAuth.js';
 
 const router = express.Router();
 
@@ -57,6 +59,17 @@ router.post('/tickets', async (req, res) => {
        RETURNING *`,
       [order_id, table_name, staff_name || null, JSON.stringify(assignedItems), ticketTotal || Number(total) || 0, status, kampalaDate()]
     );
+    const actor = await resolveNotificationUser(req);
+    if (actor?.scope === 'restaurant' && ['WAITER', 'SUPERVISOR', 'MANAGER', 'DIRECTOR', 'BARISTA_HOD'].includes(actor.role)) {
+      void notificationService.sendToRoles(['BARISTA_HOD', 'BARISTA'], {
+        type: 'BARISTA_ORDER',
+        title: 'New Barista Order',
+        body: `Order #${order_id} requires preparation.`,
+        department: 'Barista',
+        referenceId: order_id,
+        link: `/barista?order=${order_id}`,
+      });
+    }
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Barista upsert error:', err.message);
@@ -166,6 +179,24 @@ router.patch('/tickets/:id/status', async (req, res) => {
       [status, id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Ticket not found' });
+    const actor = status === 'Ready' ? await resolveNotificationUser(req) : null;
+    if (status === 'Ready' && actor?.scope === 'restaurant' && ['BARISTA', 'BARISTA_HOD'].includes(actor.role)) {
+      try {
+        const orderResult = await pool.query('SELECT staff_id FROM public.orders WHERE id = $1', [result.rows[0].order_id]);
+        if (orderResult.rows[0]?.staff_id) {
+          void notificationService.sendToUser(orderResult.rows[0].staff_id, {
+            type: 'ORDER_READY',
+            title: 'Barista Order Ready',
+            body: `Order #${result.rows[0].order_id} is ready for service.`,
+            department: 'Barista',
+            referenceId: result.rows[0].order_id,
+            link: `/staff/waiter?order=${result.rows[0].order_id}`,
+          });
+        }
+      } catch (notificationError) {
+        console.error('Barista ready notification lookup failed:', notificationError.message);
+      }
+    }
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Barista status update error:', err.message);

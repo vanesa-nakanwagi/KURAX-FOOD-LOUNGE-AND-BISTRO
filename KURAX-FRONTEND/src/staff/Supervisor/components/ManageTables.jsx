@@ -381,9 +381,17 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function SupervisorDashboard() {
-  const { orders = [], refreshData } = useData() || {};
+  const { orders = [], refreshData, currentUser } = useData() || {};
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  const savedUser = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("kurax_user") || "null"); }
+    catch { return null; }
+  }, []);
+  const staffUser = currentUser?.id != null ? currentUser : savedUser;
+  const currentStaffId = staffUser?.id;
+  const currentStaffName = staffUser?.name || "Supervisor";
+  const today = getTodayLocal();
 
   const [activeTab, setActiveTab] = useState("Live");
   const [searchQuery, setSearchQuery] = useState("");
@@ -477,10 +485,20 @@ export default function SupervisorDashboard() {
     }
   };
 
-  // ── Group all orders by table (no staff filter) ──
+  const staffOrders = useMemo(() => (orders || []).filter(order => {
+    const timestamp = order.timestamp || order.created_at;
+    if (!timestamp || toLocalDateStr(new Date(timestamp)) !== today) return false;
+    const orderStaffId = order.staff_id ?? order.staffId;
+    const idMatch = currentStaffId != null && orderStaffId != null && String(orderStaffId) === String(currentStaffId);
+    const nameMatch = currentStaffName !== "Supervisor" &&
+      String(order.staff_name || order.waiterName || order.staffName || "").trim().toLowerCase() === currentStaffName.trim().toLowerCase();
+    return currentStaffId != null && orderStaffId != null ? idMatch : nameMatch;
+  }), [orders, currentStaffId, currentStaffName, today]);
+
+  // ── Group this supervisor's orders by table ──
   const groupedTableOrders = useMemo(() => {
     const groups = {};
-    (orders || []).forEach(order => {
+    staffOrders.forEach(order => {
       const key = (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase();
       if (!groups[key]) {
         groups[key] = {
@@ -523,7 +541,7 @@ export default function SupervisorDashboard() {
       }, 0);
     });
     return groups;
-  }, [orders]);
+  }, [staffOrders]);
 
   // ── Filter orders for Live / Served tabs ──
   const filteredOrders = useMemo(() => {
@@ -551,7 +569,7 @@ export default function SupervisorDashboard() {
   // ── Counts for tabs ──
   const totalPaidItems = useMemo(() => {
     let count = 0;
-    orders.forEach(order => {
+    staffOrders.forEach(order => {
       let orderItems = order.items || [];
       if (typeof orderItems === 'string') {
         try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
@@ -559,7 +577,7 @@ export default function SupervisorDashboard() {
       orderItems.forEach(item => { if (item._rowPaid === true || item.paid_at) count++; });
     });
     return count;
-  }, [orders]);
+  }, [staffOrders]);
 
   const counts = useMemo(() => {
     const acc = { Live: 0, Served: 0, Paid: totalPaidItems, Credits: pendingCredits.length, Voided: pendingVoids.length };
@@ -601,7 +619,7 @@ export default function SupervisorDashboard() {
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-lg border border-white/5">
           <ClipboardList size={12} className="text-yellow-500" />
           <span className="text-[8px] font-semibold text-yellow-900 uppercase tracking-widest">
-            {orders.length} Orders
+            {staffOrders.length} Orders
           </span>
         </div>
       </div>
@@ -666,7 +684,7 @@ export default function SupervisorDashboard() {
               />
             )}
             {activeTab === "Paid" && (
-              <RecentlyPaidItemsPanel orders={orders} theme={theme} />
+              <RecentlyPaidItemsPanel orders={staffOrders} theme={theme} />
             )}
             {(activeTab === "Live" || activeTab === "Served") && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">

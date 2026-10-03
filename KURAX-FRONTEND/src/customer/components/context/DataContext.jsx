@@ -57,7 +57,7 @@ export const DataProvider = ({ children }) => {
   });
   const [weeklyRevenue, setWeeklyRevenue] = useState([]);
   const [monthlySummary, setMonthlySummary] = useState({ totals: {}, daily: [] });
-  const [pettyCash, setPettyCash] = useState({ total_in: 0, total_out: 0, net: 0, entries: [] });
+  const [pettyCash, setPettyCash] = useState({ total_out: 0, entries: [] });
 
   // ─── Targets and user state ───────────────────────────────────────────────
   const [dailyGoal, setDailyGoal] = useState(20);
@@ -203,7 +203,7 @@ export const DataProvider = ({ children }) => {
       total_mtn: 0, total_airtel: 0, total_credit: 0,
       total_mixed: 0, order_count: 0,
     });
-    setPettyCash({ total_in: 0, total_out: 0, net: 0, entries: [] });
+    setPettyCash({ total_out: 0, entries: [] });
     setGlobalResetKey(prev => prev + 1);
 
     const keysToRemove = [];

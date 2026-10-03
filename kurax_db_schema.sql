@@ -881,6 +881,7 @@ CREATE TABLE public.monthly_expenses (
     amount numeric DEFAULT 0 NOT NULL,
     description text,
     entered_by text,
+    payment_method text DEFAULT 'Cash'::text NOT NULL,
     updated_at timestamp with time zone DEFAULT now()
 );
 
@@ -1021,7 +1022,7 @@ CREATE TABLE public.petty_cash (
     id integer NOT NULL,
     entry_date date NOT NULL,
     amount numeric DEFAULT 0 NOT NULL,
-    direction text DEFAULT 'OUT'::text NOT NULL,
+    direction text DEFAULT 'OUT'::text NOT NULL CHECK (direction = 'OUT'::text),
     category text DEFAULT 'General'::text NOT NULL,
     description text NOT NULL,
     logged_by text,

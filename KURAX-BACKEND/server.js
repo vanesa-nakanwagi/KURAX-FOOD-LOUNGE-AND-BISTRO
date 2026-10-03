@@ -26,6 +26,8 @@ import dayClosureRoutes from './routes/dayClosureRoutes.js';
 import creditRoutes, { initCreditTables } from './routes/creditRoutes.js';
 import shishaRoutes, { initShishaTables } from './routes/shishaRoutes.js';
 import departmentRoutes from './routes/departmentRoutes.js';
+import { ensureAccountingDataModel } from './helpers/accounting.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 
 dotenv.config();
 const app = express();
@@ -102,6 +104,7 @@ app.use('/api/day-closure', dayClosureRoutes);
 app.use('/api/credits', creditRoutes);
 app.use('/api/shisha', shishaRoutes);
 app.use('/api/departments', departmentRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 6. HEALTH CHECK
 app.get('/api/health', (req, res) => {
@@ -123,6 +126,8 @@ const verifyDB = async () => {
     console.log('✅ Credit tables verified/initialized');
     await initShishaTables();
     console.log('✅ Shisha department tables verified/initialized');
+    await ensureAccountingDataModel();
+    console.log('✅ Accounting schema verified/initialized');
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
       console.warn('⚠️ Shisha PIN email is disabled: configure EMAIL_USER and EMAIL_PASS in the backend environment.');
     }

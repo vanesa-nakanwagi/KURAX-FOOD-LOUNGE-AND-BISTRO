@@ -107,7 +107,7 @@ export default function ReopenDayModal({ isOpen, onClose, closedDays, loading, o
                     <p className="text-gray-900 font-black">{selectedDayData.order_count}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Gross Revenue</p>
+                    <p className="text-gray-500">Gross Sales</p>
                     <p className="text-yellow-600 font-black">UGX {Number(selectedDayData.gross).toLocaleString()}</p>
                   </div>
                 </div>

@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pool from '../db.js';
 import { createSessionToken, readSessionToken } from '../middleware/sessionTokens.js';
+import notificationService from '../helpers/notificationService.js';
 
 const router = express.Router();
 const scrypt = promisify(scryptCallback);
@@ -429,6 +430,14 @@ router.post('/orders', requireRoles('SHISHA_WAITER'), async (req, res) => {
     }
     await recordHistory(client, order, 'PENDING', 'ORDER_CREATED', req.actor, order.notes);
     await client.query('COMMIT');
+    void notificationService.sendToRoles(['SHISHA_HOD', 'SHISHA_CHEF'], {
+      type: 'SHISHA_ORDER',
+      title: 'New Shisha Order',
+      body: `Shisha order ${orderReference(order.id)} requires attention.`,
+      department: 'Shisha',
+      referenceId: order.id,
+      link: `/shisha?order=${order.id}`,
+    }, 'shisha');
     return res.status(201).json({ ...(await loadOrder(order.id)), reference: orderReference(order.id) });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -454,6 +463,14 @@ router.post('/orders/:id/assign', requireRoles('SHISHA_HOD'), async (req, res) =
     await client.query('UPDATE public.shisha_orders SET assigned_chef_id=$1, updated_at=NOW() WHERE id=$2', [chefId, order.id]);
     await recordHistory(client, order, 'ASSIGNED', 'CHEF_ASSIGNED', req.actor, `Assigned mixer ${chefId}`);
     await client.query('COMMIT');
+    void notificationService.sendToUser(chefId, {
+      type: 'SHISHA_ORDER_ASSIGNED',
+      title: 'Shisha Order Assigned',
+      body: `Shisha order ${orderReference(order.id)} is assigned to you.`,
+      department: 'Shisha',
+      referenceId: order.id,
+      link: `/shisha?order=${order.id}`,
+    }, 'shisha');
     return res.json({ ...(await loadOrder(order.id)), reference: orderReference(order.id) });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -498,6 +515,14 @@ router.post('/orders/:id/ready', requireRoles('SHISHA_CHEF'), async (req, res) =
     }
     await recordHistory(client, order, 'READY', 'ORDER_READY', req.actor);
     await client.query('COMMIT');
+    void notificationService.sendToUser(order.shisha_waiter_id, {
+      type: 'SHISHA_ORDER_READY',
+      title: 'Shisha Order Ready',
+      body: `Shisha order ${orderReference(order.id)} is ready to serve.`,
+      department: 'Shisha',
+      referenceId: order.id,
+      link: `/shisha?order=${order.id}`,
+    }, 'shisha');
     return res.json({ ...(await loadOrder(order.id)), reference: orderReference(order.id) });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -705,7 +730,7 @@ router.get('/reports', async (req, res) => {
     return fail(res, 400, 'Provide a valid date range.');
   }
   try {
-    const [summary, waiters, methods] = await Promise.all([
+    const [summary, waiters, methods, mixers] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(total_amount),0) AS total_sales,
           COALESCE(SUM(amount_paid),0) AS amount_collected,
@@ -734,8 +759,17 @@ router.get('/reports', async (req, res) => {
            AND confirmed_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
          GROUP BY payment_method ORDER BY amount DESC`, [from, to]
       ),
+      pool.query(
+        `SELECT c.id AS mixer_id, c.name AS mixer_name, COUNT(o.id)::int AS total_orders,
+          COALESCE(SUM(o.total_amount),0) AS total_sales
+         FROM public.shisha_orders o
+         JOIN public.shisha_staff c ON c.id=o.assigned_chef_id
+         WHERE o.created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+           AND o.created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+         GROUP BY c.id, c.name ORDER BY total_sales DESC`, [from, to]
+      ),
     ]);
-    return res.json({ from, to, summary: summary.rows[0], by_waiter: waiters.rows, by_payment_method: methods.rows });
+    return res.json({ from, to, summary: summary.rows[0], by_waiter: waiters.rows, by_payment_method: methods.rows, by_mixer: mixers.rows });
   } catch (error) {
     console.error('Shisha financial report error:', error.message);
     return fail(res, 500, 'Could not load Shisha reports.');

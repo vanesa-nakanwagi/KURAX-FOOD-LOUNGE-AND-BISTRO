@@ -111,7 +111,7 @@ function GrossRevenueCard({ grossSales, creditSettledToday }) {
             <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Today</span>
           </div>
         </div>
-        <p className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">Gross Revenue</p>
+        <p className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">Gross Sales</p>
         <span className="text-2xl font-black text-emerald-600 break-words whitespace-normal">
           {formatFullAmount(grossSales)}
         </span>
@@ -122,7 +122,7 @@ function GrossRevenueCard({ grossSales, creditSettledToday }) {
               <p className="text-[10px] font-black text-emerald-600">+{formatFullAmount(creditSettledToday)}</p>
             </div>
             <div className="flex items-center justify-between bg-gray-50 rounded-lg px-2 py-1.5">
-              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider">Combined</p>
+              <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider">Collected Before Expenses</p>
               <p className="text-[11px] font-black text-gray-800 break-words">{formatFullAmount(combinedTotal)}</p>
             </div>
           </div>
@@ -166,7 +166,7 @@ export default function CashierDashboard() {
   const [qLoading,           setQLoading]           = useState(true);
   
   const [pettyCashOutTotal,  setPettyCashOutTotal]  = useState(0);
-  const [pettyCashInTotal,   setPettyCashInTotal]   = useState(0);
+  const [counterCashLive, setCounterCashLive] = useState(null);
 
   const [deliveryOrder,      setDeliveryOrder]      = useState(null);
   const [deliveryRefreshKey, setDeliveryRefreshKey] = useState(0);
@@ -202,7 +202,7 @@ export default function CashierDashboard() {
   const creditSettledToday = Number(todaySummary?.credit_settlements_today ?? 0);
 
   const totalMobileMoney = momoMTN + momoAirtel;
-  const cashOnCounter = Math.max(0, cashRevenue - pettyCashInTotal);
+  const cashOnCounter = counterCashLive ?? (cashRevenue - pettyCashOutTotal);
   const netCashAfterPetty = cashRevenue - pettyCashOutTotal;
 
   // Credit action counts (from credits array) – used only inside CREDITS section now
@@ -252,8 +252,8 @@ export default function CashierDashboard() {
       if (hRes.ok) setHistory(await hRes.json());
       if (pRes.ok) {
         const summary = await pRes.json();
-        setPettyCashInTotal(Number(summary.total_in) || 0);
         setPettyCashOutTotal(Number(summary.total_out) || 0);
+        setCounterCashLive(Number.isFinite(Number(summary.cash_on_counter)) ? Number(summary.cash_on_counter) : null);
       }
     } catch (e) {
       console.error("Cashier fetch failed:", e);
@@ -598,7 +598,7 @@ export default function CashierDashboard() {
                   label="Cash on Counter"
                   value={dayClosed ? 0 : cashOnCounter}
                   color="text-emerald-600"
-                  note={pettyCashInTotal > 0 ? `-${formatFullAmount(pettyCashInTotal)} to petty` : null}
+                  note={pettyCashOutTotal > 0 ? `-${formatFullAmount(pettyCashOutTotal)} expenses` : null}
                 />
                 <StatCard
                   icon={<CreditCard size={18} className="text-blue-600" />}
@@ -751,9 +751,9 @@ export default function CashierDashboard() {
                 staffName={cashierName}
                 grossCash={cashRevenue}
                 theme="light"
-                onTotalChange={(outTotal, inTotal) => {
+                onTotalChange={(outTotal, cashBalance) => {
                   setPettyCashOutTotal(outTotal);
-                  setPettyCashInTotal(inTotal);
+                  if (Number.isFinite(Number(cashBalance))) setCounterCashLive(Number(cashBalance));
                 }}
               />
             </div>

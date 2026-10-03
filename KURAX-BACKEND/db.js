@@ -16,6 +16,22 @@ const pool = new Pool({
 
 export async function ensureDatabaseSchema() {
   const statements = [
+    `CREATE TABLE IF NOT EXISTS public.notification_devices (
+      id SERIAL PRIMARY KEY,
+      user_scope TEXT NOT NULL CHECK (user_scope IN ('restaurant', 'shisha')),
+      user_id INTEGER NOT NULL,
+      firebase_installation_id TEXT NOT NULL UNIQUE,
+      fcm_token TEXT NOT NULL,
+      platform TEXT NOT NULL CHECK (platform IN ('web', 'android', 'ios')),
+      user_agent TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS notification_devices_user_active_idx
+      ON public.notification_devices (user_scope, user_id) WHERE is_active = true;`,
+
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS payment_confirmed BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS credit_approved BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS original_order_ids JSONB DEFAULT '[]'::jsonb;`,
@@ -225,12 +241,52 @@ export async function ensureDatabaseSchema() {
       id SERIAL PRIMARY KEY,
       entry_date DATE NOT NULL,
       amount NUMERIC NOT NULL DEFAULT 0,
-      direction TEXT NOT NULL DEFAULT 'OUT',
+      direction TEXT NOT NULL DEFAULT 'OUT' CHECK (direction = 'OUT'),
       category TEXT NOT NULL DEFAULT 'General',
       description TEXT NOT NULL,
       logged_by TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );`,
+    `CREATE TABLE IF NOT EXISTS public.purchases (
+      id SERIAL PRIMARY KEY,
+      purchase_date DATE NOT NULL,
+      supplier TEXT,
+      total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      invoice_number TEXT,
+      notes TEXT,
+      created_by TEXT DEFAULT 'Accountant',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.inventory_snapshots (
+      id SERIAL PRIMARY KEY,
+      snapshot_date DATE NOT NULL,
+      total_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_by TEXT DEFAULT 'Accountant',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+    `DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.petty_cash'::regclass AND conname = 'petty_cash_expense_only'
+      ) THEN
+        ALTER TABLE public.petty_cash
+        ADD CONSTRAINT petty_cash_expense_only CHECK (direction = 'OUT') NOT VALID;
+      END IF;
+    END $$;`,
+
+    `CREATE TABLE IF NOT EXISTS public.monthly_expenses (
+      id SERIAL PRIMARY KEY,
+      month TEXT NOT NULL,
+      category TEXT NOT NULL,
+      amount NUMERIC NOT NULL DEFAULT 0,
+      description TEXT,
+      entered_by TEXT,
+      payment_method TEXT NOT NULL DEFAULT 'Cash',
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (month, category)
+    );`,
+    `ALTER TABLE public.monthly_expenses ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'Cash';`,
 
     `CREATE TABLE IF NOT EXISTS public.monthly_targets (
       id SERIAL PRIMARY KEY,
@@ -322,6 +378,104 @@ export async function ensureDatabaseSchema() {
       message TEXT,
       meta JSONB,
       created_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS public.chart_of_accounts (
+      id SERIAL PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL CHECK (category IN ('Asset', 'Liability', 'Equity', 'Revenue', 'Expense')),
+      account_type TEXT NOT NULL,
+      normal_balance TEXT NOT NULL CHECK (normal_balance IN ('Debit', 'Credit')),
+      is_active BOOLEAN DEFAULT true,
+      parent_code TEXT,
+      description TEXT,
+      created_by TEXT DEFAULT 'System',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS public.accounting_periods (
+      id SERIAL PRIMARY KEY,
+      period_name TEXT NOT NULL UNIQUE,
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'Closed')),
+      created_by TEXT DEFAULT 'System',
+      closed_by TEXT,
+      closed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS public.journal_entries (
+      id SERIAL PRIMARY KEY,
+      reference TEXT NOT NULL UNIQUE,
+      entry_date DATE NOT NULL,
+      description TEXT NOT NULL,
+      source_transaction TEXT,
+      posted_by TEXT NOT NULL DEFAULT 'System',
+      approved_by TEXT,
+      approved_at TIMESTAMPTZ,
+      reversal_of INTEGER REFERENCES public.journal_entries(id),
+      reversal_reason TEXT,
+      business_time TIME,
+      posted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      status TEXT NOT NULL DEFAULT 'Posted' CHECK (status IN ('Draft', 'Posted', 'Reversed', 'Voided')),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS public.general_ledger (
+      id SERIAL PRIMARY KEY,
+      journal_entry_id INTEGER NOT NULL REFERENCES public.journal_entries(id) ON DELETE CASCADE,
+      account_code TEXT NOT NULL,
+      account_name TEXT NOT NULL,
+      debit NUMERIC(12,2) DEFAULT 0,
+      credit NUMERIC(12,2) DEFAULT 0,
+      entry_date DATE NOT NULL,
+      business_time TIME,
+      description TEXT,
+      source_transaction TEXT,
+      posted_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS public.accounting_audit_log (
+      id SERIAL PRIMARY KEY,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER,
+      action TEXT NOT NULL,
+      actor TEXT,
+      details JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS public.accounts_receivable (
+      id SERIAL PRIMARY KEY,
+      reference TEXT NOT NULL,
+      customer_name TEXT,
+      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0,
+      outstanding_balance NUMERIC(12,2) NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'Outstanding' CHECK (status IN ('Outstanding', 'Partially Paid', 'Fully Settled')),
+      payment_method TEXT,
+      settlement_date DATE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS public.accounts_payable (
+      id SERIAL PRIMARY KEY,
+      reference TEXT NOT NULL,
+      supplier_name TEXT,
+      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0,
+      outstanding_balance NUMERIC(12,2) NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'Unpaid' CHECK (status IN ('Unpaid', 'Partially Paid', 'Fully Paid')),
+      due_date DATE,
+      payment_method TEXT,
+      paid_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );`
   ];
 

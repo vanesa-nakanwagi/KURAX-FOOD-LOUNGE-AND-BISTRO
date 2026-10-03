@@ -1,14 +1,104 @@
-import React, { useState } from "react";
-import { FileText, PlusCircle, Package, Calendar, TrendingUp, TrendingDown, Printer, Download, Loader2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { FileText, FileSpreadsheet, PlusCircle, Package, Calendar, Loader2 } from "lucide-react";
+import * as XLSX from "xlsx";
 import API_URL from "../../config/api";
+import { downloadReportPdf } from "../reportExport";
 
-export default function ReportsPanel({ dark = false }) {
+function buildReportSections(reportType, data) {
+  if (reportType === "income") {
+    const revenueRows = (data.revenue || []).map((row) => [row.account_code, row.account_name, Number(row.amount || 0)]);
+    const expenseRows = (data.expenses || []).map((row) => [row.account_code, row.account_name, Number(row.amount || 0)]);
+
+    return [
+      {
+        title: "Revenue",
+        columns: ["Account Code", "Account", "Amount (UGX)"],
+        rows: [...revenueRows, ["", "Total Revenue", Number(data.totalRevenue || 0)]],
+      },
+      {
+        title: "Expenses",
+        columns: ["Account Code", "Account", "Amount (UGX)"],
+        rows: [...expenseRows, ["", "Total Expenses", Number(data.totalExpenses || 0)]],
+      },
+      {
+        title: "Net Profit",
+        columns: ["Metric", "Amount (UGX)"],
+        rows: [["Net Profit", Number(data.netProfit || 0)]],
+      },
+    ];
+  }
+
+  const currentYear = data.asOfDate?.slice(0, 4) || "Current year";
+  const priorYear = data.priorAsOfDate?.slice(0, 4) || "Prior year";
+  const accountRows = (accounts = []) => accounts.map((account) => [
+    account.account_name,
+    Number(account.balance || 0),
+    Number(account.prior_balance || 0),
+  ]);
+  const columns = ["Account", `${currentYear} (UGX)`, `${priorYear} (UGX)`];
+
+  return [
+    {
+      title: "Assets",
+      columns,
+      rows: [
+        ["Current assets", "", ""],
+        ...accountRows(data.assets?.current_accounts),
+        ["Total current assets", Number(data.assets?.total_current_assets || 0), Number(data.assets?.prior_year_total_current_assets || 0)],
+        ["Non-current assets", "", ""],
+        ...accountRows(data.assets?.non_current_accounts),
+        ["Total non-current assets", Number(data.assets?.total_non_current_assets || 0), Number(data.assets?.prior_year_total_non_current_assets || 0)],
+        ["Total assets", Number(data.assets?.total_assets || 0), Number(data.assets?.prior_year_total_assets || 0)],
+      ],
+    },
+    {
+      title: "Liabilities and shareholders' equity",
+      columns,
+      rows: [
+        ["Current liabilities", "", ""],
+        ...accountRows(data.liabilities?.current_accounts),
+        ["Total current liabilities", Number(data.liabilities?.total_current_liabilities || 0), Number(data.liabilities?.prior_year_total_current_liabilities || 0)],
+        ["Non-current liabilities", "", ""],
+        ...accountRows(data.liabilities?.non_current_accounts),
+        ["Total non-current liabilities", Number(data.liabilities?.total_non_current_liabilities || 0), Number(data.liabilities?.prior_year_total_non_current_liabilities || 0)],
+        ["Total liabilities", Number(data.liabilities?.total_liabilities || 0), Number(data.liabilities?.prior_year_total_liabilities || 0)],
+        ["Shareholders' equity", "", ""],
+        ...accountRows(data.equity?.accounts),
+        ["Total shareholders' equity", Number(data.equity?.total_equity || 0), Number(data.equity?.prior_year_total_equity || 0)],
+        ["Total liabilities and shareholders' equity", Number(data.total_liabilities_and_equity || 0), Number(data.prior_year_total_liabilities_and_equity || 0)],
+        ["Balance difference", Number(data.difference || 0), Number(data.prior_year_difference || 0)],
+      ],
+    },
+  ];
+}
+
+function formatUGX(value) {
+  return `UGX ${Number(value || 0).toLocaleString()}`;
+}
+
+export default function ReportsPanel({ dark = false, initialDateRange, timeRange, onDateRangeChange }) {
   const [activeTab, setActiveTab] = useState("reports");
   const [reportType, setReportType] = useState("income");
-  const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [dateRange, setDateRange] = useState(() => {
+    if (initialDateRange?.start && initialDateRange?.end) return initialDateRange;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const lastDay = String(new Date(year, now.getMonth() + 1, 0).getDate()).padStart(2, "0");
+    return { start: `${year}-${month}-01`, end: `${year}-${month}-${lastDay}` };
+  });
   const [reportData, setReportData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (initialDateRange?.start && initialDateRange?.end) setDateRange(initialDateRange);
+  }, [initialDateRange?.start, initialDateRange?.end]);
+
+  const updateDateRange = (nextRange) => {
+    setDateRange(nextRange);
+    onDateRangeChange?.(nextRange);
+  };
 
   const [purchaseForm, setPurchaseForm] = useState({
     purchase_date: new Date().toISOString().split("T")[0],
@@ -38,8 +128,8 @@ export default function ReportsPanel({ dark = false }) {
         ? `${API_URL}/api/accountant/reports/income-statement`
         : `${API_URL}/api/accountant/reports/balance-sheet`;
       const body = reportType === "income"
-        ? { startDate: dateRange.start, endDate: dateRange.end }
-        : { asOfDate: dateRange.end };
+        ? { startDate: dateRange.start, endDate: dateRange.end, startTime: timeRange?.start || null, endTime: timeRange?.end || null }
+        : { asOfDate: dateRange.end, startTime: timeRange?.start || null, endTime: timeRange?.end || null };
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -53,6 +143,18 @@ export default function ReportsPanel({ dark = false }) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const selectReportMonth = (value) => {
+    if (!value) return;
+    const [year, month] = value.split("-").map(Number);
+    const lastDay = String(new Date(year, month, 0).getDate()).padStart(2, "0");
+    updateDateRange({
+      start: `${value}-01`,
+      end: `${value}-${lastDay}`,
+    });
+    setReportData(null);
+    setError("");
   };
 
   const savePurchase = async () => {
@@ -109,17 +211,45 @@ export default function ReportsPanel({ dark = false }) {
     }
   };
 
-  const handlePrint = () => window.print();
-  const handleDownload = () => {
+  const getReportTitle = () => reportType === "income" ? "Income Statement" : "Balance Sheet";
+
+  const handleExportPdf = () => {
     if (!reportData) return;
-    const dataStr = JSON.stringify(reportData, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${reportType}_report_${dateRange.end || "latest"}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const asOfDate = reportType === "balance";
+    const dateLabel = dateRange.end || "latest";
+    downloadReportPdf({
+      filename: `${reportType}_report_${dateLabel}.pdf`,
+      title: getReportTitle(),
+      companyName: asOfDate ? "KURAX FOOD LOUNGE AND BISTRO" : "",
+      periodText: `${asOfDate ? `As of: ${dateLabel}` : `Period: ${dateRange.start} to ${dateLabel}`}${timeRange?.start || timeRange?.end ? `, ${timeRange.start || "00:00"} to ${timeRange.end || "23:59"}` : ""}`,
+      footerLabel: "Financial Report",
+      from: dateRange.start,
+      to: dateLabel,
+      sections: buildReportSections(reportType, reportData),
+    });
+  };
+
+  const handleExportExcel = () => {
+    if (!reportData) return;
+    const asOfDate = reportType === "balance";
+    const rows = [
+      [getReportTitle()],
+      ...(asOfDate ? [["KURAX FOOD LOUNGE AND BISTRO"]] : []),
+      [asOfDate ? "As of" : "Period start", asOfDate ? dateRange.end : dateRange.start],
+      ...(!asOfDate ? [["Period end", dateRange.end]] : []),
+      ...(timeRange?.start || timeRange?.end ? [["Time", `${timeRange.start || "00:00"} to ${timeRange.end || "23:59"}`]] : []),
+      [],
+    ];
+
+    buildReportSections(reportType, reportData).forEach((section) => {
+      rows.push([section.title], section.columns, ...section.rows, []);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    worksheet["!cols"] = [{ wch: 38 }, { wch: 22 }, { wch: 22 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Financial Report");
+    XLSX.writeFile(workbook, `${reportType}_report_${dateRange.end || "latest"}.xlsx`);
   };
 
   // ✅ FIXED: input styles with proper text color based on theme
@@ -172,6 +302,15 @@ export default function ReportsPanel({ dark = false }) {
         <div className={`rounded-2xl p-6 space-y-5 ${containerClass}`}>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
+              <label className={labelClass}>Report Month</label>
+              <input
+                type="month"
+                value={dateRange.start.slice(0, 7)}
+                onChange={(e) => selectReportMonth(e.target.value)}
+                className={inputClass + " w-44"}
+              />
+            </div>
+            <div>
               <label className={labelClass}>Report Type</label>
               <select
                 value={reportType}
@@ -187,7 +326,7 @@ export default function ReportsPanel({ dark = false }) {
               <input
                 type="date"
                 value={dateRange.start}
-                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                onChange={(e) => updateDateRange({ ...dateRange, start: e.target.value })}
                 className={inputClass + " w-44"}
               />
             </div>
@@ -196,7 +335,7 @@ export default function ReportsPanel({ dark = false }) {
               <input
                 type="date"
                 value={dateRange.end}
-                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                onChange={(e) => updateDateRange({ ...dateRange, end: e.target.value })}
                 className={inputClass + " w-44"}
               />
             </div>
@@ -210,16 +349,16 @@ export default function ReportsPanel({ dark = false }) {
             {reportData && (
               <>
                 <button
-                  onClick={handlePrint}
+                  onClick={handleExportPdf}
                   className="border border-gray-300 dark:border-white/20 px-4 py-3 rounded-xl text-[10px] font-black hover:bg-gray-100 dark:hover:bg-white/5 flex items-center gap-2 text-gray-700 dark:text-gray-300"
                 >
-                  <Printer size={12} /> Print
+                  <FileText size={12} /> Export PDF
                 </button>
                 <button
-                  onClick={handleDownload}
+                  onClick={handleExportExcel}
                   className="border border-gray-300 dark:border-white/20 px-4 py-3 rounded-xl text-[10px] font-black hover:bg-gray-100 dark:hover:bg-white/5 flex items-center gap-2 text-gray-700 dark:text-gray-300"
                 >
-                  <Download size={12} /> Export JSON
+                  <FileSpreadsheet size={12} /> Export Excel
                 </button>
               </>
             )}
@@ -227,67 +366,45 @@ export default function ReportsPanel({ dark = false }) {
 
           {error && <div className="text-red-500 text-sm">{error}</div>}
 
-          {/* Income Statement Display */}
-          {reportData && reportType === "income" && (
-            <div className="mt-6 space-y-4 overflow-x-auto">
-              <h3 className="text-lg font-black">Income Statement</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-gray-50 dark:bg-black/40 p-4 rounded-xl">
-                  <p className="text-gray-500 text-xs">Total Revenue</p>
-                  <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                    UGX {reportData.revenue?.toLocaleString()}
-                  </p>
+          {reportData && (
+            <section className="report-preview mt-6 space-y-5 bg-white p-5 text-gray-900">
+              <header className="border-b border-gray-200 pb-4">
+                <h3 className="text-xl font-black">{getReportTitle()}</h3>
+                {reportType === "balance" && <p className="mt-1 text-sm font-semibold">KURAX FOOD LOUNGE AND BISTRO</p>}
+                <p className="mt-1 text-sm text-gray-500">
+                  {reportType === "balance"
+                    ? `As of ${dateRange.end}`
+                    : `${dateRange.start} to ${dateRange.end}`}
+                </p>
+              </header>
+              {buildReportSections(reportType, reportData).map((section) => (
+                <div key={section.title} className="overflow-x-auto">
+                  <h4 className="mb-2 text-sm font-bold uppercase text-gray-600">{section.title}</h4>
+                  <table className="w-full border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-300">
+                        {section.columns.map((column) => (
+                          <th key={column} className="px-3 py-2 font-bold">{column}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {section.rows.map((row, rowIndex) => (
+                        <tr key={`${section.title}-${rowIndex}`} className="border-b border-gray-100">
+                          {row.map((value, columnIndex) => (
+                            <td key={`${section.title}-${rowIndex}-${columnIndex}`} className="px-3 py-2">
+                              {typeof value === "number"
+                                ? formatUGX(value)
+                                : value}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="bg-gray-50 dark:bg-black/40 p-4 rounded-xl">
-                  <p className="text-gray-500 text-xs">Cost of Goods Sold</p>
-                  <p className="text-2xl font-black text-rose-600 dark:text-rose-400">
-                    UGX {reportData.cogs?.toLocaleString()}
-                  </p>
-                </div>
-                <div className="bg-gray-50 dark:bg-black/40 p-4 rounded-xl">
-                  <p className="text-gray-500 text-xs">Beginning Inventory</p>
-                  <p className="font-bold text-gray-900 dark:text-white">{reportData.beginning_inventory?.toLocaleString()}</p>
-                </div>
-                <div className="bg-gray-50 dark:bg-black/40 p-4 rounded-xl">
-                  <p className="text-gray-500 text-xs">Purchases</p>
-                  <p className="font-bold text-gray-900 dark:text-white">{reportData.purchases?.toLocaleString()}</p>
-                </div>
-                <div className="bg-gray-50 dark:bg-black/40 p-4 rounded-xl">
-                  <p className="text-gray-500 text-xs">Ending Inventory</p>
-                  <p className="font-bold text-gray-900 dark:text-white">{reportData.ending_inventory?.toLocaleString()}</p>
-                </div>
-                <div className="bg-yellow-100 dark:bg-yellow-500/20 p-4 rounded-xl col-span-1 sm:col-span-2">
-                  <p className="text-gray-700 dark:text-gray-300 font-bold">Net Income</p>
-                  <p className="text-3xl font-black text-yellow-700 dark:text-yellow-400">
-                    UGX {reportData.netIncome?.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Balance Sheet Display */}
-          {reportData && reportType === "balance" && (
-            <div className="mt-6">
-              <h3 className="text-lg font-black">Balance Sheet (as of {dateRange.end})</h3>
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div className="bg-gray-50 dark:bg-black/40 p-4 rounded-xl">
-                  <p className="text-gray-500 text-xs">Inventory (Asset)</p>
-                  <p className="text-2xl font-black text-blue-600 dark:text-blue-400">
-                    UGX {reportData.assets?.inventory?.toLocaleString()}
-                  </p>
-                </div>
-                <div className="bg-gray-50 dark:bg-black/40 p-4 rounded-xl">
-                  <p className="text-gray-500 text-xs">Total Assets</p>
-                  <p className="text-2xl font-black text-gray-900 dark:text-white">
-                    UGX {reportData.assets?.total_assets?.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500 mt-4">
-                Note: Cash, receivables, liabilities, and equity will be added in a future update.
-              </p>
-            </div>
+              ))}
+            </section>
           )}
         </div>
       )}

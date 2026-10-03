@@ -16,12 +16,12 @@ import StaffSalesPerformance from "../../components/StaffSalesPerformance";
 
 // ── MENU CONFIGURATION (Shift Removed) ──────────────────────────────────────
 const SUPERVISOR_MENU = [
-  { id: "order",   label: "TAKE ORDER",        icon: ClipboardList },
-  { id: "manage",  label: "MANAGE ORDER",      icon: History },
-  { id: "tables",  label: "MANAGE TABLE",      icon: LayoutGrid },
-  { id: "status",  label: "VIEW ORDER STATUS", icon: Clock },
-  { id: "targets", label: "STAFF TARGETS",     icon: Target },
-  { id: "performance", label: "STAFF PERFORMANCE", icon: BarChart3 },
+  { id: "order",   label: "Take Order",        icon: ClipboardList },
+  { id: "manage",  label: "Manage Order",      icon: History },
+  { id: "tables",  label: "Manage Table",      icon: LayoutGrid },
+  { id: "status",  label: "View Order Status", icon: Clock },
+  { id: "targets", label: "Staff Targets",     icon: Target },
+  { id: "performance", label: "Staff Performance", icon: BarChart3 },
 ];
 
 export default function SupervisorLayout() {

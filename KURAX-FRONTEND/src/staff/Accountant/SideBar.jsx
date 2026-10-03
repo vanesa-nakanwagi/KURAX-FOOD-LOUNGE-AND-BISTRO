@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Receipt, Calculator, CheckCircle2, X, LogOut,
-  RotateCcw, BookOpen, BarChart3, Wallet, Sparkles, Menu, FileText, CircleDollarSign
+  Receipt, Calculator, CheckCircle2, FileText, X, LogOut,
+  RotateCcw, BookOpen, Wallet, Sparkles, Menu, CircleDollarSign, Settings,
+  BarChart3,
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
@@ -10,14 +11,14 @@ import { useData } from "../../customer/components/context/DataContext";
 
 const DESKTOP_MENU_ITEMS = [
   { key: "DASHBOARD",         label: "Dashboard",           icon: Receipt },
-  { key: "FINANCIAL_HISTORY", label: "Financial History",   icon: FileText },
   { key: "PHYSICAL_COUNT",    label: "Physical Finances",  icon: Calculator },
   { key: "LIVE_AUDIT",        label: "Live Audit",         icon: CheckCircle2 },
   { key: "MONTHLY_COSTS",     label: "Monthly Costs",      icon: Wallet },
   { key: "CREDITS",           label: "Credits",            icon: BookOpen },
-  { key: "VIEW_SALES",        label: "View Sales",         icon: BarChart3 },
   { key: "DEPARTMENT_REPORTS", label: "Department Reports", icon: CircleDollarSign },
- // { key: "REPORTS",           label: "Reports",            icon: FileText },   
+  { key: "REPORTS",           label: "Reports",            icon: FileText },
+  { key: "STAFF_PERFORMANCE", label: "Staff Sales Performance", icon: BarChart3 },
+  { key: "SYSTEM_CONFIGURATION", label: "System Configuration", icon: Settings },
   { key: "REOPEN_DAY",        label: "Reopen Day",         icon: RotateCcw },   
   { key: "END_OF_SHIFT",      label: "End of Shift",       icon: RotateCcw },
 ];
@@ -40,7 +41,8 @@ export default function SideBar({
   setIsOpen, 
   isDark = false,
   voidCount = 0,
-  creditCount = 0
+  creditCount = 0,
+  historicalMode = false,
 }) {
   const { theme } = useTheme();
   const { currentUser } = useData();
@@ -48,6 +50,13 @@ export default function SideBar({
   const [isMobile, setIsMobile] = useState(false);
 
   const dark = isDark || theme === "dark";
+  const visibleMenuItems = historicalMode
+    ? DESKTOP_MENU_ITEMS.filter(item => ["DASHBOARD", "REPORTS", "STAFF_PERFORMANCE", "DEPARTMENT_REPORTS", "SYSTEM_CONFIGURATION"].includes(item.key))
+    : DESKTOP_MENU_ITEMS;
+  const visibleDrawerItems = visibleMenuItems.filter(item => !BOTTOM_NAV_ITEMS.some(nav => nav.key === item.key));
+  const visibleBottomItems = historicalMode
+    ? [{ key: "DASHBOARD", label: "History", icon: Receipt }, { key: "REPORTS", label: "Reports", icon: FileText }]
+    : BOTTOM_NAV_ITEMS;
   const fullName = currentUser?.name || "Accountant";
   const firstName = fullName.split(" ")[0];
 
@@ -64,6 +73,7 @@ export default function SideBar({
   };
 
   const handleNavigation = (key) => {
+    if (historicalMode && !["DASHBOARD", "REPORTS", "STAFF_PERFORMANCE", "DEPARTMENT_REPORTS", "SYSTEM_CONFIGURATION"].includes(key)) return;
     setActiveSection(key);
   };
 
@@ -133,7 +143,7 @@ export default function SideBar({
             </div>
 
             <nav className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
-              {DRAWER_MENU_ITEMS.map((item) => {
+              {visibleDrawerItems.map((item) => {
                 let badge = null;
                 if (item.key === "LIVE_AUDIT") badge = voidCount;
                 if (item.key === "CREDITS") badge = creditCount;
@@ -167,7 +177,7 @@ export default function SideBar({
             ${dark ? "bg-zinc-950/95 border-white/10" : "bg-white/95 border-gray-200 shadow-lg"}`}
           style={{ paddingBottom: "env(safe-area-inset-bottom, 6px)" }}
         >
-          {BOTTOM_NAV_ITEMS.map((item) => {
+          {visibleBottomItems.map((item) => {
             const isActive = activeSection === item.key;
             const Icon = item.icon;
             let badge = null;
@@ -223,7 +233,7 @@ export default function SideBar({
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {DESKTOP_MENU_ITEMS.map((item) => {
+        {visibleMenuItems.map((item) => {
           let badge = null;
           if (item.key === "LIVE_AUDIT") badge = voidCount;
           if (item.key === "CREDITS") badge = creditCount;

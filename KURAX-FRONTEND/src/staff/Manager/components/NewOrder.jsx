@@ -12,16 +12,21 @@ import API_URL from "../../../config/api";
 export default function NewOrder() {
   const { orders = [], setOrders, menus = [], currentUser } = useData() || { setOrders: () => {}, orders: [], menus: [] };
   const { theme } = useTheme();
+  const savedUser = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("kurax_user") || "null"); }
+    catch { return null; }
+  }, []);
+  const staffUser = currentUser?.id != null ? currentUser : savedUser;
 
   // --- 1. DYNAMIC STORAGE KEYS ---
   // This ensures the Manager's cart doesn't "bleed" into the Waiter's cart
   const CART_KEY = useMemo(() => 
-    currentUser ? `kurax_cart_${currentUser.id}` : "kurax_staff_cart_guest"
-  , [currentUser]);
+    staffUser?.id != null ? `kurax_cart_${staffUser.id}` : "kurax_staff_cart_guest"
+  , [staffUser]);
 
   const TABLE_KEY = useMemo(() => 
-    currentUser ? `kurax_table_${currentUser.id}` : "kurax_table_name_guest"
-  , [currentUser]);
+    staffUser?.id != null ? `kurax_table_${staffUser.id}` : "kurax_table_name_guest"
+  , [staffUser]);
   
   // --- 2. PERSISTENT STATE INITIALIZATION ---
   const [tableName, setTableName] = useState(() => {
@@ -49,11 +54,11 @@ export default function NewOrder() {
 
   // Persist local state to LocalStorage
   useEffect(() => {
-    if (currentUser) {
+    if (staffUser?.id != null) {
       localStorage.setItem(CART_KEY, JSON.stringify(cart));
       localStorage.setItem(TABLE_KEY, tableName);
     }
-  }, [cart, tableName, CART_KEY, TABLE_KEY, currentUser]);
+  }, [cart, tableName, CART_KEY, TABLE_KEY, staffUser]);
 
   // --- 4. CALCULATIONS ---
   const cartTotal = useMemo(() => 
@@ -115,14 +120,15 @@ export default function NewOrder() {
   const handleProcessOrder = async () => {
   if (!tableName) return alert("Please assign a table name/number.");
   if (cart.length === 0) return alert("Cart is empty.");
+  const staffId = Number(staffUser?.id);
+  if (!Number.isInteger(staffId) || staffId <= 0) return alert("Your staff account could not be identified. Sign in again before placing an order.");
 
-  // 1. Ensure staffName is derived from your currentUser or fallback
-  const currentStaffName = currentUser?.name || staffName || "Unknown Waiter";
+  const currentStaffName = staffUser?.name || "Manager";
 
   const orderData = {
-    staffId: currentUser?.id || 1,
-    staff_name: currentStaffName, // 👈 The backend needs 'staff_name' to log the actor properly
-    staffRole: (currentUser?.role || "WAITER").toUpperCase(),
+    staffId,
+    staff_name: currentStaffName,
+    staffRole: (staffUser?.role || "MANAGER").toUpperCase(),
     tableName: tableName.trim().toUpperCase(),
     items: cart,
     total: cartTotal,

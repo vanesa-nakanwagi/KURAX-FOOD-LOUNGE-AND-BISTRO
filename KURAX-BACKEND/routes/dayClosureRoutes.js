@@ -1,6 +1,7 @@
 // routes/dayClosureRoutes.js
 import express from 'express';
 import pool from '../db.js';
+import { getCounterCash } from '../helpers/pettyCash.js';
 import logActivity from '../utils/logsActivity.js';
 
 const router = express.Router();
@@ -309,23 +310,13 @@ router.get('/current-day-totals', async (req, res) => {
         AND shift_cleared = false
     `, [today]);
     
-    const pettyResult = await pool.query(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE 0 END), 0) AS total_out,
-        COALESCE(SUM(CASE WHEN direction = 'IN' THEN amount ELSE 0 END), 0) AS total_in
-      FROM petty_cash
-      WHERE entry_date = $1
-    `, [today]);
+    const { pettyExpenses, cashOnCounter } = await getCounterCash(pool, today);
     
     res.json({
       date: today,
       sales: result.rows[0],
-      petty: {
-        total_out: Number(pettyResult.rows[0].total_out),
-        total_in: Number(pettyResult.rows[0].total_in),
-        net: Number(pettyResult.rows[0].total_in) - Number(pettyResult.rows[0].total_out)
-      },
-      cash_on_counter: Number(result.rows[0].total_cash) - Number(pettyResult.rows[0].total_in)
+      petty: { total_out: pettyExpenses },
+      cash_on_counter: cashOnCounter
     });
   } catch (err) {
     console.error('Current day totals error:', err.message);

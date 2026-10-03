@@ -60,15 +60,7 @@ export function RevenueChart() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
-  const [totals, setTotals] = useState({
-    cash: 0,
-    card: 0,
-    mobileMoney: 0,
-    creditSettlements: 0,
-    totalRevenue: 0,
-    expenses: 0,
-    profit: 0
-  });
+  const [totals, setTotals] = useState({ grossSales: 0, creditSettlements: 0, expenses: 0, currentCash: 0 });
 
   const fetchMonthlyRevenue = useCallback(async (month) => {
     try {
@@ -78,18 +70,16 @@ export function RevenueChart() {
       const url = `${API_URL}/api/overview/monthly-revenue?month=${month}&t=${Date.now()}`;
       console.log("🔵 Fetching monthly revenue from:", url);
       
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      const [res, financialsRes] = await Promise.all([
+        fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json' } }),
+        fetch(`${API_URL}/api/summaries/monthly-profit?month=${month}`),
+      ]);
       
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
+      if (!res.ok || !financialsRes.ok) {
+        throw new Error(`HTTP error! status: ${res.status} ${financialsRes.status}`);
       }
       
-      const rawData = await res.json();
+      const [rawData, monthlyFinancials] = await Promise.all([res.json(), financialsRes.json()]);
       console.log("📊 Raw API Response for", month, ":", JSON.stringify(rawData, null, 2));
       
       // Create a map of data by day
@@ -98,11 +88,13 @@ export function RevenueChart() {
         rawData.forEach(day => {
           const dayNum = parseInt(day.date);
           dataMap.set(dayNum, {
+            gross_sales: Number(day.gross_sales || 0),
             cash: Number(day.cash || 0),
             card: Number(day.card || 0),
             momo: Number(day.momo || 0),
             credit_settled: Number(day.credit_settled || 0),
-            expenses: Number(day.expenses || day.petty || 0)
+            expenses: Number(day.expenses || day.petty || 0),
+            cash_after_petty_expenses: Number(day.cash_after_petty_expenses || 0),
           });
         });
       }
@@ -111,55 +103,27 @@ export function RevenueChart() {
       const [year, monthNum] = month.split("-");
       const daysInMonth = getDaysInMonth(parseInt(year), parseInt(monthNum));
       
-      // Calculate totals
-      let totalCash = 0;
-      let totalCard = 0;
-      let totalMobileMoney = 0;
-      let totalCreditSettlements = 0;
-      let totalExpenses = 0;
-      
       // Build data for ALL days in the month
       const processedData = [];
       for (let day = 1; day <= daysInMonth; day++) {
-        const dayData = dataMap.get(day) || { cash: 0, card: 0, momo: 0, credit_settled: 0, expenses: 0 };
-        
-        totalCash += dayData.cash;
-        totalCard += dayData.card;
-        totalMobileMoney += dayData.momo;
-        totalCreditSettlements += dayData.credit_settled;
-        totalExpenses += dayData.expenses;
-        
-        const immediateGross = dayData.cash + dayData.card + dayData.momo;
-        const totalRevenue = immediateGross + dayData.credit_settled;
-        const profit = totalRevenue - dayData.expenses;
+      const dayData = dataMap.get(day) || { gross_sales: 0, cash: 0, card: 0, momo: 0, credit_settled: 0, expenses: 0, cash_after_petty_expenses: 0 };
+      const grossSales = dayData.gross_sales;
         
         processedData.push({
           date: `${monthNum}/${day}`,
           day: day,
-          cash: dayData.cash,
-          card: dayData.card,
-          mobileMoney: dayData.momo,
-          immediateGross: immediateGross,
+          grossSales,
           creditSettlements: dayData.credit_settled,
-          totalRevenue: totalRevenue,
           expenses: dayData.expenses,
-          profit: profit
+          cashAfterPettyExpenses: dayData.cash_after_petty_expenses,
         });
       }
       
-      const totalImmediate = totalCash + totalCard + totalMobileMoney;
-      const totalRevenue = totalImmediate + totalCreditSettlements;
-      const totalProfit = totalRevenue - totalExpenses;
-      
       setTotals({
-        cash: totalCash,
-        card: totalCard,
-        mobileMoney: totalMobileMoney,
-        creditSettlements: totalCreditSettlements,
-        immediate: totalImmediate,
-        totalRevenue: totalRevenue,
-        expenses: totalExpenses,
-        profit: totalProfit
+        grossSales: Number(monthlyFinancials.grossSales) || 0,
+        creditSettlements: Number(monthlyFinancials.creditSettlements) || 0,
+        expenses: Number(monthlyFinancials.expenses) || 0,
+        currentCash: Number(monthlyFinancials.currentCash) || 0,
       });
       
       console.log("📈 Monthly Chart Data (all days):", processedData);
@@ -177,6 +141,16 @@ export function RevenueChart() {
   useEffect(() => {
     fetchMonthlyRevenue(selectedMonth);
   }, [selectedMonth, fetchMonthlyRevenue]);
+
+  useEffect(() => {
+    const events = new EventSource(`${API_URL}/api/overview/stream`);
+    events.onmessage = (event) => {
+      try {
+        if (JSON.parse(event.data).type === "PETTY") fetchMonthlyRevenue(selectedMonth);
+      } catch {}
+    };
+    return () => events.close();
+  }, [fetchMonthlyRevenue, selectedMonth]);
 
   const handlePreviousMonth = () => {
     const [year, month] = selectedMonth.split("-");
@@ -244,7 +218,7 @@ export function RevenueChart() {
         <div className="flex items-center gap-2">
           <CalendarIcon size={14} className={dark ? "text-zinc-500" : "text-zinc-400"} />
           <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-zinc-500" : "text-zinc-400"}`}>
-            Revenue by Day
+            Sales and Cash Flow by Day
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -268,30 +242,25 @@ export function RevenueChart() {
       </div>
       
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div className={`p-2 rounded-lg text-center ${dark ? "bg-yellow-500/10" : "bg-yellow-50"}`}>
-          <p className="text-[8px] font-black uppercase text-yellow-500">Cash</p>
-          <p className="text-sm font-black text-yellow-500">{fmtK(totals.cash)}</p>
-          <p className="text-[7px] text-zinc-500">Total for month</p>
-        </div>
-        <div className={`p-2 rounded-lg text-center ${dark ? "bg-blue-500/10" : "bg-blue-50"}`}>
-          <p className="text-[8px] font-black uppercase text-blue-500">Card</p>
-          <p className="text-sm font-black text-blue-500">{fmtK(totals.card)}</p>
-          <p className="text-[7px] text-zinc-500">Total for month</p>
-        </div>
-        <div className={`p-2 rounded-lg text-center ${dark ? "bg-emerald-500/10" : "bg-emerald-50"}`}>
-          <p className="text-[8px] font-black uppercase text-emerald-500">Mobile Money</p>
-          <p className="text-sm font-black text-emerald-500">{fmtK(totals.mobileMoney)}</p>
-          <p className="text-[7px] text-zinc-500">Total for month</p>
+          <p className="text-[8px] font-black uppercase text-yellow-500">Gross Sales</p>
+          <p className="text-sm font-black text-yellow-500">{fmtK(totals.grossSales)}</p>
+          <p className="text-[7px] text-zinc-500">Before expenses</p>
         </div>
         <div className={`p-2 rounded-lg text-center ${dark ? "bg-purple-500/10" : "bg-purple-50"}`}>
-          <p className="text-[8px] font-black uppercase text-purple-500">Credit Settled</p>
+          <p className="text-[8px] font-black uppercase text-purple-500">Credit Settlements</p>
           <p className="text-sm font-black text-purple-500">{fmtK(totals.creditSettlements)}</p>
-          <p className="text-[7px] text-zinc-500">Total for month</p>
+          <p className="text-[7px] text-zinc-500">Collected this month</p>
+        </div>
+        <div className={`p-2 rounded-lg text-center ${dark ? "bg-rose-500/10" : "bg-rose-50"}`}>
+          <p className="text-[8px] font-black uppercase text-rose-500">Expenses</p>
+          <p className="text-sm font-black text-rose-500">{fmtK(totals.expenses)}</p>
+          <p className="text-[7px] text-zinc-500">Petty + fixed</p>
         </div>
         <div className={`p-2 rounded-lg text-center ${dark ? "bg-green-500/10" : "bg-green-50"}`}>
-          <p className="text-[8px] font-black uppercase text-green-500">Net Profit</p>
-          <p className="text-sm font-black text-green-500">{fmtK(totals.profit)}</p>
+          <p className="text-[8px] font-black uppercase text-green-500">Current Cash</p>
+          <p className="text-sm font-black text-green-500">{fmtK(totals.currentCash)}</p>
           <p className="text-[7px] text-zinc-500">After expenses</p>
         </div>
       </div>
@@ -337,8 +306,8 @@ export function RevenueChart() {
           {/* Immediate Gross Sales (Cash + Card + Mobile Money) */}
           <Area 
             type="monotone" 
-            dataKey="immediateGross" 
-            name="Cash + Card + Mobile Money" 
+            dataKey="grossSales"
+            name="Gross Sales"
             fill="url(#gradImmediate)" 
             stroke="#eab308" 
             strokeWidth={2}
@@ -364,11 +333,11 @@ export function RevenueChart() {
             barSize={16} 
           />
 
-          {/* Net Profit */}
+          {/* Daily cash flow after petty expenses; full month totals above also include fixed costs. */}
           <Line 
             type="monotone" 
-            dataKey="profit" 
-            name="Net Profit" 
+            dataKey="cashAfterPettyExpenses"
+            name="Cash After Petty Expenses"
             stroke="#10b981" 
             strokeWidth={3} 
             dot={{ r: 3, strokeWidth: 0, fill: "#10b981" }} 
@@ -380,7 +349,7 @@ export function RevenueChart() {
       <div className={`text-center text-[8px] font-bold uppercase tracking-widest ${dark ? "text-zinc-600" : "text-zinc-400"}`}>
         <span className="inline-flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-yellow-500" />
-          Immediate Payments (Cash + Card + Mobile Money)
+          Gross Sales (Cash + Card + Mobile Money)
         </span>
         <span className="inline-flex items-center gap-2 ml-3">
           <div className="w-2 h-2 rounded-full bg-purple-500" />
@@ -392,7 +361,7 @@ export function RevenueChart() {
         </span>
         <span className="inline-flex items-center gap-2 ml-3">
           <div className="w-2 h-2 rounded-full bg-green-500" />
-          Net Profit (After expenses)
+          Daily cash after petty expenses; monthly total includes fixed expenses.
         </span>
       </div>
     </div>
