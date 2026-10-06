@@ -12,7 +12,7 @@ export function calculateMonthlyFinancials({ grossSales = 0, creditSettlements =
 }
 
 export async function getMonthlyFinancials(pool, month) {
-  const [salesResult, settlementsResult, pettyResult, expensesResult] = await Promise.all([
+  const [salesResult, settlementsResult, pettyResult, expensesResult, cashierExpensesResult] = await Promise.all([
     pool.query(`
       SELECT
         COALESCE(SUM(o.total), 0) AS gross_sales,
@@ -51,16 +51,31 @@ export async function getMonthlyFinancials(pool, month) {
       WHERE direction = 'OUT' AND TO_CHAR(entry_date, 'YYYY-MM') = $1
     `, [month]),
     pool.query(`SELECT * FROM monthly_expenses WHERE month = $1`, [month]),
+    pool.query(`
+      SELECT COALESCE(SUM(line.debit - line.credit), 0) AS total
+      FROM public.journal_entries entry
+      JOIN public.general_ledger line ON line.journal_entry_id = entry.id
+      JOIN public.chart_of_accounts account ON account.code = line.account_code
+      WHERE account.category = 'Expense'
+        AND (
+          entry.source_transaction LIKE 'cashier_expense:%'
+          OR entry.reversal_of IN (
+            SELECT id FROM public.journal_entries WHERE source_transaction LIKE 'cashier_expense:%'
+          )
+        )
+        AND TO_CHAR(entry.entry_date, 'YYYY-MM') = $1
+    `, [month]),
   ]);
 
   const sales = salesResult.rows[0];
   const settlementBreakdown = settlementsResult.rows[0];
   const pettyOut = Number(pettyResult.rows[0].total);
   const fixedTotal = expensesResult.rows.reduce((sum, row) => sum + Number(row.amount), 0);
+  const cashierExpenseTotal = Number(cashierExpensesResult.rows[0].total) || 0;
   const financials = calculateMonthlyFinancials({
     grossSales: sales.gross_sales,
     creditSettlements: settlementBreakdown.credit_settlements,
-    expenses: pettyOut + fixedTotal,
+    expenses: pettyOut + fixedTotal + cashierExpenseTotal,
   });
 
   return {
@@ -82,6 +97,7 @@ export async function getMonthlyFinancials(pool, month) {
     },
     pettyOut,
     fixedTotal,
+    cashierExpenseTotal,
     fixedItems: expensesResult.rows,
   };
 }

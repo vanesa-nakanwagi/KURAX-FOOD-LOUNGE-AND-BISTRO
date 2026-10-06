@@ -147,10 +147,21 @@ router.get('/tickets/summary', async (req, res) => {
 router.get('/tickets', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
-    const result = await pool.query(
-      `SELECT * FROM barista_tickets WHERE ticket_date = $1 ORDER BY created_at ASC`,
-      [date]
-    );
+    const result = req.query.active === 'true'
+      ? await pool.query(
+        `SELECT t.* FROM barista_tickets t
+         JOIN public.orders o ON o.id = t.order_id
+         WHERE t.status IN ('Pending', 'Preparing')
+           AND t.cleared_at IS NULL
+           AND COALESCE(o.day_cleared, false) = false
+           AND COALESCE(o.shift_cleared, false) = false
+           AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided', 'closed', 'served')
+         ORDER BY t.created_at ASC`
+      )
+      : await pool.query(
+        `SELECT * FROM barista_tickets WHERE ticket_date = $1 ORDER BY created_at ASC`,
+        [date]
+      );
     res.json(result.rows);
   } catch (err) {
     console.error('Barista fetch tickets error:', err.message);

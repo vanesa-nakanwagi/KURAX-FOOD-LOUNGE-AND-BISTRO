@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import CashierDashboard from "./cashierDashboard";
 import PettyCashPanel from "./PettyCashPanel"; 
-import { Receipt, Wallet, LogOut, CheckCircle2, CircleDollarSign } from "lucide-react";
+import { Receipt, Wallet, LogOut, CheckCircle2, FileText } from "lucide-react";
 import logo from "../../../assets/images/logo.jpeg";
 import API_URL from "../../../config/api";
+import CashierExpensePanel from "./CashierExpensePanel";
 
 // ─── Kampala date helper ──────────────────────────────────────────────────────
 function getKampalaDate() {
@@ -138,6 +139,8 @@ export default function CashierLayout() {
             pettyOut={pettyOut} 
           />
         )}
+
+        {activeTab === "expenses" && <CashierExpensePanel user={user} />}
         
         {activeTab === "petty" && (
           <PettyCashPanel
@@ -158,16 +161,13 @@ export default function CashierLayout() {
           icon={<Receipt size={22} />}
           label="Sales"
         />
-        
-        {/* Floating Indicator for Net Cash (Mobile friendly) */}
-        <div className="flex flex-col items-center justify-center -mt-8">
-           <div className="bg-yellow-500 text-black p-3 rounded-full shadow-lg shadow-yellow-500/20 border-4 border-black">
-              <CircleDollarSign size={24} />
-           </div>
-           <span className="text-[9px] font-black text-yellow-500 mt-1 uppercase">
-             {(grossCash - pettyOut).toLocaleString()}
-           </span>
-        </div>
+
+        <NavButton
+          active={activeTab === "expenses"}
+          onClick={() => setActiveTab("expenses")}
+          icon={<FileText size={22} />}
+          label="Expenses"
+        />
 
         <NavButton
           active={activeTab === "petty"}

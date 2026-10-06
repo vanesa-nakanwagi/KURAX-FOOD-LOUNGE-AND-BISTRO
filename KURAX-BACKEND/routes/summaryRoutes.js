@@ -542,22 +542,17 @@ router.get('/staff-monthly-income', async (req, res) => {
 
       const creditSettlements = await pool.query(`
         SELECT
-          COALESCE(SUM(c.amount_paid), 0)                                                        AS total,
-          COUNT(*)                                                                                 AS settlement_count,
-          COALESCE(SUM(CASE WHEN c.settle_method = 'Cash'       THEN c.amount_paid ELSE 0 END), 0) AS cash_amount,
-          COALESCE(SUM(CASE WHEN c.settle_method = 'Card'       THEN c.amount_paid ELSE 0 END), 0) AS card_amount,
-          COALESCE(SUM(CASE WHEN c.settle_method = 'Momo-MTN'   THEN c.amount_paid ELSE 0 END), 0) AS mtn_amount,
-          COALESCE(SUM(CASE WHEN c.settle_method = 'Momo-Airtel'THEN c.amount_paid ELSE 0 END), 0) AS airtel_amount
-        FROM credits c
-        LEFT JOIN cashier_queue cq ON c.cashier_queue_id = cq.id
-        WHERE c.status IN ('FullySettled', 'PartiallySettled')
-          AND TO_CHAR((c.paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
-          AND (
-            (c.cashier_queue_id IS NOT NULL AND cq.staff_id = $1)
-            OR
-            (c.cashier_queue_id IS NULL     AND c.waiter_name ILIKE $3)
-          )
-      `, [staffId, targetMonth, `%${staffMemberName}%`]);
+          COALESCE(SUM(cs.amount_paid), 0) AS total,
+          COUNT(cs.id) AS settlement_count,
+          COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'cash' THEN cs.amount_paid ELSE 0 END), 0) AS cash_amount,
+          COALESCE(SUM(CASE WHEN LOWER(cs.method) IN ('card', 'visa', 'pos') THEN cs.amount_paid ELSE 0 END), 0) AS card_amount,
+          COALESCE(SUM(CASE WHEN LOWER(cs.method) IN ('mtn', 'momo', 'momo-mtn') THEN cs.amount_paid ELSE 0 END), 0) AS mtn_amount,
+          COALESCE(SUM(CASE WHEN LOWER(cs.method) IN ('airtel', 'momo-airtel') THEN cs.amount_paid ELSE 0 END), 0) AS airtel_amount
+        FROM credit_settlements cs
+        JOIN credits c ON c.id = cs.credit_id
+        WHERE UPPER(TRIM(COALESCE(c.waiter_name, c.requested_by, ''))) = UPPER(TRIM($1))
+          AND TO_CHAR((cs.created_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+      `, [staffMemberName, targetMonth]);
 
       creditTotal     = Number(creditSettlements.rows[0].total);
       creditBreakdown = {
@@ -583,7 +578,7 @@ router.get('/staff-monthly-income', async (req, res) => {
           AND o.payment_confirmed = true
           AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
           AND TO_CHAR((COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
-      `, [`%${staffName}%`, targetMonth]);
+      `, [staffName, targetMonth]);
 
       queueTotal     = Number(queuePayments.rows[0].total);
       queueBreakdown = {
@@ -596,17 +591,17 @@ router.get('/staff-monthly-income', async (req, res) => {
 
       const creditSettlements = await pool.query(`
         SELECT
-          COALESCE(SUM(amount_paid), 0)                                                        AS total,
-          COUNT(*)                                                                               AS settlement_count,
-          COALESCE(SUM(CASE WHEN settle_method = 'Cash'       THEN amount_paid ELSE 0 END), 0) AS cash_amount,
-          COALESCE(SUM(CASE WHEN settle_method = 'Card'       THEN amount_paid ELSE 0 END), 0) AS card_amount,
-          COALESCE(SUM(CASE WHEN settle_method = 'Momo-MTN'   THEN amount_paid ELSE 0 END), 0) AS mtn_amount,
-          COALESCE(SUM(CASE WHEN settle_method = 'Momo-Airtel'THEN amount_paid ELSE 0 END), 0) AS airtel_amount
-        FROM credits
-        WHERE status IN ('FullySettled', 'PartiallySettled')
-          AND waiter_name ILIKE $1
-          AND TO_CHAR((paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
-      `, [`%${staffName}%`, targetMonth]);
+          COALESCE(SUM(cs.amount_paid), 0) AS total,
+          COUNT(cs.id) AS settlement_count,
+          COALESCE(SUM(CASE WHEN LOWER(cs.method) = 'cash' THEN cs.amount_paid ELSE 0 END), 0) AS cash_amount,
+          COALESCE(SUM(CASE WHEN LOWER(cs.method) IN ('card', 'visa', 'pos') THEN cs.amount_paid ELSE 0 END), 0) AS card_amount,
+          COALESCE(SUM(CASE WHEN LOWER(cs.method) IN ('mtn', 'momo', 'momo-mtn') THEN cs.amount_paid ELSE 0 END), 0) AS mtn_amount,
+          COALESCE(SUM(CASE WHEN LOWER(cs.method) IN ('airtel', 'momo-airtel') THEN cs.amount_paid ELSE 0 END), 0) AS airtel_amount
+        FROM credit_settlements cs
+        JOIN credits c ON c.id = cs.credit_id
+        WHERE UPPER(TRIM(COALESCE(c.waiter_name, c.requested_by, ''))) = UPPER(TRIM($1))
+          AND TO_CHAR((cs.created_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+      `, [staffName, targetMonth]);
 
       creditTotal     = Number(creditSettlements.rows[0].total);
       creditBreakdown = {

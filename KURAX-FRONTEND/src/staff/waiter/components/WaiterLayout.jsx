@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import NewOrder from "./NewOrder";
 import PerformanceDashboard from "./PerformanceDashboard";
 import ManageTables from "./ManageTables";
@@ -10,8 +10,10 @@ import { useData } from "../../../customer/components/context/DataContext";
 
 export default function WaiterLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { theme } = useTheme();
   const { currentUser } = useData() || {};
+  const orderToOpen = new URLSearchParams(location.search).get("order");
 
   // 1. IDENTITY & REDIRECT
   const savedUser = useMemo(() => JSON.parse(localStorage.getItem("kurax_user") || "{}"), []);
@@ -27,6 +29,10 @@ export default function WaiterLayout() {
 
   // 2. NAVIGATION & SHARED STATE
   const [activeTab, setActiveTab] = useState("order");
+
+  useEffect(() => {
+    if (orderToOpen) setActiveTab("tables");
+  }, [orderToOpen]);
   
   // These states allow ManageTables / OrderHistory to "push" data into NewOrder
   const [selectedTableData, setSelectedTableData] = useState(null);
@@ -95,7 +101,7 @@ export default function WaiterLayout() {
           )}
 
           {activeTab === "tables" && (
-             <ManageTables onEditTable={handleEditTable} />
+             <ManageTables onEditTable={handleEditTable} focusOrderId={orderToOpen} />
           )}
         </main>
       </div>

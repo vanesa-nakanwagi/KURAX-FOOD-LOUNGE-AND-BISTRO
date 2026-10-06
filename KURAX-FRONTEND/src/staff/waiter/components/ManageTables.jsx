@@ -902,7 +902,7 @@ function VoidedItemsPanel({ voidedItems, theme }) {
 }
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
-export default function OrderHistory({ onAddItems }) {
+export default function OrderHistory({ onAddItems, focusOrderId }) {
   const { orders = [], currentUser, refreshData } = useData() || {};
   const { theme } = useTheme();
   const today = getTodayLocal();
@@ -1050,6 +1050,15 @@ export default function OrderHistory({ onAddItems }) {
     })),
     [groupedTableOrders, pendingPayments]
   );
+
+  useEffect(() => {
+    if (!focusOrderId) return;
+    const order = dailyStaffOrders.find(item => String(item.id) === String(focusOrderId));
+    if (order?.table_name) {
+      setSearchQuery(order.table_name);
+      setActiveTab("Live");
+    }
+  }, [focusOrderId, dailyStaffOrders]);
 
   const voidedItemsList = useMemo(() => {
     const items = [];

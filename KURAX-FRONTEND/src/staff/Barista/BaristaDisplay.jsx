@@ -287,7 +287,7 @@ export default function BaristaDisplay() {
     let mounted = true;
     const loadTickets = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/barista/tickets?date=${kampalaDateStr()}`);
+        const res = await fetch(`${API_URL}/api/barista/tickets?active=true`);
         if (res.ok) {
           const rows = await res.json();
           if (!mounted) return;

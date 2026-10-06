@@ -11,6 +11,14 @@ body {
   font-family: 'Outfit', 'Inter', sans-serif;
 }
 
+*, *::before, *::after {
+  font-style: normal !important;
+}
+
+em, i, .italic, .font-serif {
+  font-style: normal !important;
+}
+
 html, body {
   min-height: 100%;
   overflow-x: hidden;

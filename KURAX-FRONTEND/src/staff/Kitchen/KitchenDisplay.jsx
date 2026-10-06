@@ -278,7 +278,7 @@ export default function KitchenDisplay() {
     let mounted = true;
     const loadTickets = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/kitchen/tickets?date=${kampalaDateStr()}`);
+        const res = await fetch(`${API_URL}/api/kitchen/tickets?active=true`);
         if (!res.ok) return;
         const rows = await res.json();
         if (!mounted) return;

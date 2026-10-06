@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import ScrollToHash from "./customer/components/home/ScrollToHash";
 import { useState, useEffect } from "react";
+import { installNotificationSessionSync } from './utils/notificationSessionSync';
 // Public Pages
 import HomePage from "./customer/pages/HomePage.jsx";
 import MenusPage from "./customer/pages/menuPage.jsx";
@@ -151,6 +152,7 @@ export default function App() {
   // Register service worker on app mount
   useEffect(() => {
     registerServiceWorker();
+    installNotificationSessionSync();
   }, []);
 
   return (

@@ -28,6 +28,7 @@ import shishaRoutes, { initShishaTables } from './routes/shishaRoutes.js';
 import departmentRoutes from './routes/departmentRoutes.js';
 import { ensureAccountingDataModel } from './helpers/accounting.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import cashierExpenseRoutes from './routes/cashierExpenseRoutes.js';
 
 dotenv.config();
 const app = express();
@@ -112,6 +113,7 @@ app.use('/api/credits', creditRoutes);
 app.use('/api/shisha', shishaRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/cashier-expenses', cashierExpenseRoutes);
 
 // 6. HEALTH CHECK
 app.get('/api/health', (req, res) => {

@@ -1,1 +1,1 @@
-self.KURAX_FIREBASE_CONFIG = {"apiKey":"AIzaSyBExrqBFh6U1jcGfU0A8nW84MgZSApYEE","authDomain":"kurax-4d919.firebaseapp.com","projectId":"kurax-4d919","storageBucket":"kurax-4d919.firebasestorage.app","messagingSenderId":"915406281728","appId":"1:915406281728:web:f6b30e54ff5ae6483e0ce5"};
+self.KURAX_FIREBASE_CONFIG = {"apiKey":"AIzaSyBExrqBFh6U1cjGfU0FA8nW84MgZSApYEE","authDomain":"kurax-4d919.firebaseapp.com","projectId":"kurax-4d919","storageBucket":"kurax-4d919.firebasestorage.app","messagingSenderId":"915406281728","appId":"1:915406281728:web:f6b30e54ff5ae6483e0ce5"};

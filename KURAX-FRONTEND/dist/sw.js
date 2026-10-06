@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kurax-v1';
+const CACHE_NAME = 'kurax-v4';
 try {
   importScripts('/firebase-config.js');
   const config = self.KURAX_FIREBASE_CONFIG;
@@ -35,6 +35,23 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response.ok) {
+            const copy = response.clone();
+            event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put('/index.html', copy)));
+          }
+          return response;
+        })
+        .catch(async () => (await caches.match(event.request)) || caches.match('/index.html'))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then(response => response || fetch(event.request))

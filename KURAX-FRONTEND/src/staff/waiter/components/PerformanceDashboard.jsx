@@ -15,14 +15,22 @@ import API_URL from "../../../config/api";
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function getTodayLocal() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return formatOrderDate(new Date());
 }
 
 function formatOrderDate(dateStr) {
   if (!dateStr) return null;
-  const d = new Date(dateStr);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  if (typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const date = dateStr instanceof Date ? dateStr : new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 // ✅ Full amount formatter (no abbreviations)
@@ -86,6 +94,11 @@ function getIndividualItems(order, creditsData) {
       timestamp: order.timestamp || order.created_at,
       staff_name: order.staff_name,
       order_status: order.status,
+      is_ready_for_service: item.readyForService === true
+        && item.served !== true
+        && item.status !== "Paid"
+        && item.status !== "VOIDED"
+        && item.voidProcessed !== true,
       created_at: order.created_at,
       _raw_item: item,
     };
@@ -93,6 +106,8 @@ function getIndividualItems(order, creditsData) {
 }
 
 function getItemPaymentStatus(item) {
+  if (item.is_ready_for_service)
+    return { label: "Ready to serve", color: "text-yellow-700", bg: "bg-yellow-500/10", icon: <CheckCircle2 size={10} /> };
   if (item.is_paid === true)
     return { label: "Paid", color: "text-emerald-500", bg: "bg-emerald-500/10", icon: <CheckCircle2 size={10} /> };
   if (item.is_credit === true)
@@ -315,9 +330,8 @@ export default function PerformanceDashboard({ theme = "light" }) {
       if (res.ok) {
         const allCredits = await res.json();
         setCredits(allCredits.filter(credit => {
-          const matchWaiter = credit.waiter_name?.toLowerCase() === currentStaffName?.toLowerCase();
-          const creditDate = formatOrderDate(credit.created_at);
-          return matchWaiter && creditDate === currentDayDate;
+          const waiterName = String(credit.waiter_name || credit.requested_by || '').trim().toLowerCase();
+          return waiterName === currentStaffName?.trim().toLowerCase();
         }));
       }
     } catch (err) { console.error("Credits fetch failed:", err); }
@@ -425,7 +439,12 @@ export default function PerformanceDashboard({ theme = "light" }) {
   const orderProgress = orderTarget > 0 ? Math.min((dailyStaffOrdersCount / orderTarget) * 100, 100) : 0;
   const revenueProgress = revenueTarget > 0 ? Math.min((monthlyRevenue / revenueTarget) * 100, 100) : 0;
   const currentMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
-  const todayDisplay = new Date().toLocaleDateString("en-GB", { year: 'numeric', month: 'long', day: 'numeric' });
+  const todayDisplay = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(new Date());
 
   return (
     <div className="min-h-screen bg-zinc-50 font-[Outfit]">
