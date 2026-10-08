@@ -53,7 +53,7 @@ function MenuCard({ item, onOrder, onViewImage, isNew }) {
           <h4 className="text-lg font-[Outfit] text-yellow-700 dark:text-white tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
             {item.name}
           </h4>
-          <p className="text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed line-clamp-2">
+          <p className="h-12 text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed line-clamp-2">
             {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
           </p>
         </div>

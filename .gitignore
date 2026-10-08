@@ -1,5 +1,11 @@
 .copilot-specs-cache/
 node_modules
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 /KURAX-FRONTEND/.env.local
 *firebase-adminsdk*.json
 *firebase-service-account*.json

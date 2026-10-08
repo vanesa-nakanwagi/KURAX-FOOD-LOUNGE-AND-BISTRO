@@ -520,7 +520,7 @@ function HomeMenuCard({ item, onOrder, onViewImage }) {
           <h4 className="text-lg font-[Outfit] text-yellow-700 tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
             {item.name}
           </h4>
-          <p className="text-zinc-900 text-[14px] font-light leading-relaxed line-clamp-2">
+          <p className="h-12 text-zinc-900 text-[14px] font-light leading-relaxed line-clamp-2">
             {item.description || "Indulge in our masterfully crafted signature dish."}
           </p>
         </div>

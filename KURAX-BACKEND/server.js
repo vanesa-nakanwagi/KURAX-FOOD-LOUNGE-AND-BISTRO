@@ -32,19 +32,26 @@ import notificationRoutes from './routes/notificationRoutes.js';
 dotenv.config();
 const app = express();
 
+const configuredOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
 // 1. CORS
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:5175',
+  'http://localhost:8080',
   'http://localhost:42107',
   'http://10.10.162.91:3000',
   'http://10.137.60.94:41013',
   /^http:\/\/10\.137\.60\.94:\d+$/,
   /^http:\/\/10\.10\.162\.91:\d+$/,
   'https://kurax-food-lounge-and-bis-git-717fb4-nakanwagi-vanesas-projects.vercel.app',
-  /\.vercel\.app$/
+  /\.vercel\.app$/,
+  ...configuredOrigins
 ];
 
 app.use(cors({
@@ -56,8 +63,8 @@ app.use(cors({
     if (isAllowed) {
       callback(null, true);
     } else {
-      console.log("⚠️ CORS Request from Origin:", origin);
-      callback(null, true); // allow all for testing
+      console.log('⚠️ CORS Request from Origin:', origin);
+      callback(null, true); // allow all for testing without breaking existing clients
     }
   },
   credentials: true,
@@ -136,7 +143,7 @@ const verifyDB = async () => {
   }
 };
 
-const PORT = process.env.PORT || 5010;
+const PORT = Number(process.env.PORT || 5010);
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error(' Unhandled Rejection at:', promise, '\nReason:', reason);
@@ -146,7 +153,7 @@ process.on('uncaughtException', (err) => {
   console.error(' Uncaught Exception:', err);
 });
 
-app.listen(PORT, () => {
-  console.log(` Server running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(` Server running on port ${PORT} on 0.0.0.0`);
   verifyDB();
 });
