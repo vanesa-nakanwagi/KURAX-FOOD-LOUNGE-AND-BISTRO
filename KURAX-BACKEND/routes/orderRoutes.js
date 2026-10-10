@@ -1,6 +1,7 @@
 // routes/orderRoutes.js
 import express from 'express';
 import pool from '../db.js';
+import { consumeSoldOrderItems, reverseConsumedOrderItem } from '../helpers/recipeConsumption.js';
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import logActivity from '../utils/logsActivity.js';
 
@@ -754,6 +755,15 @@ router.patch('/:id/pay', async (req, res) => {
       `UPDATE orders SET items = $1 WHERE id = $2`,
       [JSON.stringify(updatedItems), id]
     );
+
+    try {
+      const consumption = await consumeSoldOrderItems({ orderId: id, items: updatedItems, createdBy: 'Cashier' });
+      for (const entry of consumption.filter((record) => !['CONSUMED', 'CONSUMED_COST_REVIEW', 'ALREADY_CONSUMED'].includes(record.status))) {
+        console.warn(`Recipe consumption ${entry.status} for order #${id}: ${entry.order_item}`);
+      }
+    } catch (error) {
+      console.error(`Recipe consumption failed for paid order #${id}:`, error.message);
+    }
  
     // Update table status if no more pending orders
     if (updatedOrder.table_name && updatedOrder.table_name !== 'WALK-IN') {
@@ -832,57 +842,64 @@ router.patch('/:id/pay', async (req, res) => {
 router.patch('/void-requests/:id/approve', async (req, res) => {
   const { id } = req.params;
   const { approved_by } = req.body;
-  
+  const client = await pool.connect();
+  let vr;
+  let result;
   try {
-    const voidReq = await pool.query(
-      `SELECT * FROM void_requests WHERE id = $1 AND status = 'Pending'`,
+    await client.query('BEGIN');
+    const voidReq = await client.query(
+      `SELECT * FROM void_requests WHERE id = $1 AND status = 'Pending' FOR UPDATE`,
       [id]
     );
     
     if (!voidReq.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Void request not found or already processed' });
     }
     
-    const vr = voidReq.rows[0];
+    vr = voidReq.rows[0];
     
-    const orderRes = await pool.query(
-      `SELECT items FROM orders WHERE id = $1`,
+    const orderRes = await client.query(
+      `SELECT items FROM orders WHERE id = $1 FOR UPDATE`,
       [vr.order_id]
     );
-    
-    if (orderRes.rows.length) {
-      let items = orderRes.rows[0].items;
-      if (typeof items === 'string') {
-        items = JSON.parse(items);
-      }
-      
-      let found = false;
-      const updatedItems = items.map(item => {
-        if (!found && item.name === vr.item_name && !item.voidProcessed) {
-          found = true;
-          return {
-            ...item,
-            status: 'VOIDED',
-            voidProcessed: true,
-            voidApprovedBy: approved_by || 'Accountant',
-            voidApprovedAt: new Date().toISOString(),
-            voidReason: vr.reason
-          };
-        }
-        return item;
-      });
-      
-      const newTotal = updatedItems
-        .filter(item => item.status !== 'VOIDED' && !item.voidProcessed)
-        .reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity || 1)), 0);
-      
-      await pool.query(
-        `UPDATE orders SET items = $1, total = $2 WHERE id = $3`,
-        [JSON.stringify(updatedItems), newTotal, vr.order_id]
-      );
+    if (!orderRes.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order for this void request was not found.' });
     }
+
+    let items = orderRes.rows[0].items;
+    if (typeof items === 'string') items = JSON.parse(items);
+    if (!Array.isArray(items)) items = [];
+    const voidedItemIndex = items.findIndex((item) => item.name === vr.item_name && !item.voidProcessed);
+    if (voidedItemIndex < 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'The requested order item was already voided or no longer exists.' });
+    }
+    const updatedItems = items.map((item, index) => index === voidedItemIndex ? {
+      ...item,
+      status: 'VOIDED',
+      voidProcessed: true,
+      voidApprovedBy: approved_by || 'Accountant',
+      voidApprovedAt: new Date().toISOString(),
+      voidReason: vr.reason,
+    } : item);
+    const newTotal = updatedItems
+      .filter((item) => item.status !== 'VOIDED' && !item.voidProcessed)
+      .reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity || 1)), 0);
+
+    await client.query(
+      `UPDATE orders SET items = $1, total = $2 WHERE id = $3`,
+      [JSON.stringify(updatedItems), newTotal, vr.order_id]
+    );
+    const inventoryReversal = await reverseConsumedOrderItem({
+      queryable: client,
+      orderId: vr.order_id,
+      orderItemIndex: voidedItemIndex,
+      createdBy: approved_by || 'Accountant',
+    });
     
-    const result = await pool.query(
+    result = await client.query(
       `UPDATE void_requests 
        SET status = 'Approved', 
            approved_by = $1,
@@ -892,19 +909,23 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
        RETURNING *`,
       [approved_by || 'Accountant', id]
     );
+    await client.query('COMMIT');
     
     await logActivity(pool, {
       type: 'VOID_APPROVED',
       actor: approved_by || 'Accountant',
       role: 'ACCOUNTANT',
       message: `Approved void request for ${vr.item_name} (Order #${vr.order_id}) - Chef: ${vr.chef_name || 'Unknown'}`,
-      meta: { void_id: id, order_id: vr.order_id, item: vr.item_name, chef: vr.chef_name }
+      meta: { void_id: id, order_id: vr.order_id, item: vr.item_name, chef: vr.chef_name, inventory_reversal: inventoryReversal.status }
     });
     
     res.json(result.rows[0]);
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Approve void error:', err.message);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

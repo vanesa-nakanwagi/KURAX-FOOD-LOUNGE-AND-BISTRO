@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../db.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
+import { summarizeDepartmentCredits } from '../helpers/departmentCreditSummary.js';
 
 const router = express.Router();
 const MANAGEMENT_ROLES = ['DIRECTOR', 'MANAGER', 'ACCOUNTANT'];
@@ -121,6 +122,55 @@ async function menuItemReport(department, from, to) {
     [from, to]
   );
   return result.rows.map((row) => ({ ...row, sales: Number(row.sales || 0), quantity: Number(row.quantity || 0) }));
+}
+
+async function departmentCreditReport(department, from, to) {
+  const itemFilter = department.paidItemFilter.replaceAll('item->>', 'credit_items.item->>');
+  const result = await pool.query(
+    `SELECT DISTINCT c.id, c.amount, c.amount_paid
+     FROM public.${department.table} t
+     JOIN public.credits c ON c.order_id = t.order_id
+     WHERE t.ticket_date BETWEEN $1::date AND $2::date
+       AND EXISTS (
+         SELECT 1
+         FROM jsonb_array_elements(COALESCE(t.items, '[]'::jsonb)) AS credit_items(item)
+         WHERE LOWER(TRIM(COALESCE(credit_items.item->>'name', ''))) = LOWER(TRIM(COALESCE(c.label, '')))
+           AND ${itemFilter}
+       )`,
+    [from, to]
+  );
+  return summarizeDepartmentCredits(result.rows);
+}
+
+function departmentPaymentJoin(department) {
+  const itemAmount = `COALESCE(
+    NULLIF(item->>'line_total','')::numeric,
+    NULLIF(item->>'lineTotal','')::numeric,
+    COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
+      * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
+  )`;
+  const hasCredit = `EXISTS (
+    SELECT 1 FROM public.credits credit
+    WHERE credit.order_id = o.id
+      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(item->>'name','')))
+  )`;
+  const creditPaid = `COALESCE((
+    SELECT SUM(credit.amount_paid) FROM public.credits credit
+    WHERE credit.order_id = o.id
+      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(item->>'name','')))
+  ),0)`;
+
+  return `LEFT JOIN LATERAL (
+    SELECT COALESCE(SUM(CASE
+      WHEN ${hasCredit} THEN LEAST(${itemAmount}, ${creditPaid})
+      WHEN item->>'_rowPaid'='true' THEN ${itemAmount}
+      ELSE LEAST(${itemAmount}, COALESCE(NULLIF(item->>'partial_amount_paid','')::numeric,0))
+    END),0) AS collected_amount
+    FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb)) AS source_items(item)
+    WHERE (item->>'_rowPaid'='true' OR item->>'is_partially_paid'='true'
+      OR item->>'creditRequested'='true' OR ${hasCredit})
+      AND ${department.paidItemFilter}
+  ) paid ON true`;
 }
 
 function parseOrderItems(value) {
@@ -343,7 +393,7 @@ router.get('/reports/consolidated', async (req, res) => {
   const summaryOnly = req.query.summary_only === 'true';
   try {
     const reports = await Promise.all(Object.entries(DEPARTMENTS).map(async ([key, department]) => {
-      const [result, performance, menuItems, inventory] = await Promise.all([
+      const [result, performance, menuItems, inventory, creditSummary] = await Promise.all([
         pool.query(
         `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(sales.sales_amount),0) AS total_sales,
           COALESCE(SUM(LEAST(sales.sales_amount, paid.collected_amount)),0) AS amount_collected,
@@ -358,18 +408,7 @@ router.get('/reports/consolidated', async (req, res) => {
            FROM jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
            WHERE ${department.paidItemFilter}
          ) sales ON true
-         LEFT JOIN LATERAL (
-           SELECT COALESCE(SUM(CASE WHEN item->>'_rowPaid'='true' THEN
-             COALESCE(NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
-               COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
-                 * COALESCE(NULLIF(item->>'quantity','')::numeric,1))
-             ELSE COALESCE((SELECT SUM(c.amount_paid) FROM public.credits c
-               WHERE c.order_id=o.id AND LOWER(COALESCE(c.label,''))=LOWER(COALESCE(item->>'name',''))),
-               NULLIF(item->>'partial_amount_paid','')::numeric,0)
-           END),0) AS collected_amount
-           FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb)) AS source_items(item)
-           WHERE (item->>'_rowPaid'='true' OR item->>'is_partially_paid'='true') AND ${department.paidItemFilter}
-         ) paid ON true
+         ${departmentPaymentJoin(department)}
          WHERE t.ticket_date BETWEEN $1::date AND $2::date`,
         [range.from, range.to]
         ),
@@ -395,6 +434,7 @@ router.get('/reports/consolidated', async (req, res) => {
         summaryOnly
           ? Promise.resolve({})
           : inventoryReport(department.station, range.from, range.to),
+        departmentCreditReport(department, range.from, range.to),
       ]);
       const summary = result.rows[0];
       const inventoryData = inventory;
@@ -404,6 +444,7 @@ router.get('/reports/consolidated', async (req, res) => {
         ...summary,
         total_sales: Number(summary.total_sales || 0),
         ...inventoryData,
+        ...creditSummary,
         gross_profit: summaryOnly ? null : Number(summary.total_sales || 0) - inventoryData.cogs,
         menu_items: menuItems,
         staff_performance: performance.rows.map(person => ({ ...person, worker_role: department.staffRole })),
@@ -449,7 +490,14 @@ router.get('/reports/consolidated', async (req, res) => {
       waste: total.waste + Number(row.waste || 0),
       amount_collected: total.amount_collected + Number(row.amount_collected || 0),
       outstanding_balance: total.outstanding_balance + Number(row.outstanding_balance || 0),
-    }), { total_orders: 0, total_sales: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0 });
+      partially_paid_credit_count: total.partially_paid_credit_count + Number(row.partially_paid_credit_count || 0),
+      partially_paid_credit_amount: total.partially_paid_credit_amount + Number(row.partially_paid_credit_amount || 0),
+      partially_paid_credit_balance: total.partially_paid_credit_balance + Number(row.partially_paid_credit_balance || 0),
+      settled_credit_count: total.settled_credit_count + Number(row.settled_credit_count || 0),
+      settled_credit_amount: total.settled_credit_amount + Number(row.settled_credit_amount || 0),
+      outstanding_credit_count: total.outstanding_credit_count + Number(row.outstanding_credit_count || 0),
+      outstanding_credit_balance: total.outstanding_credit_balance + Number(row.outstanding_credit_balance || 0),
+    }), { total_orders: 0, total_sales: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, partially_paid_credit_balance: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
     const response = {
       ...range,
       departments: reports,
@@ -477,7 +525,7 @@ router.get('/:department/reports', async (req, res) => {
   if (!range) return undefined;
 
   try {
-    const [summary, performance, menuItems, inventory] = await Promise.all([
+    const [summary, performance, menuItems, inventory, creditSummary] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS total_orders,
           COALESCE(SUM(sales.sales_amount),0) AS total_sales,
@@ -497,18 +545,7 @@ router.get('/:department/reports', async (req, res) => {
            FROM jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
            WHERE ${department.paidItemFilter}
          ) sales ON true
-         LEFT JOIN LATERAL (
-           SELECT COALESCE(SUM(CASE WHEN item->>'_rowPaid'='true' THEN
-             COALESCE(NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
-               COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
-                 * COALESCE(NULLIF(item->>'quantity','')::numeric,1))
-             ELSE COALESCE((SELECT SUM(c.amount_paid) FROM public.credits c
-               WHERE c.order_id=o.id AND LOWER(COALESCE(c.label,''))=LOWER(COALESCE(item->>'name',''))),
-               NULLIF(item->>'partial_amount_paid','')::numeric,0)
-           END),0) AS collected_amount
-           FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb)) AS source_items(item)
-           WHERE (item->>'_rowPaid'='true' OR item->>'is_partially_paid'='true') AND ${department.paidItemFilter}
-         ) paid ON true
+         ${departmentPaymentJoin(department)}
          WHERE t.ticket_date BETWEEN $1::date AND $2::date`,
         [range.from, range.to]
       ),
@@ -532,6 +569,7 @@ router.get('/:department/reports', async (req, res) => {
       ),
       menuItemReport(department, range.from, range.to),
       inventoryReport(department.station, range.from, range.to),
+      departmentCreditReport(department, range.from, range.to),
     ]);
     const departmentSummary = summary.rows[0];
     const inventoryData = inventory;
@@ -542,6 +580,7 @@ router.get('/:department/reports', async (req, res) => {
         ...departmentSummary,
         total_sales: Number(departmentSummary.total_sales || 0),
         ...inventoryData,
+        ...creditSummary,
         gross_profit: Number(departmentSummary.total_sales || 0) - inventoryData.cogs,
       },
       menu_items: menuItems,

@@ -10,6 +10,7 @@ import {
   CheckCircle2, XCircle, Award, CircleDollarSign, Zap
 } from "lucide-react";
 import API_URL from "../../../config/api";
+import { isItemFullyPaid } from "../../../utils/paymentStatus";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -29,7 +30,7 @@ function fmtUGX(n) {
 }
 
 // ─── PENDING PAYMENT PERSISTENCE ─────────────────────────────────────────────
-const PENDING_LS_KEY   = "waiter_pending_payments_v2";
+const PENDING_LS_KEY   = "manager_pending_payments_v1";
 const PENDING_TTL_MS   = 4 * 60 * 60 * 1000; // 4 hours
 
 function pendingTableKey(tableName) {
@@ -492,7 +493,7 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
         try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
       }
       orderItems.forEach(item => {
-        if (item._rowPaid === true || item.paid_at) {
+        if (isItemFullyPaid(item)) {
           items.push({
             id: `${order.id}_${item.name}`,
             order_id: order.id,
@@ -587,7 +588,7 @@ function OrderCard({
   const nonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
   const isReady = nonVoidedItems.some(item => item.readyForService && !item.served);
   const isServed = nonVoidedItems.length > 0 && nonVoidedItems.every(item =>
-    item.served === true || item._orderStatus === "Served" || item.status === "Paid" || item._rowPaid === true
+    item.served === true || item._orderStatus === "Served" || isItemFullyPaid(item)
   );
   const hasServedItems = nonVoidedItems.some(item => item.served === true);
 
@@ -595,7 +596,11 @@ function OrderCard({
   const hasPendingPayment = (order.items || []).some(item => item.paymentRequested === true && !item._rowPaid);
 
   const handleAddMore = () => {
-    navigate('/staff/waiter/menu', { state: { tableName: order.tableName, isAppending: true } });
+    if (onAddItems) {
+      onAddItems(order);
+      return;
+    }
+    navigate('/staff/manager/new-order', { state: { tableName: order.tableName, isAppending: true } });
   };
 
   const payableItems = (order.items || []).filter(item =>
@@ -722,7 +727,7 @@ function OrderCard({
             </p>
           </div>
           {nonVoidedItems.map((item, i) => {
-            const isPaid = item._rowPaid === true || item.status === "Paid";
+            const isPaid = isItemFullyPaid(item);
             const isItemServed = item.served === true;
             const isPendingPayment = item.paymentRequested === true && !isPaid;
             const isCreditRequested = item.creditRequested === true;
@@ -741,7 +746,7 @@ function OrderCard({
                         )}
                         {isVoidRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-orange-400 font-black uppercase">(waiting accountant)</span>}
                         {isPendingPayment && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-yellow-400 font-black uppercase">(awaiting cashier)</span>}
-                        {isCreditRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">(credit pending)</span>}
+                        {isCreditRequested && !isPaid && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">{item.is_partially_paid ? "(partially paid · balance due)" : "(credit pending)"}</span>}
                       </p>
                       <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
                         ×{item.quantity || 1} · {fmtUGX(item.price || 0)}
@@ -910,8 +915,11 @@ export default function OrderHistory({ onAddItems }) {
     catch { return {}; }
   }, []);
 
-  const currentStaffId   = currentUser?.id   ?? savedUser?.id;
-  const currentStaffName = currentUser?.name ?? savedUser?.name ?? "Staff Member";
+  const staffUser = [currentUser, savedUser].find(user =>
+    String(user?.role || "").trim().toUpperCase() === "MANAGER"
+  );
+  const currentStaffId   = staffUser?.id;
+  const currentStaffName = staffUser?.name ?? "Manager";
 
   const [activeTab,    setActiveTab]    = useState("Live");
   const [searchQuery,  setSearchQuery]  = useState("");
@@ -960,7 +968,7 @@ export default function OrderHistory({ onAddItems }) {
           try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
         }
         orderItems.forEach(item => {
-          if (item._rowPaid === true || item.paid_at) {
+          if (isItemFullyPaid(item)) {
             const itemKey = pendingItemKey(tableName, item.name);
             if (next[itemKey]) { delete next[itemKey]; changed = true; }
           }
@@ -979,13 +987,14 @@ export default function OrderHistory({ onAddItems }) {
     return (orders || []).filter(o => {
       const ts = o.timestamp || o.created_at;
       if (!ts) return false;
-      const idMatch   = currentStaffId
-        ? String(o.staff_id ?? o.staffId ?? "") === String(currentStaffId)
-        : false;
-      const nameMatch = currentStaffName && currentStaffName !== "Staff Member"
+      const orderStaffId = o.staff_id ?? o.staffId;
+      const orderRole = String(o.staff_role ?? o.staff_role_name ?? o.role ?? "").trim().toUpperCase();
+      const idMatch = currentStaffId != null && orderStaffId != null &&
+        String(orderStaffId) === String(currentStaffId);
+      const nameMatch = currentStaffId == null && currentStaffName && currentStaffName !== "Manager"
         ? (o.staff_name ?? o.waiterName ?? o.staffName ?? "").toLowerCase() === currentStaffName.toLowerCase()
         : false;
-      return (idMatch || nameMatch) && toLocalDateStr(new Date(ts)) === today;
+      return orderRole === "MANAGER" && (currentStaffId != null ? idMatch : nameMatch) && toLocalDateStr(new Date(ts)) === today;
     });
   }, [orders, currentStaffId, currentStaffName, today]);
 
@@ -1014,7 +1023,7 @@ export default function OrderHistory({ onAddItems }) {
         g.items.push({
           ...item,
           _orderId:         order.id,
-          _rowPaid:         rowPaid,
+          _rowPaid:         isItemFullyPaid(item) || (rowPaid && item.creditRequested !== true),
           voidRequested:    item.voidRequested    || false,
           voidProcessed:    item.voidProcessed    || false,
           paymentRequested: item.paymentRequested ||
@@ -1182,7 +1191,7 @@ export default function OrderHistory({ onAddItems }) {
         return o?.status === "Credit" || o?.payment_method === "Credit";
       }) || false;
       const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
-        item.served === true || item.status === "Paid" || item._rowPaid === true
+        item.served === true || isItemFullyPaid(item)
       );
       const isLive = !hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0 && !isServed;
       let matchTab = false;
@@ -1203,7 +1212,7 @@ export default function OrderHistory({ onAddItems }) {
       if (typeof orderItems === "string") {
         try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
       }
-      orderItems.forEach(item => { if (item._rowPaid === true || item.paid_at) count++; });
+      orderItems.forEach(item => { if (isItemFullyPaid(item)) count++; });
     });
     return count;
   }, [orders]);
@@ -1220,7 +1229,7 @@ export default function OrderHistory({ onAddItems }) {
         return o?.status === "Credit" || o?.payment_method === "Credit";
       }) || false;
       const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
-        item.served === true || item.status === "Paid" || item._rowPaid === true
+        item.served === true || isItemFullyPaid(item)
       );
       const isLive = !hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0 && !isServed;
       if (isLive && nonVoided.length > 0) acc.Live++;

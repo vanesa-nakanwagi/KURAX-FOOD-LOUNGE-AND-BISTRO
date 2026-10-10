@@ -14,12 +14,13 @@ const DESKTOP_MENU_ITEMS = [
   { key: "INVENTORY",         label: "Inventory Management", icon: Boxes },
   { key: "PHYSICAL_COUNT",    label: "Physical Finances",  icon: Calculator },
   { key: "LIVE_AUDIT",        label: "Live Audit",         icon: CheckCircle2 },
-  { key: "MONTHLY_COSTS",     label: "Log Expenses",        icon: Wallet },
+  { key: "MONTHLY_COSTS",     label: "Monthly Costs",      icon: Wallet },
   { key: "CREDITS",           label: "Credits",            icon: BookOpen },
   { key: "DEPARTMENT_REPORTS", label: "Department Reports", icon: CircleDollarSign },
-  { key: "REPORTS",           label: "Accounting",         icon: FileText },
+  { key: "REPORTS",           label: "Reports",            icon: FileText },
   { key: "STAFF_PERFORMANCE", label: "Staff Sales Performance", icon: BarChart3 },
   { key: "SYSTEM_CONFIGURATION", label: "System Configuration", icon: Settings },
+  { key: "REOPEN_DAY",        label: "Reopen Day",         icon: RotateCcw },   
   { key: "END_OF_SHIFT",      label: "End of Shift",       icon: RotateCcw },
 ];
 

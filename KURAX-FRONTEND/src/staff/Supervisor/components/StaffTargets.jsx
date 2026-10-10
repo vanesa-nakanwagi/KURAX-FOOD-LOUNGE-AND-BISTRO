@@ -490,7 +490,7 @@ export default function StaffTargets() {
                 </div>
                 <div>
                   <p className="text-[9px] text-gray-500">Achieved</p>
-                  <p className="text-lg font-black text-emerald-600">{businessTarget.current.toLocaleString()} UGX</p>
+                  <p className="text-lg font-black text-emerald-600">{Number(businessTarget.grossSales ?? businessTarget.current ?? 0).toLocaleString()} UGX</p>
                 </div>
                 <div>
                   <p className="text-[9px] text-gray-500">Percentage</p>

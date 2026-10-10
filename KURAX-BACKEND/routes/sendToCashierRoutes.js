@@ -1,10 +1,8 @@
 import express from "express";
 import pool from "../db.js";
 import { updateDailySummary } from '../helpers/summaryHelper.js';
+import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
 import logActivity from '../utils/logsActivity.js';
-import { createSalesJournalEntry } from '../helpers/accounting.js';
-import notificationService from '../helpers/notificationService.js';
-import { resolveNotificationUser } from '../middleware/notificationAuth.js';
 
 const router = express.Router();
 
@@ -128,6 +126,20 @@ router.post("/send-to-cashier", async (req, res) => {
       }
 
       if (formattedOrderIds.length) {
+        for (const orderId of formattedOrderIds) {
+          const source = await pool.query(`SELECT items FROM public.orders WHERE id = $1`, [orderId]);
+          if (!source.rows[0]) continue;
+          const orderItems = Array.isArray(source.rows[0].items) ? source.rows[0].items : JSON.parse(source.rows[0].items || '[]');
+          const paidItems = orderItems.map((item) => {
+            const isCredit = item.creditRequested === true || String(item.payment_method || '').toUpperCase().includes('CREDIT');
+            return !isCredit && item.status !== 'VOIDED' && item.voidProcessed !== true ? { ...item, _rowPaid: true } : item;
+          });
+          try {
+            await consumeSoldOrderItems({ orderId, items: paidItems, createdBy: requested_by || 'Cashier' });
+          } catch (error) {
+            console.error(`Recipe consumption failed for split-paid order #${orderId}:`, error.message);
+          }
+        }
         await pool.query(
           `UPDATE orders SET sent_to_cashier = true, is_archived = true WHERE id = ANY($1::int[])`,
           [formattedOrderIds]
@@ -183,17 +195,6 @@ router.post("/send-to-cashier", async (req, res) => {
 
     const newQueueId = result.rows[0].id;
     console.log(`🔵 Created cashier_queue entry #${newQueueId} for ${method} payment of UGX ${amount}`);
-    const actor = await resolveNotificationUser(req);
-    if (actor?.scope === 'restaurant' && ['WAITER', 'SUPERVISOR', 'MANAGER', 'DIRECTOR'].includes(actor.role)) {
-      void notificationService.sendToRoles(['CASHIER'], {
-        type: method === 'Credit' ? 'CREDIT_CONFIRMATION' : 'PAYMENT_CONFIRMATION',
-        title: method === 'Credit' ? 'Credit Requires Confirmation' : 'Payment Requires Confirmation',
-        body: `A ${String(method).toLowerCase()} payment at ${table_name} is waiting for confirmation.`,
-        department: 'Cashier',
-        referenceId: newQueueId,
-        link: `/cashier?queue=${newQueueId}`,
-      });
-    }
 
     if (formattedOrderIds.length) {
       await pool.query(
@@ -360,6 +361,14 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
           );
           console.log(`✅ Updated original order #${orderId}: _rowPaid=true stamped`);
         }
+        try {
+          const consumption = await consumeSoldOrderItems({ orderId, items: updatedItems, createdBy: confirmed_by || 'Cashier' });
+          for (const entry of consumption.filter((record) => !['CONSUMED', 'CONSUMED_COST_REVIEW', 'ALREADY_CONSUMED'].includes(record.status))) {
+            console.warn(`Recipe consumption ${entry.status} for order #${orderId}: ${entry.order_item}`);
+          }
+        } catch (error) {
+          console.error(`Recipe consumption failed for confirmed order #${orderId}:`, error.message);
+        }
       }
     }
 
@@ -410,19 +419,6 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
     }
 
     await updateDailySummary({ amount: q.amount, method: paymentMethod, orderCount: 0 });
-
-    try {
-      await createSalesJournalEntry({
-        amount: q.amount,
-        paymentMethod: q.method,
-        description: `Sales recorded from ${q.table_name || 'walk-in customer'}`,
-        sourceTransaction: `cashier_queue:${id}`,
-        postedBy: confirmed_by || 'Cashier',
-        entryDate: new Date().toISOString().slice(0, 10),
-      });
-    } catch (journalError) {
-      console.error('Accounting sync failed for sale:', journalError.message);
-    }
 
     await logActivity(pool, 'SALE',
       `${q.table_name || 'Table'} — UGX ${Number(q.amount).toLocaleString()} ${q.method} confirmed by ${confirmed_by || 'Cashier'}`,
@@ -823,6 +819,16 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
            WHERE id = $3`,
           [JSON.stringify(updatedItems), newStatus, orderId]
         );
+        try {
+          const approvedCreditItems = updatedItems.map((item) =>
+            item.creditRequested === true || String(item.payment_method || '').toUpperCase().includes('CREDIT')
+              ? { ...item, _approvedCreditSale: true }
+              : item
+          );
+          await consumeSoldOrderItems({ orderId, items: approvedCreditItems, createdBy: approved_by || 'Manager' });
+        } catch (error) {
+          console.error(`Recipe consumption failed for approved credit order #${orderId}:`, error.message);
+        }
         console.log(`✅ Order #${orderId} updated. Credit item stamped. Status: ${newStatus}`);
       }
     }

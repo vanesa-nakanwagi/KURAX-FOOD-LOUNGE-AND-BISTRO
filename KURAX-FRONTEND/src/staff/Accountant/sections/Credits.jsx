@@ -1,7 +1,7 @@
 import React from "react";
 import { BookOpen, CheckCircle2, XCircle, Receipt } from "lucide-react";
 import AccountantCreditRow from "../common/AccountantCreditRow";
-import { formatCurrencyCompact } from "../utils/helpers";
+import { fmt } from "../utils/helpers";
 
 export default function Credits({ 
   creditsLedger,
@@ -88,7 +88,7 @@ export default function Credits({
             <BookOpen size={16}/>
           </div>
           <p className="text-[8px] font-bold uppercase text-yellow-900 tracking-widest mb-1">Outstanding</p>
-          <h3 className="text-xl font-black text-purple-600">{formatCurrencyCompact(correctOutstandingTotal)}</h3>
+          <h3 className="text-xl font-black text-purple-600">UGX {fmt(correctOutstandingTotal)}</h3>
           <p className={`text-[9px] ${subTextClassColor} mt-0.5`}>
             {approvedCredits.length + partiallySettledCredits.length} credit{(approvedCredits.length + partiallySettledCredits.length) !== 1 ? 's' : ''} pending payment
           </p>
@@ -106,7 +106,7 @@ export default function Credits({
             <CheckCircle2 size={16}/>
           </div>
           <p className="text-[8px] font-bold uppercase text-yellow-900 tracking-widest mb-1">Settled</p>
-          <h3 className="text-xl font-black text-emerald-600">{formatCurrencyCompact(correctSettledTotal)}</h3>
+          <h3 className="text-xl font-black text-emerald-600">UGX {fmt(correctSettledTotal)}</h3>
           <p className={`text-[9px] ${subTextClassColor} mt-0.5`}>
             {settledCredits.length} credit{settledCredits.length !== 1 ? 's' : ''} cleared
           </p>
@@ -118,7 +118,7 @@ export default function Credits({
             <XCircle size={16}/>
           </div>
           <p className="text-[8px] font-bold uppercase text-yellow-900 tracking-widest mb-1">Rejected</p>
-          <h3 className="text-xl font-black text-red-600">{formatCurrencyCompact(correctRejectedTotal)}</h3>
+          <h3 className="text-xl font-black text-red-600">UGX {fmt(correctRejectedTotal)}</h3>
           <p className={`text-[9px] ${subTextClassColor} mt-0.5`}>
             {rejectedCredits.length} credit{rejectedCredits.length !== 1 ? 's' : ''} rejected
           </p>
@@ -130,7 +130,7 @@ export default function Credits({
             <Receipt size={16}/>
           </div>
           <p className="text-[8px] font-black uppercase text-black/60 tracking-widest mb-1">All Time Credits</p>
-          <h3 className="text-xl font-black text-black">{formatCurrencyCompact(allTimeTotal)}</h3>
+          <h3 className="text-xl font-black text-black">UGX {fmt(allTimeTotal)}</h3>
           <p className="text-[9px] text-black/50 mt-0.5">
             {creditsLedger.length} total entries (current month)
           </p>

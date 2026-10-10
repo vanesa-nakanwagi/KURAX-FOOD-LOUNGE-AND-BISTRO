@@ -13,12 +13,35 @@ function buildReportSections(reportType, data) {
       {
         title: "Revenue",
         columns: ["Account Code", "Account", "Amount (UGX)"],
-        rows: [...revenueRows, ["", "Total Revenue", Number(data.totalRevenue || 0)]],
+        rows: [...revenueRows, ["", "Net Sales", Number(data.totalRevenue || 0)]],
+      },
+      {
+        title: "Sales Adjustments",
+        columns: ["Metric", "Amount (UGX)"],
+        rows: [
+          ["Gross Sales", Number(data.grossSales || 0)],
+          ["Discounts", Number(data.totalDiscounts || 0)],
+          ["Approved voids / refunds", Number(data.totalRefunds || 0)],
+          ["Net Sales", Number(data.netSales ?? data.totalRevenue ?? 0)],
+        ],
+      },
+      {
+        title: "Cost of Goods Sold",
+        columns: ["Account", "Amount (UGX)"],
+        rows: [["Ingredient costs", Number(data.costOfGoodsSold || 0)]],
+      },
+      {
+        title: "Gross Profit",
+        columns: ["Metric", "Amount"],
+        rows: [
+          ["Gross Profit (UGX)", Number(data.grossProfit || 0)],
+          ["Gross Profit Margin", `${Number(data.grossProfitMargin || 0).toFixed(1)}%`],
+        ],
       },
       {
         title: "Expenses",
         columns: ["Account Code", "Account", "Amount (UGX)"],
-        rows: [...expenseRows, ["", "Total Expenses", Number(data.totalExpenses || 0)]],
+        rows: [...expenseRows, ["", "Total Operating Expenses", Number(data.totalOperatingExpenses ?? data.totalExpenses ?? 0)]],
       },
       {
         title: "Net Profit",

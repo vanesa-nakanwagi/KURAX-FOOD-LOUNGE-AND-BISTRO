@@ -8,6 +8,7 @@ import {
   CheckCircle2, XCircle, CircleDollarSign
 } from "lucide-react";
 import API_URL from "../../../config/api";
+import { isItemFullyPaid } from "../../../utils/paymentStatus";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -50,7 +51,7 @@ function SupervisorOrderCard({ order, theme, onServeItem }) {
   const allItemsPaid = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
   const hasAnyPaidItems = nonVoidedItems.some(item => item._rowPaid === true);
   const allItemsServed = nonVoidedItems.length > 0 && nonVoidedItems.every(item =>
-    item.served === true || item.status === "Paid" || item._rowPaid === true
+    item.served === true || isItemFullyPaid(item)
   );
   const hasServedItems = nonVoidedItems.some(item => item.served === true);
   const hasReadyItems = nonVoidedItems.some(item => item.readyForService && !item.served);
@@ -125,7 +126,7 @@ function SupervisorOrderCard({ order, theme, onServeItem }) {
       {expanded && (
         <div className="px-3 sm:px-4 pb-3 space-y-2 border-t border-black/5 pt-3">
           {nonVoidedItems.map((item, i) => {
-            const isPaid = item._rowPaid === true || item.status === "Paid";
+            const isPaid = isItemFullyPaid(item);
             const isPendingPayment = item.paymentRequested === true && !isPaid;
             const isCreditRequested = item.creditRequested === true;
             const isVoidRequested = item.voidRequested && !item.voidProcessed;
@@ -305,7 +306,7 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
         try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
       }
       orderItems.forEach(item => {
-        if (item._rowPaid === true || item.paid_at) {
+        if (isItemFullyPaid(item)) {
           items.push({
             id: `${order.id}_${item.name}`,
             order_id: order.id,
@@ -388,7 +389,9 @@ export default function SupervisorDashboard() {
     try { return JSON.parse(localStorage.getItem("kurax_user") || "null"); }
     catch { return null; }
   }, []);
-  const staffUser = currentUser?.id != null ? currentUser : savedUser;
+  const staffUser = [currentUser, savedUser].find(user =>
+    String(user?.role || "").trim().toUpperCase() === "SUPERVISOR"
+  ) || null;
   const currentStaffId = staffUser?.id;
   const currentStaffName = staffUser?.name || "Supervisor";
   const today = getTodayLocal();
@@ -490,9 +493,9 @@ export default function SupervisorDashboard() {
     if (!timestamp || toLocalDateStr(new Date(timestamp)) !== today) return false;
     const orderStaffId = order.staff_id ?? order.staffId;
     const idMatch = currentStaffId != null && orderStaffId != null && String(orderStaffId) === String(currentStaffId);
-    const nameMatch = currentStaffName !== "Supervisor" &&
+    const nameMatch = currentStaffId == null && currentStaffName !== "Supervisor" &&
       String(order.staff_name || order.waiterName || order.staffName || "").trim().toLowerCase() === currentStaffName.trim().toLowerCase();
-    return currentStaffId != null && orderStaffId != null ? idMatch : nameMatch;
+    return currentStaffId != null ? idMatch : nameMatch;
   }), [orders, currentStaffId, currentStaffName, today]);
 
   // ── Group this supervisor's orders by table ──
@@ -519,7 +522,7 @@ export default function SupervisorDashboard() {
         g.items.push({
           ...item,
           _orderId: order.id,
-          _rowPaid: order.status === "Paid" || order.is_paid,
+          _rowPaid: isItemFullyPaid(item) || ((order.status === "Paid" || order.is_paid) && item.creditRequested !== true),
           voidRequested: item.voidRequested || false,
           voidProcessed: item.voidProcessed || false,
           paymentRequested: item.paymentRequested || false,
@@ -553,7 +556,7 @@ export default function SupervisorDashboard() {
       const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
       const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
-        item.served === true || item.status === "Paid" || item._rowPaid === true
+        item.served === true || isItemFullyPaid(item)
       );
       const isLive = !hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed;
       let matchTab = false;
@@ -574,7 +577,7 @@ export default function SupervisorDashboard() {
       if (typeof orderItems === 'string') {
         try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
       }
-      orderItems.forEach(item => { if (item._rowPaid === true || item.paid_at) count++; });
+      orderItems.forEach(item => { if (isItemFullyPaid(item)) count++; });
     });
     return count;
   }, [staffOrders]);
@@ -588,7 +591,7 @@ export default function SupervisorDashboard() {
       const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
       const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
-        item.served === true || item.status === "Paid" || item._rowPaid === true
+        item.served === true || isItemFullyPaid(item)
       );
       const isLive = !hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed;
       if (isLive && nonVoided.length > 0) acc.Live++;

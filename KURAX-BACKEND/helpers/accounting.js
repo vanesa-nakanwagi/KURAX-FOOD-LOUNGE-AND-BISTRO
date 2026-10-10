@@ -4,6 +4,7 @@ export const DEFAULT_ACCOUNTS = [
   { code: '1001', name: 'Counter Cash', category: 'Asset', account_type: 'Cash', normal_balance: 'Debit', description: 'Cash on hand' },
   { code: '1002', name: 'Bank', category: 'Asset', account_type: 'Bank', normal_balance: 'Debit', description: 'Operating bank account' },
   { code: '1003', name: 'Mobile Money', category: 'Asset', account_type: 'Mobile Money', normal_balance: 'Debit', description: 'Mobile money float' },
+  { code: '1004', name: 'Card Settlement Clearing', category: 'Asset', account_type: 'Clearing', normal_balance: 'Debit', description: 'Card receipts awaiting settlement into the operating bank' },
   { code: '1101', name: 'Accounts Receivable', category: 'Asset', account_type: 'Receivable', normal_balance: 'Debit', description: 'Customer credit balances' },
   { code: '1201', name: 'Inventory', category: 'Asset', account_type: 'Inventory', normal_balance: 'Debit', description: 'Stock on hand' },
   { code: '1501', name: 'Equipment', category: 'Asset', account_type: 'Fixed Asset', normal_balance: 'Debit', description: 'Equipment and machinery' },
@@ -27,7 +28,67 @@ export const DEFAULT_ACCOUNTS = [
   { code: '5007', name: 'Marketing', category: 'Expense', account_type: 'Operating Expense', normal_balance: 'Debit', description: 'Advertising and promotions' },
   { code: '5008', name: 'Petty Expenses', category: 'Expense', account_type: 'Operating Expense', normal_balance: 'Debit', description: 'Small operational expenses' },
   { code: '5009', name: 'Other Operating Expenses', category: 'Expense', account_type: 'Operating Expense', normal_balance: 'Debit', description: 'Other operating expenses' },
+  { code: '5010', name: 'Cost of Goods Sold', category: 'Expense', account_type: 'Cost of Goods Sold', normal_balance: 'Debit', description: 'Ingredient costs recognized when menu items are sold' },
 ];
+
+const CARD_PAYMENT_METHODS = new Set(['card', 'bankcard', 'creditcard', 'debitcard', 'visa', 'mastercard', 'pos']);
+const SETTLED_STATUSES = new Set(['settled', 'fullysettled', 'cleared', 'deposited', 'banked']);
+
+export function resolveRevenueAccountCode(department = '') {
+  const normalized = String(department || '').trim().toLowerCase();
+  const accountByDepartment = {
+    kitchen: '4001',
+    food: '4001',
+    bar: '4002',
+    barman: '4002',
+    barista: '4003',
+    other: '4005',
+  };
+  const accountCode = accountByDepartment[normalized];
+  if (!accountCode) throw new Error(`Unsupported sales department: ${department || '(missing)'}`);
+  return accountCode;
+}
+
+export function resolveIncomeStatementRevenueCode(station = '', category = '') {
+  const normalizedStation = String(station || '').trim().toLowerCase();
+  const normalizedCategory = String(category || '').trim().toLowerCase();
+
+  if (normalizedStation === 'barista' || /barista|coffee|tea/.test(normalizedCategory)) return '4003';
+  if (['bar', 'barman'].includes(normalizedStation) || /barman|bar|cocktail|drink|beer/.test(normalizedCategory)) return '4002';
+  return '4001';
+}
+
+export function aggregateIncomeStatementRevenue(rows = []) {
+  return rows.reduce((totals, row) => {
+    const code = resolveIncomeStatementRevenueCode(row.station, row.category);
+    totals[code] = (totals[code] || 0) + safeMoney(row.amount);
+    return totals;
+  }, {});
+}
+
+export function resolvePaymentDebitAccountCode(paymentMethod = 'Cash', settlementStatus = 'Pending') {
+  const method = String(paymentMethod || 'Cash').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  const status = String(settlementStatus ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  const isSettled = settlementStatus === true || SETTLED_STATUSES.has(status);
+
+  if (CARD_PAYMENT_METHODS.has(method)) return isSettled ? '1002' : '1004';
+
+  const accountByMethod = {
+    cash: '1001',
+    mtn: '1003',
+    momo: '1003',
+    mobile: '1003',
+    mobilemoney: '1003',
+    airtel: '1003',
+    momomtn: '1003',
+    momoairtel: '1003',
+    credit: '1101',
+    receivable: '1101',
+  };
+  const accountCode = accountByMethod[method];
+  if (!accountCode) throw new Error(`Unsupported payment method: ${paymentMethod}`);
+  return accountCode;
+}
 
 export function safeMoney(value) {
   const asNumber = Number(value || 0);
@@ -157,6 +218,19 @@ export async function ensureAccountingDataModel() {
   await pool.query(`ALTER TABLE public.journal_entries ALTER COLUMN posted_at SET DEFAULT NOW()`);
   await pool.query(`ALTER TABLE public.journal_entries ALTER COLUMN posted_at SET NOT NULL`);
   await pool.query(`ALTER TABLE public.general_ledger ADD COLUMN IF NOT EXISTS business_time TIME`);
+  await pool.query(
+    `UPDATE public.journal_entries
+     SET business_time = (posted_at AT TIME ZONE 'Africa/Kampala')::time
+     WHERE business_time IS NULL AND posted_at IS NOT NULL`
+  );
+  await pool.query(
+    `UPDATE public.general_ledger gl
+     SET business_time = je.business_time
+     FROM public.journal_entries je
+     WHERE gl.journal_entry_id = je.id
+       AND gl.business_time IS NULL
+       AND je.business_time IS NOT NULL`
+  );
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS journal_entries_reversal_of_unique ON public.journal_entries (reversal_of) WHERE reversal_of IS NOT NULL`);
 
   for (const account of DEFAULT_ACCOUNTS) {
@@ -206,12 +280,14 @@ export async function listAccounts() {
 
 export async function createJournalEntry({
   entryDate,
+  businessTime,
   description,
   sourceTransaction,
   postedBy = 'System',
   lines,
   reference,
   systemType = 'MAIN',
+  queryable = pool,
 }) {
   if (!Array.isArray(lines) || lines.length === 0) {
     throw new Error('A journal entry requires at least one accounting line.');
@@ -233,12 +309,19 @@ export async function createJournalEntry({
 
   const finalReference = reference || `JE-${Date.now()}`;
   const finalDate = entryDate || new Date().toISOString().slice(0, 10);
+  const finalBusinessTime = businessTime || new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Kampala',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date());
 
-  const result = await pool.query(
-    `INSERT INTO public.journal_entries (reference, entry_date, description, source_transaction, posted_by, status, system_type)
-     VALUES ($1, $2, $3, $4, $5, 'Posted', $6)
+  const result = await queryable.query(
+    `INSERT INTO public.journal_entries (reference, entry_date, business_time, description, source_transaction, posted_by, status, system_type)
+     VALUES ($1, $2, $3, $4, $5, $6, 'Posted', $7)
      RETURNING *`,
-    [finalReference, finalDate, description || 'Accounting entry', sourceTransaction || 'Manual Entry', postedBy || 'System', systemType === 'SHISHA' ? 'SHISHA' : 'MAIN']
+    [finalReference, finalDate, finalBusinessTime, description || 'Accounting entry', sourceTransaction || 'Manual Entry', postedBy || 'System', systemType === 'SHISHA' ? 'SHISHA' : 'MAIN']
   );
 
   const journal = result.rows[0];
@@ -253,7 +336,7 @@ export async function createJournalEntry({
       throw new Error(`Account code ${line.accountCode} does not exist in the chart of accounts.`);
     }
 
-    await pool.query(
+    await queryable.query(
       `INSERT INTO public.general_ledger (
          journal_entry_id,
          account_code,
@@ -261,10 +344,11 @@ export async function createJournalEntry({
          debit,
          credit,
          entry_date,
+         business_time,
          description,
          source_transaction,
          posted_by
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         journal.id,
         account.code,
@@ -272,6 +356,7 @@ export async function createJournalEntry({
         line.debit,
         line.credit,
         finalDate,
+        finalBusinessTime,
         description || 'Accounting entry',
         sourceTransaction || 'Manual Entry',
         postedBy || 'System',
@@ -279,7 +364,7 @@ export async function createJournalEntry({
     );
   }
 
-  await pool.query(
+  await queryable.query(
     `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
      VALUES ('journal_entry', $1, 'posted', $2, $3)`,
     [journal.id, postedBy || 'System', JSON.stringify({ reference: finalReference, description: description || 'Accounting entry', totalDebit, totalCredit })]
@@ -605,6 +690,8 @@ export async function createExpenseJournalEntry({
 export async function createSalesJournalEntry({
   amount,
   paymentMethod = 'Cash',
+  settlementStatus = 'Pending',
+  businessTime,
   revenueAccountCode = '4001',
   description,
   sourceTransaction,
@@ -612,24 +699,7 @@ export async function createSalesJournalEntry({
   entryDate,
 }) {
   const numericAmount = safeMoney(amount);
-  const normalizedMethod = String(paymentMethod || 'Cash').trim().toLowerCase();
-
-  const debitAccountMap = {
-    cash: '1001',
-    card: '1002',
-    mtn: '1003',
-    momo: '1003',
-    mobile: '1003',
-    airtel: '1003',
-    'momo-mtn': '1003',
-    'momo-airtel': '1003',
-    'momo_mtn': '1003',
-    'momo_airtel': '1003',
-    credit: '1101',
-    receivable: '1101',
-  };
-
-  const debitAccountCode = debitAccountMap[normalizedMethod] || '1001';
+  const debitAccountCode = resolvePaymentDebitAccountCode(paymentMethod, settlementStatus);
   const debitAccount = await getAccountByCode(debitAccountCode);
   const revenueAccount = await getAccountByCode(revenueAccountCode);
 
@@ -643,6 +713,7 @@ export async function createSalesJournalEntry({
 
   return createJournalEntry({
     entryDate,
+    businessTime,
     description: description || `Sales - ${paymentMethod || 'Cash'}`,
     sourceTransaction: sourceTransaction || `sale:${(paymentMethod || 'Cash').toLowerCase()}`,
     postedBy,
@@ -656,25 +727,13 @@ export async function createSalesJournalEntry({
 export async function createReceivableSettlementJournalEntry({
   amount,
   paymentMethod = 'Cash',
+  settlementStatus = 'Pending',
   sourceTransaction,
   postedBy = 'System',
   entryDate,
 }) {
   const numericAmount = safeMoney(amount);
-  const normalizedMethod = String(paymentMethod || 'Cash').trim().toLowerCase();
-  const depositAccountMap = {
-    cash: '1001',
-    card: '1002',
-    mtn: '1003',
-    momo: '1003',
-    mobile: '1003',
-    airtel: '1003',
-    'momo-mtn': '1003',
-    'momo-airtel': '1003',
-    'momo_mtn': '1003',
-    'momo_airtel': '1003',
-  };
-  const accountCode = depositAccountMap[normalizedMethod] || '1001';
+  const accountCode = resolvePaymentDebitAccountCode(paymentMethod, settlementStatus);
   const debitAccount = await getAccountByCode(accountCode);
   const receivableAccount = await getAccountByCode('1101');
 
@@ -722,7 +781,7 @@ export async function getTrialBalance(startDate, endDate, startTime = null, endT
 }
 
 export async function getIncomeStatement(startDate, endDate, startTime = null, endTime = null) {
-  const result = await pool.query(
+  const [result, salesResult, refundsResult] = await Promise.all([pool.query(
     `SELECT
        coa.code,
        coa.name,
@@ -740,27 +799,126 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
      GROUP BY coa.code, coa.name, coa.category
      ORDER BY coa.code ASC`,
     [startDate, endDate, startTime, endTime]
-  );
+  ), pool.query(
+    `SELECT
+       item->>'station' AS station,
+       item->>'category' AS category,
+       COALESCE(
+         NULLIF(item->>'line_total', '')::numeric,
+         NULLIF(item->>'lineTotal', '')::numeric,
+         COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+           * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+       ) AS amount,
+       COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+         * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1) AS gross_amount
+     FROM public.orders o
+     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
+     LEFT JOIN LATERAL (
+       SELECT c.id, c.approved_at, c.created_at
+       FROM public.credits c
+       LEFT JOIN public.cashier_queue cq ON cq.id = c.cashier_queue_id
+       WHERE c.order_id = o.id
+         AND c.status IN ('Approved', 'PartiallySettled', 'FullySettled')
+         AND (
+           LOWER(BTRIM(COALESCE(cq.item->>'name', ''))) = LOWER(BTRIM(COALESCE(item->>'name', '')))
+           OR LOWER(BTRIM(COALESCE(c.label, ''))) = LOWER(BTRIM(COALESCE(item->>'name', '')))
+         )
+       ORDER BY c.approved_at DESC NULLS LAST, c.created_at DESC
+       LIMIT 1
+     ) approved_credit ON true
+     WHERE UPPER(COALESCE(item->>'station', '')) NOT LIKE '%SHISHA%'
+       AND UPPER(COALESCE(item->>'category', '')) NOT LIKE '%SHISHA%'
+       AND (
+         (
+           approved_credit.id IS NOT NULL
+           AND COALESCE(approved_credit.approved_at, approved_credit.created_at) IS NOT NULL
+           AND (COALESCE(approved_credit.approved_at, approved_credit.created_at) AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date
+           AND ($3::time IS NULL OR (COALESCE(approved_credit.approved_at, approved_credit.created_at) AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (COALESCE(approved_credit.approved_at, approved_credit.created_at) AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         )
+         OR (
+           approved_credit.id IS NULL
+           AND COALESCE(item->>'_rowPaid', 'false') = 'true'
+           AND UPPER(COALESCE(item->>'payment_method', '')) NOT LIKE '%CREDIT%'
+           AND COALESCE(NULLIF(item->>'paid_at', '')::timestamptz, o.paid_at, o.created_at) IS NOT NULL
+           AND (COALESCE(NULLIF(item->>'paid_at', '')::timestamptz, o.paid_at, o.created_at) AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date
+           AND ($3::time IS NULL OR (COALESCE(NULLIF(item->>'paid_at', '')::timestamptz, o.paid_at, o.created_at) AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (COALESCE(NULLIF(item->>'paid_at', '')::timestamptz, o.paid_at, o.created_at) AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         )
+       )
+     ORDER BY o.id`,
+    [startDate, endDate, startTime, endTime]
+  ), pool.query(
+    `SELECT item->>'station' AS station, item->>'category' AS category,
+            COALESCE(
+              NULLIF(item->>'line_total', '')::numeric,
+              NULLIF(item->>'lineTotal', '')::numeric,
+              COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+                * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+            ) AS amount
+     FROM public.void_requests vr
+     JOIN public.orders o ON o.id = vr.order_id
+     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
+     LEFT JOIN LATERAL (
+       SELECT c.id
+       FROM public.credits c
+       LEFT JOIN public.cashier_queue cq ON cq.id = c.cashier_queue_id
+       WHERE c.order_id = o.id
+         AND c.status IN ('Approved', 'PartiallySettled', 'FullySettled')
+         AND (LOWER(BTRIM(COALESCE(cq.item->>'name', ''))) = LOWER(BTRIM(COALESCE(item->>'name', '')))
+           OR LOWER(BTRIM(COALESCE(c.label, ''))) = LOWER(BTRIM(COALESCE(item->>'name', ''))))
+       ORDER BY c.approved_at DESC NULLS LAST, c.created_at DESC LIMIT 1
+     ) approved_credit ON true
+     WHERE vr.status = 'Approved'
+       AND LOWER(BTRIM(COALESCE(item->>'name', ''))) = LOWER(BTRIM(vr.item_name))
+       AND (COALESCE(item->>'voidProcessed', 'false') = 'true' OR UPPER(COALESCE(item->>'status', '')) = 'VOIDED')
+       AND (approved_credit.id IS NOT NULL OR (COALESCE(item->>'_rowPaid', 'false') = 'true' AND UPPER(COALESCE(item->>'payment_method', '')) NOT LIKE '%CREDIT%'))
+       AND UPPER(COALESCE(item->>'station', '')) NOT LIKE '%SHISHA%'
+       AND UPPER(COALESCE(item->>'category', '')) NOT LIKE '%SHISHA%'
+       AND (vr.resolved_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date
+       AND ($3::time IS NULL OR (vr.resolved_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+       AND ($4::time IS NULL OR (vr.resolved_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)`,
+    [startDate, endDate, startTime, endTime]
+  )]);
 
+  const revenueTotals = aggregateIncomeStatementRevenue(salesResult.rows);
+  const refundTotals = aggregateIncomeStatementRevenue(refundsResult.rows);
+  const grossSales = salesResult.rows.reduce((sum, row) => sum + Number(row.gross_amount ?? row.amount ?? 0), 0);
+  const totalDiscounts = salesResult.rows.reduce((sum, row) => sum + Math.max(0, Number(row.gross_amount ?? row.amount ?? 0) - Number(row.amount || 0)), 0);
+  const totalRefunds = refundsResult.rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  for (const [code, amount] of Object.entries(refundTotals)) revenueTotals[code] = (revenueTotals[code] || 0) - amount;
   const revenue = result.rows.filter((row) => row.category === 'Revenue');
   const expenses = result.rows.filter((row) => row.category === 'Expense');
-  const totalRevenue = revenue.reduce((sum, row) => sum + (Number(row.credit_total || 0) - Number(row.debit_total || 0)), 0);
-  const totalExpenses = expenses.reduce((sum, row) => sum + (Number(row.debit_total || 0) - Number(row.credit_total || 0)), 0);
+  const cogsAccount = expenses.find((row) => row.code === '5010');
+  const operatingExpenses = expenses.filter((row) => row.code !== '5010');
+  const totalRevenue = revenue.reduce((sum, row) => sum + (revenueTotals[row.code] || 0), 0);
+  const costOfGoodsSold = Number(cogsAccount?.debit_total || 0) - Number(cogsAccount?.credit_total || 0);
+  const totalOperatingExpenses = operatingExpenses.reduce((sum, row) => sum + (Number(row.debit_total || 0) - Number(row.credit_total || 0)), 0);
+  const totalExpenses = costOfGoodsSold + totalOperatingExpenses;
+  const grossProfit = totalRevenue - costOfGoodsSold;
 
   return {
     startDate,
     endDate,
+    grossSales,
+    totalDiscounts,
+    totalRefunds,
+    netSales: totalRevenue,
     revenue: revenue.map((row) => ({
       account_code: row.code,
       account_name: row.name,
-      amount: Number(row.credit_total || 0) - Number(row.debit_total || 0),
+      amount: revenueTotals[row.code] || 0,
     })),
-    expenses: expenses.map((row) => ({
+    expenses: operatingExpenses.map((row) => ({
       account_code: row.code,
       account_name: row.name,
       amount: Number(row.debit_total || 0) - Number(row.credit_total || 0),
     })),
     totalRevenue,
+    costOfGoodsSold,
+    grossProfit,
+    grossProfitMargin: totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0,
+    totalOperatingExpenses,
     totalExpenses,
     netProfit: totalRevenue - totalExpenses,
   };

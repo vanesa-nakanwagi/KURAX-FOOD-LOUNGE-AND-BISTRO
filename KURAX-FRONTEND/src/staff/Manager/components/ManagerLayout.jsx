@@ -83,7 +83,12 @@ export default function ManagerLayout() {
       case "tables":  return <LiveTableGrid />; 
       case "target":  return <TargetSettings />;
       case "history": return <PerformanceDashboard />;
-      case "manage": return <OrderHistory />;
+      case "manage": return <OrderHistory onAddItems={(order) => {
+        if (currentStaffId != null && order?.tableName) {
+          localStorage.setItem(`kurax_table_${currentStaffId}`, order.tableName);
+        }
+        setActiveTab("order");
+      }} />;
       case "reports": return <StaffSalesPerformance role="MANAGER" />;
       case "department-reports": return <DepartmentHod department="all" embedded />;
         case "audit-trail": return <AccountingAuditTrail dark={isDark} />;

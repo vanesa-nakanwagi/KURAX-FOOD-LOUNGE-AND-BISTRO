@@ -640,7 +640,7 @@ function TableCard({ table, isDark, creditInfo }) {
       </div>
 
       {/* Waiter info */}
-      <div className="flex items-center justify-between mb-3 text-[11px]">
+      <div className="flex items-center justify-between mb-3 text-xs">
         <div className="flex items-center gap-1 text-gray-500">
           <User size={12} />
           <span>Waiter:</span>
@@ -651,15 +651,15 @@ function TableCard({ table, isDark, creditInfo }) {
       {/* Payment Summary */}
       <div className="mb-3 p-2 rounded-lg bg-gray-100/10">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-bold uppercase text-gray-500">Payment Summary</span>
+          <span className="text-xs font-bold uppercase text-gray-500">Payment Summary</span>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-gray-500">Items: {itemCount}</span>
-            <span className="text-[10px] text-gray-500">|</span>
-            <span className="text-[10px] text-gray-500">Paid: <span className="font-bold text-yellow-500">UGX {total.toLocaleString()}</span></span>
+            <span className="text-[11px] text-gray-500">Items: {itemCount}</span>
+            <span className="text-[11px] text-gray-500">|</span>
+            <span className="text-[11px] text-gray-500">Paid: <span className="font-bold text-yellow-500">UGX {total.toLocaleString()}</span></span>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-1 text-[9px]">
+        <div className="grid grid-cols-2 gap-1 text-[11px]">
           {cashTotal > 0 && (
             <div className="flex items-center gap-1 text-green-600">
               <Banknote size={10} /> Cash: UGX {cashTotal.toLocaleString()}
@@ -693,11 +693,11 @@ function TableCard({ table, isDark, creditInfo }) {
         <div className="mb-3">
           <div className="flex items-center gap-1 mb-1.5">
             <CheckCircle size={10} className="text-green-500" />
-            <span className="text-[9px] font-bold uppercase text-green-500">Paid Items ({paidItems.length})</span>
+            <span className="text-[10px] font-bold uppercase text-green-500">Paid Items ({paidItems.length})</span>
           </div>
           <div className="space-y-1.5 max-h-[150px] overflow-y-auto">
             {paidItems.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between text-[10px] p-1.5 rounded bg-green-500/5">
+              <div key={idx} className="flex items-center justify-between text-xs p-1.5 rounded bg-green-500/5">
                 <div className="flex items-center gap-1.5 flex-1 min-w-0">
                   {getCategoryIcon(item.category)}
                   <span className="truncate font-medium">{item.name}</span>
@@ -718,7 +718,7 @@ function TableCard({ table, isDark, creditInfo }) {
         <div className="mb-3">
           <div className="flex items-center gap-1 mb-1.5">
             <Clock size={10} className="text-orange-500" />
-            <span className="text-[9px] font-bold uppercase text-orange-500">Pending ({unpaidItems.length})</span>
+            <span className="text-[10px] font-bold uppercase text-orange-500">Pending ({unpaidItems.length})</span>
           </div>
           <div className="space-y-1.5 max-h-[150px] overflow-y-auto">
             {unpaidItems.map((item, idx) => {
@@ -727,7 +727,7 @@ function TableCard({ table, isDark, creditInfo }) {
               
               return (
                 <div key={idx} className={`flex flex-col p-1.5 rounded ${isCreditItem ? 'bg-purple-500/5' : 'bg-orange-500/5'}`}>
-                  <div className="flex items-center justify-between text-[10px]">
+                  <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5 flex-1 min-w-0">
                       {getCategoryIcon(item.category)}
                       <span className="truncate font-medium">{item.name}</span>
@@ -744,7 +744,7 @@ function TableCard({ table, isDark, creditInfo }) {
                   {/* Show partial payment info for credit items */}
                   {isCreditItem && isPartiallySettled && (
                     <div className="mt-1 pl-4">
-                      <div className="flex justify-between text-[8px] text-gray-500">
+                      <div className="flex justify-between text-[10px] text-gray-500">
                         <span>Paid: UGX {item.amountPaid?.toLocaleString()}</span>
                         <span>Remaining: UGX {item.total.toLocaleString()}</span>
                       </div>
@@ -758,13 +758,13 @@ function TableCard({ table, isDark, creditInfo }) {
                   )}
                   
                   {isCreditItem && !isPartiallySettled && creditInfo?.status === "Approved" && (
-                    <span className="text-[8px] text-purple-500 ml-4 mt-0.5">(Approved – awaiting settlement)</span>
+                    <span className="text-[10px] text-purple-500 ml-4 mt-0.5">(Approved – awaiting settlement)</span>
                   )}
                   {isCreditItem && !isPartiallySettled && creditInfo?.status === "PendingCashier" && (
-                    <span className="text-[8px] text-yellow-500 ml-4 mt-0.5">(Awaiting cashier → manager approval)</span>
+                    <span className="text-[10px] text-yellow-500 ml-4 mt-0.5">(Awaiting cashier → manager approval)</span>
                   )}
                   {isCreditItem && !isPartiallySettled && creditInfo?.status === "PendingManagerApproval" && (
-                    <span className="text-[8px] text-orange-500 ml-4 mt-0.5">(Awaiting manager approval)</span>
+                    <span className="text-[10px] text-orange-500 ml-4 mt-0.5">(Awaiting manager approval)</span>
                   )}
                 </div>
               );
@@ -776,7 +776,7 @@ function TableCard({ table, isDark, creditInfo }) {
       {/* Credit client info with partial payment details */}
       {creditInfo && creditInfo.status !== "FullySettled" && (
         <div className="mt-3 pt-2 border-t border-gray-200/30">
-          <div className="flex justify-between text-[9px]">
+          <div className="flex justify-between text-[11px]">
             <span className="text-gray-500 flex items-center gap-1">
               <User size={8} /> Client:
             </span>
@@ -785,18 +785,18 @@ function TableCard({ table, isDark, creditInfo }) {
           
           {/* Credit payment breakdown */}
           <div className="mt-2 space-y-1">
-            <div className="flex justify-between text-[9px]">
+            <div className="flex justify-between text-[11px]">
               <span className="text-gray-500">Total Credit:</span>
               <span className="font-bold">UGX {Number(creditInfo.amount).toLocaleString()}</span>
             </div>
             
             {Number(creditInfo.amount_paid) > 0 && (
               <>
-                <div className="flex justify-between text-[9px]">
+                <div className="flex justify-between text-[11px]">
                   <span className="text-gray-500">Amount Paid:</span>
                   <span className="text-green-500 font-bold">UGX {Number(creditInfo.amount_paid).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between text-[9px]">
+                <div className="flex justify-between text-[11px]">
                   <span className="text-gray-500">Remaining Balance:</span>
                   <span className="text-orange-500 font-bold">UGX {Number(creditInfo.balance).toLocaleString()}</span>
                 </div>
@@ -804,7 +804,7 @@ function TableCard({ table, isDark, creditInfo }) {
                 {/* Progress bar for partial payments */}
                 {creditInfo.status === "PartiallySettled" && (
                   <div className="mt-2">
-                    <div className="flex justify-between text-[8px] mb-1">
+                    <div className="flex justify-between text-[10px] mb-1">
                       <span className="text-gray-500">Settlement Progress</span>
                       <span className="text-gray-500">{Math.round((Number(creditInfo.amount_paid) / Number(creditInfo.amount)) * 100)}%</span>
                     </div>
@@ -814,7 +814,7 @@ function TableCard({ table, isDark, creditInfo }) {
                         style={{ width: `${(Number(creditInfo.amount_paid) / Number(creditInfo.amount)) * 100}%` }}
                       />
                     </div>
-                    <p className="text-[8px] text-center mt-1 text-gray-500">
+                    <p className="text-[10px] text-center mt-1 text-gray-500">
                       UGX {Number(creditInfo.balance).toLocaleString()} remaining to be paid
                     </p>
                   </div>

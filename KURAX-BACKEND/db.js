@@ -165,6 +165,7 @@ export async function ensureDatabaseSchema() {
       label TEXT,
       amount NUMERIC DEFAULT 0,
       method TEXT DEFAULT 'Cash',
+      settlement_status TEXT NOT NULL DEFAULT 'Pending',
       status TEXT DEFAULT 'Pending',
       requested_by TEXT,
       staff_id INTEGER,
@@ -184,6 +185,7 @@ export async function ensureDatabaseSchema() {
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       shift_cleared BOOLEAN DEFAULT false
     );`,
+    `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS settlement_status TEXT NOT NULL DEFAULT 'Pending';`,
 
     `CREATE TABLE IF NOT EXISTS public.credits (
       id SERIAL PRIMARY KEY,
@@ -555,11 +557,13 @@ export async function ensureDatabaseSchema() {
       version_number INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','SUBMITTED','APPROVED','ACTIVE','INACTIVE')),
       created_by TEXT,
+      updated_by TEXT,
       approved_by TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       approved_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );`,
+    `ALTER TABLE IF EXISTS public.inventory_recipes ADD COLUMN IF NOT EXISTS updated_by TEXT;`,
     `CREATE TABLE IF NOT EXISTS public.recipe_ingredients (
       id SERIAL PRIMARY KEY,
       recipe_id INTEGER NOT NULL REFERENCES public.inventory_recipes(id) ON DELETE CASCADE,

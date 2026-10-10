@@ -1,81 +1,103 @@
 import express from 'express';
 import pool from '../db.js';
 import { createJournalEntry } from '../helpers/accounting.js';
-import { buildInventorySummary, generateInventorySummaryPdf } from '../helpers/inventorySummaryService.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
+import { consumeSoldOrderItems, convertRecipeQuantity } from '../helpers/recipeConsumption.js';
 
 const router = express.Router();
-const INVENTORY_STATION_BY_ROLE = {
-  KITCHEN_HOD: 'KITCHEN',
-  CHEF: 'KITCHEN',
-  BAR_HOD: 'BARMAN',
-  BARMAN: 'BARMAN',
-  BARISTA_HOD: 'BARISTA',
-  BARISTA: 'BARISTA',
-};
 
-async function authenticateInventory(req, res, next) {
+const ROLE_STATIONS = {
+  CHEF: 'KITCHEN',
+  KITCHEN_HOD: 'KITCHEN',
+  BARMAN: 'BAR',
+  BAR_HOD: 'BAR',
+  BARISTA: 'BARISTA',
+  BARISTA_HOD: 'BARISTA',
+};
+const HOD_STATION_ROLES = {
+  KITCHEN: 'KITCHEN_HOD',
+  BAR: 'BAR_HOD',
+  BARISTA: 'BARISTA_HOD',
+};
+const RECIPE_VIEW_ROLES = new Set([
+  ...Object.keys(ROLE_STATIONS),
+  'ACCOUNTANT',
+  'DIRECTOR',
+  'MANAGER',
+  'SUPERVISOR',
+]);
+
+function normalizeStation(value) {
+  const station = String(value || '').trim().toUpperCase();
+  if (station === 'KITCHEN' || station === 'CHEF') return 'KITCHEN';
+  if (station === 'BAR' || station === 'BARMAN') return 'BAR';
+  if (station === 'BARISTA') return 'BARISTA';
+  return '';
+}
+
+async function authenticateRecipeUser(req, res, next) {
   const token = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.slice(7)
     : null;
-  if (!token) return res.status(401).json({ error: 'Sign in to access inventory workflows.' });
+  if (!token) return res.status(401).json({ error: 'Sign in to access recipes.' });
 
   try {
     const session = readSessionToken(token);
-    if (session.scope !== 'restaurant' || !session.id) return res.status(401).json({ error: 'Invalid staff session.' });
+    if (session.scope !== 'restaurant' || !session.id) {
+      return res.status(401).json({ error: 'Invalid staff session.' });
+    }
     const result = await pool.query(
-      'SELECT id, name, role, is_active FROM public.staff WHERE id=$1',
+      'SELECT id, name, role, is_active FROM public.staff WHERE id = $1',
       [session.id]
     );
     const actor = result.rows[0];
     if (!actor || actor.is_active === false || actor.role !== session.role) {
       return res.status(401).json({ error: 'Staff account is inactive or has changed.' });
     }
-
-    req.user = actor;
-    req.inventoryStation = INVENTORY_STATION_BY_ROLE[actor.role] || null;
-    req.inventoryIsHod = actor.role.endsWith('_HOD');
+    if (!RECIPE_VIEW_ROLES.has(actor.role)) {
+      return res.status(403).json({ error: 'This account cannot access recipes.' });
+    }
+    req.inventoryActor = actor;
     return next();
   } catch {
     return res.status(401).json({ error: 'Session expired. Sign in again.' });
   }
 }
 
-function allowInventoryReport(req, res, next) {
-  const role = req.user?.role;
-  if (['ACCOUNTANT', 'DIRECTOR', 'MANAGER'].includes(role) || req.inventoryStation) return next();
-  return res.status(403).json({ error: 'This account cannot view department inventory records.' });
+function canManageStation(req, station) {
+  const normalized = normalizeStation(station);
+  const authorizedStation = ROLE_STATIONS[req.inventoryActor?.role];
+  return Boolean(normalized && authorizedStation === normalized);
 }
 
-function requireDepartmentOperator(req, res, next) {
-  if (!req.inventoryStation) return res.status(403).json({ error: 'Only department staff and HODs can record this inventory activity.' });
-  return next();
+function unitFamily(unit) {
+  const normalized = normalizeUnit(unit);
+  if (['kg', 'g', 'gram'].includes(normalized)) return 'mass';
+  if (['litre', 'liter', 'l', 'ml', 'millilitre', 'milliliter'].includes(normalized)) return 'volume';
+  return normalized;
 }
 
-function stationMatchesDepartment(itemStation, departmentStation) {
-  const station = String(itemStation || '').trim().toUpperCase();
-  if (departmentStation === 'KITCHEN') return !['BARMAN', 'BAR', 'BARISTA', 'SHISHA'].includes(station);
-  if (departmentStation === 'BARMAN') return ['BARMAN', 'BAR'].includes(station);
-  return station === departmentStation;
+function requestedRecipeStation(req, value, res) {
+  const requested = normalizeStation(value);
+  const authorizedStation = ROLE_STATIONS[req.inventoryActor?.role];
+  const wantsAllStations = String(value || '').trim().toUpperCase() === 'ALL';
+  if (wantsAllStations && authorizedStation) {
+    res.status(403).json({ error: 'You can only access recipes for your assigned department.' });
+    return null;
+  }
+  if (wantsAllStations) return 'ALL';
+  if (authorizedStation && requested && authorizedStation !== requested) {
+    res.status(403).json({ error: 'You can only access recipes for your assigned department.' });
+    return null;
+  }
+  if (value && !requested) {
+    res.status(400).json({ error: 'A valid recipe department is required.' });
+    return null;
+  }
+  return authorizedStation || requested;
 }
 
-function requireRecipeDepartment({ hodOnly = false } = {}) {
-  return async (req, res, next) => {
-    if (!req.inventoryStation || (hodOnly && !req.inventoryIsHod)) {
-      return res.status(403).json({ error: hodOnly ? 'Only the department HOD can approve or activate recipes.' : 'Department access is required.' });
-    }
-    try {
-      const result = await pool.query('SELECT station FROM public.inventory_recipes WHERE id=$1', [Number(req.params.id)]);
-      if (!result.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
-      if (!stationMatchesDepartment(result.rows[0].station, req.inventoryStation)) {
-        return res.status(403).json({ error: 'You cannot change a recipe for another department.' });
-      }
-      return next();
-    } catch (error) {
-      return res.status(500).json({ error: error.message });
-    }
-  };
-}
+router.use(['/recipes', '/consumption', '/waste', '/reports'], authenticateRecipeUser);
 
 const UNIT_FACTORS = {
   piece: 1,
@@ -138,10 +160,18 @@ function money(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function currentBusinessDate() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
+}
+
 function stockStatus(item) {
   if (Number(item.current_quantity || 0) <= 0) return 'OUT OF STOCK';
   if (Number(item.minimum_stock_level || 0) >= 0 && Number(item.current_quantity || 0) <= Number(item.minimum_stock_level || 0)) return 'LOW STOCK';
   return 'IN STOCK';
+}
+
+function isActiveOrderItem(item = {}) {
+  return item.voidProcessed !== true && String(item.status || '').toUpperCase() !== 'VOIDED';
 }
 
 function getPaymentAccount(paymentMethod) {
@@ -204,7 +234,7 @@ async function buildItemSummary(item) {
 router.get('/locations', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM public.inventory_locations WHERE is_active = true AND UPPER(name) <> 'SHISHA' ORDER BY name ASC`
+      `SELECT * FROM public.inventory_locations WHERE is_active = true ORDER BY name ASC`
     );
     res.json(result.rows);
   } catch (error) {
@@ -259,14 +289,7 @@ router.get('/items', async (req, res) => {
        LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
        LEFT JOIN public.suppliers s ON s.id = ii.supplier_id
        WHERE ii.is_active = true
-         AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
-         AND ($1::text IS NULL OR
-           (CASE WHEN $1 = 'KITCHEN'
-             THEN UPPER(COALESCE(ii.station, 'KITCHEN')) NOT IN ('BARMAN', 'BAR', 'BARISTA', 'SHISHA')
-             ELSE UPPER(COALESCE(ii.station, '')) = $1 OR ($1 = 'BARMAN' AND UPPER(COALESCE(ii.station, '')) = 'BAR')
-           END))
-       ORDER BY ii.item_name ASC`,
-      [req.query.station ? String(req.query.station).toUpperCase() : null]
+       ORDER BY ii.item_name ASC`
     );
 
     const rows = await Promise.all(result.rows.map(buildItemSummary));
@@ -288,7 +311,7 @@ router.get('/stock', async (req, res) => {
        FROM public.inventory_items ii
        LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
        LEFT JOIN public.suppliers s ON s.id = ii.supplier_id
-      WHERE ii.is_active = true AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
+       WHERE ii.is_active = true
        ORDER BY ii.item_name ASC`
     );
     res.json(result.rows.map(buildItemSummary));
@@ -317,9 +340,6 @@ router.post('/items', async (req, res) => {
   } = payload;
 
   if (!item_name) return res.status(400).json({ error: 'Item name is required.' });
-  if (String(station || '').toUpperCase() === 'SHISHA' || String(location_name || '').toUpperCase() === 'SHISHA') {
-    return res.status(400).json({ error: 'Shisha stock is managed outside the main inventory system.' });
-  }
 
   try {
     const resolvedSupplierId = await resolveSupplierId(supplier_id || null, supplier_name || null);
@@ -366,13 +386,11 @@ router.post('/purchases', async (req, res) => {
   const items = Array.isArray(payload.items) ? payload.items : [payload];
   const paymentMethod = payload.payment_method || 'Cash';
   const supplierName = payload.supplier_name || payload.supplier || 'KURAX PRIMARY SUPPLIER';
-  const businessDate = payload.business_date || new Date().toISOString().slice(0, 10);
+  const businessDate = payload.business_date || currentBusinessDate();
+  const actor = req.user?.name || payload.posted_by || 'Accountant';
 
   if (!items.length) {
     return res.status(400).json({ error: 'At least one item is required.' });
-  }
-  if (items.some((row) => String(row.station || '').toUpperCase() === 'SHISHA' || String(row.location_name || '').toUpperCase() === 'SHISHA')) {
-    return res.status(400).json({ error: 'Shisha purchases must remain in the separate Shisha subsystem.' });
   }
 
   const client = await pool.connect();
@@ -384,7 +402,7 @@ router.post('/purchases', async (req, res) => {
       `INSERT INTO public.purchase_receipts (supplier_id, receipt_number, payment_method, total_amount, business_date, notes, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [supplierId, payload.receipt_number || `PUR-${Date.now()}`, paymentMethod, 0, businessDate, payload.notes || '', req.user?.name || 'Accountant']
+      [supplierId, payload.receipt_number || `PUR-${Date.now()}`, paymentMethod, 0, businessDate, payload.notes || '', actor]
     );
 
     let totalAmount = 0;
@@ -398,9 +416,6 @@ router.post('/purchases', async (req, res) => {
       if (itemIdNumber) {
         const found = await client.query(`SELECT * FROM public.inventory_items WHERE id = $1`, [Number(itemIdNumber)]);
         item = found.rows[0];
-      }
-      if (item && String(item.station || '').toUpperCase() === 'SHISHA') {
-        throw new Error('Shisha stock is managed outside the main inventory system.');
       }
 
       if (!item && itemName) {
@@ -420,7 +435,7 @@ router.post('/purchases', async (req, res) => {
             supplierId,
             await resolveLocationId(row.location_id || null, row.location_name || 'MAIN STORE'),
             row.station || 'KITCHEN',
-            req.user?.name || 'Accountant',
+            actor,
           ]
         );
         item = createdItem.rows[0];
@@ -446,7 +461,7 @@ router.post('/purchases', async (req, res) => {
              location_id = COALESCE(location_id, $4),
              updated_by = $5
          WHERE id = $6`,
-        [quantity, unitCost, supplierId, await resolveLocationId(row.location_id || item.location_id || null, row.location_name || 'MAIN STORE'), req.user?.name || 'Accountant', item.id]
+        [quantity, unitCost, supplierId, await resolveLocationId(row.location_id || item.location_id || null, row.location_name || 'MAIN STORE'), actor, item.id]
       );
 
       const transactionResult = await client.query(
@@ -467,7 +482,7 @@ router.post('/purchases', async (req, res) => {
           row.station || item.station || 'KITCHEN',
           supplierId,
           businessDate,
-          req.user?.name || 'Accountant',
+          actor,
           `Purchase receipt for ${item.item_name}`,
         ]
       );
@@ -490,7 +505,7 @@ router.post('/purchases', async (req, res) => {
       entryDate: businessDate,
       description: `Inventory purchase from ${supplierName}`,
       sourceTransaction: `PUR-${purchase.rows[0].id}`,
-      postedBy: req.user?.name || 'Accountant',
+      postedBy: actor,
       reference: `INV-PUR-${purchase.rows[0].id}`,
       lines: [
         { accountCode: '1201', accountName: 'Inventory', debit: totalAmount },
@@ -547,7 +562,7 @@ router.post('/transfers', async (req, res) => {
       `INSERT INTO public.inventory_transfers (reference_number, source_location_id, destination_location_id, status, notes, business_date, created_by)
        VALUES ($1, $2, $3, 'COMPLETED', $4, $5, $6)
        RETURNING *`,
-      [referenceNumber, Number(payload.source_location_id), Number(payload.destination_location_id), payload.notes || '', payload.business_date || new Date().toISOString().slice(0, 10), req.user?.name || 'Accountant']
+      [referenceNumber, Number(payload.source_location_id), Number(payload.destination_location_id), payload.notes || '', payload.business_date || currentBusinessDate(), req.user?.name || 'Accountant']
     );
 
     const transferId = transfer.rows[0].id;
@@ -624,13 +639,13 @@ router.post('/transfers', async (req, res) => {
       await client.query(
         `INSERT INTO public.inventory_transactions (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value, source_location_id, destination_location_id, station, business_date, created_by, notes)
          VALUES ($1, $2, 'TRANSFER_OUT', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [item.id, `${referenceNumber}-OUT-${item.id}`, quantity, unit, item.unit_cost || 0, quantity * Number(item.unit_cost || 0), Number(payload.source_location_id), Number(payload.destination_location_id), item.station || 'KITCHEN', payload.business_date || new Date().toISOString().slice(0, 10), req.user?.name || 'Accountant', `Transfer out: ${item.item_name}`]
+        [item.id, `${referenceNumber}-OUT-${item.id}`, quantity, unit, item.unit_cost || 0, quantity * Number(item.unit_cost || 0), Number(payload.source_location_id), Number(payload.destination_location_id), item.station || 'KITCHEN', payload.business_date || currentBusinessDate(), req.user?.name || 'Accountant', `Transfer out: ${item.item_name}`]
       );
 
       await client.query(
         `INSERT INTO public.inventory_transactions (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value, source_location_id, destination_location_id, station, business_date, created_by, notes)
          VALUES ($1, $2, 'TRANSFER_IN', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [destinationItem.id, `${referenceNumber}-IN-${item.id}`, quantity, unit, item.unit_cost || 0, quantity * Number(item.unit_cost || 0), Number(payload.source_location_id), Number(payload.destination_location_id), item.station || 'KITCHEN', payload.business_date || new Date().toISOString().slice(0, 10), req.user?.name || 'Accountant', `Transfer in: ${item.item_name}`]
+        [destinationItem.id, `${referenceNumber}-IN-${item.id}`, quantity, unit, item.unit_cost || 0, quantity * Number(item.unit_cost || 0), Number(payload.source_location_id), Number(payload.destination_location_id), item.station || 'KITCHEN', payload.business_date || currentBusinessDate(), req.user?.name || 'Accountant', `Transfer in: ${item.item_name}`]
       );
 
       transferItems.push({ item_name: item.item_name, quantity, unit });
@@ -666,8 +681,10 @@ router.get('/transfers', async (req, res) => {
   }
 });
 
-router.get('/recipes', authenticateInventory, allowInventoryReport, async (req, res) => {
+router.get('/recipes', async (req, res) => {
   try {
+    const station = requestedRecipeStation(req, req.query.station, res);
+    if (res.headersSent) return;
     const result = await pool.query(
       `SELECT r.*, COALESCE((SELECT json_agg(row_to_json(ri)) FROM (
         SELECT ri.*, ii.item_name AS ingredient_name
@@ -676,9 +693,9 @@ router.get('/recipes', authenticateInventory, allowInventoryReport, async (req, 
         WHERE ri.recipe_id = r.id
       ) ri), '[]'::json) AS ingredients
        FROM public.inventory_recipes r
-      WHERE ($1::text IS NULL OR UPPER(r.station) = $1 OR ($1 = 'BARMAN' AND UPPER(r.station) = 'BAR'))
-      ORDER BY r.created_at DESC`,
-          [req.inventoryStation]
+      WHERE ($1 = 'ALL' OR UPPER(r.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
+       ORDER BY r.created_at DESC`
+          , [station || 'ALL']
     );
     res.json(result.rows);
   } catch (error) {
@@ -686,122 +703,270 @@ router.get('/recipes', authenticateInventory, allowInventoryReport, async (req, 
   }
 });
 
-router.post('/recipes', authenticateInventory, requireDepartmentOperator, async (req, res) => {
-  const payload = req.body || {};
-  const ingredients = Array.isArray(payload.ingredients) ? payload.ingredients : [];
-
-  if (!payload.menu_name) return res.status(400).json({ error: 'Menu item name is required.' });
-  if (!ingredients.length) return res.status(400).json({ error: 'At least one inventory ingredient is required.' });
+router.get('/recipes/menu-items', async (req, res) => {
+  const station = requestedRecipeStation(req, req.query.station, res);
+  if (res.headersSent) return;
+  if (!station) return res.status(400).json({ error: 'A department is required to browse menu items.' });
 
   try {
-    const validatedIngredients = [];
-    for (const ingredient of ingredients) {
-      const ingredientItemId = ingredient.ingredient_item_id || (ingredient.ingredient_name ? await resolveItemIdByName(ingredient.ingredient_name) : null);
-      if (!ingredientItemId) return res.status(400).json({ error: 'Select a stock item for every recipe ingredient.' });
-      const ingredientItem = await pool.query('SELECT id, station FROM public.inventory_items WHERE id=$1 AND is_active=true', [Number(ingredientItemId)]);
-      if (!ingredientItem.rows[0]) return res.status(400).json({ error: 'A selected recipe ingredient is not active inventory.' });
-      if (!stationMatchesDepartment(ingredientItem.rows[0].station, req.inventoryStation)) {
-        return res.status(403).json({ error: 'Recipes can only use ingredients assigned to your department.' });
-      }
-      validatedIngredients.push({ ...ingredient, ingredient_item_id: ingredientItem.rows[0].id });
+    const result = await pool.query(
+      `SELECT m.id, m.name, m.category, m.station, m.price,
+              COALESCE(recipe.status, 'NOT_CONFIGURED') AS recipe_status,
+              recipe.id AS recipe_id,
+              recipe.version_number AS recipe_version
+       FROM public.menus m
+       LEFT JOIN LATERAL (
+         SELECT r.id, r.status, r.version_number
+         FROM public.inventory_recipes r
+         WHERE r.menu_item_id = m.id
+          OR (r.menu_item_id IS NULL AND LOWER(r.menu_name) = LOWER(m.name)
+            AND UPPER(r.station) IN (CASE WHEN UPPER(m.station) = 'BARMAN' THEN 'BAR' ELSE UPPER(m.station) END,
+                         CASE WHEN UPPER(m.station) IN ('BAR', 'BARMAN') THEN 'BARMAN' ELSE UPPER(m.station) END))
+         ORDER BY r.version_number DESC, r.created_at DESC
+         LIMIT 1
+       ) recipe ON true
+       WHERE m.published = true
+         AND LOWER(TRIM(COALESCE(m.category, ''))) <> 'shisha'
+         AND LOWER(TRIM(COALESCE(m.station, ''))) <> 'shisha'
+         AND ($1 = 'ALL' OR UPPER(m.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
+       ORDER BY m.name ASC`,
+      [station]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/recipes', async (req, res) => {
+  const payload = req.body || {};
+  const ingredients = Array.isArray(payload.ingredients) ? payload.ingredients : [];
+  const menuItemId = Number(payload.menu_item_id);
+  if (!Number.isInteger(menuItemId) || menuItemId <= 0) return res.status(400).json({ error: 'Select an existing menu item.' });
+  if (!ingredients.length) return res.status(400).json({ error: 'Add at least one ingredient to the recipe.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const menuResult = await client.query(
+      `SELECT id, name, station FROM public.menus
+       WHERE id = $1 AND published = true
+         AND LOWER(TRIM(COALESCE(category, ''))) <> 'shisha'
+         AND LOWER(TRIM(COALESCE(station, ''))) <> 'shisha'
+       FOR SHARE`,
+      [menuItemId]
+    );
+    const menuItem = menuResult.rows[0];
+    const station = normalizeStation(menuItem?.station);
+    if (!menuItem || !station) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Published menu item not found.' });
+    }
+    if (!canManageStation(req, station)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'You can only configure recipes for your assigned department.' });
+    }
+    if (ingredients.some((ingredient) => {
+      const quantity = Number(ingredient.quantity);
+      return !Number.isFinite(quantity) || quantity <= 0 || !Number.isInteger(Number(ingredient.ingredient_item_id));
+    })) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Each ingredient needs an existing inventory item and a quantity greater than zero.' });
     }
 
-    const recipe = await pool.query(
-      `INSERT INTO public.inventory_recipes (menu_item_id, menu_name, station, version_number, status, created_by)
-       VALUES ($1, $2, $3, $4, 'DRAFT', $5)
+    const ingredientIds = [...new Set(ingredients.map((ingredient) => Number(ingredient.ingredient_item_id)))];
+    const stockResult = await client.query(
+      `SELECT ii.id, ii.item_name, ii.unit, ii.station, il.name AS location_name
+       FROM public.inventory_items ii
+       LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
+       WHERE ii.id = ANY($1::int[]) AND ii.is_active = true`,
+      [ingredientIds]
+    );
+    const stockItems = new Map(stockResult.rows.map((item) => [item.id, item]));
+    for (const ingredient of ingredients) {
+      const stockItem = stockItems.get(Number(ingredient.ingredient_item_id));
+      const stockStation = normalizeStation(stockItem?.station);
+      const isMainStore = String(stockItem?.location_name || '').trim().toUpperCase() === 'MAIN STORE';
+      if (!stockItem || (stockStation && stockStation !== station && !isMainStore)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Ingredient ${stockItem?.item_name || ingredient.ingredient_item_id} is not available to ${station}.` });
+      }
+      if (unitFamily(ingredient.unit || stockItem.unit) !== unitFamily(stockItem.unit)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Ingredient unit ${ingredient.unit} is incompatible with ${stockItem.unit} stock for ${stockItem.item_name}.` });
+      }
+    }
+
+    await client.query('SELECT pg_advisory_xact_lock($1)', [menuItemId]);
+    const versionResult = await client.query(
+      `SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version
+       FROM public.inventory_recipes WHERE menu_item_id = $1 OR (menu_item_id IS NULL AND LOWER(menu_name) = LOWER($2) AND UPPER(station) IN ($3, CASE WHEN $3 = 'BAR' THEN 'BARMAN' ELSE $3 END))`,
+      [menuItemId, menuItem.name, station]
+    );
+    const recipeResult = await client.query(
+      `INSERT INTO public.inventory_recipes (menu_item_id, menu_name, station, version_number, status, created_by, updated_by)
+       VALUES ($1, $2, $3, $4, 'DRAFT', $5, $5)
        RETURNING *`,
-      [payload.menu_item_id || null, String(payload.menu_name).trim(), req.inventoryStation, Number(payload.version_number || 1), req.user.name]
+      [menuItem.id, menuItem.name, station, Number(versionResult.rows[0].next_version), req.inventoryActor.name]
     );
 
-    for (const ingredient of validatedIngredients) {
-      const ingredientItemId = ingredient.ingredient_item_id;
-      await pool.query(
+    for (const ingredient of ingredients) {
+      const stockItem = stockItems.get(Number(ingredient.ingredient_item_id));
+      await client.query(
         `INSERT INTO public.recipe_ingredients (recipe_id, ingredient_item_id, ingredient_name, quantity, unit)
          VALUES ($1, $2, $3, $4, $5)`,
-        [recipe.rows[0].id, ingredientItemId || null, ingredient.ingredient_name || ingredient.name || 'Ingredient', Number(ingredient.quantity || 0), normalizeUnit(ingredient.unit || 'g')]
+        [recipeResult.rows[0].id, stockItem.id, stockItem.item_name, Number(ingredient.quantity), normalizeUnit(ingredient.unit || stockItem.unit)]
       );
     }
 
-    res.status(201).json({ recipe: recipe.rows[0], ingredients });
+    await client.query('COMMIT');
+    res.status(201).json({ recipe: recipeResult.rows[0], ingredients });
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
-router.put('/recipes/:id', authenticateInventory, requireDepartmentOperator, requireRecipeDepartment({ hodOnly: true }), async (req, res) => {
+router.put('/recipes/:id', async (req, res) => {
   const { id } = req.params;
   const payload = req.body || {};
-
+  const ingredients = Array.isArray(payload.ingredients) ? payload.ingredients : [];
+  const client = await pool.connect();
   try {
-    const recipe = await pool.query(
-      `UPDATE public.inventory_recipes
-       SET menu_name = $1,
-           station = $2,
-           version_number = $3,
-           updated_at = NOW()
-       WHERE id = $5
-       RETURNING *`,
-      [String(payload.menu_name || '').trim() || 'Unknown Menu', req.inventoryStation, Number(payload.version_number || 1), Number(id)]
+    await client.query('BEGIN');
+    const current = await client.query(`SELECT * FROM public.inventory_recipes WHERE id = $1 FOR UPDATE`, [Number(id)]);
+    const currentRecipe = current.rows[0];
+    if (!currentRecipe) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Recipe not found.' });
+    }
+    if (!canManageStation(req, currentRecipe.station)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'You can only edit recipes for your assigned department.' });
+    }
+    if (currentRecipe.status !== 'DRAFT') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Submitted or active recipes are immutable. Save a new version instead.' });
+    }
+    if (!ingredients.length || ingredients.some((ingredient) => !Number.isInteger(Number(ingredient.ingredient_item_id)) || !Number.isFinite(Number(ingredient.quantity)) || Number(ingredient.quantity) <= 0)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Each draft recipe needs inventory ingredients with quantities greater than zero.' });
+    }
+    const ingredientIds = [...new Set(ingredients.map((ingredient) => Number(ingredient.ingredient_item_id)))];
+    const stockResult = await client.query(
+      `SELECT ii.id, ii.item_name, ii.unit, ii.station, il.name AS location_name
+       FROM public.inventory_items ii
+       LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
+       WHERE ii.id = ANY($1::int[]) AND ii.is_active = true`,
+      [ingredientIds]
     );
-
-    if (!recipe.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
-
-    if (Array.isArray(payload.ingredients)) {
-      await pool.query(`DELETE FROM public.recipe_ingredients WHERE recipe_id = $1`, [Number(id)]);
-      for (const ingredient of payload.ingredients) {
-        const ingredientItemId = ingredient.ingredient_item_id || (ingredient.ingredient_name ? await resolveItemIdByName(ingredient.ingredient_name) : null);
-        await pool.query(
-          `INSERT INTO public.recipe_ingredients (recipe_id, ingredient_item_id, ingredient_name, quantity, unit) VALUES ($1, $2, $3, $4, $5)`,
-          [Number(id), ingredientItemId || null, ingredient.ingredient_name || ingredient.name || 'Ingredient', Number(ingredient.quantity || 0), normalizeUnit(ingredient.unit || 'g')]
-        );
+    const stockItems = new Map(stockResult.rows.map((item) => [item.id, item]));
+    for (const ingredient of ingredients) {
+      const stockItem = stockItems.get(Number(ingredient.ingredient_item_id));
+      const stockStation = normalizeStation(stockItem?.station);
+      if (!stockItem || (stockStation && stockStation !== normalizeStation(currentRecipe.station) && String(stockItem.location_name || '').trim().toUpperCase() !== 'MAIN STORE')) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Ingredient ${stockItem?.item_name || ingredient.ingredient_item_id} is not available to this department.` });
+      }
+      if (unitFamily(ingredient.unit || stockItem.unit) !== unitFamily(stockItem.unit)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Ingredient unit ${ingredient.unit} is incompatible with ${stockItem.unit} stock for ${stockItem.item_name}.` });
       }
     }
 
+    await client.query(`DELETE FROM public.recipe_ingredients WHERE recipe_id = $1`, [Number(id)]);
+    for (const ingredient of ingredients) {
+      const stockItem = stockItems.get(Number(ingredient.ingredient_item_id));
+      await client.query(
+        `INSERT INTO public.recipe_ingredients (recipe_id, ingredient_item_id, ingredient_name, quantity, unit)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [Number(id), stockItem.id, stockItem.item_name, Number(ingredient.quantity), normalizeUnit(ingredient.unit || stockItem.unit)]
+      );
+    }
+    const recipe = await client.query(`UPDATE public.inventory_recipes SET updated_at = NOW(), updated_by = $2 WHERE id = $1 RETURNING *`, [Number(id), req.inventoryActor.name]);
+    await client.query('COMMIT');
     res.json(recipe.rows[0]);
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
-router.post('/recipes/:id/submit', authenticateInventory, requireDepartmentOperator, requireRecipeDepartment(), async (req, res) => {
+router.post('/recipes/:id/submit', async (req, res) => {
   const { id } = req.params;
   try {
+    const existing = await pool.query(`SELECT station FROM public.inventory_recipes WHERE id = $1`, [Number(id)]);
+    if (!existing.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
+    if (!canManageStation(req, existing.rows[0].station)) return res.status(403).json({ error: 'You can only submit recipes for your assigned department.' });
     const result = await pool.query(
-      `UPDATE public.inventory_recipes SET status = 'SUBMITTED', updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [Number(id)]
+      `UPDATE public.inventory_recipes SET status = 'SUBMITTED', updated_at = NOW(), updated_by = $2 WHERE id = $1 AND status = 'DRAFT' RETURNING *`,
+      [Number(id), req.inventoryActor.name]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
+    if (!result.rows[0]) return res.status(409).json({ error: 'Only draft recipes can be submitted.' });
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/recipes/:id/approve', authenticateInventory, requireRecipeDepartment({ hodOnly: true }), async (req, res) => {
+router.post('/recipes/:id/approve', async (req, res) => {
   const { id } = req.params;
   try {
+    const existing = await pool.query(`SELECT station FROM public.inventory_recipes WHERE id = $1`, [Number(id)]);
+    if (!existing.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
+    if (HOD_STATION_ROLES[normalizeStation(existing.rows[0].station)] !== req.inventoryActor.role) {
+      return res.status(403).json({ error: 'Only the department HOD can approve this recipe.' });
+    }
     const result = await pool.query(
-      `UPDATE public.inventory_recipes SET status = 'APPROVED', approved_by = $1, approved_at = NOW(), updated_at = NOW() WHERE id = $2 RETURNING *`,
-      [req.user.name, Number(id)]
+      `UPDATE public.inventory_recipes SET status = 'APPROVED', approved_by = $1, approved_at = NOW(), updated_at = NOW(), updated_by = $1 WHERE id = $2 AND status = 'SUBMITTED' RETURNING *`,
+      [req.inventoryActor.name, Number(id)]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
+    if (!result.rows[0]) return res.status(409).json({ error: 'Only submitted recipes can be approved.' });
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/recipes/:id/activate', authenticateInventory, requireRecipeDepartment({ hodOnly: true }), async (req, res) => {
+router.post('/recipes/:id/activate', async (req, res) => {
   const { id } = req.params;
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
-      `UPDATE public.inventory_recipes SET status = 'ACTIVE', updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [Number(id)]
+    await client.query('BEGIN');
+    const current = await client.query(`SELECT * FROM public.inventory_recipes WHERE id = $1 FOR UPDATE`, [Number(id)]);
+    const recipe = current.rows[0];
+    if (!recipe) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Recipe not found.' });
+    }
+    if (HOD_STATION_ROLES[normalizeStation(recipe.station)] !== req.inventoryActor.role) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Only the department HOD can activate this recipe.' });
+    }
+    if (recipe.status !== 'APPROVED') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Only approved recipes can be activated.' });
+    }
+    await client.query(
+      `UPDATE public.inventory_recipes SET status = 'INACTIVE', updated_at = NOW(), updated_by = $3
+      WHERE menu_item_id = $1 AND UPPER(station) IN ($2, CASE WHEN $2 = 'BAR' THEN 'BARMAN' ELSE $2 END) AND status = 'ACTIVE'`,
+      [recipe.menu_item_id, normalizeStation(recipe.station), req.inventoryActor.name]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
+    const result = await client.query(
+      `UPDATE public.inventory_recipes SET status = 'ACTIVE', updated_at = NOW(), updated_by = $2 WHERE id = $1 RETURNING *`,
+      [Number(id), req.inventoryActor.name]
+    );
+    await client.query('COMMIT');
     res.json(result.rows[0]);
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -810,7 +975,7 @@ router.get('/recipes/:id/costing', async (req, res) => {
   try {
     const recipe = await pool.query(
       `SELECT r.*, COALESCE((SELECT json_agg(row_to_json(ri)) FROM (
-        SELECT ri.*, ii.item_name, ii.unit_cost
+        SELECT ri.*, ii.item_name, ii.unit, ii.unit_cost
         FROM public.recipe_ingredients ri
         LEFT JOIN public.inventory_items ii ON ii.id = ri.ingredient_item_id
         WHERE ri.recipe_id = r.id
@@ -821,20 +986,31 @@ router.get('/recipes/:id/costing', async (req, res) => {
     );
 
     if (!recipe.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
+    if (ROLE_STATIONS[req.inventoryActor.role] && !canManageStation(req, recipe.rows[0].station)) {
+      return res.status(403).json({ error: 'You can only view recipes for your assigned department.' });
+    }
 
     const parsedIngredients = recipe.rows[0].ingredients || [];
     let totalCost = 0;
+    let missingCostItems = 0;
 
     for (const ingredient of parsedIngredients) {
-      const ingredientItem = ingredient.item_name ? await pool.query(`SELECT * FROM public.inventory_items WHERE LOWER(item_name) = LOWER($1) LIMIT 1`, [ingredient.item_name]) : null;
+      const ingredientItem = ingredient.ingredient_item_id
+        ? await pool.query(`SELECT * FROM public.inventory_items WHERE id = $1 LIMIT 1`, [ingredient.ingredient_item_id])
+        : null;
       const item = ingredientItem?.rows[0] || null;
-      if (!item) continue;
-      const qty = Number(ingredient.quantity || 0);
-      const itemUnit = normalizeUnit(item.unit || 'kg');
-      const ingredientUnit = normalizeUnit(ingredient.unit || itemUnit);
-      const baseQty = toBaseQuantity(qty, ingredientUnit);
-      const unitFactor = toBaseQuantity(1, itemUnit);
-      const cost = (baseQty / unitFactor) * Number(item.unit_cost || 0);
+      if (!item) {
+        missingCostItems += 1;
+        continue;
+      }
+      let cost;
+      try {
+        cost = convertRecipeQuantity(Number(ingredient.quantity || 0), ingredient.unit || item.unit, item.unit || 'kg') * Number(item.unit_cost || 0);
+      } catch {
+        missingCostItems += 1;
+        continue;
+      }
+      if (Number(item.unit_cost || 0) <= 0) missingCostItems += 1;
       totalCost += cost;
     }
 
@@ -842,23 +1018,24 @@ router.get('/recipes/:id/costing', async (req, res) => {
     const grossProfit = sellingPrice - totalCost;
     const foodCostPercentage = sellingPrice > 0 ? ((totalCost / sellingPrice) * 100) : 0;
 
-    res.json({ recipe: recipe.rows[0], total_cost: totalCost, selling_price: sellingPrice, gross_profit: grossProfit, food_cost_percentage: foodCostPercentage });
+    res.json({ recipe: recipe.rows[0], total_cost: totalCost, selling_price: sellingPrice, gross_profit: grossProfit, food_cost_percentage: foodCostPercentage, cost_status: missingCostItems ? 'REVIEW_REQUIRED' : 'ESTIMATED', missing_cost_items: missingCostItems });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.get('/consumption', authenticateInventory, allowInventoryReport, async (req, res) => {
+router.get('/consumption', async (req, res) => {
   try {
+    const station = ROLE_STATIONS[req.inventoryActor.role];
     const result = await pool.query(
       `SELECT ic.*, ii.item_name, ir.menu_name
        FROM public.inventory_consumptions ic
        LEFT JOIN public.inventory_items ii ON ii.id = ic.item_id
-      LEFT JOIN public.inventory_recipes ir ON ir.id = ic.recipe_id
-      WHERE ($1::text IS NULL OR UPPER(ic.station) = $1 OR ($1 = 'BARMAN' AND UPPER(ic.station) = 'BAR'))
+       LEFT JOIN public.inventory_recipes ir ON ir.id = ic.recipe_id
+       WHERE ($1::text IS NULL OR UPPER(ic.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
        ORDER BY ic.created_at DESC
-      LIMIT 200`,
-          [req.inventoryStation]
+       LIMIT 200`,
+      [station || null]
     );
     res.json(result.rows);
   } catch (error) {
@@ -866,137 +1043,45 @@ router.get('/consumption', authenticateInventory, allowInventoryReport, async (r
   }
 });
 
-router.post('/consumption', authenticateInventory, requireDepartmentOperator, async (req, res) => {
+router.post('/consumption', async (req, res) => {
   const payload = req.body || {};
-  const orderId = payload.order_id || payload.orderId || null;
-  const submittedItems = Array.isArray(payload.items) ? payload.items : [];
-  const items = req.inventoryStation
-    ? submittedItems.map((item) => ({ ...item, station: req.inventoryStation }))
-    : submittedItems;
-
-  if (!orderId && !items.length) return res.status(400).json({ error: 'Order ID or item list is required.' });
+  const orderId = Number(payload.order_id || payload.orderId);
+  if (!Number.isInteger(orderId) || orderId <= 0) return res.status(400).json({ error: 'A paid order ID is required.' });
+  if (!ROLE_STATIONS[req.inventoryActor.role] && !['ACCOUNTANT', 'DIRECTOR', 'MANAGER'].includes(req.inventoryActor.role)) {
+    return res.status(403).json({ error: 'This account cannot post inventory consumption.' });
+  }
 
   try {
-    let orderItems = items;
-    if (!orderItems.length && orderId) {
-      const order = await pool.query(`SELECT items FROM public.orders WHERE id = $1`, [Number(orderId)]);
-      if (!order.rows[0]) return res.status(404).json({ error: 'Order not found.' });
-      orderItems = Array.isArray(order.rows[0].items) ? order.rows[0].items : JSON.parse(order.rows[0].items || '[]');
+    const order = await pool.query(`SELECT items FROM public.orders WHERE id = $1`, [orderId]);
+    if (!order.rows[0]) return res.status(404).json({ error: 'Order not found.' });
+    const orderItems = Array.isArray(order.rows[0].items) ? order.rows[0].items : JSON.parse(order.rows[0].items || '[]');
+    const station = ROLE_STATIONS[req.inventoryActor.role];
+    if (station && orderItems.some((item) => isActiveOrderItem(item) && normalizeStation(item.station || 'KITCHEN') !== station)) {
+      return res.status(403).json({ error: 'You can only process consumption for your assigned department.' });
     }
-
-    const consumptionRecords = [];
-    const businessDate = payload.business_date || new Date().toISOString().slice(0, 10);
-
-    for (let index = 0; index < orderItems.length; index += 1) {
-      const item = orderItems[index];
-      const menuName = item.menu_name || item.name || item.item_name;
-      const itemQty = Number(item.quantity || 1);
-      const station = (item.station || payload.station || 'KITCHEN').toUpperCase();
-      const recipe = await pool.query(
-        `SELECT * FROM public.inventory_recipes WHERE LOWER(menu_name) = LOWER($1) AND UPPER(station) = UPPER($2) AND status = 'ACTIVE' ORDER BY version_number DESC LIMIT 1`,
-        [String(menuName).trim(), station]
-      );
-
-      if (!recipe.rows[0]) {
-        consumptionRecords.push({ order_item: menuName, status: 'MISSING_RECIPE', message: 'Recipe not configured' });
-        continue;
-      }
-
-      const ingredients = await pool.query(
-        `SELECT ri.*, ii.item_name, ii.unit, ii.current_quantity, ii.unit_cost
-         FROM public.recipe_ingredients ri
-         LEFT JOIN public.inventory_items ii ON ii.id = ri.ingredient_item_id
-         WHERE ri.recipe_id = $1`,
-        [recipe.rows[0].id]
-      );
-
-      for (const ingredient of ingredients.rows) {
-        const ingredientName = ingredient.item_name || ingredient.ingredient_name;
-        const ingredientItem = ingredient.ingredient_item_id
-          ? await pool.query(`SELECT * FROM public.inventory_items WHERE id = $1 LIMIT 1`, [ingredient.ingredient_item_id])
-          : ingredient.item_name
-            ? await pool.query(`SELECT * FROM public.inventory_items WHERE LOWER(item_name) = LOWER($1) LIMIT 1`, [ingredient.item_name])
-            : null;
-        const stockItem = ingredientItem?.rows[0] || null;
-
-        if (!stockItem) {
-          consumptionRecords.push({ order_item: menuName, status: 'MISSING_INGREDIENT', ingredient: ingredientName, message: 'Ingredient not configured in stock inventory.' });
-          continue;
-        }
-
-        const stockUnit = normalizeUnit(stockItem.unit || 'kg');
-        const consumptionUnit = stockUnit;
-        const requiredQty = (toBaseQuantity(ingredient.quantity || 0, ingredient.unit || stockUnit) / toBaseQuantity(1, stockUnit)) * itemQty;
-        if (Number(stockItem.current_quantity || 0) < requiredQty) {
-          consumptionRecords.push({ order_item: menuName, status: 'INSUFFICIENT_STOCK', ingredient: ingredientName, shortage: requiredQty - Number(stockItem.current_quantity || 0), available: stockItem.current_quantity });
-          continue;
-        }
-
-        const referenceNumber = `${orderId || 'manual'}-${menuName}-${ingredientName}-${recipe.rows[0].id}-${Date.now()}-${index}`;
-        const existing = await pool.query(`SELECT id FROM public.inventory_consumptions WHERE reference_number = $1 LIMIT 1`, [referenceNumber]);
-        if (existing.rows[0]) continue;
-
-        const stockUpdate = await pool.query(
-          `UPDATE public.inventory_items
-           SET current_quantity = current_quantity - $1,
-               inventory_value = (current_quantity - $1) * unit_cost,
-               updated_at = NOW()
-           WHERE id = $2 AND current_quantity >= $1
-           RETURNING id`,
-          [requiredQty, stockItem.id]
-        );
-        if (!stockUpdate.rows[0]) {
-          consumptionRecords.push({ order_item: menuName, status: 'INSUFFICIENT_STOCK', ingredient: ingredientName, message: 'Stock changed before consumption could be posted.' });
-          continue;
-        }
-
-        await pool.query(
-          `INSERT INTO public.inventory_consumptions (order_id, order_item_id, recipe_id, recipe_version, item_id, quantity, unit, station, business_date, created_by, reference_number)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [orderId || null, String(item.id || `${menuName}-${index}`), recipe.rows[0].id, String(recipe.rows[0].version_number || 1), stockItem.id, requiredQty, consumptionUnit, station, businessDate, req.user?.name || 'System', referenceNumber]
-        );
-
-        const cogsValue = requiredQty * Number(stockItem.unit_cost || 0);
-        await pool.query(
-          `INSERT INTO public.inventory_transactions (
-            item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value,
-            source_location_id, destination_location_id, station, business_date, created_by, notes
-          ) VALUES ($1, $2, 'CONSUMPTION', $3, $4, $5, $6, $7, NULL, $8, $9, $10, $11)`,
-          [stockItem.id, referenceNumber, requiredQty, consumptionUnit, Number(stockItem.unit_cost || 0), cogsValue, stockItem.location_id || null, station, businessDate, req.user?.name || 'System', `Consumption for ${menuName}`]
-        );
-
-        await createJournalEntry({
-          entryDate: businessDate,
-          description: `COGS for ${menuName}`,
-          sourceTransaction: referenceNumber,
-          postedBy: req.user?.name || 'System',
-          reference: `COGS-${referenceNumber}`,
-          lines: [
-            { accountCode: '5009', accountName: 'Other Operating Expenses', debit: cogsValue },
-            { accountCode: '1201', accountName: 'Inventory', credit: cogsValue },
-          ],
-        });
-
-        consumptionRecords.push({ order_item: menuName, ingredient: ingredientName, quantity: requiredQty, unit: consumptionUnit, status: 'CONSUMED' });
-      }
-    }
-
-    res.json({ success: true, record_count: consumptionRecords.length, entries: consumptionRecords });
+    const entries = await consumeSoldOrderItems({
+      orderId,
+      items: orderItems,
+      businessDate: payload.business_date,
+      createdBy: req.inventoryActor.name,
+    });
+    res.json({ success: true, record_count: entries.filter((entry) => ['CONSUMED', 'CONSUMED_COST_REVIEW'].includes(entry.status)).length, entries });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.get('/waste', authenticateInventory, allowInventoryReport, async (req, res) => {
+router.get('/waste', async (req, res) => {
   try {
+    const station = ROLE_STATIONS[req.inventoryActor.role];
     const result = await pool.query(
       `SELECT iw.*, ii.item_name
        FROM public.inventory_waste iw
        LEFT JOIN public.inventory_items ii ON ii.id = iw.item_id
-      WHERE ($1::text IS NULL OR UPPER(iw.station) = $1 OR ($1 = 'BARMAN' AND UPPER(iw.station) = 'BAR'))
+       WHERE ($1::text IS NULL OR UPPER(iw.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
        ORDER BY iw.created_at DESC
        LIMIT 200`,
-      [req.inventoryStation]
+      [station || null]
     );
     res.json(result.rows);
   } catch (error) {
@@ -1004,10 +1089,11 @@ router.get('/waste', authenticateInventory, allowInventoryReport, async (req, re
   }
 });
 
-router.post('/waste', authenticateInventory, requireDepartmentOperator, async (req, res) => {
+router.post('/waste', async (req, res) => {
   const payload = req.body || {};
   const itemId = Number(payload.item_id || payload.itemId);
   const quantity = Number(payload.quantity || 0);
+  const actor = req.inventoryActor.name;
 
   if (!itemId || !Number.isFinite(quantity) || quantity <= 0) {
     return res.status(400).json({ error: 'Item and quantity are required.' });
@@ -1016,7 +1102,7 @@ router.post('/waste', authenticateInventory, requireDepartmentOperator, async (r
   const client = await pool.connect();
   let item;
   let wasteEntry;
-  const businessDate = payload.business_date || new Date().toISOString().slice(0, 10);
+  const businessDate = payload.business_date || new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
 
   try {
     await client.query('BEGIN');
@@ -1025,13 +1111,28 @@ router.post('/waste', authenticateInventory, requireDepartmentOperator, async (r
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Inventory item not found.' });
     }
-    if (!stationMatchesDepartment(item.station, req.inventoryStation)) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'You can only record waste for your department stock.' });
-    }
-    const wasteStation = req.inventoryStation;
 
-    const newCurrent = Number(item.current_quantity || 0) - quantity;
+    const station = normalizeStation(payload.station || item.station || 'KITCHEN');
+    if (ROLE_STATIONS[req.inventoryActor.role] && ROLE_STATIONS[req.inventoryActor.role] !== station) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'You can only record waste for your assigned department.' });
+    }
+    if (ROLE_STATIONS[req.inventoryActor.role] && normalizeStation(item.station) && normalizeStation(item.station) !== station) {
+      const location = await client.query(`SELECT name FROM public.inventory_locations WHERE id = $1`, [item.location_id]);
+      if (String(location.rows[0]?.name || '').trim().toUpperCase() !== 'MAIN STORE') {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'This stock item belongs to another department.' });
+      }
+    }
+    let recordedQuantity;
+    try {
+      recordedQuantity = convertRecipeQuantity(quantity, payload.unit || item.unit || 'kg', item.unit || 'kg');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: error.message });
+    }
+
+    const newCurrent = Number(item.current_quantity || 0) - recordedQuantity;
     if (newCurrent < 0) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: `Insufficient stock for ${item.item_name}. Available: ${item.current_quantity}.` });
@@ -1041,7 +1142,7 @@ router.post('/waste', authenticateInventory, requireDepartmentOperator, async (r
       `INSERT INTO public.inventory_waste (item_id, quantity, unit, station, reason, business_date, created_by, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [item.id, quantity, normalizeUnit(payload.unit || item.unit || 'kg'), wasteStation, payload.reason || 'Waste', businessDate, req.user.name, payload.notes || '']
+      [item.id, recordedQuantity, normalizeUnit(item.unit || 'kg'), station, payload.reason || 'Waste', businessDate, actor, payload.notes || '']
     );
 
     await client.query(
@@ -1052,22 +1153,25 @@ router.post('/waste', authenticateInventory, requireDepartmentOperator, async (r
     await client.query(
       `INSERT INTO public.inventory_transactions (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value, source_location_id, destination_location_id, station, business_date, created_by, notes)
        VALUES ($1, $2, 'WASTE', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [item.id, `WASTE-${wasteEntry.rows[0].id}`, quantity, normalizeUnit(payload.unit || item.unit || 'kg'), Number(item.unit_cost || 0), quantity * Number(item.unit_cost || 0), item.location_id || null, null, wasteStation, businessDate, req.user.name, payload.notes || 'Waste entry']
+      [item.id, `WASTE-${wasteEntry.rows[0].id}`, recordedQuantity, normalizeUnit(item.unit || 'kg'), Number(item.unit_cost || 0), recordedQuantity * Number(item.unit_cost || 0), item.location_id || null, null, station, businessDate, actor, Number(item.unit_cost || 0) > 0 ? (payload.notes || 'Waste entry') : `COST_REVIEW: missing unit cost for ${item.item_name}; ${payload.notes || 'Waste entry'}`]
     );
 
+    const wasteCost = recordedQuantity * Number(item.unit_cost || 0);
+    if (wasteCost > 0) {
+      await createJournalEntry({
+        queryable: client,
+        entryDate: businessDate,
+        description: `Waste for ${item.item_name}`,
+        sourceTransaction: `WASTE-${wasteEntry.rows[0].id}`,
+        postedBy: actor,
+        reference: `WASTE-${wasteEntry.rows[0].id}`,
+        lines: [
+          { accountCode: '5009', accountName: 'Waste / Inventory Loss', debit: wasteCost },
+          { accountCode: '1201', accountName: 'Inventory', credit: wasteCost },
+        ],
+      });
+    }
     await client.query('COMMIT');
-
-    await createJournalEntry({
-      entryDate: businessDate,
-      description: `Waste for ${item.item_name}`,
-      sourceTransaction: `WASTE-${wasteEntry.rows[0].id}`,
-      postedBy: req.user?.name || 'Accountant',
-      reference: `WASTE-${wasteEntry.rows[0].id}`,
-      lines: [
-        { accountCode: String(payload.expense_account || '5009'), accountName: 'Waste / Inventory Loss', debit: quantity * Number(item.unit_cost || 0) },
-        { accountCode: '1201', accountName: 'Inventory', credit: quantity * Number(item.unit_cost || 0) },
-      ],
-    });
 
     res.status(201).json(wasteEntry.rows[0]);
   } catch (error) {
@@ -1102,76 +1206,42 @@ router.post('/stock-counts', async (req, res) => {
 
   if (!itemId) return res.status(400).json({ error: 'Item is required.' });
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    const item = (await client.query(`SELECT * FROM public.inventory_items WHERE id = $1 FOR UPDATE`, [itemId])).rows[0];
-    if (!item) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Inventory item not found.' });
-    }
+    const item = (await pool.query(`SELECT * FROM public.inventory_items WHERE id = $1`, [itemId])).rows[0];
+    if (!item) return res.status(404).json({ error: 'Inventory item not found.' });
 
     const systemQuantity = Number(item.current_quantity || 0);
     const variance = physicalQuantity - systemQuantity;
-    const businessDate = payload.business_date || new Date().toISOString().slice(0, 10);
-    const actor = req.user?.name || 'Accountant';
-    const reason = payload.reason || 'Stock count variance';
-    const adjustmentLocationId = locationId || item.location_id;
-    const countRecord = await client.query(
+    const countRecord = await pool.query(
       `INSERT INTO public.stock_counts (item_id, location_id, system_quantity, physical_quantity, variance, reason, business_date, counted_by, approved_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [item.id, adjustmentLocationId, systemQuantity, physicalQuantity, variance, reason, businessDate, payload.counted_by || actor, payload.approved_by || null]
+      [item.id, locationId || item.location_id, systemQuantity, physicalQuantity, variance, payload.reason || 'Physical count', payload.business_date || currentBusinessDate(), payload.counted_by || req.user?.name || 'Accountant', payload.approved_by || null]
     );
 
     if (Math.abs(variance) > 0.0001) {
       const adjustmentType = variance > 0 ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT';
-      const adjustmentRecord = await client.query(
+      await pool.query(
         `INSERT INTO public.inventory_adjustments (item_id, location_id, adjustment_type, quantity, reason, business_date, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id`,
-        [item.id, adjustmentLocationId, adjustmentType, Math.abs(variance), reason, businessDate, actor]
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [item.id, locationId || item.location_id, adjustmentType, Math.abs(variance), payload.reason || 'Stock count variance', payload.business_date || currentBusinessDate(), req.user?.name || 'Accountant']
       );
 
-      await client.query(
-        `UPDATE public.inventory_items SET current_quantity = current_quantity + $1, inventory_value = (current_quantity + $1) * unit_cost, updated_at = NOW() WHERE id = $2`,
+        await pool.query(
+          `UPDATE public.inventory_items SET current_quantity = current_quantity + $1, inventory_value = (current_quantity + $1) * unit_cost, updated_at = NOW() WHERE id = $2`,
         [variance, item.id]
       );
 
-      await client.query(
+      await pool.query(
         `INSERT INTO public.inventory_transactions (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value, source_location_id, destination_location_id, station, business_date, created_by, notes)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-        [item.id, `ADJ-${countRecord.rows[0].id}`, adjustmentType, Math.abs(variance), normalizeUnit(item.unit || 'kg'), Number(item.unit_cost || 0), Math.abs(variance) * Number(item.unit_cost || 0), adjustmentLocationId, null, item.station || 'KITCHEN', businessDate, actor, reason]
-      );
-
-      await client.query(
-        `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
-         VALUES ('inventory_adjustment', $1, $2, $3, $4)`,
-        [adjustmentRecord.rows[0].id, adjustmentType.toLowerCase(), actor, JSON.stringify({
-          item_id: item.id,
-          item_name: item.item_name,
-          adjustment_type: adjustmentType,
-          quantity: Math.abs(variance),
-          unit: normalizeUnit(item.unit || 'kg'),
-          system_quantity: systemQuantity,
-          physical_quantity: physicalQuantity,
-          variance,
-          reason,
-          business_date: businessDate,
-          location_id: adjustmentLocationId,
-          stock_count_id: countRecord.rows[0].id,
-          reference: `ADJ-${countRecord.rows[0].id}`,
-        })]
+        [item.id, `ADJ-${countRecord.rows[0].id}`, adjustmentType, Math.abs(variance), normalizeUnit(item.unit || 'kg'), Number(item.unit_cost || 0), Math.abs(variance) * Number(item.unit_cost || 0), locationId || item.location_id, null, item.station || 'KITCHEN', payload.business_date || currentBusinessDate(), req.user?.name || 'Accountant', 'Stock count variance']
       );
     }
 
-    await client.query('COMMIT');
     res.status(201).json(countRecord.rows[0]);
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: error.message });
-  } finally {
-    client.release();
   }
 });
 
@@ -1207,8 +1277,6 @@ router.get('/dashboard', async (req, res) => {
       FROM public.inventory_items ii
       LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
       WHERE ii.is_active = true
-        AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
-        AND LOWER(COALESCE(il.name, '')) NOT LIKE '%shisha%'
     `);
 
     const purchaseTotal = await pool.query(`SELECT COALESCE(SUM(total_amount), 0) AS total_purchases FROM public.purchase_receipts`);
@@ -1226,136 +1294,195 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
-async function handleInventorySummaryRequest(req, res) {
+router.get('/reports/cogs', async (req, res) => {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
+  const startDate = req.query.startDate || `${today.slice(0, 7)}-01`;
+  const endDate = req.query.endDate || today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || startDate > endDate) {
+    return res.status(400).json({ error: 'A valid startDate and endDate range is required.' });
+  }
+
   try {
-    const payload = req.body || {};
-    const businessDate = payload.business_date || payload.start_date || payload.end_date || new Date().toISOString().slice(0, 10);
-    const startDate = payload.start_date || businessDate;
-    const endDate = payload.end_date || businessDate;
-    const period = payload.period || 'Daily';
-    const department = payload.department || 'ALL';
-    const exportFormat = String(payload.export_format || payload.format || 'json').toLowerCase();
-
-    const reportDepartmentValue = String(department || 'ALL').trim();
-    const departmentClause = reportDepartmentValue.toUpperCase() === 'ALL'
-      ? "AND UPPER(COALESCE(ii.station, '')) NOT IN ('SHISHA') AND LOWER(COALESCE(il.name, '')) NOT LIKE '%shisha%'"
-      : reportDepartmentValue.toUpperCase() === 'MAIN STORE'
-        ? "AND (LOWER(COALESCE(il.name, '')) NOT LIKE '%kitchen%' AND LOWER(COALESCE(il.name, '')) NOT LIKE '%bar%' AND LOWER(COALESCE(il.name, '')) NOT LIKE '%barista%' AND LOWER(COALESCE(il.name, '')) NOT LIKE '%shisha%' OR LOWER(COALESCE(ii.station, '')) IN ('', 'MAIN STORE'))"
-        : reportDepartmentValue.toUpperCase() === 'KITCHEN'
-          ? "AND (UPPER(COALESCE(ii.station, '')) = 'KITCHEN' OR LOWER(COALESCE(il.name, '')) LIKE '%kitchen%')"
-          : reportDepartmentValue.toUpperCase() === 'BAR'
-            ? "AND (UPPER(COALESCE(ii.station, '')) IN ('BAR', 'BARMAN') OR LOWER(COALESCE(il.name, '')) LIKE '%bar%')"
-            : "AND (UPPER(COALESCE(ii.station, '')) = 'BARISTA' OR LOWER(COALESCE(il.name, '')) LIKE '%barista%')";
-
-    const [itemsResult, purchaseResult, transactionResult, wasteResult, adjustmentResult] = await Promise.all([
-      pool.query(`
-        SELECT ii.*, il.name AS location_name
-        FROM public.inventory_items ii
-        LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
-        WHERE ii.is_active = true
-          ${departmentClause}
-          AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
-          AND LOWER(COALESCE(il.name, '')) NOT LIKE '%shisha%'
-        ORDER BY ii.item_name ASC
-      `),
-      pool.query(`
-        SELECT pr.id, pr.business_date, pri.item_id, pri.quantity, pri.unit_cost, pri.total_cost, ii.item_name, ii.station, il.name AS location_name
-        FROM public.purchase_receipt_items pri
-        LEFT JOIN public.purchase_receipts pr ON pr.id = pri.purchase_id
-        LEFT JOIN public.inventory_items ii ON ii.id = pri.item_id
-        LEFT JOIN public.inventory_locations il ON il.id = pri.location_id
-        WHERE pr.business_date BETWEEN $1 AND $2
-          AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
-          AND LOWER(COALESCE(il.name, '')) NOT LIKE '%shisha%'
-      `, [startDate, endDate]),
-      pool.query(`
-        SELECT it.*, ii.item_name, ii.station, sl.name AS source_location, dl.name AS destination_location
-        FROM public.inventory_transactions it
-        LEFT JOIN public.inventory_items ii ON ii.id = it.item_id
-        LEFT JOIN public.inventory_locations sl ON sl.id = it.source_location_id
-        LEFT JOIN public.inventory_locations dl ON dl.id = it.destination_location_id
-        WHERE it.business_date BETWEEN $1 AND $2
-          AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
-          AND LOWER(COALESCE(sl.name, '')) NOT LIKE '%shisha%'
-          AND LOWER(COALESCE(dl.name, '')) NOT LIKE '%shisha%'
-      `, [startDate, endDate]),
-      pool.query(`
-        SELECT iw.*, ii.item_name, ii.station, il.name AS location_name
-        FROM public.inventory_waste iw
-        LEFT JOIN public.inventory_items ii ON ii.id = iw.item_id
-        LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
-        WHERE iw.business_date BETWEEN $1 AND $2
-          AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
-          AND LOWER(COALESCE(il.name, '')) NOT LIKE '%shisha%'
-      `, [startDate, endDate]),
-      pool.query(`
-        SELECT ia.*, ii.item_name, ii.station, il.name AS location_name
-        FROM public.inventory_adjustments ia
-        LEFT JOIN public.inventory_items ii ON ii.id = ia.item_id
-        LEFT JOIN public.inventory_locations il ON il.id = ia.location_id
-        WHERE ia.business_date BETWEEN $1 AND $2
-          AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
-          AND LOWER(COALESCE(il.name, '')) NOT LIKE '%shisha%'
-      `, [startDate, endDate])
+    const station = ROLE_STATIONS[req.inventoryActor.role];
+    const [consumptionResult, wasteResult, salesResult, refundsResult] = await Promise.all([
+      pool.query(
+        `SELECT it.business_date, UPPER(COALESCE(it.station, 'KITCHEN')) AS station,
+                COALESCE(ir.menu_name, 'Unassigned menu item') AS menu_name,
+                ii.item_name,
+                SUM(CASE WHEN it.transaction_type = 'REVERSAL' THEN -it.quantity ELSE it.quantity END) AS quantity,
+                SUM(CASE WHEN it.transaction_type = 'REVERSAL' THEN -it.total_value ELSE it.total_value END) AS cost,
+                BOOL_OR(COALESCE(it.notes, '') LIKE 'COST_REVIEW:%') AS needs_cost_review
+         FROM public.inventory_transactions it
+         LEFT JOIN public.inventory_recipes ir ON ir.id = it.recipe_id
+         LEFT JOIN public.inventory_items ii ON ii.id = it.item_id
+         WHERE (it.transaction_type = 'CONSUMPTION' OR (it.transaction_type = 'REVERSAL' AND it.notes LIKE 'COGS_REVERSAL:%'))
+           AND it.business_date BETWEEN $1::date AND $2::date
+           AND ($3::text IS NULL OR UPPER(it.station) IN ($3, CASE WHEN $3 = 'BAR' THEN 'BARMAN' ELSE $3 END))
+         GROUP BY it.business_date, UPPER(COALESCE(it.station, 'KITCHEN')), COALESCE(ir.menu_name, 'Unassigned menu item'), ii.item_name
+         ORDER BY it.business_date DESC, menu_name, ii.item_name`,
+        [startDate, endDate, station || null]
+      ),
+      pool.query(
+        `SELECT it.business_date, UPPER(COALESCE(it.station, 'KITCHEN')) AS station,
+                ii.item_name, SUM(it.quantity) AS quantity, SUM(it.total_value) AS cost
+         FROM public.inventory_transactions it
+         LEFT JOIN public.inventory_items ii ON ii.id = it.item_id
+         WHERE it.transaction_type = 'WASTE'
+           AND it.business_date BETWEEN $1::date AND $2::date
+           AND ($3::text IS NULL OR UPPER(it.station) IN ($3, CASE WHEN $3 = 'BAR' THEN 'BARMAN' ELSE $3 END))
+         GROUP BY it.business_date, UPPER(COALESCE(it.station, 'KITCHEN')), ii.item_name
+         ORDER BY it.business_date DESC, ii.item_name`,
+        [startDate, endDate, station || null]
+      ),
+      pool.query(
+        `SELECT item->>'name' AS menu_name,
+                CASE
+                  WHEN UPPER(COALESCE(item->>'station', '')) IN ('BAR', 'BARMAN') OR LOWER(COALESCE(item->>'category', '')) ~ 'barman|bar|cocktail|drink|beer' THEN 'BAR'
+                  WHEN UPPER(COALESCE(item->>'station', '')) = 'BARISTA' OR LOWER(COALESCE(item->>'category', '')) ~ 'barista|coffee|tea' THEN 'BARISTA'
+                  ELSE 'KITCHEN'
+                END AS station,
+                    SUM(COALESCE(NULLIF(item->>'line_total', '')::numeric, NULLIF(item->>'lineTotal', '')::numeric,
+                    COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+                      * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1))) AS net_sales,
+                    SUM(COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+                      * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)) AS gross_sales,
+                    SUM(GREATEST(0, COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+                      * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+                      - COALESCE(NULLIF(item->>'line_total', '')::numeric, NULLIF(item->>'lineTotal', '')::numeric,
+                    COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+                      * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)))) AS discounts
+         FROM public.orders o
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
+         LEFT JOIN LATERAL (
+           SELECT c.id, c.approved_at, c.created_at
+           FROM public.credits c
+           LEFT JOIN public.cashier_queue cq ON cq.id = c.cashier_queue_id
+           WHERE c.order_id = o.id AND c.status IN ('Approved', 'PartiallySettled', 'FullySettled')
+             AND (LOWER(BTRIM(COALESCE(cq.item->>'name', ''))) = LOWER(BTRIM(COALESCE(item->>'name', '')))
+               OR LOWER(BTRIM(COALESCE(c.label, ''))) = LOWER(BTRIM(COALESCE(item->>'name', ''))))
+           ORDER BY c.approved_at DESC NULLS LAST, c.created_at DESC LIMIT 1
+         ) approved_credit ON true
+         WHERE (UPPER(COALESCE(item->>'station', '')) NOT LIKE '%SHISHA%' AND UPPER(COALESCE(item->>'category', '')) NOT LIKE '%SHISHA%')
+           AND ((approved_credit.id IS NOT NULL AND (COALESCE(approved_credit.approved_at, approved_credit.created_at) AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date)
+             OR (approved_credit.id IS NULL AND COALESCE(item->>'_rowPaid', 'false') = 'true'
+                 AND UPPER(COALESCE(item->>'payment_method', '')) NOT LIKE '%CREDIT%'
+                 AND (COALESCE(NULLIF(item->>'paid_at', '')::timestamptz, o.paid_at, o.created_at) AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date))
+           AND ($3::text IS NULL OR CASE
+             WHEN UPPER(COALESCE(item->>'station', '')) IN ('BAR', 'BARMAN') OR LOWER(COALESCE(item->>'category', '')) ~ 'barman|bar|cocktail|drink|beer' THEN 'BAR'
+             WHEN UPPER(COALESCE(item->>'station', '')) = 'BARISTA' OR LOWER(COALESCE(item->>'category', '')) ~ 'barista|coffee|tea' THEN 'BARISTA'
+             ELSE 'KITCHEN' END = $3)
+         GROUP BY item->>'name', station
+         ORDER BY menu_name`,
+        [startDate, endDate, station || null]
+      ),
+      pool.query(
+        `SELECT item->>'name' AS menu_name,
+                CASE
+                  WHEN UPPER(COALESCE(item->>'station', '')) IN ('BAR', 'BARMAN') OR LOWER(COALESCE(item->>'category', '')) ~ 'barman|bar|cocktail|drink|beer' THEN 'BAR'
+                  WHEN UPPER(COALESCE(item->>'station', '')) = 'BARISTA' OR LOWER(COALESCE(item->>'category', '')) ~ 'barista|coffee|tea' THEN 'BARISTA'
+                  ELSE 'KITCHEN'
+                END AS station,
+                COALESCE(NULLIF(item->>'line_total', '')::numeric, NULLIF(item->>'lineTotal', '')::numeric,
+                  COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+                    * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)) AS refund
+         FROM public.void_requests vr
+         JOIN public.orders o ON o.id = vr.order_id
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
+         LEFT JOIN LATERAL (
+           SELECT c.id
+           FROM public.credits c
+           LEFT JOIN public.cashier_queue cq ON cq.id = c.cashier_queue_id
+           WHERE c.order_id = o.id AND c.status IN ('Approved', 'PartiallySettled', 'FullySettled')
+             AND (LOWER(BTRIM(COALESCE(cq.item->>'name', ''))) = LOWER(BTRIM(COALESCE(item->>'name', '')))
+               OR LOWER(BTRIM(COALESCE(c.label, ''))) = LOWER(BTRIM(COALESCE(item->>'name', ''))))
+           ORDER BY c.approved_at DESC NULLS LAST, c.created_at DESC LIMIT 1
+         ) approved_credit ON true
+         WHERE vr.status = 'Approved'
+           AND LOWER(BTRIM(COALESCE(item->>'name', ''))) = LOWER(BTRIM(vr.item_name))
+           AND (COALESCE(item->>'voidProcessed', 'false') = 'true' OR UPPER(COALESCE(item->>'status', '')) = 'VOIDED')
+           AND (approved_credit.id IS NOT NULL OR (COALESCE(item->>'_rowPaid', 'false') = 'true' AND UPPER(COALESCE(item->>'payment_method', '')) NOT LIKE '%CREDIT%'))
+           AND (vr.resolved_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date
+           AND ($3::text IS NULL OR CASE
+             WHEN UPPER(COALESCE(item->>'station', '')) IN ('BAR', 'BARMAN') OR LOWER(COALESCE(item->>'category', '')) ~ 'barman|bar|cocktail|drink|beer' THEN 'BAR'
+             WHEN UPPER(COALESCE(item->>'station', '')) = 'BARISTA' OR LOWER(COALESCE(item->>'category', '')) ~ 'barista|coffee|tea' THEN 'BARISTA'
+             ELSE 'KITCHEN' END = $3)`,
+        [startDate, endDate, station || null]
+      ),
     ]);
 
-    const report = buildInventorySummary({
-      items: itemsResult.rows,
-      transactions: transactionResult.rows,
-      purchases: purchaseResult.rows,
-      waste: wasteResult.rows,
-      adjustments: adjustmentResult.rows,
-      businessDate,
-      department: reportDepartmentValue,
-      generatedBy: req.user?.name || 'Accountant',
-      period,
+    const consumption = consumptionResult.rows.map((row) => ({ ...row, quantity: Number(row.quantity || 0), cost: Number(row.cost || 0) }));
+    const waste = wasteResult.rows.map((row) => ({ ...row, quantity: Number(row.quantity || 0), cost: Number(row.cost || 0) }));
+    const sales = salesResult.rows.map((row) => ({ ...row, gross_sales: Number(row.gross_sales || 0), net_sales: Number(row.net_sales || 0), discounts: Number(row.discounts || 0) }));
+    const refunds = refundsResult.rows.map((row) => ({ ...row, refund: Number(row.refund || 0) }));
+    const groupedBy = (rows, key, valueKey) => Object.entries(rows.reduce((groups, row) => {
+      const keyValue = row[key] || 'Unassigned';
+      groups[keyValue] = (groups[keyValue] || 0) + Number(row[valueKey] || 0);
+      return groups;
+    }, {})).map(([name, value]) => ({ name, value }));
+    const cogsByMenu = new Map();
+    for (const row of consumption) {
+      const key = `${row.station}::${row.menu_name}`;
+      cogsByMenu.set(key, (cogsByMenu.get(key) || 0) + row.cost);
+    }
+    const salesByMenu = new Map(sales.map((row) => [`${row.station}::${row.menu_name}`, row.gross_sales]));
+    const netSalesByMenu = new Map(sales.map((row) => [`${row.station}::${row.menu_name}`, row.net_sales]));
+    const discountsByMenu = new Map(sales.map((row) => [`${row.station}::${row.menu_name}`, row.discounts]));
+    const refundsByMenu = new Map();
+    for (const row of refunds) {
+      const key = `${row.station}::${row.menu_name}`;
+      refundsByMenu.set(key, (refundsByMenu.get(key) || 0) + row.refund);
+    }
+    const menuItems = [...new Set([...salesByMenu.keys(), ...cogsByMenu.keys(), ...refundsByMenu.keys()])].map((key) => {
+      const [department, menuName] = key.split('::');
+      const grossSales = salesByMenu.get(key) || 0;
+      const discounts = discountsByMenu.get(key) || 0;
+      const refunds = refundsByMenu.get(key) || 0;
+      const netSales = (netSalesByMenu.get(key) || 0) - refunds;
+      const cogs = cogsByMenu.get(key) || 0;
+      return { department, menu_name: menuName, gross_sales: grossSales, discounts, refunds, net_sales: netSales, cogs, gross_profit: netSales - cogs, gross_profit_margin: netSales > 0 ? ((netSales - cogs) / netSales) * 100 : 0 };
+    }).sort((left, right) => left.menu_name.localeCompare(right.menu_name));
+    const netSalesByDepartment = [...new Set([...sales.map((row) => row.station), ...refunds.map((row) => row.station)])].map((department) => ({
+      name: department,
+      value: sales.filter((row) => row.station === department).reduce((sum, row) => sum + row.net_sales, 0)
+        - refunds.filter((row) => row.station === department).reduce((sum, row) => sum + row.refund, 0),
+    }));
+
+    res.json({
       startDate,
       endDate,
+      grossSales: sales.reduce((sum, row) => sum + row.gross_sales, 0),
+      discounts: sales.reduce((sum, row) => sum + row.discounts, 0),
+      refunds: refunds.reduce((sum, row) => sum + row.refund, 0),
+      netSales: sales.reduce((sum, row) => sum + row.net_sales, 0) - refunds.reduce((sum, row) => sum + row.refund, 0),
+      cogs: consumption.reduce((sum, row) => sum + row.cost, 0),
+      wasteCost: waste.reduce((sum, row) => sum + row.cost, 0),
+      grossProfit: sales.reduce((sum, row) => sum + row.net_sales, 0) - refunds.reduce((sum, row) => sum + row.refund, 0) - consumption.reduce((sum, row) => sum + row.cost, 0),
+      salesByDepartment: netSalesByDepartment,
+      departments: groupedBy(consumption, 'station', 'cost'),
+      daily: groupedBy(consumption, 'business_date', 'cost'),
+      ingredients: groupedBy(consumption, 'item_name', 'cost'),
+      wasteByDepartment: groupedBy(waste, 'station', 'cost'),
+      menuItems,
+      consumption,
+      waste,
+      costReviewCount: consumption.filter((row) => row.needs_cost_review).length,
     });
-
-    if (exportFormat === 'pdf') {
-      const pdfBuffer = generateInventorySummaryPdf(report);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename=Kurax_Inventory_Summary_${businessDate}.pdf`);
-      return res.send(pdfBuffer);
-    }
-
-    return res.json(report);
   } catch (error) {
-    return res.status(500).json({ error: error.message || 'Unable to generate inventory summary.' });
+    res.status(500).json({ error: error.message });
   }
-}
-
-router.post('/reports/summary', authenticateInventory, allowInventoryReport, handleInventorySummaryRequest);
-
-router.get('/reports/summary', authenticateInventory, allowInventoryReport, async (req, res) => {
-  const businessDate = req.query.business_date || req.query.start_date || req.query.end_date || new Date().toISOString().slice(0, 10);
-  const startDate = req.query.start_date || businessDate;
-  const endDate = req.query.end_date || businessDate;
-  const department = req.query.department || 'ALL';
-  const period = req.query.period || 'Daily';
-  const exportFormat = String(req.query.format || req.query.export_format || 'json').toLowerCase();
-
-  req.body = {
-    business_date: businessDate,
-    start_date: startDate,
-    end_date: endDate,
-    department,
-    period,
-    export_format: exportFormat,
-  };
-
-  return handleInventorySummaryRequest(req, res);
 });
 
 router.get('/reports/low-stock', async (req, res) => {
   try {
+    const station = ROLE_STATIONS[req.inventoryActor.role];
     const result = await pool.query(
       `SELECT ii.*, il.name AS location_name
        FROM public.inventory_items ii
        LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
        WHERE ii.is_active = true AND ii.current_quantity <= ii.minimum_stock_level
-       ORDER BY ii.item_name ASC`
+         AND ($1::text IS NULL OR UPPER(ii.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
+       ORDER BY ii.item_name ASC`,
+      [station || null]
     );
     res.json(result.rows);
   } catch (error) {
@@ -1363,14 +1490,19 @@ router.get('/reports/low-stock', async (req, res) => {
   }
 });
 
+router.use('/transactions', authenticateRecipeUser);
+
 router.get('/reports/menu-items-without-recipes', async (req, res) => {
   try {
+    const station = ROLE_STATIONS[req.inventoryActor.role];
     const result = await pool.query(
       `SELECT m.id, m.name, m.station, m.category, m.price
        FROM public.menus m
-       LEFT JOIN public.inventory_recipes r ON LOWER(m.name) = LOWER(r.menu_name) AND r.status = 'ACTIVE'
+       LEFT JOIN public.inventory_recipes r ON (r.menu_item_id = m.id OR LOWER(m.name) = LOWER(r.menu_name)) AND r.status = 'ACTIVE'
        WHERE m.published = true AND r.id IS NULL
-       ORDER BY m.name ASC`
+         AND ($1::text IS NULL OR UPPER(m.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
+       ORDER BY m.name ASC`,
+      [station || null]
     );
     res.json(result.rows);
   } catch (error) {
@@ -1380,14 +1512,17 @@ router.get('/reports/menu-items-without-recipes', async (req, res) => {
 
 router.get('/transactions', async (req, res) => {
   try {
+    const station = ROLE_STATIONS[req.inventoryActor.role];
     const result = await pool.query(
       `SELECT it.*, ii.item_name, sl.name AS source_location, dl.name AS destination_location
        FROM public.inventory_transactions it
        LEFT JOIN public.inventory_items ii ON ii.id = it.item_id
        LEFT JOIN public.inventory_locations sl ON sl.id = it.source_location_id
        LEFT JOIN public.inventory_locations dl ON dl.id = it.destination_location_id
+      WHERE ($1::text IS NULL OR UPPER(it.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
        ORDER BY it.created_at DESC
-       LIMIT 200`
+      LIMIT 200`,
+          [station || null]
     );
     res.json(result.rows);
   } catch (error) {

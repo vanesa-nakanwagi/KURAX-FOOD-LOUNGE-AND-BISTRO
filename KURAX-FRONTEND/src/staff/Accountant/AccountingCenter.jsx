@@ -41,9 +41,45 @@ async function requestJSON(url, options) {
   return data;
 }
 
+function getAccountantName() {
+  try {
+    return JSON.parse(localStorage.getItem("kurax_user") || "{}").name?.trim() || "Accountant";
+  } catch {
+    return "Accountant";
+  }
+}
+
 function formatUGX(value) {
   const amount = Number(value || 0);
   return `UGX ${amount.toLocaleString()}`;
+}
+
+function formatSourceReference(source) {
+  const value = String(source || '').trim();
+  if (!value) return 'Manual entry';
+
+  const [type, ...referenceParts] = value.split(':');
+  const reference = referenceParts.join(':');
+  const labels = {
+    backdated_expense: 'Backdated expense',
+    cashier_expense: 'Cashier expense',
+    cashier_queue: 'Cashier sale',
+    credit_settlement: 'Credit settlement',
+    monthly_expense: 'Monthly expense',
+    petty_cash: 'Petty cash entry',
+    sale: 'Sale',
+  };
+  const label = labels[type.toLowerCase()];
+
+  if (label) {
+    const displayReference = type.toLowerCase() === 'cashier_queue' && reference
+      ? `Queue #${reference}`
+      : reference;
+    return displayReference ? `${label} · ${displayReference}` : label;
+  }
+  if (/^PUR-/i.test(value)) return `Inventory purchase · ${value}`;
+  if (/^WASTE-/i.test(value)) return `Inventory waste · ${value}`;
+  return value;
 }
 
 function getTableModel(view, data) {
@@ -57,7 +93,11 @@ function getTableModel(view, data) {
   }
 
   if (view === "cash") {
-    const balances = new Map((data.balanceSheet?.assets?.accounts || []).map((account) => [account.account_code, account.balance]));
+    const assetAccounts = [
+      ...(data.balanceSheet?.assets?.current_accounts || []),
+      ...(data.balanceSheet?.assets?.non_current_accounts || []),
+    ];
+    const balances = new Map(assetAccounts.map((account) => [account.account_code, account.balance]));
     const accounts = (data.accounts || []).filter((account) => ["cash", "bank", "mobile money"].includes(String(account.account_type || "").toLowerCase()));
     return {
       columns: ["Code", "Account", "Account Type", "Balance (UGX)"],
@@ -86,15 +126,16 @@ function getTableModel(view, data) {
       entry.status,
       relatedEntry,
       entry.reversal_reason || "",
+      entry.posted_by || "",
       ];
     });
-    return { columns: ["Journal Ref", "Transaction Date", "Business Time", "Posted On", "Description", "Debit Total (UGX)", "Credit Total (UGX)", "Status", "Linked Entry", "Reversal Reason"], rows };
+    return { columns: ["Journal Ref", "Transaction Date", "Business Time", "Posted On", "Description", "Debit Total (UGX)", "Credit Total (UGX)", "Status", "Linked Entry", "Reversal Reason", "Posted By"], rows };
   }
 
   if (view === "ledger") {
     return {
-      columns: ["Transaction Date", "Business Time", "Posted On", "Account Code", "Account", "Description", "Source", "Debit (UGX)", "Credit (UGX)", "Posted By"],
-      rows: (data.entries || []).map((entry) => [entry.entry_date?.slice(0, 10), entry.business_time?.slice(0, 5), entry.created_at ? new Date(entry.created_at).toLocaleString("en-GB", { timeZone: "Africa/Kampala" }) : "", entry.account_code, entry.account_name, entry.description, entry.source_transaction, Number(entry.debit || 0), Number(entry.credit || 0), entry.posted_by]),
+      columns: ["Transaction Date", "Business Time", "Posted On", "Account Code", "Account", "Description", "Source / Reference", "Debit (UGX)", "Credit (UGX)", "Posted By"],
+      rows: (data.entries || []).map((entry) => [entry.entry_date?.slice(0, 10), entry.business_time?.slice(0, 5) || "-", entry.created_at ? new Date(entry.created_at).toLocaleString("en-GB", { timeZone: "Africa/Kampala" }) : "", entry.account_code, entry.account_name, entry.description, formatSourceReference(entry.source_transaction), Number(entry.debit || 0), Number(entry.credit || 0), entry.posted_by]),
     };
   }
 
@@ -253,7 +294,7 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
       await requestJSON(`${API_URL}/api/accountant/accounting/periods`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(periodForm),
+        body: JSON.stringify({ ...periodForm, created_by: getAccountantName() }),
       });
       await loadView("periods");
     } catch (saveError) {
@@ -270,12 +311,7 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
     setError("");
     setNotice("");
     try {
-      let actor = "Accountant";
-      try {
-        actor = JSON.parse(localStorage.getItem("kurax_user") || "{}").name || actor;
-      } catch {
-        actor = "Accountant";
-      }
+      const actor = getAccountantName();
       const result = await requestJSON(`${API_URL}/api/accountant/accounting/journal-entries/${reversalForm.entry.id}/reverse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

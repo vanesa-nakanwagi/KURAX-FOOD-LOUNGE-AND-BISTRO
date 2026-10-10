@@ -26,6 +26,7 @@ export default function DepartmentInventory({ department, embedded = false }) {
   const [session] = useState(readSession);
   const [section, setSection] = useState('recipes');
   const [items, setItems] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
   const [records, setRecords] = useState({ recipes: [], consumption: [], waste: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,20 +42,22 @@ export default function DepartmentInventory({ department, embedded = false }) {
     setLoading(true);
     try {
       const query = `?station=${encodeURIComponent(config.station)}`;
-      const [itemsResponse, recipesResponse, consumptionResponse, wasteResponse] = await Promise.all([
+      const [itemsResponse, recipesResponse, menusResponse, consumptionResponse, wasteResponse] = await Promise.all([
         fetch(`${API_URL}/api/inventory/items${query}`, { headers }),
-        fetch(`${API_URL}/api/inventory/recipes`, { headers }),
+        fetch(`${API_URL}/api/inventory/recipes?station=${encodeURIComponent(config.station)}`, { headers }),
+        fetch(`${API_URL}/api/inventory/recipes/menu-items?station=${encodeURIComponent(config.station)}`, { headers }),
         fetch(`${API_URL}/api/inventory/consumption`, { headers }),
         fetch(`${API_URL}/api/inventory/waste`, { headers }),
       ]);
-      const responses = [itemsResponse, recipesResponse, consumptionResponse, wasteResponse];
+      const responses = [itemsResponse, recipesResponse, menusResponse, consumptionResponse, wasteResponse];
       const failed = responses.find((response) => !response.ok);
       if (failed) {
         const result = await failed.json().catch(() => ({}));
         throw new Error(result.error || 'Unable to load department inventory records.');
       }
-      const [itemRows, recipeRows, consumptionRows, wasteRows] = await Promise.all(responses.map((response) => response.json()));
+      const [itemRows, recipeRows, menuRows, consumptionRows, wasteRows] = await Promise.all(responses.map((response) => response.json()));
       setItems(itemRows);
+      setMenuItems(menuRows);
       setRecords({ recipes: recipeRows, consumption: consumptionRows, waste: wasteRows });
       setError('');
     } catch (loadError) {
@@ -112,8 +115,10 @@ export default function DepartmentInventory({ department, embedded = false }) {
           <InventoryWorkflows
             section={section}
             items={items}
+            menuItems={menuItems}
             records={records}
             station={config.station}
+            canConfigureRecipes
             canApproveRecipes={isHod}
             onAction={runAction}
           />

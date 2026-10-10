@@ -44,10 +44,10 @@ function getItemCount(items) {
   if (typeof items === "string") {
     try {
       const parsed = JSON.parse(items);
-      return Array.isArray(parsed) ? parsed.length : 1;
-    } catch { return 1; }
+      return Array.isArray(parsed) ? parsed.length : 0;
+    } catch { return 0; }
   }
-  return 1;
+  return 0;
 }
 
 function getIndividualItems(order, creditsData) {
@@ -269,7 +269,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
       const orderDate = formatOrderDate(order.timestamp || order.created_at);
       const matchStaff = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase() ||
                          Number(order.staff_id) === Number(currentStaffId);
-      return matchStaff && orderDate === today;
+      return matchStaff && orderDate === today && getItemCount(order.items) > 0;
     });
   }, [allOrders, currentDayDate, currentStaffName, currentStaffId]);
 

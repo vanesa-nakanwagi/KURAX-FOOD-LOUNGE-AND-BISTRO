@@ -609,8 +609,8 @@ router.patch('/:id/settle', async (req, res) => {
                   is_partially_paid: true,
                   partial_payment_method: method || "Cash",
                   partial_paid_at: new Date().toISOString(),
-                  partial_amount_paid: payment,
-                  remaining_balance: item.price * (item.quantity || 1) - payment
+                  partial_amount_paid: newPaid,
+                  remaining_balance: Math.max((Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1) - newPaid, 0)
                 };
               }
             }

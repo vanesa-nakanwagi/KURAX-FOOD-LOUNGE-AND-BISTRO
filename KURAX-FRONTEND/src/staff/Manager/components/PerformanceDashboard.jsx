@@ -40,10 +40,10 @@ function getItemCount(items) {
   if (typeof items === "string") {
     try {
       const parsed = JSON.parse(items);
-      return Array.isArray(parsed) ? parsed.length : 1;
-    } catch { return 1; }
+      return Array.isArray(parsed) ? parsed.length : 0;
+    } catch { return 0; }
   }
-  return 1;
+  return 0;
 }
 
 function getIndividualItems(order, creditsData) {
@@ -403,7 +403,8 @@ export default function PerformanceDashboard({ theme = "light" }) {
     return count;
   }, [orders, currentDayDate]);
   const dailyStaffOrdersCount = useMemo(() => orders.filter(order =>
-    formatOrderDate(order.created_at || order.timestamp) === currentDayDate
+    formatOrderDate(order.created_at || order.timestamp) === currentDayDate &&
+    getItemCount(order.items) > 0
   ).length, [orders, currentDayDate]);
 
   const monthlyRevenue = monthlyIncomeData?.monthly_income || 0;

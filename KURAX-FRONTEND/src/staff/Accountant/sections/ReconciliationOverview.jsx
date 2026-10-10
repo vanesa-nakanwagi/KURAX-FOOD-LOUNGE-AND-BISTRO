@@ -97,6 +97,7 @@ export default function ReconciliationOverview({
   physMomoMTN,
   physMomoAirtel,
   physCard,
+  pettyCashIn,
   pettyCashToday,
   varCash,
   varMTN,
@@ -188,10 +189,11 @@ export default function ReconciliationOverview({
   const dayStatusClass = dayClosed ? "bg-emerald-50 text-emerald-700 border-emerald-200" : exceptions.length ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200";
   const netCollected = summaryAvailable ? Number(sys.gross || 0) + Number(sys.credit_settlements || 0) : 0;
   const hasMonthlyProfit = Boolean(profitData?.sales || profitData?.costs);
-  const monthlyGrossSales = Number(profitData?.grossSales ?? profitData?.sales?.from_paid_orders ?? 0);
-  const monthlyCreditSettlements = Number(profitData?.creditSettlements ?? profitData?.sales?.from_credit_settlements ?? 0);
-  const monthlyExpenses = Number(profitData?.expenses ?? profitData?.costs?.total ?? 0);
-  const monthlyCurrentCash = Number(profitData?.currentCash ?? profitData?.net_profit ?? 0);
+  const monthlyRevenue = Number(profitData?.sales?.total_gross ?? 0) > 0
+    ? Number(profitData?.sales?.total_gross ?? 0)
+    : (Number(profitData?.sales?.from_paid_orders ?? 0) + Number(profitData?.sales?.from_credit_settlements ?? 0));
+  const monthlyExpenses = profitData?.costs?.total;
+  const monthlyNet = profitData?.net_profit;
   const checklist = [
     { label: "Payments confirmed", done: summaryAvailable },
     { label: "Shifts submitted", done: summaryAvailable && Number(sys.orders || 0) > 0 },
@@ -290,10 +292,10 @@ export default function ReconciliationOverview({
         </Panel>
 
         <Panel className="p-5 sm:p-6 xl:col-span-2">
-          <SectionHeader eyebrow="Monthly Financials" title="Sales, expenses, and cash" detail={`Selected month: ${selectedMonth || "Not available"}`} action={<select value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)} className="border border-gray-200 rounded-lg px-2 py-2 text-[9px] font-bold text-gray-700 bg-white"><option value={selectedMonth}>{selectedMonth}</option><option value={`${new Date().getFullYear()}-${String(new Date().getMonth()).padStart(2, "0")}`}>{`${new Date().getFullYear()}-${String(new Date().getMonth()).padStart(2, "0")}`}</option></select>} />
+          <SectionHeader eyebrow="Profitability" title="Revenue and expense impact" detail={`Existing monthly source: ${selectedMonth || "Not available"}`} action={<select value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)} className="border border-gray-200 rounded-lg px-2 py-2 text-[9px] font-bold text-gray-700 bg-white"><option value={selectedMonth}>{selectedMonth}</option><option value={`${new Date().getFullYear()}-${String(new Date().getMonth()).padStart(2, "0")}`}>{`${new Date().getFullYear()}-${String(new Date().getMonth()).padStart(2, "0")}`}</option></select>} />
           <div className="space-y-3">
-            {[["Gross Sales", monthlyGrossSales, "text-emerald-700"], ["Credit Settlements", monthlyCreditSettlements, "text-purple-700"], ["Expenses", monthlyExpenses, "text-red-700"], ["Petty cash outflow", pettyCashToday?.total_out, "text-orange-700"]].map(([label, value, color]) => <div key={label} className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3"><span className="text-[10px] font-bold text-gray-600">{label}</span><span className={`font-black ${color}`}>{amount(value, label === "Petty cash outflow" ? pettyCashToday != null : hasMonthlyProfit)}</span></div>)}
-            <div className="rounded-xl p-4 mt-4" style={{ backgroundColor: `${MAROON}0d`, border: `1px solid ${MAROON}26` }}><p className="text-[8px] font-black uppercase tracking-widest" style={{ color: MAROON }}>Current Cash</p><p className="text-xl font-black mt-1" style={{ color: MAROON }}>{amount(monthlyCurrentCash, hasMonthlyProfit)}</p></div>
+            {[["Revenue", monthlyRevenue, "text-emerald-700"], ["Expenses", monthlyExpenses, "text-red-700"], ["Petty cash outflow", pettyCashToday?.total_out, "text-orange-700"]].map(([label, value, color]) => <div key={label} className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3"><span className="text-[10px] font-bold text-gray-600">{label}</span><span className={`font-black ${color}`}>{amount(value, label === "Petty cash outflow" ? pettyCashToday != null : hasMonthlyProfit)}</span></div>)}
+            <div className="rounded-xl p-4 mt-4" style={{ backgroundColor: `${MAROON}0d`, border: `1px solid ${MAROON}26` }}><p className="text-[8px] font-black uppercase tracking-widest" style={{ color: MAROON }}>Net result</p><p className="text-xl font-black mt-1" style={{ color: MAROON }}>{amount(monthlyNet, hasMonthlyProfit)}</p><p className="text-[9px] text-gray-500 mt-2">Estimated COGS: Not available</p></div>
             {profitLoad && <p className="text-[9px] text-gray-400">Refreshing monthly figures…</p>}
           </div>
         </Panel>

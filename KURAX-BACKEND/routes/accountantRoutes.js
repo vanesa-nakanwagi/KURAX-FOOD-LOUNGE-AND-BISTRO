@@ -15,6 +15,7 @@ import {
   getTrialBalance,
   listAccounts,
   postBackdatedExpense,
+  resolveRevenueAccountCode,
   reverseJournalEntry,
 } from '../helpers/accounting.js';
 
@@ -1092,9 +1093,31 @@ router.get('/accounting/accounts-payable', async (req, res) => {
   try {
     const params = [];
     const dateFilter = startDate && endDate ? `WHERE c.created_at::date BETWEEN $1 AND $2` : '';
+    const purchaseDateFilter = startDate && endDate ? `AND pr.business_date BETWEEN $1 AND $2` : '';
     if (startDate && endDate) params.push(startDate, endDate);
     const rows = await pool.query(
-      `SELECT c.* FROM public.accounts_payable c ${dateFilter} ORDER BY c.created_at DESC`,
+      `SELECT c.reference, c.supplier_name, c.amount, c.amount_paid, c.outstanding_balance,
+              c.status, c.due_date, c.payment_method, c.created_at, c.updated_at
+       FROM public.accounts_payable c ${dateFilter}
+       UNION ALL
+       SELECT 'INV-PUR-' || pr.id::text AS reference, s.name AS supplier_name,
+              pr.total_amount AS amount, 0 AS amount_paid, pr.total_amount AS outstanding_balance,
+              'Unpaid' AS status, NULL::date AS due_date, pr.payment_method,
+              pr.created_at, pr.created_at AS updated_at
+       FROM public.purchase_receipts pr
+       LEFT JOIN public.suppliers s ON s.id = pr.supplier_id
+       WHERE pr.total_amount > 0
+         AND (
+           LOWER(COALESCE(pr.payment_method, '')) LIKE '%credit%'
+           OR LOWER(COALESCE(pr.payment_method, '')) LIKE '%payable%'
+           OR LOWER(COALESCE(pr.payment_method, '')) LIKE '%supplier%'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM public.accounts_payable existing
+           WHERE existing.reference = 'INV-PUR-' || pr.id::text
+         )
+         ${purchaseDateFilter}
+       ORDER BY created_at DESC`,
       params
     );
     res.json({ entries: rows.rows });
@@ -1161,14 +1184,22 @@ router.get('/accounting/audit-trail', async (req, res) => {
 });
 
 router.post('/accounting/sales', async (req, res) => {
-  const { amount, paymentMethod = 'Cash', description, sourceTransaction, postedBy, entryDate } = req.body;
+  const { amount, department, station, paymentMethod = 'Cash', settlementStatus = 'Pending', description, sourceTransaction, postedBy, entryDate } = req.body;
   if (!amount || Number(amount) <= 0) {
     return res.status(400).json({ error: 'Valid sale amount is required' });
+  }
+  let revenueAccountCode;
+  try {
+    revenueAccountCode = resolveRevenueAccountCode(department || station);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
   try {
     const entry = await createSalesJournalEntry({
       amount,
       paymentMethod,
+      settlementStatus,
+      revenueAccountCode,
       description,
       sourceTransaction,
       postedBy,
