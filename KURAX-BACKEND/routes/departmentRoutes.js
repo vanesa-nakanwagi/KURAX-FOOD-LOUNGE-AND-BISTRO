@@ -5,9 +5,9 @@ import { readSessionToken } from '../middleware/sessionTokens.js';
 const router = express.Router();
 const MANAGEMENT_ROLES = ['DIRECTOR', 'MANAGER', 'ACCOUNTANT'];
 const DEPARTMENTS = {
-  kitchen: { label: 'Kitchen', hodRole: 'KITCHEN_HOD', staffRole: 'CHEF', table: 'kitchen_tickets', assignments: 'chef_assignments', paidItemFilter: "LOWER(COALESCE(item->>'station','kitchen')) NOT IN ('barman','barista')" },
-  bar: { label: 'Bar', hodRole: 'BAR_HOD', staffRole: 'BARMAN', table: 'barman_tickets', assignments: 'barman_assignments', paidItemFilter: "LOWER(COALESCE(item->>'station',''))='barman'" },
-  barista: { label: 'Barista', hodRole: 'BARISTA_HOD', staffRole: 'BARISTA', table: 'barista_tickets', assignments: 'barista_assignments', paidItemFilter: "LOWER(COALESCE(item->>'station',''))='barista'" },
+  kitchen: { label: 'Kitchen', station: 'KITCHEN', hodRole: 'KITCHEN_HOD', staffRole: 'CHEF', table: 'kitchen_tickets', assignments: 'chef_assignments', paidItemFilter: "LOWER(COALESCE(item->>'station','kitchen')) NOT IN ('barman','bar','barista','shisha')" },
+  bar: { label: 'Bar', station: 'BARMAN', hodRole: 'BAR_HOD', staffRole: 'BARMAN', table: 'barman_tickets', assignments: 'barman_assignments', paidItemFilter: "LOWER(COALESCE(item->>'station','')) IN ('barman','bar')" },
+  barista: { label: 'Barista', station: 'BARISTA', hodRole: 'BARISTA_HOD', staffRole: 'BARISTA', table: 'barista_tickets', assignments: 'barista_assignments', paidItemFilter: "LOWER(COALESCE(item->>'station',''))='barista'" },
 };
 
 function fail(res, status, message) {
@@ -50,6 +50,77 @@ function itemBelongsToDepartment(item, departmentKey) {
   if (departmentKey === 'bar') return station === 'barman';
   if (departmentKey === 'barista') return station === 'barista';
   return false;
+}
+
+async function inventoryReport(station, from, to) {
+  const consumptionStationFilter = station === 'KITCHEN'
+    ? "UPPER(COALESCE(NULLIF(ic.station,''), NULLIF(ii.station,''), 'KITCHEN')) NOT IN ('BARMAN','BAR','BARISTA','SHISHA')"
+    : station === 'BARMAN'
+      ? "UPPER(COALESCE(NULLIF(ic.station,''), NULLIF(ii.station,''), '')) IN ('BARMAN','BAR')"
+      : "UPPER(COALESCE(NULLIF(ic.station,''), NULLIF(ii.station,''), '')) = 'BARISTA'";
+  const wasteStationFilter = station === 'KITCHEN'
+    ? "UPPER(COALESCE(NULLIF(it.station,''), NULLIF(ii.station,''), 'KITCHEN')) NOT IN ('BARMAN','BAR','BARISTA','SHISHA')"
+    : station === 'BARMAN'
+      ? "UPPER(COALESCE(NULLIF(it.station,''), NULLIF(ii.station,''), '')) IN ('BARMAN','BAR')"
+      : "UPPER(COALESCE(NULLIF(it.station,''), NULLIF(ii.station,''), '')) = 'BARISTA'";
+  const result = await pool.query(
+    `WITH department_usage AS (
+       SELECT 'CONSUMPTION' AS transaction_type, ii.item_name, ic.unit,
+              SUM(ic.quantity) AS quantity, SUM(ic.quantity * ii.unit_cost) AS value
+       FROM public.inventory_consumptions ic
+       JOIN public.inventory_items ii ON ii.id = ic.item_id
+       WHERE ic.business_date BETWEEN $1::date AND $2::date
+         AND ${consumptionStationFilter}
+         AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
+       GROUP BY ii.item_name, ic.unit
+       UNION ALL
+       SELECT 'WASTE' AS transaction_type, ii.item_name, it.unit,
+              SUM(it.quantity) AS quantity, SUM(it.total_value) AS value
+       FROM public.inventory_transactions it
+       JOIN public.inventory_items ii ON ii.id = it.item_id
+       WHERE it.transaction_type = 'WASTE'
+         AND it.business_date BETWEEN $1::date AND $2::date
+         AND ${wasteStationFilter}
+         AND UPPER(COALESCE(ii.station, '')) <> 'SHISHA'
+       GROUP BY ii.item_name, it.unit
+     )
+     SELECT transaction_type, item_name, unit, SUM(quantity) AS quantity, SUM(value) AS value
+     FROM department_usage
+     GROUP BY transaction_type, item_name, unit
+     ORDER BY item_name, transaction_type`,
+    [from, to]
+  );
+  const consumption = result.rows.filter((row) => row.transaction_type === 'CONSUMPTION');
+  const waste = result.rows.filter((row) => row.transaction_type === 'WASTE');
+  const sum = (rows, key) => rows.reduce((total, row) => total + Number(row[key] || 0), 0);
+  return {
+    cogs: sum(consumption, 'value'),
+    consumption_value: sum(consumption, 'value'),
+    consumption_quantity: sum(consumption, 'quantity'),
+    waste: sum(waste, 'value'),
+    waste_quantity: sum(waste, 'quantity'),
+    inventory_usage: consumption.map((row) => ({ item_name: row.item_name, unit: row.unit, quantity: Number(row.quantity || 0), value: Number(row.value || 0) })),
+  };
+}
+
+async function menuItemReport(department, from, to) {
+  const result = await pool.query(
+    `SELECT item->>'name' AS menu_item,
+            COALESCE(SUM(COALESCE(
+              NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
+              COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
+                * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
+            )),0) AS sales,
+            COALESCE(SUM(COALESCE(NULLIF(item->>'quantity','')::numeric,1)),0) AS quantity
+     FROM public.${department.table} t
+     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
+     WHERE t.ticket_date BETWEEN $1::date AND $2::date
+       AND ${department.paidItemFilter}
+     GROUP BY item->>'name'
+     ORDER BY sales DESC, menu_item`,
+    [from, to]
+  );
+  return result.rows.map((row) => ({ ...row, sales: Number(row.sales || 0), quantity: Number(row.quantity || 0) }));
 }
 
 function parseOrderItems(value) {
@@ -269,9 +340,10 @@ router.get('/reports/consolidated', async (req, res) => {
   if (!MANAGEMENT_ROLES.includes(req.actor.role)) return fail(res, 403, 'Management reporting access is required.');
   const range = dateRange(req, res);
   if (!range) return undefined;
+  const summaryOnly = req.query.summary_only === 'true';
   try {
     const reports = await Promise.all(Object.entries(DEPARTMENTS).map(async ([key, department]) => {
-      const [result, performance] = await Promise.all([
+      const [result, performance, menuItems, inventory] = await Promise.all([
         pool.query(
         `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(sales.sales_amount),0) AS total_sales,
           COALESCE(SUM(LEAST(sales.sales_amount, paid.collected_amount)),0) AS amount_collected,
@@ -319,40 +391,76 @@ router.get('/reports/consolidated', async (req, res) => {
            ORDER BY total_sales DESC, 1`,
           [range.from, range.to]
         ),
+        summaryOnly ? Promise.resolve([]) : menuItemReport(department, range.from, range.to),
+        summaryOnly
+          ? Promise.resolve({})
+          : inventoryReport(department.station, range.from, range.to),
       ]);
+      const summary = result.rows[0];
+      const inventoryData = inventory;
       return {
         department: key,
         label: department.label,
-        ...result.rows[0],
+        ...summary,
+        total_sales: Number(summary.total_sales || 0),
+        ...inventoryData,
+        gross_profit: summaryOnly ? null : Number(summary.total_sales || 0) - inventoryData.cogs,
+        menu_items: menuItems,
         staff_performance: performance.rows.map(person => ({ ...person, worker_role: department.staffRole })),
       };
     }));
-    const shisha = await pool.query(
-      `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(total_amount),0) AS total_sales,
-        COALESCE(SUM(amount_paid),0) AS amount_collected, COALESCE(SUM(outstanding_amount),0) AS outstanding_balance
-       FROM public.shisha_orders
-       WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
-         AND created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')`,
-      [range.from, range.to]
-    );
-    const shishaPerformance = await pool.query(
-      `SELECT s.name AS staff_name,
-        CASE WHEN s.role='SHISHA_CHEF' THEN 'MIXER' ELSE 'SHISHA_WAITER' END AS worker_role,
-        COUNT(o.id)::int AS items_assigned,
-        COUNT(o.id) FILTER (WHERE o.order_status IN ('READY','SERVED','FULLY_PAID','PARTIALLY_PAID'))::int AS completed_items,
-        COALESCE(SUM(o.total_amount),0) AS total_sales
-       FROM public.shisha_staff s
-       LEFT JOIN public.shisha_orders o ON
-         ((s.role='SHISHA_WAITER' AND o.shisha_waiter_id=s.id) OR
-          (s.role='SHISHA_CHEF' AND o.assigned_chef_id=s.id))
-         AND o.created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
-         AND o.created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
-       WHERE s.role IN ('SHISHA_WAITER','SHISHA_CHEF')
-       GROUP BY s.id, s.name ORDER BY items_assigned DESC, s.name`,
-      [range.from, range.to]
-    );
-    reports.push({ department: 'shisha', label: 'Shisha', ...shisha.rows[0], staff_performance: shishaPerformance.rows });
-    return res.json({ ...range, departments: reports });
+    const [shisha, shishaPerformance] = summaryOnly
+      ? [
+          { rows: [{ total_orders: 0, total_sales: 0, amount_collected: 0, outstanding_balance: 0 }] },
+          { rows: [] },
+        ]
+      : await Promise.all([
+          pool.query(
+            `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(total_amount),0) AS total_sales,
+              COALESCE(SUM(amount_paid),0) AS amount_collected, COALESCE(SUM(outstanding_amount),0) AS outstanding_balance
+             FROM public.shisha_orders
+             WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+               AND created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')`,
+            [range.from, range.to]
+          ),
+          pool.query(
+            `SELECT s.name AS staff_name,
+              CASE WHEN s.role='SHISHA_CHEF' THEN 'MIXER' ELSE 'SHISHA_WAITER' END AS worker_role,
+              COUNT(o.id)::int AS items_assigned,
+              COUNT(o.id) FILTER (WHERE o.order_status IN ('READY','SERVED','FULLY_PAID','PARTIALLY_PAID'))::int AS completed_items,
+              COALESCE(SUM(o.total_amount),0) AS total_sales
+             FROM public.shisha_staff s
+             LEFT JOIN public.shisha_orders o ON
+               ((s.role='SHISHA_WAITER' AND o.shisha_waiter_id=s.id) OR
+                (s.role='SHISHA_CHEF' AND o.assigned_chef_id=s.id))
+               AND o.created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+               AND o.created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+             WHERE s.role IN ('SHISHA_WAITER','SHISHA_CHEF')
+             GROUP BY s.id, s.name ORDER BY items_assigned DESC, s.name`,
+            [range.from, range.to]
+          ),
+        ]);
+    const totals = reports.reduce((total, row) => ({
+      total_orders: total.total_orders + Number(row.total_orders || 0),
+      total_sales: total.total_sales + Number(row.total_sales || 0),
+      cogs: total.cogs + Number(row.cogs || 0),
+      gross_profit: total.gross_profit + Number(row.gross_profit || 0),
+      consumption_value: total.consumption_value + Number(row.consumption_value || 0),
+      waste: total.waste + Number(row.waste || 0),
+      amount_collected: total.amount_collected + Number(row.amount_collected || 0),
+      outstanding_balance: total.outstanding_balance + Number(row.outstanding_balance || 0),
+    }), { total_orders: 0, total_sales: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0 });
+    const response = {
+      ...range,
+      departments: reports,
+      main_departments: reports,
+      summary_only: summaryOnly,
+    };
+    if (!summaryOnly) {
+      response.main_totals = totals;
+      response.shisha_subsystem = { ...shisha.rows[0], staff_performance: shishaPerformance.rows };
+    }
+    return res.json(response);
   } catch (error) {
     console.error('Consolidated department report error:', error.message);
     return fail(res, 500, 'Could not load consolidated department reports.');
@@ -369,7 +477,7 @@ router.get('/:department/reports', async (req, res) => {
   if (!range) return undefined;
 
   try {
-    const [summary, performance] = await Promise.all([
+    const [summary, performance, menuItems, inventory] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS total_orders,
           COALESCE(SUM(sales.sales_amount),0) AS total_sales,
@@ -422,8 +530,24 @@ router.get('/:department/reports', async (req, res) => {
          ORDER BY total_sales DESC, 1`,
         [range.from, range.to]
       ),
+      menuItemReport(department, range.from, range.to),
+      inventoryReport(department.station, range.from, range.to),
     ]);
-    return res.json({ department: req.params.department, ...range, summary: summary.rows[0], staff_performance: performance.rows });
+    const departmentSummary = summary.rows[0];
+    const inventoryData = inventory;
+    return res.json({
+      department: req.params.department,
+      ...range,
+      summary: {
+        ...departmentSummary,
+        total_sales: Number(departmentSummary.total_sales || 0),
+        ...inventoryData,
+        gross_profit: Number(departmentSummary.total_sales || 0) - inventoryData.cogs,
+      },
+      menu_items: menuItems,
+      inventory_usage: inventoryData.inventory_usage,
+      staff_performance: performance.rows,
+    });
   } catch (error) {
     console.error('Department report error:', error.message);
     return fail(res, 500, 'Could not load department reports.');

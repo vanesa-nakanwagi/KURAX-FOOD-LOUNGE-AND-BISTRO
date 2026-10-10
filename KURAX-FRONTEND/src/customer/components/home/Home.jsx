@@ -3,8 +3,8 @@ import { useNavigate, Link, useLocation } from "react-router-dom";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import { 
-  Plus, Sparkles, ArrowRight, Star, ChefHat, Calendar, 
-  Truck, Clock, CreditCard, UtensilsCrossed, ZoomIn
+  Plus, Sparkles, ArrowRight, Calendar, 
+  Truck, Clock, CreditCard, ZoomIn
 } from "lucide-react";
 
 // Existing Utils & Components
@@ -197,18 +197,6 @@ function ChefSection() {
               finest ingredients to create an unforgettable fine‑dining experience.
             </motion.p>
 
-            <motion.div variants={staggerChildrenLocal} className="flex flex-wrap gap-3 pt-2">
-              {[
-                { icon: ChefHat, label: 'Master Chef' },
-                { icon: Star, label: 'Premium Ingredients' },
-                { icon: UtensilsCrossed, label: 'Fusion Techniques' }
-              ].map((item, idx) => (
-                <motion.div key={idx} variants={fadeInUpLocal} className="flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-zinc-200">
-                  <item.icon size={16} className="text-yellow-600" />
-                  <span className="text-sm font-medium text-zinc-800">{item.label}</span>
-                </motion.div>
-              ))}
-            </motion.div>
           </motion.div>
 
           {/* Image side (right) – FIXED HEIGHT to prevent layout shift */}

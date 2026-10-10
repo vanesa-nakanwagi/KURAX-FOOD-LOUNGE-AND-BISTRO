@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Check, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Users, Wine } from 'lucide-react';
+import { ArrowRight, Boxes, Check, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Users, Wine } from 'lucide-react';
 import API_URL from '../config/api';
 import { downloadReportPdf } from './reportExport';
+import DepartmentInventory from './DepartmentInventory';
 
 const DEPARTMENTS = {
   kitchen: { label: 'Kitchen', title: 'Kitchen station', role: 'KITCHEN_HOD', station: 'kitchen', workerRole: 'CHEF', icon: ChefHat },
@@ -76,6 +77,8 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
 
   useEffect(() => {
@@ -96,9 +99,11 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     if (!session?.token || !allowed) return undefined;
     let mounted = true;
     const load = async () => {
+      if (isManagement && mounted) setReportLoading(true);
       try {
         const query = new URLSearchParams({ from, to });
         if (isManagement) {
+          query.set('summary_only', 'true');
           const data = await request(`/api/departments/reports/consolidated?${query}`, session.token);
           if (mounted) setReport(data);
         } else {
@@ -122,11 +127,13 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         if (mounted) setError('');
       } catch (loadError) {
         if (mounted) setError(loadError.message);
+      } finally {
+        if (isManagement && mounted) setReportLoading(false);
       }
     };
     load();
-    const timer = window.setInterval(load, 12000);
-    return () => { mounted = false; window.clearInterval(timer); };
+    const timer = isManagement ? null : window.setInterval(load, 12000);
+    return () => { mounted = false; if (timer) window.clearInterval(timer); };
   }, [session?.token, allowed, departmentKey, from, to, refreshCounter]);
 
   function choosePreset(nextPreset) {
@@ -149,9 +156,23 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           rows: [
             ['Orders', report.summary?.total_orders ?? 0],
             ['Sales', money(report.summary?.total_sales)],
+            ['COGS', money(report.summary?.cogs)],
+            ['Gross profit', money(report.summary?.gross_profit)],
+            ['Inventory consumption', money(report.summary?.consumption_value)],
+            ['Waste', money(report.summary?.waste)],
             ['Collected', money(report.summary?.amount_collected)],
             ['Outstanding', money(report.summary?.outstanding_balance)],
           ],
+        },
+        {
+          title: 'Menu items',
+          columns: ['Menu item', 'Quantity', 'Sales'],
+          rows: (report.menu_items || []).map(item => [item.menu_item, item.quantity, money(item.sales)]),
+        },
+        {
+          title: 'Inventory usage',
+          columns: ['Ingredient', 'Quantity', 'Value'],
+          rows: (report.inventory_usage || []).map(item => [item.item_name, `${item.quantity} ${item.unit}`, money(item.value)]),
         },
         {
           title: `Sales by ${config.workerRole.toLowerCase()}`,
@@ -162,45 +183,81 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     });
   }
 
-  function downloadConsolidatedReport() {
+  async function downloadConsolidatedReport() {
     if (!report || report.from !== from || report.to !== to) return;
-    const departments = report.departments || [];
-    const totals = departments.reduce((result, department) => ({
-      orders: result.orders + Number(department.total_orders || 0),
-      sales: result.sales + Number(department.total_sales || 0),
-      collected: result.collected + Number(department.amount_collected || 0),
-      outstanding: result.outstanding + Number(department.outstanding_balance || 0),
-    }), { orders: 0, sales: 0, collected: 0, outstanding: 0 });
-    const staffPerformance = departments.flatMap(department => (department.staff_performance || []).map(person => [
-      department.label,
-      String(person.worker_role || '').replaceAll('_', ' '),
-      person.staff_name,
-      person.items_assigned,
-      person.completed_items,
-      money(person.total_sales),
-    ]));
+    setDownloadingPdf(true);
+    setError('');
+    try {
+      const query = new URLSearchParams({ from, to });
+      const fullReport = await request(`/api/departments/reports/consolidated?${query}`, session.token);
+      const departments = fullReport.departments || [];
+      const totals = fullReport.main_totals || departments.reduce((result, department) => ({
+        total_orders: result.total_orders + Number(department.total_orders || 0),
+        total_sales: result.total_sales + Number(department.total_sales || 0),
+        cogs: result.cogs + Number(department.cogs || 0),
+        gross_profit: result.gross_profit + Number(department.gross_profit || 0),
+        consumption_value: result.consumption_value + Number(department.consumption_value || 0),
+        waste: result.waste + Number(department.waste || 0),
+        amount_collected: result.amount_collected + Number(department.amount_collected || 0),
+        outstanding_balance: result.outstanding_balance + Number(department.outstanding_balance || 0),
+      }), { total_orders: 0, total_sales: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0 });
+      const staffPerformance = departments.flatMap(department => (department.staff_performance || []).map(person => [
+        department.label,
+        String(person.worker_role || '').replaceAll('_', ' '),
+        person.staff_name,
+        person.items_assigned,
+        person.completed_items,
+        money(person.total_sales),
+      ]));
 
-    downloadReportPdf({
-      filename: `department-report-${from}-to-${to}.pdf`,
-      title: 'Department Sales Report',
-      from: report.from,
-      to: report.to,
-      sections: [
+      downloadReportPdf({
+        filename: `department-report-${from}-to-${to}.pdf`,
+        title: 'Department Sales Report',
+        from: fullReport.from,
+        to: fullReport.to,
+        sections: [
         {
-          title: 'Sales by department',
-          columns: ['Department', 'Orders', 'Sales', 'Collected', 'Unpaid balance'],
+          title: 'Main department totals',
+          columns: ['Metric', 'Value'],
           rows: [
-            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), money(department.amount_collected), money(department.outstanding_balance)]),
-            ['All departments', totals.orders, money(totals.sales), money(totals.collected), money(totals.outstanding)],
+            ['Orders', totals.total_orders],
+            ['Sales', money(totals.total_sales)],
+            ['COGS', money(totals.cogs)],
+            ['Gross profit', money(totals.gross_profit)],
+            ['Inventory consumption', money(totals.consumption_value)],
+            ['Waste', money(totals.waste)],
           ],
+        },
+        {
+          title: 'Main departments',
+          columns: ['Department', 'Orders', 'Sales', 'COGS', 'Gross profit', 'Consumption', 'Waste'],
+          rows: [
+            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), money(department.cogs), money(department.gross_profit), money(department.consumption_value), money(department.waste)]),
+            ['Total main departments', totals.total_orders, money(totals.total_sales), money(totals.cogs), money(totals.gross_profit), money(totals.consumption_value), money(totals.waste)],
+          ],
+        },
+        {
+          title: 'Menu items by department',
+          columns: ['Department', 'Menu item', 'Quantity', 'Sales'],
+          rows: departments.flatMap(department => (department.menu_items || []).map(item => [department.label, item.menu_item, item.quantity, money(item.sales)])),
+        },
+        {
+          title: 'Inventory usage by department',
+          columns: ['Department', 'Ingredient', 'Quantity', 'Value'],
+          rows: departments.flatMap(department => (department.inventory_usage || []).map(item => [department.label, item.item_name, `${item.quantity} ${item.unit}`, money(item.value)])),
         },
         {
           title: 'Sales by department staff',
           columns: ['Department', 'Role', 'Staff member', 'Handled', 'Completed', 'Sales'],
           rows: staffPerformance,
         },
-      ],
-    });
+        ],
+      });
+    } catch (downloadError) {
+      setError(downloadError.message || 'Could not download department report.');
+    } finally {
+      setDownloadingPdf(false);
+    }
   }
 
   async function addStaff(event) {
@@ -275,7 +332,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     ? assignedTickets.filter(ticket => ['Ready', 'Served', 'Paid', 'Closed'].includes(ticket.status))
     : activeTickets;
   const tabs = isManagement ? [['reports', 'Department reports', CircleDollarSign]] : [
-    ['orders', 'Orders', ClipboardList], ['team', 'Team', Users], ['reports', 'Reports', CircleDollarSign],
+    ['orders', 'Orders', ClipboardList], ['team', 'Team', Users], ['inventory', 'Inventory', Boxes], ['reports', 'Reports', CircleDollarSign],
   ];
 
   return (
@@ -291,7 +348,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         <header className={`${embedded ? '' : 'sticky top-0 z-30'} border-b border-yellow-500 bg-yellow-500 text-black`}>
           <div className="mx-auto flex w-full items-center justify-between gap-4 px-5 py-4 sm:px-8">
             <div><p className="text-xs font-black uppercase tracking-[0.2em]">Kurax Operations</p><h1 className="mt-1 text-2xl font-black">Department reporting</h1></div>
-            <div className="flex items-center gap-3 text-sm"><span className="hidden sm:block">{session.name}</span>{!embedded && <button title="Sign out" onClick={signOut} className="rounded-md border border-black/20 p-2 hover:bg-black/10"><LogOut size={18} /></button>}</div>
+            <div className="flex items-center gap-3 text-sm"><span className="hidden sm:block">{session.name}</span>{isManagement && <button type="button" onClick={() => setRefreshCounter(value => value + 1)} disabled={reportLoading} className="inline-flex items-center gap-2 rounded-md border border-black/20 px-3 py-2 text-xs font-bold hover:bg-black/10 disabled:opacity-50"><RefreshCw size={14} className={reportLoading ? 'animate-spin' : ''} /> Refresh</button>}{!embedded && <button title="Sign out" onClick={signOut} className="rounded-md border border-black/20 p-2 hover:bg-black/10"><LogOut size={18} /></button>}</div>
           </div>
         </header>
       )}
@@ -301,6 +358,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           {tabs.map(([key, label, Icon]) => <button key={key} onClick={() => setTab(key)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition ${tab === key ? 'border-amber-600 text-zinc-950' : 'border-transparent text-zinc-500 hover:text-zinc-900'}`}><Icon size={16} /> {label}</button>)}
         </nav>}
         {(error || message) && <div className={`mb-5 rounded-lg border px-4 py-3 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : isManagement ? 'border-amber-200 bg-amber-50 text-zinc-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">{error || message}</div>}
+        {isManagement && reportLoading && <p role="status" className="mb-4 text-sm font-semibold text-zinc-600">Loading department report…</p>}
 
         {tab === 'orders' && !isManagement && <section>
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">Incoming and active orders</h2><p className="text-sm text-zinc-500">Updates automatically every 12 seconds.</p></div><div className="flex gap-2"><button onClick={() => setTicketView('active')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'active' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Active</button><button onClick={() => setTicketView('completed')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'completed' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Completed</button><button onClick={() => navigate(`/${config.station}`)} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950 hover:bg-amber-300">Manage station <ArrowRight size={16} /></button></div></div>
@@ -338,12 +396,14 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           </div></div>
         </section>}
 
+  {tab === 'inventory' && !isManagement && <DepartmentInventory department={departmentKey} embedded />}
+
         {tab === 'reports' && <section>
           <div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-xl font-black">{isManagement ? 'Sales by department' : `${config.label} report`}</h2><p className="mt-1 text-sm text-stone-600">{from} to {to}</p></div><div className="flex flex-wrap gap-2" role="group" aria-label="Report date range">
             {PRESETS.map(option => <button key={option} onClick={() => choosePreset(option)} className={`rounded-lg px-3 py-2 text-xs font-bold ${preset === option ? (isManagement ? 'bg-yellow-500 text-black' : 'bg-zinc-900 text-white') : 'border border-zinc-200 bg-white text-zinc-600'}`}>{option}</button>)}
             {preset === 'Select Month' && <input aria-label="Report month" type="month" value={reportMonth} onChange={event => { if (!event.target.value) return; setReportMonth(event.target.value); setRange(datesForMonth(event.target.value)); }} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" />}
             {preset === 'Custom' && <><input aria-label="From date" type="date" value={from} onChange={event => setRange([event.target.value, to])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /><input aria-label="To date" type="date" value={to} onChange={event => setRange([from, event.target.value])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /></>}
-            <button type="button" onClick={isManagement ? downloadConsolidatedReport : downloadDepartmentReport} disabled={!report || report.from !== from || report.to !== to} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 ${isManagement ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-amber-400 hover:bg-amber-300'}`}><Download size={15} /> Download PDF</button>
+            <button type="button" onClick={isManagement ? downloadConsolidatedReport : downloadDepartmentReport} disabled={!report || report.from !== from || report.to !== to || downloadingPdf} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 ${isManagement ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-amber-400 hover:bg-amber-300'}`}><Download size={15} /> {downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}</button>
           </div></div>
           {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr><th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th><th className="p-3">Collected</th><th className="p-3">Unpaid balance</th></tr></thead><tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200"><td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td><td className="p-3">{money(row.amount_collected)}</td><td className="p-3">{money(row.outstanding_balance)}</td></tr>)}</tbody><tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr><td className="p-3">All departments</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.total_orders || 0), 0)}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.total_sales || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.amount_collected || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_balance || 0), 0))}</td></tr></tfoot></table></div> : <>
             <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Orders', summary.total_orders], ['Sales', money(summary.total_sales)], ['Collected', money(summary.amount_collected)], ['Outstanding', money(summary.outstanding_balance)]].map(([label, value]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-3 text-2xl font-black">{value}</p></article>)}</div>

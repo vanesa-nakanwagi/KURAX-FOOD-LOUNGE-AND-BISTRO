@@ -72,6 +72,7 @@ export async function ensureAccountingDataModel() {
       approved_at TIMESTAMPTZ,
       reversal_of INTEGER REFERENCES public.journal_entries(id),
       reversal_reason TEXT,
+      system_type TEXT NOT NULL DEFAULT 'MAIN' CHECK (system_type IN ('MAIN', 'SHISHA')),
       business_time TIME,
       posted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       status TEXT NOT NULL DEFAULT 'Posted' CHECK (status IN ('Draft', 'Posted', 'Reversed', 'Voided')),
@@ -135,7 +136,22 @@ export async function ensureAccountingDataModel() {
 
   await pool.query(`ALTER TABLE public.journal_entries ADD COLUMN IF NOT EXISTS reversal_of INTEGER REFERENCES public.journal_entries(id)`);
   await pool.query(`ALTER TABLE public.journal_entries ADD COLUMN IF NOT EXISTS reversal_reason TEXT`);
+  await pool.query(`ALTER TABLE public.journal_entries ADD COLUMN IF NOT EXISTS system_type TEXT NOT NULL DEFAULT 'MAIN'`);
   await pool.query(`ALTER TABLE public.journal_entries ADD COLUMN IF NOT EXISTS business_time TIME`);
+  await pool.query(
+    `UPDATE public.journal_entries je
+     SET system_type = 'SHISHA'
+     WHERE je.system_type <> 'SHISHA'
+       AND (
+         je.source_transaction ILIKE 'shisha%'
+         OR EXISTS (
+           SELECT 1 FROM public.general_ledger gl
+           WHERE gl.journal_entry_id = je.id AND gl.account_code = '4004'
+         )
+       )`
+  );
+  await pool.query(`ALTER TABLE public.journal_entries DROP CONSTRAINT IF EXISTS journal_entries_system_type_check`);
+  await pool.query(`ALTER TABLE public.journal_entries ADD CONSTRAINT journal_entries_system_type_check CHECK (system_type IN ('MAIN', 'SHISHA'))`);
   await pool.query(`ALTER TABLE public.journal_entries ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ`);
   await pool.query(`UPDATE public.journal_entries SET posted_at = created_at WHERE posted_at IS NULL`);
   await pool.query(`ALTER TABLE public.journal_entries ALTER COLUMN posted_at SET DEFAULT NOW()`);
@@ -158,6 +174,8 @@ export async function ensureAccountingDataModel() {
       [account.code, account.name, account.category, account.account_type, account.normal_balance, account.description]
     );
   }
+
+  await pool.query(`UPDATE public.chart_of_accounts SET is_active = false, updated_at = NOW() WHERE code = '4004'`);
 
   const currentMonth = new Date();
   const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
@@ -193,6 +211,7 @@ export async function createJournalEntry({
   postedBy = 'System',
   lines,
   reference,
+  systemType = 'MAIN',
 }) {
   if (!Array.isArray(lines) || lines.length === 0) {
     throw new Error('A journal entry requires at least one accounting line.');
@@ -216,10 +235,10 @@ export async function createJournalEntry({
   const finalDate = entryDate || new Date().toISOString().slice(0, 10);
 
   const result = await pool.query(
-    `INSERT INTO public.journal_entries (reference, entry_date, description, source_transaction, posted_by, status)
-     VALUES ($1, $2, $3, $4, $5, 'Posted')
+    `INSERT INTO public.journal_entries (reference, entry_date, description, source_transaction, posted_by, status, system_type)
+     VALUES ($1, $2, $3, $4, $5, 'Posted', $6)
      RETURNING *`,
-    [finalReference, finalDate, description || 'Accounting entry', sourceTransaction || 'Manual Entry', postedBy || 'System']
+    [finalReference, finalDate, description || 'Accounting entry', sourceTransaction || 'Manual Entry', postedBy || 'System', systemType === 'SHISHA' ? 'SHISHA' : 'MAIN']
   );
 
   const journal = result.rows[0];
@@ -683,7 +702,9 @@ export async function getTrialBalance(startDate, endDate, startTime = null, endT
        COALESCE(SUM(gl.debit), 0) AS total_debit,
        COALESCE(SUM(gl.credit), 0) AS total_credit
      FROM public.general_ledger gl
+       JOIN public.journal_entries je ON je.id = gl.journal_entry_id AND je.system_type = 'MAIN'
      WHERE gl.entry_date BETWEEN $1 AND $2
+         AND gl.account_code <> '4004'
        AND ($3::time IS NULL OR gl.business_time >= $3::time)
        AND ($4::time IS NULL OR gl.business_time <= $4::time)
      GROUP BY gl.account_code, gl.account_name
@@ -711,9 +732,11 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
      FROM public.chart_of_accounts coa
      LEFT JOIN public.general_ledger gl
        ON gl.account_code = coa.code AND gl.entry_date BETWEEN $1 AND $2
+         AND gl.account_code <> '4004'
+         AND EXISTS (SELECT 1 FROM public.journal_entries je WHERE je.id = gl.journal_entry_id AND je.system_type = 'MAIN')
          AND ($3::time IS NULL OR gl.business_time >= $3::time)
          AND ($4::time IS NULL OR gl.business_time <= $4::time)
-     WHERE coa.category IN ('Revenue', 'Expense')
+     WHERE coa.category IN ('Revenue', 'Expense') AND coa.is_active = true AND coa.code <> '4004'
      GROUP BY coa.code, coa.name, coa.category
      ORDER BY coa.code ASC`,
     [startDate, endDate, startTime, endTime]
@@ -760,7 +783,8 @@ export async function getBalanceSheet(asOfDate, startTime = null, endTime = null
       COALESCE(SUM(CASE WHEN (gl.entry_date < $2 OR (gl.entry_date = $2 AND ($3::time IS NULL OR gl.business_time >= $3::time) AND ($4::time IS NULL OR gl.business_time <= $4::time))) AND gl.credit > 0 THEN gl.credit ELSE 0 END), 0) AS prior_credit
      FROM public.chart_of_accounts coa
      LEFT JOIN public.general_ledger gl
-       ON gl.account_code = coa.code AND gl.entry_date <= $1
+       ON gl.account_code = coa.code AND gl.entry_date <= $1 AND gl.account_code <> '4004'
+         AND EXISTS (SELECT 1 FROM public.journal_entries je WHERE je.id = gl.journal_entry_id AND je.system_type = 'MAIN')
      WHERE coa.category IN ('Asset', 'Liability', 'Equity')
      GROUP BY coa.code, coa.name, coa.category, coa.account_type
      ORDER BY coa.code`,
@@ -839,22 +863,25 @@ export async function getBalanceSheet(asOfDate, startTime = null, endTime = null
 export async function getCashFlowStatement(startDate, endDate, startTime = null, endTime = null) {
   const result = await pool.query(
     `SELECT
-       SUM(CASE WHEN account_code = '1001' AND credit > 0 THEN credit ELSE 0 END) AS cash_in,
-       SUM(CASE WHEN account_code = '1001' AND debit > 0 THEN debit ELSE 0 END) AS cash_out
-     FROM public.general_ledger
-     WHERE entry_date BETWEEN $1 AND $2
-       AND ($3::time IS NULL OR business_time >= $3::time)
-       AND ($4::time IS NULL OR business_time <= $4::time)`,
+       SUM(CASE WHEN gl.account_code = '1001' AND gl.credit > 0 THEN gl.credit ELSE 0 END) AS cash_in,
+       SUM(CASE WHEN gl.account_code = '1001' AND gl.debit > 0 THEN gl.debit ELSE 0 END) AS cash_out
+     FROM public.general_ledger gl
+     JOIN public.journal_entries je ON je.id = gl.journal_entry_id AND je.system_type = 'MAIN'
+     WHERE gl.entry_date BETWEEN $1 AND $2
+       AND gl.account_code <> '4004'
+       AND ($3::time IS NULL OR gl.business_time >= $3::time)
+       AND ($4::time IS NULL OR gl.business_time <= $4::time)`,
     [startDate, endDate, startTime, endTime]
   );
 
   const cashIn = Number(result.rows[0]?.cash_in || 0);
   const cashOut = Number(result.rows[0]?.cash_out || 0);
   const openingCash = Number((await pool.query(
-    `SELECT COALESCE(SUM(CASE WHEN account_code = '1001' AND credit > 0 THEN credit ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN account_code = '1001' AND debit > 0 THEN debit ELSE 0 END), 0) AS opening_cash
-     FROM public.general_ledger
-      WHERE entry_date < $1
-        OR (entry_date = $1 AND $2::time IS NOT NULL AND (business_time < $2::time OR business_time IS NULL))`,
+    `SELECT COALESCE(SUM(CASE WHEN gl.account_code = '1001' AND gl.credit > 0 THEN gl.credit ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN gl.account_code = '1001' AND gl.debit > 0 THEN gl.debit ELSE 0 END), 0) AS opening_cash
+     FROM public.general_ledger gl
+     JOIN public.journal_entries je ON je.id = gl.journal_entry_id AND je.system_type = 'MAIN'
+     WHERE (gl.entry_date < $1 AND gl.account_code <> '4004')
+        OR (gl.entry_date = $1 AND gl.account_code <> '4004' AND $2::time IS NOT NULL AND (gl.business_time < $2::time OR gl.business_time IS NULL))`,
     [startDate, startTime]
   )).rows[0]?.opening_cash || 0);
 
@@ -885,9 +912,10 @@ export async function getJournalEntries({ startDate, endDate, startTime, endTime
                LEFT JOIN public.journal_entries original ON original.id = je.reversal_of
                LEFT JOIN public.general_ledger gl ON gl.journal_entry_id = je.id`;
   const params = [];
+  query += ` WHERE je.system_type = 'MAIN'`;
 
   if (startDate && endDate) {
-    query += ` WHERE je.entry_date BETWEEN $1 AND $2
+    query += ` AND je.entry_date BETWEEN $1 AND $2
                  AND ($3::time IS NULL OR je.business_time >= $3::time)
                  AND ($4::time IS NULL OR je.business_time <= $4::time)`;
     params.push(startDate, endDate, startTime || null, endTime || null);
@@ -907,17 +935,19 @@ export async function getJournalEntries({ startDate, endDate, startTime, endTime
 }
 
 export async function getGeneralLedger(startDate, endDate, startTime = null, endTime = null) {
-  let query = `SELECT * FROM public.general_ledger`;
+  let query = `SELECT gl.* FROM public.general_ledger gl
+               JOIN public.journal_entries je ON je.id = gl.journal_entry_id
+               WHERE je.system_type = 'MAIN' AND gl.account_code <> '4004'`;
   const params = [];
 
   if (startDate && endDate) {
-    query += ` WHERE entry_date BETWEEN $1 AND $2
-                 AND ($3::time IS NULL OR business_time >= $3::time)
-                 AND ($4::time IS NULL OR business_time <= $4::time)`;
+    query += ` AND gl.entry_date BETWEEN $1 AND $2
+           AND ($3::time IS NULL OR gl.business_time >= $3::time)
+           AND ($4::time IS NULL OR gl.business_time <= $4::time)`;
     params.push(startDate, endDate, startTime, endTime);
   }
 
-  query += ` ORDER BY entry_date DESC, id DESC`;
+  query += ` ORDER BY gl.entry_date DESC, gl.id DESC`;
 
   const result = await pool.query(query, params);
   return result.rows;
@@ -925,7 +955,36 @@ export async function getGeneralLedger(startDate, endDate, startTime = null, end
 
 export async function getAuditTrail() {
   const result = await pool.query(
-    `SELECT * FROM public.accounting_audit_log ORDER BY created_at DESC LIMIT 100`
+    `SELECT entity_type, entity_id, action, actor, details, created_at
+     FROM (
+       SELECT entity_type, entity_id, action, actor, details, created_at
+       FROM public.accounting_audit_log
+       UNION ALL
+       SELECT 'inventory_adjustment' AS entity_type,
+              ia.id AS entity_id,
+              LOWER(ia.adjustment_type) AS action,
+              ia.created_by AS actor,
+              jsonb_build_object(
+                'item_id', ia.item_id,
+                'item_name', ii.item_name,
+                'adjustment_type', ia.adjustment_type,
+                'quantity', ia.quantity,
+                'reason', ia.reason,
+                'business_date', ia.business_date,
+                'location_id', ia.location_id
+              ) AS details,
+              ia.created_at
+       FROM public.inventory_adjustments ia
+       LEFT JOIN public.inventory_items ii ON ii.id = ia.item_id
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM public.accounting_audit_log audit
+         WHERE audit.entity_type = 'inventory_adjustment'
+           AND audit.entity_id = ia.id
+       )
+     ) audit_entries
+     ORDER BY created_at DESC
+     LIMIT 100`
   );
   return result.rows;
 }

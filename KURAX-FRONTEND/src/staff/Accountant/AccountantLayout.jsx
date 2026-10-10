@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { Menu, RefreshCw, AlertTriangle, RotateCcw, Sparkles } from "lucide-react";
 import { useData } from "../../customer/components/context/DataContext";
 import SideBar from "./SideBar";
@@ -17,6 +18,7 @@ import DepartmentHod from "../DepartmentHod";
 import StaffSalesPerformance from "../components/StaffSalesPerformance";
 import SystemConfiguration from "./SystemConfiguration";
 import HistoricalBusinessOverview from "./HistoricalBusinessOverview";
+import InventoryManagement from "./InventoryManagement";
 
 // Import modal components
 import ReopenDayModal from "./modals/ReopenDayModal";
@@ -35,10 +37,12 @@ function getBusinessSettingsKey() {
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function AccountantLayout() {
+  const location = useLocation();
+  const isInventoryRoute = location.pathname.startsWith("/accountant/inventory");
   const { todaySummary, orders = [], refreshData } = useData() || {};
   const businessSettingsKey = getBusinessSettingsKey();
 
-  const [activeSection, setActiveSection] = useState("DASHBOARD");
+  const [activeSection, setActiveSection] = useState(() => location.state?.activeSection || "DASHBOARD");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [error, setError] = useState(null);
   const [dayClosed, setDayClosed] = useState(false);
@@ -733,7 +737,7 @@ export default function AccountantLayout() {
       {/* Sidebar - Sticky/fixed so it doesn't scroll */}
       <div className="sticky top-0 h-screen flex-shrink-0">
         <SideBar
-          activeSection={activeSection}
+          activeSection={isInventoryRoute ? "INVENTORY" : activeSection}
           setActiveSection={setActiveSection}
           isOpen={mobileMenuOpen}
           setIsOpen={setMobileMenuOpen}
@@ -779,6 +783,7 @@ export default function AccountantLayout() {
             </div>
           </div>
 
+          {isInventoryRoute ? <InventoryManagement /> : <>
           {dayClosed && businessSettings.mode !== "HISTORICAL" && (
             <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-center animate-in fade-in duration-500">
               <div className="flex items-center justify-center gap-2">
@@ -975,7 +980,7 @@ export default function AccountantLayout() {
               onReturnToLive={returnToLive}
             />
           )}
-
+          </>}
         </main>
         <Footer isDark={false} />
       </div>

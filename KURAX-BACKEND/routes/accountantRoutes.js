@@ -843,6 +843,7 @@ router.get('/accounting/historical-summary', async (req, res) => {
         `SELECT gl.account_code, gl.account_name,
                 COALESCE(SUM(gl.debit - gl.credit), 0) AS amount
          FROM public.general_ledger gl
+         JOIN public.journal_entries je ON je.id = gl.journal_entry_id AND je.system_type = 'MAIN'
          JOIN public.chart_of_accounts coa ON coa.code = gl.account_code
          WHERE coa.category = 'Expense' AND gl.entry_date BETWEEN $1 AND $2
            AND ($3::time IS NULL OR gl.business_time >= $3::time)

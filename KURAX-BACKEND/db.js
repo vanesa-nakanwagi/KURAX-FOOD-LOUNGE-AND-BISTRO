@@ -419,6 +419,184 @@ export async function ensureDatabaseSchema() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );`,
 
+    `CREATE TABLE IF NOT EXISTS public.inventory_locations (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL DEFAULT 'STORE',
+      parent_id INTEGER REFERENCES public.inventory_locations(id) ON DELETE SET NULL,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.suppliers (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      contact_person TEXT,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.inventory_items (
+      id SERIAL PRIMARY KEY,
+      item_name TEXT NOT NULL,
+      sku TEXT,
+      category TEXT,
+      unit TEXT NOT NULL DEFAULT 'kg',
+      base_unit TEXT NOT NULL DEFAULT 'g',
+      minimum_stock_level NUMERIC(12,3) NOT NULL DEFAULT 0,
+      current_quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      unit_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+      inventory_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+      supplier_id INTEGER REFERENCES public.suppliers(id) ON DELETE SET NULL,
+      location_id INTEGER REFERENCES public.inventory_locations(id) ON DELETE SET NULL,
+      station TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_by TEXT,
+      updated_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.inventory_transactions (
+      id SERIAL PRIMARY KEY,
+      item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+      reference_number TEXT,
+      transaction_type TEXT NOT NULL CHECK (transaction_type IN ('PURCHASE','CONSUMPTION','TRANSFER_IN','TRANSFER_OUT','WASTE','ADJUSTMENT_IN','ADJUSTMENT_OUT','RETURN_TO_SUPPLIER','STOCK_COUNT','REVERSAL')),
+      quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT 'kg',
+      unit_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+      source_location_id INTEGER REFERENCES public.inventory_locations(id) ON DELETE SET NULL,
+      destination_location_id INTEGER REFERENCES public.inventory_locations(id) ON DELETE SET NULL,
+      station TEXT,
+      order_id INTEGER,
+      recipe_id INTEGER,
+      recipe_version TEXT,
+      supplier_id INTEGER REFERENCES public.suppliers(id) ON DELETE SET NULL,
+      business_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      created_by TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.inventory_transfers (
+      id SERIAL PRIMARY KEY,
+      reference_number TEXT NOT NULL UNIQUE,
+      source_location_id INTEGER REFERENCES public.inventory_locations(id) ON DELETE SET NULL,
+      destination_location_id INTEGER REFERENCES public.inventory_locations(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','COMPLETED','REVERSED')),
+      notes TEXT,
+      business_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.inventory_transfer_items (
+      id SERIAL PRIMARY KEY,
+      transfer_id INTEGER REFERENCES public.inventory_transfers(id) ON DELETE CASCADE,
+      item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+      quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT 'kg',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.purchase_receipts (
+      id SERIAL PRIMARY KEY,
+      supplier_id INTEGER REFERENCES public.suppliers(id) ON DELETE SET NULL,
+      receipt_number TEXT,
+      payment_method TEXT DEFAULT 'Cash',
+      total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      business_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      notes TEXT,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.purchase_receipt_items (
+      id SERIAL PRIMARY KEY,
+      purchase_id INTEGER REFERENCES public.purchase_receipts(id) ON DELETE CASCADE,
+      item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+      quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      unit TEXT DEFAULT 'kg',
+      unit_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+      location_id INTEGER REFERENCES public.inventory_locations(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.inventory_recipes (
+      id SERIAL PRIMARY KEY,
+      menu_item_id INTEGER,
+      menu_name TEXT NOT NULL,
+      station TEXT NOT NULL,
+      version_number INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','SUBMITTED','APPROVED','ACTIVE','INACTIVE')),
+      created_by TEXT,
+      approved_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      approved_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.recipe_ingredients (
+      id SERIAL PRIMARY KEY,
+      recipe_id INTEGER NOT NULL REFERENCES public.inventory_recipes(id) ON DELETE CASCADE,
+      ingredient_item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE SET NULL,
+      ingredient_name TEXT NOT NULL,
+      quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT 'g',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.inventory_consumptions (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER,
+      order_item_id TEXT,
+      recipe_id INTEGER REFERENCES public.inventory_recipes(id) ON DELETE SET NULL,
+      recipe_version TEXT,
+      item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+      quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT 'g',
+      station TEXT,
+      business_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      created_by TEXT,
+      reference_number TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.inventory_waste (
+      id SERIAL PRIMARY KEY,
+      item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+      quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT 'kg',
+      station TEXT,
+      reason TEXT,
+      business_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      created_by TEXT,
+      approved_by TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.stock_counts (
+      id SERIAL PRIMARY KEY,
+      item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER REFERENCES public.inventory_locations(id) ON DELETE SET NULL,
+      system_quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      physical_quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      variance NUMERIC(12,3) NOT NULL DEFAULT 0,
+      reason TEXT,
+      business_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      counted_by TEXT,
+      approved_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE TABLE IF NOT EXISTS public.inventory_adjustments (
+      id SERIAL PRIMARY KEY,
+      item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER REFERENCES public.inventory_locations(id) ON DELETE SET NULL,
+      adjustment_type TEXT NOT NULL CHECK (adjustment_type IN ('ADJUSTMENT_IN','ADJUSTMENT_OUT')),
+      quantity NUMERIC(12,3) NOT NULL DEFAULT 0,
+      reason TEXT,
+      business_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
     `CREATE TABLE IF NOT EXISTS public.accounting_periods (
       id SERIAL PRIMARY KEY,
       period_name TEXT NOT NULL UNIQUE,
@@ -510,6 +688,27 @@ export async function ensureDatabaseSchema() {
       console.error('Schema bootstrap warning:', error.message);
     }
   }
+
+  const defaultLocations = [
+    ['MAIN STORE', 'STORE', null],
+    ['KITCHEN', 'STATION', null],
+    ['BAR', 'STATION', null],
+    ['BARISTA', 'STATION', null],
+  ];
+
+  for (const [name, type, parentId] of defaultLocations) {
+    await pool.query(
+      `INSERT INTO public.inventory_locations (name, type, parent_id) VALUES ($1, $2, $3)
+       ON CONFLICT (name) DO NOTHING`,
+      [name, type, parentId]
+    );
+  }
+
+  await pool.query(
+    `INSERT INTO public.suppliers (name, contact_person, email, is_active)
+     VALUES ('KURAX PRIMARY SUPPLIER', 'Operations', 'ops@kurax.local', true)
+     ON CONFLICT (name) DO NOTHING`
+  );
 }
 
 //  Listen for idle client errors to prevent Node from crashing
