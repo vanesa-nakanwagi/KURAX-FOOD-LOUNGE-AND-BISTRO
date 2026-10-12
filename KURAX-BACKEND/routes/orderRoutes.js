@@ -3,6 +3,7 @@ import express from 'express';
 import pool from '../db.js';
 import { consumeSoldOrderItems, reverseConsumedOrderItem } from '../helpers/recipeConsumption.js';
 import { updateDailySummary } from '../helpers/summaryHelper.js';
+import { buildOpenShiftOrderClause } from '../helpers/shiftVisibility.js';
 import logActivity from '../utils/logsActivity.js';
 
 const router = express.Router();
@@ -82,7 +83,8 @@ router.get('/cashier-queue', async (req, res) => {
        FROM orders o
        LEFT JOIN staff s ON o.staff_id = s.id
        WHERE o.status NOT IN ('Paid', 'Closed', 'Voided', 'Cancelled')
-         AND o.shift_cleared = FALSE
+         AND COALESCE(o.shift_cleared, false) = FALSE
+         AND COALESCE(o.day_cleared, false) = FALSE
          AND (o.payment_method IS NULL OR o.payment_method = '')
        ORDER BY o.created_at DESC`
     );
@@ -130,7 +132,8 @@ router.get('/tables/all', async (req, res) => {
         WHERE o.status NOT IN ('Paid', 'Closed', 'Voided', 'Cancelled')
           AND o.table_name IS NOT NULL
           AND o.table_name != 'WALK-IN'
-          AND o.shift_cleared = FALSE
+          AND COALESCE(o.shift_cleared, false) = FALSE
+          AND COALESCE(o.day_cleared, false) = FALSE
           AND (o.payment_method IS NULL OR o.payment_method = '')
         GROUP BY o.table_name
       )

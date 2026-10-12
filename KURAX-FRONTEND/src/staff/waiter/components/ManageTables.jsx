@@ -3,7 +3,7 @@ import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useNavigate } from 'react-router-dom';
 import { 
-  Plus, RotateCcw, Send, Bell, Lock, AlertCircle, X, Coffee, Wine, Smartphone, CreditCard, Phone,
+  Plus, Send, Bell, Lock, AlertCircle, X, Coffee, Wine, Smartphone, CreditCard, Phone,
   Utensils, ChevronUp, ChevronDown, CheckCircle, 
   AlertTriangle, Clock, Receipt, Banknote,
   Calendar, User, BookOpen, ClipboardList, Search, Hourglass,
@@ -566,8 +566,8 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
 function OrderCard({ 
   order, 
   theme, 
-  onMarkServed, 
-  onUnserve,
+  onServeItem,
+  onMarkAllServed,
   onPayTable,
   onPayItem,
   onVoidItem,
@@ -580,9 +580,6 @@ function OrderCard({
   const isDark = theme === "dark";
 
   if (!order) return null;
-
-  const isReady  = order.status === "Ready";
-  const isServed = order.status === "Served";
 
   const hasPendingVoid    = (order.items || []).some(item => item.voidRequested === true && item.voidProcessed !== true);
   const hasPendingPayment = (order.items || []).some(item => item.paymentRequested === true && !item._rowPaid);
@@ -604,7 +601,10 @@ function OrderCard({
       item.status === "VOIDED" || item.voidProcessed === true
     );
 
-  const nonVoidedItems    = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
+  const nonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
+  const hasReadyItems = nonVoidedItems.some(item => item.readyForService === true && item.served !== true && !item._rowPaid);
+  const isServed = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item.served === true || item._rowPaid === true);
+  const canMarkAllServed = !isServed && nonVoidedItems.some(item => item.readyForService === true || item.served === true);
   const allItemsPaid      = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
   const hasAnyPaidItems   = nonVoidedItems.some(item => item._rowPaid === true);
   const hasAnyCreditItems = nonVoidedItems.some(item => item.creditRequested === true);
@@ -614,7 +614,7 @@ function OrderCard({
   const isAwaitingCashier = tablePaymentPending || hasAnyPaymentRequested;
 
   // ── Display status ──
-  let displayStatus = order.status;
+  let displayStatus = isServed ? "Served" : order.status === "Served" ? "Pending" : order.status;
   let displayColor  = "text-zinc-400";
   let displayBg     = "bg-zinc-500/10 border-zinc-500/20";
   let displayDot    = "bg-zinc-400";
@@ -645,11 +645,13 @@ function OrderCard({
     displayBg = "bg-blue-500/10 border-blue-500/20"; displayDot = "bg-blue-400";
     statusIcon = <Banknote size={10} />;
   } else if (hasAnyPendingItems) {
-    if (order.status === "Ready") {
-      displayStatus = "Ready"; displayColor = "text-yellow-900";
+    if (hasReadyItems) {
+      displayStatus = nonVoidedItems.every(item => item.readyForService === true || item.served === true || item._rowPaid)
+        ? "Ready" : "Partially Ready";
+      displayColor = "text-yellow-900";
       displayBg = "bg-yellow-400/10 border-yellow-400/30"; displayDot = "bg-yellow-400";
       statusIcon = <Bell size={10} />;
-    } else if (order.status === "Served") {
+    } else if (isServed) {
       displayStatus = "Served"; displayColor = "text-blue-400";
       displayBg = "bg-blue-500/10 border-blue-500/20"; displayDot = "bg-blue-400";
       statusIcon = <Utensils size={10} />;
@@ -715,6 +717,7 @@ function OrderCard({
           </div>
           {nonVoidedItems.map((item, i) => {
             const isPaid = item._rowPaid === true;
+            const isItemServed = item.served === true;
             const isPendingPayment = item.paymentRequested === true && !isPaid;
             const isCreditRequested = item.creditRequested === true;
             const isVoidRequested = item.voidRequested && !item.voidProcessed;
@@ -740,13 +743,22 @@ function OrderCard({
                     </div>
                   </div>
                   <div className="flex gap-1 sm:gap-1.5 shrink-0">
-                    {isServed && !isPaid && item.status !== 'VOIDED' && !item.voidProcessed &&
+                    {isItemServed && !isPaid && item.status !== 'VOIDED' && !item.voidProcessed &&
                      !isPendingPayment && !isCreditRequested && !tablePaymentPending && !isPaying && (
                       <button onClick={() => onPayItem && onPayItem(item, order)}
                         className="p-1.5 bg-yellow-500/10 text-yellow-500 rounded-lg hover:bg-yellow-500/20 transition-all" title="Pay this item individually">
                         <Receipt size={11} />
                       </button>
                     )}
+                    {item.readyForService === true && !isItemServed && !isPaid && !isVoidRequested &&
+                     !isPendingPayment && !isCreditRequested && (
+                      <button onClick={() => onServeItem && onServeItem(item)}
+                        className="px-2 py-1 bg-emerald-500/10 text-emerald-600 rounded-lg hover:bg-emerald-500/20 text-[8px] font-black uppercase"
+                        title="Serve this ready item">
+                        Serve
+                      </button>
+                    )}
+                    {isItemServed && <span className="px-2 py-1 bg-blue-500/10 text-blue-500 rounded-lg text-[8px] font-black uppercase">Served</span>}
                     {isPendingPayment && (
                       <div className="p-1.5 bg-yellow-500/20 text-yellow-400 rounded-lg flex items-center gap-1">
                         <Hourglass size={9} /> <span className="text-[6px] sm:text-[8px] font-black hidden sm:inline">Awaiting</span>
@@ -793,20 +805,14 @@ function OrderCard({
       <div className={`px-3 sm:px-4 pb-3 sm:pb-4 pt-2 border-t ${isDark ? "border-white/5" : "border-black/5"}`}>
         <div className="flex flex-col gap-2">
           <div className="flex gap-2">
-            {isReady && !isServed && (
-              <button onClick={() => onMarkServed && onMarkServed(order)}
-                className="flex-1 py-1.5 sm:py-2.5 bg-yellow-400 text-black font-black text-[8px] sm:text-[8px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5">
-                Mark Served
-              </button>
-            )}
             <button onClick={handleAddMore}
               className="flex-1 py-1.5 sm:py-2.5 border border-yellow-500/40 text-yellow-600 font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5">
               <Plus size={12} strokeWidth={3} /> Add Items
             </button>
-            {isServed && !hasPendingPayment && !isAwaitingCashier && !isPaying && (
-              <button onClick={() => onUnserve && onUnserve(order)}
-                className="py-1.5 sm:py-2.5 px-2.5 sm:px-3.5 border border-black/10 text-zinc-400 font-black text-[8px] sm:text-[10px] rounded-lg sm:rounded-xl">
-                <RotateCcw size={11} />
+            {canMarkAllServed && (
+              <button onClick={() => onMarkAllServed && onMarkAllServed(order)}
+                className="flex-1 py-1.5 sm:py-2.5 bg-yellow-400 text-black font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl">
+                Mark All Served
               </button>
             )}
           </div>
@@ -819,27 +825,10 @@ function OrderCard({
           )}
 
           {isServed && isAwaitingCashier && !allItemsPaid && (
-            <div className="w-full space-y-2">
+            <div className="w-full">
               <div className="w-full py-1.5 sm:py-2.5 bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5">
                 <Hourglass size={11} className="animate-pulse" /> Sent to Cashier — Awaiting Confirmation
               </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  const payload = {
-                    type: "table",
-                    tableName: order.tableName,
-                    orderIds: order.orderIds || [],
-                  };
-                  const ok = await cancelPendingRequest(payload);
-                  if (ok) {
-                    alert("Request cancelled — you can submit again after confirming the client payment method.");
-                  }
-                }}
-                className="w-full py-1.5 sm:py-2.5 border border-red-300 bg-red-50 text-red-700 font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5"
-              >
-                <X size={10} /> Undo Send to Cashier
-              </button>
             </div>
           )}
 
@@ -1026,7 +1015,7 @@ export default function OrderHistory({ onAddItems }) {
         g.items.push({
           ...item,
           _orderId:         order.id,
-          _rowPaid:         rowPaid,
+          _rowPaid:         rowPaid || item._rowPaid === true || Boolean(item.paid_at),
           voidRequested:    item.voidRequested    || false,
           voidProcessed:    item.voidProcessed    || false,
           paymentRequested: item.paymentRequested ||
@@ -1082,29 +1071,39 @@ export default function OrderHistory({ onAddItems }) {
 
   useEffect(() => { fetchCredits(); }, [fetchCredits, refreshData]);
 
-  const handleMarkServed = useCallback(async (order) => {
+  const handleServeItem = useCallback(async (item) => {
     try {
-      await Promise.all((order.orderIds || []).map(id =>
+      const response = await fetch(`${API_URL}/api/orders/${item._orderId}/items/${item._orderItemIndex}/serve`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        alert(result.error || "Could not serve this item.");
+        return;
+      }
+      refreshData?.();
+    } catch (err) { console.error("Serve item failed:", err); }
+  }, [refreshData]);
+
+  const handleMarkAllServed = useCallback(async (order) => {
+    try {
+      const responses = await Promise.all((order.orderIds || []).map(id =>
         fetch(`${API_URL}/api/orders/${id}/status`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "Served" }),
         })
       ));
+      const failedResponse = responses.find(response => !response.ok);
+      if (failedResponse) {
+        const result = await failedResponse.json().catch(() => ({}));
+        alert(result.error || "Could not mark the table served.");
+        return;
+      }
       refreshData?.();
-      setTimeout(() => refreshData?.(), 500);
-    } catch (err) { console.error("Mark served failed:", err); }
-  }, [refreshData]);
-
-  const handleUnserve = useCallback(async (order) => {
-    try {
-      await Promise.all((order.orderIds || []).map(id =>
-        fetch(`${API_URL}/api/orders/${id}/status`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "Ready" }),
-        })
-      ));
-      refreshData?.();
-    } catch (err) { console.error("Unserve failed:", err); }
+    } catch (err) { console.error("Mark all served failed:", err); }
   }, [refreshData]);
 
   const handleMarkTablePaid = useCallback(async (order) => {
@@ -1119,40 +1118,6 @@ export default function OrderHistory({ onAddItems }) {
       fetchCredits();
     } catch (err) { console.error("Mark paid failed:", err); }
   }, [refreshData, fetchCredits]);
-
-  const cancelPendingRequest = useCallback(async (payload) => {
-    const tableName = String(payload?.tableName || "").trim().toUpperCase();
-    const isItemPay = payload?.type === "item";
-    const lsKey = isItemPay
-      ? pendingItemKey(tableName, payload?.item?.name || "")
-      : pendingTableKey(tableName);
-
-    try {
-      const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/cancel-pending`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          table_name: tableName,
-          order_ids: payload?.orderIds || [],
-          item_name: payload?.item?.name || null,
-          canceled_by: currentStaffName,
-        }),
-      });
-
-      if (res.ok) {
-        clearPending(lsKey);
-        refreshData?.();
-        return true;
-      }
-
-      const error = await res.json().catch(() => ({}));
-      console.error("Cancel pending request failed:", error.error || "Unknown error");
-      return false;
-    } catch (err) {
-      console.error("Cancel pending request network error:", err);
-      return false;
-    }
-  }, [currentStaffName, refreshData, clearPending]);
 
   const handleSend = useCallback(async (payload) => {
     const tableName = String(payload.tableName || "").trim().toUpperCase();
@@ -1345,8 +1310,8 @@ export default function OrderHistory({ onAddItems }) {
                 theme={theme}
                 tablePaymentPending={order.tablePaymentPending}
                 isPaying={isPaying}
-                onUnserve={handleUnserve}
-                onMarkServed={handleMarkServed}
+                onServeItem={handleServeItem}
+                onMarkAllServed={handleMarkAllServed}
                 onMarkTablePaid={handleMarkTablePaid}
                 onPayItem={(item, ord) => {
                   if (isPaying) return;

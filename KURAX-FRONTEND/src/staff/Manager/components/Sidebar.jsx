@@ -22,11 +22,11 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 const NAV_ITEMS = [
   { id: "target", label: "Dashboard", short: "Home", icon: LayoutDashboard },
   { id: "order",   label: "Take Order",       short: "Order",   icon: ClipboardList },
-  { id: "reconciliation", label: "Payment Reconciliation", short: "Reconcile", icon: WalletCards },
   { id: "history", label: "Manage Orders",     short: "History", icon: History },
   { id: "manage",  label: "Manage Table",      short: "Table",   icon: Table },
   { id: "tables",  label: "All Floor",         short: "Floor",   icon: LayoutDashboard },
   { id: "status",  label: "Order Status",      short: "Status",  icon: Clock },
+  { id: "reconciliation", label: "Payment Reconciliation", short: "Reconcile", icon: WalletCards },
   { id: "reports", label: "Staff Performance", short: "Reports", icon: BarChart3 },
   { id: "department-reports", label: "Department Reports", short: "Dept. Sales", icon: CircleDollarSign },
   { id: "audit-trail", label: "Audit Trail", short: "Audit", icon: ClipboardList },

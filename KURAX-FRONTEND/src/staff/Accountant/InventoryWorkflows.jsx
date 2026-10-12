@@ -19,6 +19,18 @@ function quantityLabel(item) {
   return `${item.item_name} · ${Number(item.current_quantity || 0)} ${item.unit || 'kg'} · ${item.location_name || 'Unassigned'}`;
 }
 
+function normalizeStation(value) {
+  const station = String(value || '').trim().toUpperCase();
+  if (station === 'CHEF') return 'KITCHEN';
+  if (station === 'BARMAN') return 'BAR';
+  if (['KITCHEN', 'BAR', 'BARISTA'].includes(station)) return station;
+  return '';
+}
+
+function itemAssignedToStation(value, targetStation) {
+  return String(value || '').split(/[,;|/]+/).some((assignment) => normalizeStation(assignment) === targetStation);
+}
+
 function Panel({ title, description, children }) {
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
@@ -230,16 +242,18 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
     (!recipe.menu_item_id && recipe.menu_name?.toLowerCase() === selectedMenu?.name?.toLowerCase())
   );
   const editableDraft = menuRecipes.find((recipe) => recipe.status === 'DRAFT');
-  const normalizeDepartment = (value) => String(value || '').toUpperCase() === 'BARMAN' ? 'BAR' : String(value || '').toUpperCase();
+  const normalizeDepartment = (value) => {
+    const department = String(value || '').toUpperCase();
+    if (department === 'BARMAN') return 'BAR';
+    if (department === 'CHEF') return 'KITCHEN';
+    return department;
+  };
+  const menuStation = normalizeDepartment(selectedMenu?.station);
   const filteredMenus = menuItems.filter((menu) =>
-    (stationFilter === 'ALL' || normalizeDepartment(menu.station) === normalizeDepartment(stationFilter)) &&
+    (stationFilter === 'ALL' || !String(menu.station || '').trim() || normalizeDepartment(menu.station) === normalizeDepartment(stationFilter)) &&
     menu.name.toLowerCase().includes(search.trim().toLowerCase())
   );
-  const recipeInventoryItems = items.filter((item) => {
-    if (station === 'ALL') return true;
-    const itemStation = normalizeDepartment(item.station);
-    return !itemStation || itemStation === normalizeDepartment(station) || String(item.location_name || '').trim().toUpperCase() === 'MAIN STORE';
-  });
+  const recipeInventoryItems = items.filter((item) => menuStation && itemAssignedToStation(item.station, menuStation));
   const changeIngredient = (index, key, value) => setIngredients((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: value } : row));
   const selectMenu = (menu) => {
     setSelectedMenuId(String(menu.id));
@@ -267,7 +281,7 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
 
   const submit = async (event) => {
     event.preventDefault();
-    if (!selectedMenu) return;
+    if (!selectedMenu || !menuStation || ingredients.some((ingredient) => !recipeInventoryItems.some((item) => String(item.id) === ingredient.ingredient_item_id))) return;
     setSaving(true);
     const payloadIngredients = ingredients.map((row) => ({ ingredient_item_id: Number(row.ingredient_item_id), quantity: Number(row.quantity), unit: row.unit }));
     const path = editableDraft ? `recipes/${editableDraft.id}` : 'recipes';
@@ -296,6 +310,8 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
       </Panel>
       {selectedMenu && canConfigureRecipes && <Panel title={`${menuRecipes.length ? 'Update' : 'Configure'} ${selectedMenu.name}`} description="Saving creates a new draft version. The active recipe stays unchanged until the new version is approved and activated.">
         <form onSubmit={submit} className="space-y-4">
+          {!menuStation && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">This menu item has no station assignment. Assign it to Kitchen, Bar, or Barista before configuring a recipe.</p>}
+          {menuStation && !recipeInventoryItems.length && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">No inventory ingredients are assigned to {menuStation}. Assign ingredients to this station before configuring a recipe.</p>}
           {ingredients.map((ingredient, index) => {
             const stockItem = recipeInventoryItems.find((item) => String(item.id) === ingredient.ingredient_item_id);
             return <div key={index} className="grid items-end gap-3 rounded-lg bg-zinc-50 p-3 md:grid-cols-[2fr_1fr_1fr_auto]">
@@ -310,8 +326,8 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
             </div>;
           })}
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" onClick={() => setIngredients((current) => [...current, { ingredient_item_id: '', quantity: '', unit: 'g' }])} className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-bold text-zinc-700">Add ingredient</button>
-            <SubmitButton disabled={saving || !recipeInventoryItems.length || !ingredients.length}>{saving ? 'Saving…' : 'Save recipe draft'}</SubmitButton>
+            <button type="button" onClick={() => setIngredients((current) => [...current, { ingredient_item_id: '', quantity: '', unit: 'g' }])} disabled={!menuStation || !recipeInventoryItems.length} className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-bold text-zinc-700 disabled:opacity-40">Add ingredient</button>
+            <SubmitButton disabled={saving || !menuStation || !recipeInventoryItems.length || !ingredients.length || ingredients.some((ingredient) => !recipeInventoryItems.some((item) => String(item.id) === ingredient.ingredient_item_id))}>{saving ? 'Saving…' : 'Save recipe draft'}</SubmitButton>
             <span className="text-sm font-bold text-zinc-700">Estimated cost per serving: {estimatedCost === null ? 'Cost unavailable; review ingredient costs' : `UGX ${estimatedCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</span>
           </div>
         </form>
@@ -545,6 +561,12 @@ function ReportsWorkflow({ records, onAction }) {
         { label: 'Station', key: 'station' },
         { label: 'Category', key: 'category' },
         { label: 'Price', render: (row) => `UGX ${Number(row.price || 0).toLocaleString()}` },
+      ]} />
+      <History title="Menu items with active recipes" rows={(records.recipes || []).filter((recipe) => recipe.status === 'ACTIVE')} empty="No menu items currently have active recipes." columns={[
+        { label: 'Menu item', key: 'menu_name' },
+        { label: 'Station', key: 'station' },
+        { label: 'Recipe version', key: 'version_number' },
+        { label: 'Status', key: 'status' },
       ]} />
       <History title="Recent inventory transactions" rows={records.transactions || []} empty="No inventory transactions found." columns={[
         { label: 'Date', key: 'business_date' },

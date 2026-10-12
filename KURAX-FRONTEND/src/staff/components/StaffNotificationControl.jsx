@@ -244,7 +244,6 @@ export default function StaffNotificationControl({ isShisha = false }) {
       if (!response.ok && response.status !== 404) throw new Error('Could not disable notifications for this device.');
       await deleteToken(getMessaging(app)).catch(() => {});
       setEnabled(false);
-      setMessage('Notifications disabled on this device.');
     } catch (error) {
       setMessage(error.message || 'Could not disable notifications.');
     } finally {
@@ -255,16 +254,15 @@ export default function StaffNotificationControl({ isShisha = false }) {
   if (!session?.token || checking) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[1000] max-w-[calc(100vw-2rem)]">
+    <div className="fixed top-4 right-4 z-[1000] max-w-[calc(100vw-2rem)]">
       <button
         type="button"
         onClick={enabled ? handleDisable : handleEnable}
         disabled={loading}
-        className="flex min-h-11 items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-xs font-bold text-white shadow-xl transition-colors hover:border-yellow-500 hover:text-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex h-11 w-11 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950 text-white shadow-xl transition-colors hover:border-yellow-500 hover:text-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
         aria-label={enabled ? 'Disable notifications on this device' : 'Enable staff notifications'}
       >
-        {loading ? <LoaderCircle size={16} className="animate-spin" /> : enabled ? <BellOff size={16} /> : <Bell size={16} />}
-        {loading ? 'Saving...' : enabled ? 'Disable Notifications' : 'Enable Notifications'}
+        {loading ? <LoaderCircle size={18} className="animate-spin" /> : enabled ? <BellOff size={18} /> : <Bell size={18} />}
       </button>
       {message && <p role="status" className="mt-2 max-w-72 rounded-lg bg-zinc-950/95 px-3 py-2 text-xs text-zinc-200 shadow-lg">{message}</p>}
     </div>

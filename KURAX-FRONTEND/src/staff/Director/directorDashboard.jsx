@@ -26,6 +26,7 @@ import ReconciliationViewer from "../Accountant/sections/ReconciliationViewer";
 import StaffSalesPerformance from "../components/StaffSalesPerformance";
 import DepartmentHod from "../DepartmentHod";
 import AccountingAuditTrail from "../components/AccountingAuditTrail";
+import ReportsPanel from "../Accountant/ReportsPanel";
 
 // ── CREDIT STATUS BADGE COMPONENT ────────────────────────────────────────────
 function CreditStatusBadge({ status }) {
@@ -52,14 +53,15 @@ function CreditStatusBadge({ status }) {
 
 const NAV = [
   { icon: <LayoutDashboard size={18} />, label: "Dashboard",  tab: "TARGETS"  },
+  { icon: <BarChart3 size={18} />, label: "Menu Profitability", tab: "MENU_PROFITABILITY" },
   { icon: <Wallet size={18} />,       label: "Reconciliation", tab: "RECONCILIATION" },
-  { icon: <Users size={18} />,           label: "Staff",      tab: "STAFF"     },
-  { icon: <CreditCard size={18} />,      label: "Finances & Credits",  tab: "FINANCES"  },
+  { icon: <CreditCard size={18} />,      label: "Finance & Credits",  tab: "FINANCES"  },
   { icon: <BarChart3 size={18} />,       label: "Staff Performance",   tab: "PERFORMANCE" },
-  { icon: <History size={18} />,         label: "History",    tab: "HISTORY"   },
-  { icon: <Bike size={18} />,            label: "Riders",     tab: "RIDERS"    },
   { icon: <CircleDollarSign size={18} />, label: "Department Reports", tab: "DEPARTMENT_REPORTS" },
+  { icon: <Users size={18} />,           label: "Staff",      tab: "STAFF"     },
+  { icon: <Bike size={18} />,            label: "Riders",     tab: "RIDERS"    },
   { icon: <ClipboardList size={18} />, label: "Audit Trail", tab: "AUDIT_TRAIL" },
+  { icon: <History size={18} />,         label: "History",    tab: "HISTORY"   },
 ];
 
 export default function DirectorDashboard() {
@@ -424,23 +426,12 @@ export default function DirectorDashboard() {
             )}
 
             {activeTab === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded />}
-                      {activeTab === "AUDIT_TRAIL" && <AccountingAuditTrail />}
+            {activeTab === "MENU_PROFITABILITY" && <ReportsPanel hideFinancialTabs />}
+            {activeTab === "AUDIT_TRAIL" && <AccountingAuditTrail />}
           </div>
           <Footer />
         </main>
 
-        {/* Mobile bottom nav */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-gray-200 flex items-center justify-around px-1 py-1.5 bg-white/95 backdrop-blur-sm"
-             style={{ paddingBottom: "env(safe-area-inset-bottom, 8px)" }}>
-          {NAV.map(({ icon, label, tab }) => (
-            <button key={tab} onClick={() => handleNavigation(tab)}
-              className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all flex-1
-                ${activeTab === tab ? "text-yellow-600" : "text-gray-500"}`}>
-              <span className={`transition-transform ${activeTab === tab ? "scale-110" : ""}`}>{icon}</span>
-              <span className="text-[8px] font-bold uppercase tracking-wide">{label}</span>
-            </button>
-          ))}
-        </nav>
       </div>
 
       {/* ── MODALS ──────────────────────────────────────────────────────── */}

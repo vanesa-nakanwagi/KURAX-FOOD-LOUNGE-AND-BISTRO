@@ -1,6 +1,8 @@
 import express from 'express';
 import pool from '../db.js';
 import { createJournalEntry } from '../helpers/accounting.js';
+import { shishaInventoryFilterSql } from '../helpers/inventoryFilters.js';
+import { itemAssignedToStation } from '../helpers/inventoryStations.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import { consumeSoldOrderItems, convertRecipeQuantity } from '../helpers/recipeConsumption.js';
 
@@ -289,6 +291,7 @@ router.get('/items', async (req, res) => {
        LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
        LEFT JOIN public.suppliers s ON s.id = ii.supplier_id
        WHERE ii.is_active = true
+         AND ${shishaInventoryFilterSql('ii')}
        ORDER BY ii.item_name ASC`
     );
 
@@ -312,6 +315,7 @@ router.get('/stock', async (req, res) => {
        LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
        LEFT JOIN public.suppliers s ON s.id = ii.supplier_id
        WHERE ii.is_active = true
+         AND ${shishaInventoryFilterSql('ii')}
        ORDER BY ii.item_name ASC`
     );
     res.json(result.rows.map(buildItemSummary));
@@ -728,7 +732,11 @@ router.get('/recipes/menu-items', async (req, res) => {
        WHERE m.published = true
          AND LOWER(TRIM(COALESCE(m.category, ''))) <> 'shisha'
          AND LOWER(TRIM(COALESCE(m.station, ''))) <> 'shisha'
-         AND ($1 = 'ALL' OR UPPER(m.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
+         AND (
+           $1 = 'ALL'
+           OR UPPER(m.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END)
+           OR ($1 <> 'ALL' AND NULLIF(TRIM(m.station), '') IS NULL)
+         )
        ORDER BY m.name ASC`,
       [station]
     );
@@ -758,9 +766,13 @@ router.post('/recipes', async (req, res) => {
     );
     const menuItem = menuResult.rows[0];
     const station = normalizeStation(menuItem?.station);
-    if (!menuItem || !station) {
+    if (!menuItem) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Published menu item not found.' });
+    }
+    if (!station) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'This menu item has no station assignment. Assign it to Kitchen, Bar, or Barista before configuring a recipe.' });
     }
     if (!canManageStation(req, station)) {
       await client.query('ROLLBACK');
@@ -785,9 +797,7 @@ router.post('/recipes', async (req, res) => {
     const stockItems = new Map(stockResult.rows.map((item) => [item.id, item]));
     for (const ingredient of ingredients) {
       const stockItem = stockItems.get(Number(ingredient.ingredient_item_id));
-      const stockStation = normalizeStation(stockItem?.station);
-      const isMainStore = String(stockItem?.location_name || '').trim().toUpperCase() === 'MAIN STORE';
-      if (!stockItem || (stockStation && stockStation !== station && !isMainStore)) {
+      if (!stockItem || !itemAssignedToStation(stockItem.station, station)) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: `Ingredient ${stockItem?.item_name || ingredient.ingredient_item_id} is not available to ${station}.` });
       }
@@ -865,8 +875,7 @@ router.put('/recipes/:id', async (req, res) => {
     const stockItems = new Map(stockResult.rows.map((item) => [item.id, item]));
     for (const ingredient of ingredients) {
       const stockItem = stockItems.get(Number(ingredient.ingredient_item_id));
-      const stockStation = normalizeStation(stockItem?.station);
-      if (!stockItem || (stockStation && stockStation !== normalizeStation(currentRecipe.station) && String(stockItem.location_name || '').trim().toUpperCase() !== 'MAIN STORE')) {
+      if (!stockItem || !itemAssignedToStation(stockItem.station, currentRecipe.station)) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: `Ingredient ${stockItem?.item_name || ingredient.ingredient_item_id} is not available to this department.` });
       }
@@ -1277,6 +1286,7 @@ router.get('/dashboard', async (req, res) => {
       FROM public.inventory_items ii
       LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
       WHERE ii.is_active = true
+        AND ${shishaInventoryFilterSql('ii')}
     `);
 
     const purchaseTotal = await pool.query(`SELECT COALESCE(SUM(total_amount), 0) AS total_purchases FROM public.purchase_receipts`);
@@ -1479,7 +1489,9 @@ router.get('/reports/low-stock', async (req, res) => {
       `SELECT ii.*, il.name AS location_name
        FROM public.inventory_items ii
        LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
-       WHERE ii.is_active = true AND ii.current_quantity <= ii.minimum_stock_level
+       WHERE ii.is_active = true
+         AND ${shishaInventoryFilterSql('ii')}
+         AND ii.current_quantity <= ii.minimum_stock_level
          AND ($1::text IS NULL OR UPPER(ii.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
        ORDER BY ii.item_name ASC`,
       [station || null]

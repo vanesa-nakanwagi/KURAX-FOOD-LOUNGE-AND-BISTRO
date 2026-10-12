@@ -17,10 +17,9 @@ const DESKTOP_MENU_ITEMS = [
   { key: "MONTHLY_COSTS",     label: "Monthly Costs",      icon: Wallet },
   { key: "CREDITS",           label: "Credits",            icon: BookOpen },
   { key: "DEPARTMENT_REPORTS", label: "Department Reports", icon: CircleDollarSign },
-  { key: "REPORTS",           label: "Reports",            icon: FileText },
+  { key: "REPORTS",           label: "Accounting",         icon: FileText },
   { key: "STAFF_PERFORMANCE", label: "Staff Sales Performance", icon: BarChart3 },
   { key: "SYSTEM_CONFIGURATION", label: "System Configuration", icon: Settings },
-  { key: "REOPEN_DAY",        label: "Reopen Day",         icon: RotateCcw },   
   { key: "END_OF_SHIFT",      label: "End of Shift",       icon: RotateCcw },
 ];
 
@@ -57,7 +56,7 @@ export default function SideBar({
     : DESKTOP_MENU_ITEMS;
   const visibleDrawerItems = visibleMenuItems.filter(item => !BOTTOM_NAV_ITEMS.some(nav => nav.key === item.key));
   const visibleBottomItems = historicalMode
-    ? [{ key: "DASHBOARD", label: "History", icon: Receipt }, { key: "REPORTS", label: "Reports", icon: FileText }]
+    ? [{ key: "DASHBOARD", label: "History", icon: Receipt }, { key: "REPORTS", label: "Accounting", icon: FileText }]
     : BOTTOM_NAV_ITEMS;
   const fullName = currentUser?.name || "Accountant";
   const firstName = fullName.split(" ")[0];

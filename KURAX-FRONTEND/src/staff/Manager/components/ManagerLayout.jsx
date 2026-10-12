@@ -5,7 +5,7 @@ import {
 } from "lucide-react"; 
 
 // Component Imports
-import NewOrder           from "./NewOrder";
+import NewOrder           from "../../waiter/components/NewOrder";
 import PerformanceDashboard      from "./PerformanceDashboard";
 import TargetSettings     from "./TargetSettings"; 
 import Sidebar            from "./Sidebar"; 
@@ -78,7 +78,7 @@ export default function ManagerLayout() {
       case "reconciliation": return <ReconciliationViewer userName={currentStaffName} dark={isDark} onlyReconciliation />;
       case "order": 
         if (!isGranted) return <LockedView name={currentStaffName} role={currentUser?.role} theme={theme} />;
-        return <NewOrder />;
+        return <NewOrder staffRole="MANAGER" />;
       case "status":  return <LiveOrderStatus />;
       case "tables":  return <LiveTableGrid />; 
       case "target":  return <TargetSettings />;
@@ -93,7 +93,9 @@ export default function ManagerLayout() {
       case "department-reports": return <DepartmentHod department="all" embedded />;
         case "audit-trail": return <AccountingAuditTrail dark={isDark} />;
       case "credits": return <ManagerCreditPanel managerName={currentStaffName} />; // REMOVED theme prop
-      default:        return <NewOrder />;
+      default:        return isGranted
+        ? <NewOrder staffRole="MANAGER" />
+        : <LockedView name={currentStaffName} role={currentUser?.role} theme={theme} />;
     }
   };
 

@@ -11,15 +11,23 @@ import ThemeToggle from "../../../customer/components/context/ThemeToggle";
 import { getImageSrc } from "../../../utils/imageHelper";
 import API_URL from "../../../config/api";
 
-export default function NewOrder({ preSelectedTable, onClearSelection }) {
+export default function NewOrder({ preSelectedTable, onClearSelection, staffRole: staffRoleOverride = "WAITER" }) {
   const { orders = [], setOrders, menus = [], currentUser } = useData() || { setOrders: () => {}, orders: [], menus: [] };
   const { theme } = useTheme();
   const navigate = useNavigate();
+  const savedUser = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("kurax_user") || "null"); }
+    catch { return null; }
+  }, []);
+  const staffUser = currentUser?.id != null ? currentUser : savedUser;
+  const staffRole = String(staffRoleOverride || staffUser?.role || "WAITER").toUpperCase();
+  const CART_KEY = staffRole === "WAITER" ? "kurax_staff_cart" : `kurax_cart_${staffUser?.id ?? "guest"}`;
+  const TABLE_KEY = staffRole === "WAITER" ? "kurax_table_name" : `kurax_table_${staffUser?.id ?? "guest"}`;
   
   // --- 1. STATE ---
-  const [tableName, setTableName]           = useState(() => localStorage.getItem("kurax_table_name") || "");
+  const [tableName, setTableName]           = useState(() => localStorage.getItem(TABLE_KEY) || "");
   const [cart, setCart]                     = useState(() => {
-    const saved = localStorage.getItem("kurax_staff_cart");
+    const saved = localStorage.getItem(CART_KEY);
     return saved ? JSON.parse(saved) : [];
   });
   const [existingItems, setExistingItems]   = useState([]);
@@ -27,6 +35,12 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
   const [isCartOpen, setIsCartOpen]         = useState(false);
   const [showSuccess, setShowSuccess]       = useState(false);
   const [activeCategory, setActiveCategory] = useState("Starters");
+
+  useEffect(() => {
+    const savedCart = localStorage.getItem(CART_KEY);
+    setCart(savedCart ? JSON.parse(savedCart) : []);
+    setTableName(localStorage.getItem(TABLE_KEY) || "");
+  }, [CART_KEY, TABLE_KEY]);
 
   // --- 2. BRIDGE ---
   useEffect(() => {
@@ -49,9 +63,9 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
 
   // --- 3. LOCAL STORAGE SYNC ---
   useEffect(() => {
-    localStorage.setItem("kurax_staff_cart", JSON.stringify(cart));
-    localStorage.setItem("kurax_table_name", tableName);
-  }, [cart, tableName]);
+    localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    localStorage.setItem(TABLE_KEY, tableName);
+  }, [cart, tableName, CART_KEY, TABLE_KEY]);
 
   // --- 4. CALCULATIONS ---
   const cartTotal = useMemo(() => 
@@ -93,10 +107,13 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
   const handleProcessOrder = async () => {
     if (!tableName) return alert("Please assign a table name.");
     if (cart.length === 0) return alert("Cart is empty.");
+    const staffId = Number(staffUser?.id);
+    if (!Number.isInteger(staffId) || staffId <= 0) return alert("Your staff account could not be identified. Sign in again before placing an order.");
 
     const orderData = {
-      staffId:   currentUser?.id   || 1,
-      staffName: currentUser?.name || "Waiter",
+      staffId,
+      staffName: staffUser?.name || staffRole,
+      staffRole,
       tableName: tableName.toUpperCase(),
       items:     cart,
       total:     cartTotal,
@@ -118,8 +135,8 @@ export default function NewOrder({ preSelectedTable, onClearSelection }) {
         setCart([]);
         setTableName("");
         setExistingItems([]);
-        localStorage.removeItem("kurax_staff_cart");
-        localStorage.removeItem("kurax_table_name");
+        localStorage.removeItem(CART_KEY);
+        localStorage.removeItem(TABLE_KEY);
       } else {
         alert(data.error || "Order failed.");
       }

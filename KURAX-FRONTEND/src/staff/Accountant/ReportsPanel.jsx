@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { FileText, FileSpreadsheet, PlusCircle, Package, Calendar, Loader2 } from "lucide-react";
+import { FileText, FileSpreadsheet, PlusCircle, Package, Calendar, Loader2, TrendingUp } from "lucide-react";
 import * as XLSX from "xlsx";
 import API_URL from "../../config/api";
 import { downloadReportPdf } from "../reportExport";
@@ -99,8 +99,17 @@ function formatUGX(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
 }
 
-export default function ReportsPanel({ dark = false, initialDateRange, timeRange, onDateRangeChange }) {
-  const [activeTab, setActiveTab] = useState("reports");
+function staffAuthHeaders() {
+  try {
+    const token = JSON.parse(localStorage.getItem('kurax_user') || '{}').token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+export default function ReportsPanel({ dark = false, initialDateRange, timeRange, onDateRangeChange, hideFinancialTabs = false }) {
+  const [activeTab, setActiveTab] = useState(hideFinancialTabs ? "menu-profitability" : "reports");
   const [reportType, setReportType] = useState("income");
   const [dateRange, setDateRange] = useState(() => {
     if (initialDateRange?.start && initialDateRange?.end) return initialDateRange;
@@ -113,6 +122,24 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
   const [reportData, setReportData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [menuProfitability, setMenuProfitability] = useState(null);
+  const [menuProfitabilityLoading, setMenuProfitabilityLoading] = useState(false);
+  const [menuProfitabilityError, setMenuProfitabilityError] = useState("");
+  const [menuFilters, setMenuFilters] = useState({
+    start: dateRange.start,
+    end: dateRange.end,
+    category: 'ALL',
+    search: '',
+    sortBy: 'gross_profit',
+    sortDir: 'desc',
+  });
+
+  const availableCategories = [...new Set([
+    'Starters',
+    'Local Foods',
+    'Drinks & Cocktails',
+    ...(menuProfitability?.categories || []),
+  ].filter(Boolean))].sort();
 
   useEffect(() => {
     if (initialDateRange?.start && initialDateRange?.end) setDateRange(initialDateRange);
@@ -165,6 +192,38 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
       setError(err.message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMenuProfitability = async () => {
+    if (!menuFilters.start || !menuFilters.end) {
+      setMenuProfitabilityError('Please select both dates for the menu profitability report.');
+      return;
+    }
+
+    setMenuProfitabilityLoading(true);
+    setMenuProfitabilityError('');
+
+    try {
+      const params = new URLSearchParams({
+        startDate: menuFilters.start,
+        endDate: menuFilters.end,
+        sortBy: menuFilters.sortBy,
+        sortDir: menuFilters.sortDir,
+      });
+      if (menuFilters.category && menuFilters.category !== 'ALL') params.set('category', menuFilters.category);
+      if (menuFilters.search) params.set('search', menuFilters.search);
+
+      const res = await fetch(`${API_URL}/api/reports/menu-profitability?${params.toString()}`, {
+        headers: { 'Content-Type': 'application/json', ...staffAuthHeaders() },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setMenuProfitability(data);
+    } catch (err) {
+      setMenuProfitabilityError(err.message || 'Unable to generate the menu profitability report.');
+    } finally {
+      setMenuProfitabilityLoading(false);
     }
   };
 
@@ -291,37 +350,59 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
         <h2 className={`text-2xl font-black uppercase leading-none ${textClass}`}>
-          Financial Reports & Inventory
+          {hideFinancialTabs ? "Menu Profitability" : "Financial Reports & Inventory"}
         </h2>
         <p className="text-yellow-600 text-[13px] font-medium mt-1 italic">
-          Generate income statement / balance sheet • Record purchases • Log inventory snapshots
+          {hideFinancialTabs
+            ? "Track menu performance and profit by category and item."
+            : "Generate income statement / balance sheet • Record purchases • Log inventory snapshots"}
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200 dark:border-white/10">
-        <button
-          onClick={() => setActiveTab("reports")}
-          className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all
-            ${activeTab === "reports"
-              ? "text-yellow-600 border-b-2 border-yellow-500"
-              : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"}`}
-        >
-          <FileText size={12} className="inline mr-1" /> Generate Report
-        </button>
-        <button
-          onClick={() => setActiveTab("inventory")}
-          className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all
-            ${activeTab === "inventory"
-              ? "text-yellow-600 border-b-2 border-yellow-500"
-              : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"}`}
-        >
-          <Package size={12} className="inline mr-1" /> Inventory Data Entry
-        </button>
-      </div>
+      {!hideFinancialTabs ? (
+        <div className="flex gap-2 border-b border-gray-200 dark:border-white/10">
+          <button
+            onClick={() => setActiveTab("reports")}
+            className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all
+              ${activeTab === "reports"
+                ? "text-yellow-600 border-b-2 border-yellow-500"
+                : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"}`}
+          >
+            <FileText size={12} className="inline mr-1" /> Generate Report
+          </button>
+          <button
+            onClick={() => setActiveTab("menu-profitability")}
+            className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all
+              ${activeTab === "menu-profitability"
+                ? "text-yellow-600 border-b-2 border-yellow-500"
+                : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"}`}
+          >
+            <TrendingUp size={12} className="inline mr-1" /> Menu Profitability
+          </button>
+          <button
+            onClick={() => setActiveTab("inventory")}
+            className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all
+              ${activeTab === "inventory"
+                ? "text-yellow-600 border-b-2 border-yellow-500"
+                : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"}`}
+          >
+            <Package size={12} className="inline mr-1" /> Inventory Data Entry
+          </button>
+        </div>
+      ) : (
+        <div className="flex gap-2 border-b border-gray-200 dark:border-white/10">
+          <button
+            onClick={() => setActiveTab("menu-profitability")}
+            className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all text-yellow-600 border-b-2 border-yellow-500`}
+          >
+            <TrendingUp size={12} className="inline mr-1" /> Menu Profitability
+          </button>
+        </div>
+      )}
 
       {/* ========== TAB 1: REPORTS ========== */}
-      {activeTab === "reports" && (
+      {!hideFinancialTabs && activeTab === "reports" && (
         <div className={`rounded-2xl p-6 space-y-5 ${containerClass}`}>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
@@ -432,8 +513,99 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
         </div>
       )}
 
+      {(activeTab === "menu-profitability" || hideFinancialTabs) && (
+        <div className={`rounded-2xl p-6 space-y-5 ${containerClass}`}>
+          <div className="flex flex-wrap gap-4 items-end">
+            <div>
+              <label className={labelClass}>Start Date</label>
+              <input type="date" value={menuFilters.start} onChange={(e) => setMenuFilters((current) => ({ ...current, start: e.target.value }))} className={inputClass + " w-44"} />
+            </div>
+            <div>
+              <label className={labelClass}>End Date</label>
+              <input type="date" value={menuFilters.end} onChange={(e) => setMenuFilters((current) => ({ ...current, end: e.target.value }))} className={inputClass + " w-44"} />
+            </div>
+            <div>
+              <label className={labelClass}>Category</label>
+              <select value={menuFilters.category} onChange={(e) => setMenuFilters((current) => ({ ...current, category: e.target.value }))} className={inputClass + " w-40"}>
+                <option value="ALL">All categories</option>
+                {availableCategories.map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Search</label>
+              <input type="text" value={menuFilters.search} onChange={(e) => setMenuFilters((current) => ({ ...current, search: e.target.value }))} placeholder="Menu item" className={inputClass + " w-52"} />
+            </div>
+            <div>
+              <label className={labelClass}>Sort</label>
+              <select value={menuFilters.sortBy} onChange={(e) => setMenuFilters((current) => ({ ...current, sortBy: e.target.value }))} className={inputClass + " w-40"}>
+                <option value="gross_profit">Gross profit</option>
+                <option value="net_sales">Net sales</option>
+                <option value="cogs">Ingredient cost</option>
+                <option value="gross_profit_margin">Margin</option>
+                <option value="menu_name">Menu item</option>
+              </select>
+            </div>
+            <button onClick={loadMenuProfitability} disabled={menuProfitabilityLoading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-black px-5 py-3 rounded-xl text-[10px] uppercase disabled:opacity-50 flex items-center gap-2">
+              {menuProfitabilityLoading ? <Loader2 size={14} className="animate-spin" /> : 'Run report'}
+            </button>
+          </div>
+
+          {menuProfitabilityError && <div className="text-red-500 text-sm">{menuProfitabilityError}</div>}
+
+          {menuProfitability && (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[['Total net sales', menuProfitability.summary.totalNetSales], ['Ingredient COGS', menuProfitability.summary.totalCogs], ['Gross profit', menuProfitability.summary.grossProfit], ['Gross margin', `${Number(menuProfitability.summary.grossProfitMargin || 0).toFixed(1)}%`]].map(([label, value]) => (
+                  <div key={label} className="border-l-2 border-amber-500 bg-zinc-50 px-4 py-3">
+                    <p className="text-[10px] font-black uppercase text-zinc-500">{label}</p>
+                    <p className="mt-1 text-lg font-black">{label.includes('margin') ? value : formatUGX(value)}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1000px] border-collapse text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="px-2 py-2">Menu item</th>
+                      <th className="px-2 py-2">Category</th>
+                      <th className="px-2 py-2">Qty sold</th>
+                      <th className="px-2 py-2">Selling price</th>
+                      <th className="px-2 py-2">Net sales</th>
+                      <th className="px-2 py-2">Ingredient cost</th>
+                      <th className="px-2 py-2">Gross profit</th>
+                      <th className="px-2 py-2">Margin</th>
+                      <th className="px-2 py-2">Contribution</th>
+                      <th className="px-2 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(menuProfitability.rows || []).map((row) => (
+                      <tr key={`${row.menu_name}-${row.category}`} className="border-b border-gray-100 align-top">
+                        <td className="px-2 py-2 font-semibold">{row.menu_name}</td>
+                        <td className="px-2 py-2">{row.category}</td>
+                        <td className="px-2 py-2">{Number(row.quantity_sold || 0)}</td>
+                        <td className="px-2 py-2">{formatUGX(row.selling_price || 0)}</td>
+                        <td className="px-2 py-2">{formatUGX(row.net_sales || 0)}</td>
+                        <td className="px-2 py-2">{formatUGX(row.cogs || 0)}</td>
+                        <td className="px-2 py-2 font-bold text-emerald-700">{formatUGX(row.gross_profit || 0)}</td>
+                        <td className="px-2 py-2">{Number(row.gross_profit_margin || 0).toFixed(1)}%</td>
+                        <td className="px-2 py-2">{formatUGX(row.contribution || 0)}</td>
+                        <td className="px-2 py-2"><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${Number(row.gross_profit || 0) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{row.profitability_status || 'Profitable'}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* ========== TAB 2: INVENTORY DATA ENTRY ========== */}
-      {activeTab === "inventory" && (
+      {!hideFinancialTabs && activeTab === "inventory" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Record Purchase */}
           <div className={`rounded-2xl p-6 space-y-4 ${containerClass}`}>

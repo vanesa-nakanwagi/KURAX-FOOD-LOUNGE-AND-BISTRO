@@ -982,11 +982,9 @@ export default function OrderHistory({ onAddItems }) {
     });
   }, [orders]);
 
-  const dailyStaffOrders = useMemo(() => {
+  const managerOrders = useMemo(() => {
     if (!currentStaffId && !currentStaffName) return [];
     return (orders || []).filter(o => {
-      const ts = o.timestamp || o.created_at;
-      if (!ts) return false;
       const orderStaffId = o.staff_id ?? o.staffId;
       const orderRole = String(o.staff_role ?? o.staff_role_name ?? o.role ?? "").trim().toUpperCase();
       const idMatch = currentStaffId != null && orderStaffId != null &&
@@ -994,9 +992,21 @@ export default function OrderHistory({ onAddItems }) {
       const nameMatch = currentStaffId == null && currentStaffName && currentStaffName !== "Manager"
         ? (o.staff_name ?? o.waiterName ?? o.staffName ?? "").toLowerCase() === currentStaffName.toLowerCase()
         : false;
-      return orderRole === "MANAGER" && (currentStaffId != null ? idMatch : nameMatch) && toLocalDateStr(new Date(ts)) === today;
+      return orderRole === "MANAGER" && (currentStaffId != null ? idMatch : nameMatch);
     });
-  }, [orders, currentStaffId, currentStaffName, today]);
+  }, [orders, currentStaffId, currentStaffName]);
+
+  const dailyStaffOrders = useMemo(() => managerOrders.filter(order => {
+    const timestamp = order.timestamp || order.created_at;
+    return timestamp && toLocalDateStr(new Date(timestamp)) === today;
+  }), [managerOrders, today]);
+
+  const managerCredits = useMemo(() => creditsData.filter(credit => {
+    const creditOrder = managerOrders.find(order => String(order.id) === String(credit.order_id));
+    if (creditOrder) return true;
+    const ownerName = String(credit.waiter_name ?? credit.requested_by ?? "").trim().toLowerCase();
+    return Boolean(currentStaffName && currentStaffName !== "Manager" && ownerName === currentStaffName.trim().toLowerCase());
+  }), [creditsData, managerOrders, currentStaffName]);
 
   const groupedTableOrders = useMemo(() => {
     const groups = {};
@@ -1207,7 +1217,7 @@ export default function OrderHistory({ onAddItems }) {
 
   const totalPaidItemsCount = useMemo(() => {
     let count = 0;
-    orders.forEach(order => {
+    managerOrders.forEach(order => {
       let orderItems = order.items || [];
       if (typeof orderItems === "string") {
         try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
@@ -1215,10 +1225,10 @@ export default function OrderHistory({ onAddItems }) {
       orderItems.forEach(item => { if (isItemFullyPaid(item)) count++; });
     });
     return count;
-  }, [orders]);
+  }, [managerOrders]);
 
   const counts = useMemo(() => {
-    const acc = { Live: 0, Served: 0, Paid: totalPaidItemsCount, Credits: creditsData.length, Voided: voidedItemsList.length };
+    const acc = { Live: 0, Served: 0, Paid: totalPaidItemsCount, Credits: managerCredits.length, Voided: voidedItemsList.length };
     enrichedGroups.forEach(g => {
       const nonVoided  = (g.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
       const allPaid    = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
@@ -1236,7 +1246,7 @@ export default function OrderHistory({ onAddItems }) {
       if (isServed) acc.Served++;
     });
     return acc;
-  }, [enrichedGroups, voidedItemsList, creditsData, totalPaidItemsCount, orders]);
+  }, [enrichedGroups, voidedItemsList, managerCredits.length, totalPaidItemsCount, orders]);
 
   return (
     <div className={`min-h-screen font-[Outfit] pb-20 sm:pb-28 ${theme === "dark" ? "bg-zinc-950 text-white" : "bg-zinc-50 text-zinc-900"}`}>
@@ -1290,9 +1300,9 @@ export default function OrderHistory({ onAddItems }) {
         {activeTab === "Voided" ? (
           <VoidedItemsPanel voidedItems={voidedItemsList} theme={theme} />
         ) : activeTab === "Credits" ? (
-          <CreditedItemsPanel creditedItems={creditsData} theme={theme} />
+          <CreditedItemsPanel creditedItems={managerCredits} theme={theme} />
         ) : activeTab === "Paid" ? (
-          <RecentlyPaidItemsPanel orders={orders} theme={theme} />
+          <RecentlyPaidItemsPanel orders={managerOrders} theme={theme} />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
             {filteredOrders.map(order => (

@@ -305,7 +305,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   async function assignOrder(order) {
     const staffId = assignmentSelections[order.id];
     if (!staffId) {
-      setError(`Select a ${config.workerRole} before dispatching this order.`);
+      setError(`Select yourself or a ${config.workerRole} before dispatching this order.`);
       return;
     }
     setAssigningOrderId(order.id);
@@ -377,7 +377,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
               {assignmentQueue.map(order => <div key={order.id} className="grid gap-4 p-4 lg:grid-cols-[1fr_340px] lg:items-center">
                 <div><p className="text-sm font-black">Order #{order.id} · {order.table_name || 'Walk-in'}</p><p className="mt-0.5 text-xs text-zinc-500">Waiter: {order.staff_name || 'Staff'}</p><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">{order.items.map((item, index) => <span key={`${item.name}-${index}`} className="text-zinc-700">{item.quantity || 1} × {item.name}</span>)}</div></div>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <select aria-label={`Assign order ${order.id} to ${config.workerRole}`} value={assignmentSelections[order.id] || ''} onChange={event => setAssignmentSelections(current => ({ ...current, [order.id]: event.target.value }))} className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-amber-500"><option value="">Choose {config.workerRole.toLowerCase()}</option>{staff.filter(member => member.is_active).map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select>
+                  <select aria-label={`Assign order ${order.id} to yourself or a ${config.workerRole}`} value={assignmentSelections[order.id] || ''} onChange={event => setAssignmentSelections(current => ({ ...current, [order.id]: event.target.value }))} className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-amber-500"><option value="">Choose assignee</option><option value={session.id}>Assign to myself ({session.name})</option>{staff.filter(member => member.is_active).map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select>
                   <button type="button" disabled={assigningOrderId === order.id || !assignmentSelections[order.id]} onClick={() => assignOrder(order)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-zinc-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"><Check size={15} /> {assigningOrderId === order.id ? 'Assigning' : 'Assign & send'}</button>
                 </div>
               </div>)}

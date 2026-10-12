@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Lock, ShieldCheck, RefreshCcw, LayoutGrid, Menu as MenuIcon, Zap, Bell } from "lucide-react";
 import { BarChart3, ClipboardList, Clock, History, Target } from "lucide-react";
 
-import NewOrder from "./NewOrder";
+import NewOrder from "../../waiter/components/NewOrder";
 import PerformanceDashboard from "./PerformanceDashboard";
 import LiveOrderStatus from "./LiveOrderStatus";
 import Sidebar from "./Sidebar";
@@ -44,7 +44,7 @@ export default function SupervisorLayout() {
     switch (activeTab) {
       case "order":
         if (!isGranted) return <LockedView name={currentStaffName} role="Supervisor" />;
-        return <NewOrder />;
+        return <NewOrder staffRole="SUPERVISOR" />;
       case "status":
         return <LiveOrderStatus />;
       case "targets":
@@ -56,7 +56,7 @@ export default function SupervisorLayout() {
          case "tables":
         return <OrderHistory />;
       default:
-        return <NewOrder />;
+        return isGranted ? <NewOrder staffRole="SUPERVISOR" /> : <LockedView name={currentStaffName} role="Supervisor" />;
     }
   };
 

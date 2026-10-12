@@ -1,5 +1,6 @@
 import express from 'express';
 import pool from '../db.js';
+import { buildOpenShiftOrderClause, buildOpenShiftCashierQueueClause } from '../helpers/shiftVisibility.js';
 
 const router = express.Router();
 
@@ -18,14 +19,13 @@ router.get('/live-orders', async (req, res) => {
   }
 
   try {
+    const { sql, params } = buildOpenShiftOrderClause({ staffId: staff_id, staffName: staff_name });
     const result = await pool.query(
       `SELECT * FROM orders
-       WHERE (staff_id = $1 OR staff_name = $2)
-         AND status NOT IN ('Paid', 'Closed', 'Voided')
+       WHERE ${sql}
          AND is_archived = false
-         AND shift_cleared = false
        ORDER BY created_at ASC`,
-      [staff_id, staff_name]
+      params
     );
     res.json(result.rows);
   } catch (err) {
@@ -81,15 +81,16 @@ router.patch('/end-shift', async (req, res) => {
 
     if (isNaN(finalGross)) {
       if (isPermitted) {
+        const { sql: orderSql, params: orderParams } = buildOpenShiftOrderClause({ staffId: waiter_id });
         const ordersRes = await pool.query(
           `SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS gross
-           FROM orders WHERE staff_id = $1 AND date = $2 AND shift_cleared = FALSE
-           AND status NOT IN ('Cancelled', 'Voided')`,
-          [waiter_id, today]
+           FROM orders WHERE ${orderSql} AND status NOT IN ('Cancelled', 'Voided')`,
+          orderParams
         );
         finalCount = Number(ordersRes.rows[0].count);
         finalGross = Number(ordersRes.rows[0].gross);
 
+        const { sql: queueSql, params: queueParams } = buildOpenShiftCashierQueueClause({ staffId: waiter_id, staffName: waiter_name });
         const queueRes = await pool.query(
           `SELECT
              COALESCE(SUM(CASE WHEN method = 'Cash' THEN amount ELSE 0 END), 0) AS total_cash,
@@ -97,10 +98,8 @@ router.patch('/end-shift', async (req, res) => {
              COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0) AS total_airtel,
              COALESCE(SUM(CASE WHEN method IN ('Card','Visa','POS','Debit') THEN amount ELSE 0 END), 0) AS total_card
            FROM cashier_queue
-           WHERE (staff_id = $1 OR requested_by = $2)
-             AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
-             AND status = 'Confirmed' AND method != 'Credit' AND shift_cleared = FALSE`,
-          [waiter_id, waiter_name, today]
+           WHERE ${queueSql}`,
+          queueParams
         );
         finalCash   = Number(queueRes.rows[0].total_cash);
         finalMTN    = Number(queueRes.rows[0].total_mtn);
@@ -119,9 +118,9 @@ router.patch('/end-shift', async (req, res) => {
          COALESCE(SUM(amount) FILTER (WHERE status = 'Confirmed' AND method = 'Credit'), 0) AS credit_approved_amt
        FROM cashier_queue
        WHERE confirmed_by ILIKE $1
-         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $2
-         AND shift_cleared = FALSE`,
-      [waiter_name, today]
+         AND COALESCE(shift_cleared, false) = FALSE
+         AND COALESCE(day_cleared, false) = FALSE` ,
+      [waiter_name]
     );
     const crApp     = Number(creditRes.rows[0].credit_approved) || 0;
     const crRej     = Number(creditRes.rows[0].credit_rejected) || 0;
@@ -155,15 +154,15 @@ router.patch('/end-shift', async (req, res) => {
     if (isPermitted) {
       await pool.query(
         `UPDATE orders SET shift_cleared = TRUE 
-         WHERE staff_id = $1 AND date = $2 AND shift_cleared = FALSE`,
-        [waiter_id, today]
+         WHERE staff_id = $1 AND COALESCE(shift_cleared, false) = FALSE AND COALESCE(day_cleared, false) = FALSE`,
+        [waiter_id]
       );
       await pool.query(
         `UPDATE cashier_queue SET shift_cleared = TRUE 
-         WHERE (staff_id = $1 OR requested_by = $2) 
-         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3 
-         AND shift_cleared = FALSE`,
-        [waiter_id, waiter_name, today]
+         WHERE (staff_id = $1 OR requested_by = $2)
+         AND COALESCE(shift_cleared, false) = FALSE
+         AND COALESCE(day_cleared, false) = FALSE`,
+        [waiter_id, waiter_name]
       );
     }
 
@@ -210,9 +209,9 @@ router.get('/manager-credit-stats', async (req, res) => {
          COALESCE(SUM(amount) FILTER (WHERE status = 'Confirmed' AND method = 'Credit'), 0) AS approved_amt
        FROM cashier_queue
        WHERE confirmed_by ILIKE $1 
-       AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $2
-       AND shift_cleared = FALSE`,
-      [manager_name, today]
+       AND COALESCE(shift_cleared, false) = FALSE
+       AND COALESCE(day_cleared, false) = FALSE`,
+      [manager_name]
     );
     const row = result.rows[0];
     res.json({
@@ -235,12 +234,13 @@ router.get('/manager-shift-preview', async (req, res) => {
       `SELECT COUNT(*) AS order_count, COALESCE(SUM(total), 0) AS gross_total
        FROM orders 
        WHERE staff_id = $1 
-         AND date = $2 
-         AND shift_cleared = FALSE 
+         AND COALESCE(shift_cleared, false) = FALSE
+         AND COALESCE(day_cleared, false) = FALSE
          AND sent_to_cashier = FALSE
          AND status NOT IN ('Cancelled', 'Voided')`,
-      [staff_id, today]
+      [staff_id]
     );
+    const { sql: queueSql, params: queueParams } = buildOpenShiftCashierQueueClause({ staffId: staff_id, staffName: staff_name });
     const queueRes = await pool.query(
       `SELECT
          COALESCE(SUM(CASE WHEN method = 'Cash' THEN amount ELSE 0 END), 0) AS total_cash,
@@ -248,12 +248,8 @@ router.get('/manager-shift-preview', async (req, res) => {
          COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0) AS total_airtel,
          COALESCE(SUM(CASE WHEN method IN ('Card','Visa','POS','Debit') THEN amount ELSE 0 END), 0) AS total_card
        FROM cashier_queue
-       WHERE (staff_id = $1 OR requested_by = $2) 
-         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
-         AND status = 'Confirmed' 
-         AND method != 'Credit' 
-         AND shift_cleared = FALSE`,
-      [staff_id, staff_name || '', today]
+       WHERE ${queueSql}`,
+      queueParams
     );
     res.json({
       order_count: Number(ordersRes.rows[0].order_count) || 0,
@@ -277,12 +273,13 @@ router.get('/supervisor-shift-preview', async (req, res) => {
       `SELECT COUNT(*) AS order_count, COALESCE(SUM(total), 0) AS gross_total
        FROM orders 
        WHERE staff_id = $1 
-         AND date = $2 
-         AND shift_cleared = FALSE 
+         AND COALESCE(shift_cleared, false) = FALSE
+         AND COALESCE(day_cleared, false) = FALSE
          AND sent_to_cashier = FALSE
          AND status NOT IN ('Cancelled', 'Voided')`,
-      [staff_id, today]
+      [staff_id]
     );
+    const { sql: queueSql, params: queueParams } = buildOpenShiftCashierQueueClause({ staffId: staff_id, staffName: staff_name });
     const queueRes = await pool.query(
       `SELECT
          COALESCE(SUM(CASE WHEN method = 'Cash' THEN amount ELSE 0 END), 0) AS total_cash,
@@ -290,12 +287,8 @@ router.get('/supervisor-shift-preview', async (req, res) => {
          COALESCE(SUM(CASE WHEN method = 'Momo-Airtel' THEN amount ELSE 0 END), 0) AS total_airtel,
          COALESCE(SUM(CASE WHEN method IN ('Card','Visa','POS','Debit') THEN amount ELSE 0 END), 0) AS total_card
        FROM cashier_queue
-       WHERE (staff_id = $1 OR requested_by = $2) 
-         AND (created_at AT TIME ZONE 'Africa/Nairobi')::date = $3
-         AND status = 'Confirmed' 
-         AND method != 'Credit' 
-         AND shift_cleared = FALSE`,
-      [staff_id, staff_name || '', today]
+       WHERE ${queueSql}`,
+      queueParams
     );
     res.json({
       order_count: Number(ordersRes.rows[0].order_count) || 0,

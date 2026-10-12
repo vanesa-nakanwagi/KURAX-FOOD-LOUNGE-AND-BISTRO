@@ -256,11 +256,12 @@ router.post('/:department/orders/:orderId/assign', requireDepartmentHod, async (
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const staffResult = await client.query(
-      'SELECT id, name FROM public.staff WHERE id=$1 AND role=$2 AND is_active=true',
-      [staffId, req.department.staffRole]
-    );
-    const assignee = staffResult.rows[0];
+    const assignee = staffId === req.actor.id && req.actor.role === req.department.hodRole
+      ? { id: req.actor.id, name: req.actor.name }
+      : (await client.query(
+        'SELECT id, name FROM public.staff WHERE id=$1 AND role=$2 AND is_active=true',
+        [staffId, req.department.staffRole]
+      )).rows[0];
     if (!assignee) {
       await client.query('ROLLBACK');
       return fail(res, 400, 'That worker is not active in this department.');

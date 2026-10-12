@@ -717,6 +717,20 @@ export async function ensureDatabaseSchema() {
     }
   }
 
+  const indexStatements = [
+    'CREATE INDEX IF NOT EXISTS idx_inventory_consumptions_recipe_business_date ON public.inventory_consumptions (recipe_id, business_date);',
+    'CREATE INDEX IF NOT EXISTS idx_inventory_transactions_type_business_date ON public.inventory_transactions (transaction_type, business_date);',
+    'CREATE INDEX IF NOT EXISTS idx_orders_items_gin ON public.orders USING GIN (items jsonb_path_ops);',
+  ];
+
+  for (const statement of indexStatements) {
+    try {
+      await pool.query(statement);
+    } catch (error) {
+      console.error('Schema index warning:', error.message);
+    }
+  }
+
   const defaultLocations = [
     ['MAIN STORE', 'STORE', null],
     ['KITCHEN', 'STATION', null],
