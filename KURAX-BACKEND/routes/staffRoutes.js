@@ -91,7 +91,6 @@ router.post('/login', async (req, res) => {
   const { email, pin } = req.body;
   
   console.log('🔐 Login attempt received');
-  console.log('📧 Email:', email);
   
   try {
     if (!email || !pin) {
@@ -100,9 +99,26 @@ router.post('/login', async (req, res) => {
 
     const normalizedEmail = String(email).trim().toLowerCase();
     const userResult = await pool.query(
-      'SELECT * FROM staff WHERE lower(trim(email)) = $1',
+      `SELECT id, email, name, role, pin, is_active, is_permitted,
+              monthly_income_target, daily_order_target
+       FROM public.staff
+       WHERE lower(trim(email)) = $1`,
       [normalizedEmail]
     );
+    let databaseHost = 'not-configured';
+    try {
+      databaseHost = new URL(process.env.DATABASE_URL).hostname;
+    } catch {
+      databaseHost = 'invalid-database-url';
+    }
+
+    console.info('[staff-login] lookup result', {
+      databaseHost,
+      schema: 'public',
+      table: 'staff',
+      matchCount: userResult.rowCount,
+      found: userResult.rowCount > 0,
+    });
     
     if (userResult.rows.length === 0) {
       return res.status(401).json({ error: "User not found" });

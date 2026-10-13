@@ -133,6 +133,30 @@ export async function ensureDatabaseSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );`,
+    `DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_index i
+        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = 'public.daily_summary'::regclass
+          AND i.indisunique AND i.indisvalid AND i.indpred IS NULL
+          AND i.indnkeyatts = 1 AND a.attname = 'summary_date'
+      ) THEN
+        CREATE UNIQUE INDEX daily_summary_summary_date_uidx ON public.daily_summary (summary_date);
+      END IF;
+    END $$;`,
+    `DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_index i
+        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = 'public.daily_summaries'::regclass
+          AND i.indisunique AND i.indisvalid AND i.indpred IS NULL
+          AND i.indnkeyatts = 1 AND a.attname = 'summary_date'
+      ) THEN
+        CREATE UNIQUE INDEX daily_summaries_summary_date_uidx ON public.daily_summaries (summary_date);
+      END IF;
+    END $$;`,
 
     `CREATE TABLE IF NOT EXISTS public.cashier_queue (
       id SERIAL PRIMARY KEY,
