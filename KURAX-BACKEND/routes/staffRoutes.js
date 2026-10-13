@@ -98,6 +98,7 @@ router.post('/login', async (req, res) => {
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
+    const databaseResult = await pool.query('SELECT current_database() AS database_name');
     const userResult = await pool.query(
       `SELECT id, email, name, role, pin, is_active, is_permitted,
               monthly_income_target, daily_order_target
@@ -114,6 +115,7 @@ router.post('/login', async (req, res) => {
 
     console.info('[staff-login] lookup result', {
       databaseHost,
+      database: databaseResult.rows[0]?.database_name || 'unknown',
       schema: 'public',
       table: 'staff',
       matchCount: userResult.rowCount,
