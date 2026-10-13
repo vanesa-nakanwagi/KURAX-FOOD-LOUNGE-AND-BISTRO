@@ -1,7 +1,7 @@
 import API_URL from '../config/api';
 import { firebaseVapidKey, getKuraxFirebaseApp, isFirebasePushConfigured } from '../config/firebase';
 import { getId, getInstallations } from 'firebase/installations';
-import { getToken, isSupported } from 'firebase/messaging';
+import { getMessaging, getToken, isSupported } from 'firebase/messaging';
 
 function readSession() {
   try {

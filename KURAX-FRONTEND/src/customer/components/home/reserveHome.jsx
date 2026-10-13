@@ -127,7 +127,7 @@ const Reserve = () => {
                 <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
                 <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
                   Executive{" "}
-                  <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
+                  <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent">
                     Private Dining
                   </span>
                 </h2>

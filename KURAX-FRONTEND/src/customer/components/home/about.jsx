@@ -106,7 +106,7 @@ export default function About() {
         >
           <span className="block w-10 h-px bg-gradient-to-r from-yellow-500 to-transparent" />
           <p
-            className="text-xs font-bold tracking-[0.35em] uppercase"
+           className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent"
             style={{
               background: "linear-gradient(90deg, #f59e0b, #fde68a)",
               WebkitBackgroundClip: "text",
@@ -114,7 +114,7 @@ export default function About() {
               backgroundClip: "text",
             }}
           >
-            About Kurax
+            About Kurax                                          
           </p>
         </motion.div>
 

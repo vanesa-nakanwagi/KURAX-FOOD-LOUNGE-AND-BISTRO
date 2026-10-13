@@ -81,7 +81,7 @@ export default function Services() {
           </div>
           
           <h2 className="text-3xl md:text-5xl font-serif font-bold text-slate-900 dark:text-white mb-6 tracking-tight">
-            Savor Every <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent">
+            Savor Every <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent">
       Moment</span>
           </h2>
           

@@ -313,7 +313,7 @@ export default function Events() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 pb-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8 pb-10">
             {events.map(event => (
               <div key={event.id} className="group bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-yellow-300 hover:shadow-md transition-all flex flex-col shadow-sm">
                 <div className="h-44 md:h-48 bg-gray-100 flex items-center justify-center relative flex-shrink-0">

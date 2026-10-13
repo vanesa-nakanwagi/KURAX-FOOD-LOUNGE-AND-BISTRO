@@ -99,6 +99,40 @@ function formatUGX(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
 }
 
+function buildMenuProfitabilitySections(report) {
+  const summary = report?.summary || {};
+  const rows = (report?.rows || []).map((row) => [
+    row.menu_name || '',
+    row.category || '',
+    Number(row.quantity_sold || 0),
+    Number(row.selling_price || 0),
+    Number(row.net_sales || 0),
+    Number(row.cogs || 0),
+    Number(row.gross_profit || 0),
+    Number(row.gross_profit_margin || 0),
+    Number(row.contribution || 0),
+    row.profitability_status || 'Profitable',
+  ]);
+
+  return [
+    {
+      title: 'Summary',
+      columns: ['Metric', 'Value'],
+      rows: [
+        ['Total net sales (UGX)', Number(summary.totalNetSales || 0)],
+        ['Ingredient COGS (UGX)', Number(summary.totalCogs || 0)],
+        ['Gross profit (UGX)', Number(summary.grossProfit || 0)],
+        ['Gross margin (%)', Number(summary.grossProfitMargin || 0)],
+      ],
+    },
+    {
+      title: 'Menu Item Profitability',
+      columns: ['Menu item', 'Category', 'Qty sold', 'Selling price (UGX)', 'Net sales (UGX)', 'Ingredient cost (UGX)', 'Gross profit (UGX)', 'Margin (%)', 'Contribution (UGX)', 'Status'],
+      rows,
+    },
+  ];
+}
+
 function staffAuthHeaders() {
   try {
     const token = JSON.parse(localStorage.getItem('kurax_user') || '{}').token;
@@ -334,6 +368,44 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
     XLSX.writeFile(workbook, `${reportType}_report_${dateRange.end || "latest"}.xlsx`);
   };
 
+  const exportMenuProfitabilityExcel = () => {
+    if (!menuProfitability) return;
+    const reportSections = buildMenuProfitabilitySections(menuProfitability);
+    const rows = [
+      ['Menu Profitability Report'],
+      ['Period', `${menuFilters.start} to ${menuFilters.end}`],
+      ['Category', menuFilters.category === 'ALL' ? 'All categories' : menuFilters.category],
+      ...(menuFilters.search ? [['Search', menuFilters.search]] : []),
+      [],
+    ];
+
+    reportSections.forEach((section) => rows.push([section.title], section.columns, ...section.rows, []));
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    worksheet['!cols'] = [{ wch: 28 }, { wch: 22 }, { wch: 12 }, ...Array(7).fill({ wch: 20 }), { wch: 18 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Menu Profitability');
+    XLSX.writeFile(workbook, `menu_profitability_${menuFilters.start}_to_${menuFilters.end}.xlsx`);
+  };
+
+  const exportMenuProfitabilityPdf = () => {
+    if (!menuProfitability) return;
+    const filterText = [
+      menuFilters.category !== 'ALL' ? `Category: ${menuFilters.category}` : '',
+      menuFilters.search ? `Search: ${menuFilters.search}` : '',
+    ].filter(Boolean).join(' | ');
+    downloadReportPdf({
+      filename: `menu_profitability_${menuFilters.start}_to_${menuFilters.end}.pdf`,
+      title: 'Menu Profitability Report',
+      companyName: 'KURAX FOOD LOUNGE AND BISTRO',
+      periodText: `Period: ${menuFilters.start} to ${menuFilters.end}${filterText ? ` | ${filterText}` : ''}`,
+      footerLabel: 'Menu Profitability Report',
+      from: menuFilters.start,
+      to: menuFilters.end,
+      orientation: 'landscape',
+      sections: buildMenuProfitabilitySections(menuProfitability),
+    });
+  };
+
   // ✅ FIXED: input styles with proper text color based on theme
   const inputClass = dark
     ? "w-full bg-zinc-800 border border-white/10 rounded-xl p-3 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-yellow-500"
@@ -549,6 +621,12 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
             </div>
             <button onClick={loadMenuProfitability} disabled={menuProfitabilityLoading} className="bg-yellow-500 hover:bg-yellow-600 text-black font-black px-5 py-3 rounded-xl text-[10px] uppercase disabled:opacity-50 flex items-center gap-2">
               {menuProfitabilityLoading ? <Loader2 size={14} className="animate-spin" /> : 'Run report'}
+            </button>
+            <button onClick={exportMenuProfitabilityExcel} disabled={!menuProfitability || menuProfitabilityLoading} aria-label="Download menu profitability as Excel" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[10px] font-black uppercase text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">
+              <FileSpreadsheet size={14} /> Excel
+            </button>
+            <button onClick={exportMenuProfitabilityPdf} disabled={!menuProfitability || menuProfitabilityLoading} aria-label="Download menu profitability as PDF" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[10px] font-black uppercase text-red-800 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50">
+              <FileText size={14} /> PDF
             </button>
           </div>
 

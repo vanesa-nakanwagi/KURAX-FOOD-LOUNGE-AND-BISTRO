@@ -50,7 +50,7 @@ export default function TopSection({ searchPlaceholder }) {
   const debouncedSearch = useCallback(
     debounce((query) => {
       if (query.trim()) {
-        if (location.pathname !== "/menus" && location.pathname !== "/events") {
+        if (!["/menus", "/combos", "/events"].includes(location.pathname)) {
           navigate("/menus");
         } else {
           window.dispatchEvent(new CustomEvent("search", { detail: query }));
@@ -70,7 +70,7 @@ export default function TopSection({ searchPlaceholder }) {
 
   const handleKeyPress = (e) => {
     if (e.key === "Enter" && searchQuery.trim()) {
-      if (location.pathname !== "/menus" && location.pathname !== "/events") {
+      if (!["/menus", "/combos", "/events"].includes(location.pathname)) {
         navigate("/menus");
       } else {
         window.dispatchEvent(new CustomEvent("search", { detail: searchQuery }));
@@ -170,6 +170,7 @@ export default function TopSection({ searchPlaceholder }) {
           {[
             { name: "Home", path: "/" },
             { name: "Menus", path: "/menus" },
+            { name: "Combos", path: "/combos" },
             { name: "Events", path: "/events" },
             { name: "Reservations", path: "/reservations" },
           ].map((link) => (

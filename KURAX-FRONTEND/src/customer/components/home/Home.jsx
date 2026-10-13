@@ -226,9 +226,11 @@ function ChefSection() {
 export default function Home() {
   const [current, setCurrent] = useState(0);
   const [dbMenus, setDbMenus] = useState([]);
+  const [dbCombos, setDbCombos] = useState([]);
   const [selectedImage, setSelectedImage] = useState(null);
   const [dbEvents, setDbEvents] = useState([]);
   const [loadingMenus, setLoadingMenus] = useState(true);
+  const [loadingCombos, setLoadingCombos] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEventTitle, setSelectedEventTitle] = useState("");
@@ -254,8 +256,9 @@ export default function Home() {
 
   useEffect(() => {
     const fetchRecentData = async () => {
-      const [menuResult, eventResult] = await Promise.allSettled([
+        const [menuResult, comboResult, eventResult] = await Promise.allSettled([
           axios.get(`${API_URL}/api/menus`),
+          axios.get(`${API_URL}/api/combos`),
           axios.get(`${API_URL}/api/events`)
       ]);
 
@@ -266,6 +269,17 @@ export default function Home() {
         console.error("❌ MENU FETCH ERROR:", menuResult.reason);
       }
 
+      if (comboResult.status === 'fulfilled') {
+        const combos = Array.isArray(comboResult.value.data) ? comboResult.value.data : [];
+        setDbCombos(combos.filter(combo =>
+          combo.published === true &&
+          combo.customer_visible !== false &&
+          combo.is_available !== false
+        ).slice(0, 4));
+      } else {
+        console.error("❌ COMBO FETCH ERROR:", comboResult.reason);
+      }
+
       if (eventResult.status === 'fulfilled') {
         const events = Array.isArray(eventResult.value.data) ? eventResult.value.data : [];
         setDbEvents(events.filter(event => event.status === 'live').slice(0, 3));
@@ -274,6 +288,7 @@ export default function Home() {
       }
 
       setLoadingMenus(false);
+      setLoadingCombos(false);
       setLoadingEvents(false);
     };
     fetchRecentData();
@@ -355,7 +370,7 @@ export default function Home() {
                 <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
                 <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
                   Signature{" "}
-                  <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent whitespace-nowrap">
+                  <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent">
                     Dishes
                   </span>
                 </h2>
@@ -383,6 +398,68 @@ export default function Home() {
         </motion.div>
       </section>
 
+      {/* Signature Combos Section */}
+      <section id="combos" className="py-24 px-6 bg-[#f4f3ef] border-b border-zinc-200">
+        <motion.div
+          className="max-w-7xl mx-auto"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+        >
+          <motion.header variants={fadeInUp} className="mb-16 flex flex-row items-center justify-between gap-4">
+            <div className="space-y-2 flex-1">
+              <span className="text-yellow-600 font-bold uppercase tracking-[0.3em] text-xs">Made to Share</span>
+              <div className="flex items-center gap-2 md:gap-3">
+                <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
+                <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
+                  Our{" "}
+                  <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent">
+                    Combos
+                  </span>
+                </h2>
+              </div>
+            </div>
+          </motion.header>
+
+          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {loadingCombos ? (
+              [...Array(4)].map((_, index) => (
+                <div key={index} className="h-[400px] bg-zinc-100 rounded-3xl animate-pulse" />
+              ))
+            ) : dbCombos.length > 0 ? (
+              dbCombos.map((combo) => {
+                const comboItem = {
+                  ...combo,
+                  id: `combo-${combo.id}`,
+                  combo_id: combo.id,
+                  type: 'combo',
+                };
+                return (
+                  <HomeMenuCard
+                    key={comboItem.id}
+                    item={comboItem}
+                    badge="Combo"
+                    onOrder={handleOrder}
+                    onViewImage={() => setSelectedImage({ src: getImageSrc(combo.image_url), alt: combo.name })}
+                  />
+                );
+              })
+            ) : (
+              <p className="col-span-full py-12 text-center italic text-zinc-500">
+                Our chefs are preparing new combo offers.
+              </p>
+            )}
+          </motion.div>
+
+          <Link
+            to="/combos"
+            className="mt-8 inline-flex items-center gap-3 bg-yellow-400 px-6 py-4 text-xs uppercase tracking-[0.2em] text-black transition-colors hover:bg-yellow-500 sm:text-sm"
+          >
+            View Combos <ArrowRight size={18} />
+          </Link>
+        </motion.div>
+      </section>
+
       {/* Upcoming Events Section */}
       <section id="events" className="scroll-mt-24 py-24 px-6 bg-[#f4f3ef] relative overflow-hidden">
         <motion.div 
@@ -403,7 +480,7 @@ export default function Home() {
                 <div className="w-1.5 h-6 md:h-8 bg-yellow-500 rounded-full" />
                 <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-serif leading-[0.85] tracking-tighter">
                   Upcoming{" "}
-                  <span className="bg-gradient-to-br from-amber-400 via-yellow-200 to-amber-600 bg-clip-text text-transparent whitespace-nowrap">
+                  <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent">
                     Schedule
                   </span>
                 </h2>
@@ -473,10 +550,8 @@ export default function Home() {
 }
 
 // Menu Card Helper
-function HomeMenuCard({ item, onOrder, onViewImage }) {
-  const imageUrl = item.image_url?.startsWith('http') 
-    ? item.image_url 
-    : `${API_URL}${item.image_url}`;
+function HomeMenuCard({ item, onOrder, onViewImage, badge = "New" }) {
+  const imageUrl = getImageSrc(item.image_url);
 
   return (
     <motion.div 
@@ -498,7 +573,7 @@ function HomeMenuCard({ item, onOrder, onViewImage }) {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
         <div className="absolute top-4 left-4">
            <div className="bg-yellow-500 text-black text-[8px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest">
-             <Sparkles size={8} /> New
+             <Sparkles size={8} /> {badge}
            </div>
         </div>
       </div>

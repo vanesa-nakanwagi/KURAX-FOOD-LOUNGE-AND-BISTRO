@@ -61,6 +61,36 @@ CREATE TABLE IF NOT EXISTS menus (
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS combos (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  category TEXT NOT NULL DEFAULT 'Starters',
+  station TEXT NOT NULL DEFAULT 'Kitchen',
+  image_url TEXT,
+  is_available BOOLEAN NOT NULL DEFAULT true,
+  published BOOLEAN NOT NULL DEFAULT false,
+  customer_visible BOOLEAN NOT NULL DEFAULT true,
+  regular_total NUMERIC(12,2) NOT NULL DEFAULT 0,
+  discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  discount_percentage NUMERIC(12,2) NOT NULL DEFAULT 0,
+  total_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+  gross_profit NUMERIC(12,2) NOT NULL DEFAULT 0,
+  margin_percentage NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS combo_items (
+  id SERIAL PRIMARY KEY,
+  combo_id INTEGER NOT NULL REFERENCES combos(id) ON DELETE CASCADE,
+  menu_item_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE RESTRICT,
+  quantity NUMERIC(12,2) NOT NULL CHECK (quantity > 0),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (combo_id, menu_item_id)
+);
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 3. ORDERS
 -- Core order table. items stored as JSONB array.

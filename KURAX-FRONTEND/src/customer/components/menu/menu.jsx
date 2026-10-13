@@ -12,18 +12,16 @@ import MenuImageViewer from "./MenuImageViewer.jsx";
 /* =========================
    CONSISTENT MENU CARD COMPONENT
 ========================= */
-function MenuCard({ item, onOrder, onViewImage, isNew }) {
+export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW" }) {
   const [imgLoaded, setImgLoaded] = useState(false);
-  const imageUrl = item.image_url?.startsWith("http")
-    ? item.image_url
-    : `${API_URL}${item.image_url}`;
+  const imageUrl = getImageSrc(item.image_url);
 
   return (
     <div className="group relative font-outfit flex flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
       {isNew && (
         <div className="absolute top-4 left-4 z-30">
           <div className="bg-yellow-500 text-black text-[8px]  px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
-            <Sparkles size={8} /> NEW
+            <Sparkles size={8} /> {badgeLabel}
           </div>
         </div>
       )}

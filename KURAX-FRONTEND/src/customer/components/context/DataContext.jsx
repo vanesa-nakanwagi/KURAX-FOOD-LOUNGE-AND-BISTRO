@@ -44,6 +44,7 @@ export const DataProvider = ({ children }) => {
   const [staffList, setStaffList]     = useState([]);
   const [allOrders, setAllOrders]     = useState([]); // unfiltered (includes archived)
   const [menus, setMenus]             = useState([]);
+  const [combos, setCombos]           = useState([]);
   const [events, setEvents]           = useState([]);
   const [isLoading, setIsLoading]     = useState(true);
   const [globalResetKey, setGlobalResetKey] = useState(0);
@@ -151,20 +152,42 @@ export const DataProvider = ({ children }) => {
       const user = currentUserRef.current;
       const permissionUrl = user ? `${API_URL}/api/staff/permission/${user.id}` : null;
 
-      const [staffRes, orderRes, menuRes, eventRes, permRes] = await Promise.allSettled([
+      const [staffRes, orderRes, menuRes, comboRes, eventRes, permRes] = await Promise.allSettled([
         fetch(`${API_URL}/api/staff`),
         fetch(`${API_URL}/api/orders`),
         fetch(`${API_URL}/api/menus`),
+        fetch(`${API_URL}/api/combos`),
         fetch(`${API_URL}/api/events`),
         permissionUrl ? fetch(permissionUrl) : Promise.reject('No User'),
       ]);
+
+      const menuData = menuRes.status === 'fulfilled' && menuRes.value.ok ? await menuRes.value.json() : [];
+      const comboData = comboRes.status === 'fulfilled' && comboRes.value.ok ? await comboRes.value.json() : [];
 
       if (staffRes.status === 'fulfilled' && staffRes.value.ok)
         setStaffList(await staffRes.value.json());
       if (orderRes.status === 'fulfilled' && orderRes.value.ok)
         setAllOrders(await orderRes.value.json());
-      if (menuRes.status === 'fulfilled' && menuRes.value.ok)
-        setMenus(await menuRes.value.json());
+      setCombos(comboData);
+      setMenus([
+        ...menuData,
+        ...comboData.map((combo) => ({
+          ...combo,
+          id: `combo-${combo.id}`,
+          combo_id: combo.id,
+          type: 'combo',
+          price: Number(combo.price || 0),
+          name: combo.name,
+          description: combo.description || 'Combo offer',
+          category: combo.category || 'Starters',
+          station: combo.station || 'Kitchen',
+          image_url: combo.image_url,
+          published: combo.published === true,
+          customer_visible: combo.customer_visible !== false,
+          is_available: combo.is_available !== false,
+          status: combo.published ? 'live' : 'draft',
+        })),
+      ]);
 
       if (permRes.status === 'fulfilled' && permRes.value.ok) {
         const data = await permRes.value.json();

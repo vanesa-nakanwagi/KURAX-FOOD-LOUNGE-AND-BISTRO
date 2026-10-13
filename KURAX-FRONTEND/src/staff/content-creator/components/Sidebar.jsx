@@ -7,6 +7,7 @@ import {
   LogOut,
   MoreVertical,
   X,
+  Sparkles,
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 
@@ -30,12 +31,14 @@ export default function Sidebar() {
   const DESKTOP_MENU_ITEMS = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/content-creator" },
     { icon: UtensilsCrossed, label: "Menus", path: "/content-creator/menus" },
+    { icon: Sparkles, label: "Combos", path: "/content-creator/combos" },
     { icon: Calendar, label: "Events", path: "/content-creator/events" },
   ];
 
   // Bottom navigation items for mobile (Menus and Events)
   const BOTTOM_NAV_ITEMS = [
     { icon: UtensilsCrossed, label: "Menus", path: "/content-creator/menus" },
+    { icon: Sparkles, label: "Combos", path: "/content-creator/combos" },
     { icon: Calendar, label: "Events", path: "/content-creator/events" },
   ];
 

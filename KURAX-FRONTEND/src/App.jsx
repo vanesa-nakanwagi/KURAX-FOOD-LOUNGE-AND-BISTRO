@@ -5,6 +5,7 @@ import { installNotificationSessionSync } from './utils/notificationSessionSync'
 // Public Pages
 import HomePage from "./customer/pages/HomePage.jsx";
 import MenusPage from "./customer/pages/menuPage.jsx";
+import CombosPage from "./customer/pages/combosPage.jsx";
 import EventsPage from "./customer/pages/eventsPage.jsx";
 import ReservationsPage from "./customer/components/reservations/Reservations.jsx";
 
@@ -162,6 +163,7 @@ export default function App() {
         {/* --- PUBLIC CUSTOMER PAGES --- */}
         <Route path="/" element={<HomePage />} />
         <Route path="/menus" element={<MenusPage />} />
+        <Route path="/combos" element={<CombosPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/reservations" element={<ReservationsPage />} />
         <Route path="/staff/waiter/menu" element={<NewOrder />} /> 

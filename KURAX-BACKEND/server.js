@@ -31,6 +31,7 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import cashierExpenseRoutes from './routes/cashierExpenseRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
+import comboRoutes from './routes/comboRoutes.js';
 
 dotenv.config();
 const app = express();
@@ -118,6 +119,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/cashier-expenses', cashierExpenseRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/combos', comboRoutes);
 
 // 6. HEALTH CHECK
 app.get('/api/health', (req, res) => {

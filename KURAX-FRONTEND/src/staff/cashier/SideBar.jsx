@@ -7,7 +7,7 @@ import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
 import { useData } from "../../customer/components/context/DataContext";
 
-// ✅ Store component FUNCTIONS, not JSX
+
 const MENU_ITEMS = [
   { id: "PENDING",     label: "My Collection",  icon: LayoutDashboard },
   { id: "CLOSED",      label: "Order Status",   icon: RotateCcw },
@@ -16,7 +16,6 @@ const MENU_ITEMS = [
   { id: "DELIVERIES",  label: "Riders",         icon: Bike },
 ];
 
-// Bottom navigation items for mobile (first two items as example; adjust as needed)
 const BOTTOM_NAV_ITEMS = [
   { id: "PENDING",    label: "Collect", icon: LayoutDashboard },
   { id: "DELIVERIES", label: "Riders",  icon: Bike },
@@ -59,7 +58,6 @@ export default function SideBar({
     navigate("/staff/login");
   };
 
-  // Unified NavButton – receives component function, not JSX
   const NavButton = ({ item, showLabel = true, onClick, isActive, badge }) => {
     const Icon = item.icon;
     return (

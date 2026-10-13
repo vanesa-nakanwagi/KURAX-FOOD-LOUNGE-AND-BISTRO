@@ -32,6 +32,9 @@ services:
       PORT: ${PORT:-5010}
       DATABASE_URL: ${DATABASE_URL:-postgresql://kurax:npg_5vuA2aHohTkm@database:5432/kurax_db}
       JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-random-secret}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      MENU_IMAGE_BUCKET: ${MENU_IMAGE_BUCKET:-menu-images}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173,http://localhost:3000}
