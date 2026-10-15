@@ -38,7 +38,7 @@ export default function BookingModal({ show, onClose, eventTitle }) {
 
   const buildWhatsAppMessage = () => {
     const lines = [
-      `*New Event Booking* 🎟`,
+      `*New Event Booking*`,
       ``,
       `*Event:* ${eventTitle}`,
       `*Name:* ${formData.name}`,

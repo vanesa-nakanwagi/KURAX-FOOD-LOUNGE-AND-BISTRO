@@ -140,7 +140,7 @@ export default function LiveAudit({
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-[11px] font-black
                     ${vr.status === 'Approved' ? 'bg-rose-100 text-rose-600' : 'bg-gray-200 text-gray-500'}`}>
-                    {vr.status === 'Approved' ? '✓' : '✕'}
+                    {vr.status === 'Approved' ? <CheckCircle2 size={12} className="text-emerald-500" /> : <XCircle size={12} className="text-red-500" />}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">

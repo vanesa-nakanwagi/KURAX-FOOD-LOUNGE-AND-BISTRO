@@ -33,7 +33,7 @@ export default function DepartmentInventory({ department, embedded = false }) {
   const [message, setMessage] = useState('');
   const config = DEPARTMENTS[department];
   const role = String(session?.role || '').toUpperCase();
-  const allowed = config && [config.hodRole, config.staffRole].includes(role);
+  const allowed = config && role === config.hodRole;
   const isHod = role === config?.hodRole;
   const headers = { Authorization: `Bearer ${session?.token || ''}` };
 

@@ -19,6 +19,7 @@ import ReconciliationViewer from "../../Accountant/sections/ReconciliationViewer
 import StaffSalesPerformance from "../../components/StaffSalesPerformance";
 import DepartmentHod from "../../DepartmentHod";
 import AccountingAuditTrail from "../../components/AccountingAuditTrail";
+import ShishaSalesReports from "../../Shisha/ShishaSalesReports";
 
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData }  from "../../../customer/components/context/DataContext";
@@ -91,6 +92,7 @@ export default function ManagerLayout() {
       }} />;
       case "reports": return <StaffSalesPerformance role="MANAGER" />;
       case "department-reports": return <DepartmentHod department="all" embedded />;
+      case "shisha-sales": return <ShishaSalesReports dark={isDark} />;
         case "audit-trail": return <AccountingAuditTrail dark={isDark} />;
       case "credits": return <ManagerCreditPanel managerName={currentStaffName} />; // REMOVED theme prop
       default:        return isGranted

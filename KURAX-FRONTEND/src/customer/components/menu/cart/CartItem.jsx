@@ -1,3 +1,4 @@
+import { Trash2 } from "lucide-react";
 import { getImageSrc } from "../../../../utils/imageHelper.js";
 
 export default function CartItem({ item, onIncrease, onDecrease, onRemove }) {
@@ -42,8 +43,9 @@ export default function CartItem({ item, onIncrease, onDecrease, onRemove }) {
         <button
           onClick={onRemove}
           className="px-2 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition flex items-center justify-center"
+          aria-label="Remove item"
         >
-          <span className="text-xs">🗑</span>
+          <Trash2 size={14} />
         </button>
       </div>
     </div>

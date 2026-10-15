@@ -1,5 +1,5 @@
 import CheckoutForm from "../checkout/CheckoutForm.jsx";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, X } from "lucide-react";
 import { getImageSrc } from "../../../../utils/imageHelper.js";
 export default function CartModal({
   isCartOpen,
@@ -29,8 +29,9 @@ export default function CartModal({
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-gray-800 dark:text-white text-xl font-bold hover:text-yellow-500 transition"
+          aria-label="Close cart"
         >
-          ✕
+          <X size={18} />
         </button>
 
         {/* ================= STEP 1: CART / ADD DISH ================= */}

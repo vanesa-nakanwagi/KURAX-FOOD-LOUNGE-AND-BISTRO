@@ -358,8 +358,8 @@ export default function LiveOrderStatus() {
                   <SearchX size={32} strokeWidth={1.5} />
                 </div>
                 <p className="font-black uppercase italic tracking-[0.2em] text-sm">No {filter} Orders</p>
-                <p className={`text-[9px] mt-2 font-medium uppercase tracking-wider ${isDark ? "text-gray-600" : "text-gray-400"}`}>
-                  All caught up! 🎉
+                <p className={`text-[9px] mt-2 font-medium uppercase tracking-wider flex items-center justify-center gap-1 ${isDark ? "text-gray-600" : "text-gray-400"}`}>
+                  <CheckCircle2 size={10} /> All caught up!
                 </p>
               </div>
             ) : (

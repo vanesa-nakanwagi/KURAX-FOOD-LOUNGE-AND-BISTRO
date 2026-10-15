@@ -19,6 +19,7 @@ import StaffSalesPerformance from "../components/StaffSalesPerformance";
 import SystemConfiguration from "./SystemConfiguration";
 import HistoricalBusinessOverview from "./HistoricalBusinessOverview";
 import InventoryManagement from "./InventoryManagement";
+import ShishaSalesReports from "../Shisha/ShishaSalesReports";
 
 // Import modal components
 import ReopenDayModal from "./modals/ReopenDayModal";
@@ -961,6 +962,7 @@ export default function AccountantLayout() {
           )}
 
           {activeSection === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded initialRange={businessSettings.dateRange} />}
+          {activeSection === "SHISHA_SALES" && <ShishaSalesReports />}
 
           {activeSection === "SYSTEM_CONFIGURATION" && (
             <SystemConfiguration

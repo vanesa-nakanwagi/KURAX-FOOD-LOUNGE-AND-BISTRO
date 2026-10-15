@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Lock, ShieldCheck, RefreshCcw, LayoutGrid, Menu as MenuIcon, Zap, Bell } from "lucide-react";
 import { BarChart3, ClipboardList, Clock, History, Target } from "lucide-react";
+import { Flame } from "lucide-react";
 
 import NewOrder from "../../waiter/components/NewOrder";
 import PerformanceDashboard from "./PerformanceDashboard";
@@ -13,6 +14,7 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData } from "../../../customer/components/context/DataContext";
 import API_URL from "../../../config/api";
 import StaffSalesPerformance from "../../components/StaffSalesPerformance";
+import ShishaSalesReports from "../../Shisha/ShishaSalesReports";
 
 // ── MENU CONFIGURATION (Shift Removed) ──────────────────────────────────────
 const SUPERVISOR_MENU = [
@@ -22,6 +24,7 @@ const SUPERVISOR_MENU = [
   { id: "status",  label: "View Order Status", icon: Clock },
   { id: "targets", label: "Staff Targets",     icon: Target },
   { id: "performance", label: "Staff Performance", icon: BarChart3 },
+  { id: "shisha-sales", label: "Shisha Sales", icon: Flame },
 ];
 
 export default function SupervisorLayout() {
@@ -51,6 +54,8 @@ export default function SupervisorLayout() {
         return <StaffTargets />;
       case "performance":
         return <StaffSalesPerformance role="SUPERVISOR" />;
+      case "shisha-sales":
+        return <ShishaSalesReports dark={isDark} />;
       case "manage":
         return <PerformanceDashboard />;
          case "tables":

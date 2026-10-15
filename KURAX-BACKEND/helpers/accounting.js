@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import pool from '../db.js';
 
 export const DEFAULT_ACCOUNTS = [
@@ -5,6 +6,7 @@ export const DEFAULT_ACCOUNTS = [
   { code: '1002', name: 'Bank', category: 'Asset', account_type: 'Bank', normal_balance: 'Debit', description: 'Operating bank account' },
   { code: '1003', name: 'Mobile Money', category: 'Asset', account_type: 'Mobile Money', normal_balance: 'Debit', description: 'Mobile money float' },
   { code: '1004', name: 'Card Settlement Clearing', category: 'Asset', account_type: 'Clearing', normal_balance: 'Debit', description: 'Card receipts awaiting settlement into the operating bank' },
+  { code: '1005', name: 'Kurax Savings', category: 'Asset', account_type: 'Savings', normal_balance: 'Debit', description: 'Longer-term cash reserve account for Kurax savings and transfers' },
   { code: '1101', name: 'Accounts Receivable', category: 'Asset', account_type: 'Receivable', normal_balance: 'Debit', description: 'Customer credit balances' },
   { code: '1201', name: 'Inventory', category: 'Asset', account_type: 'Inventory', normal_balance: 'Debit', description: 'Stock on hand' },
   { code: '1501', name: 'Equipment', category: 'Asset', account_type: 'Fixed Asset', normal_balance: 'Debit', description: 'Equipment and machinery' },
@@ -261,6 +263,169 @@ export async function ensureAccountingDataModel() {
      ON CONFLICT (period_name) DO NOTHING`,
     [periodName, monthStart.toISOString().slice(0, 10), monthEnd.toISOString().slice(0, 10)]
   );
+}
+
+export function isEligibleInternalTransferAccount(account = null) {
+  if (!account) return false;
+  const category = String(account.category || '').trim();
+  if (category !== 'Asset' || account.is_active === false) return false;
+
+  return true;
+}
+
+export function resolveSavingsAccount(accounts = DEFAULT_ACCOUNTS, explicitCode = process.env.KURAX_SAVINGS_ACCOUNT_CODE || null) {
+  const candidates = Array.isArray(accounts) && accounts.length ? accounts : DEFAULT_ACCOUNTS;
+  const configuredCode = String(explicitCode || process.env.KURAX_SAVINGS_ACCOUNT_CODE || '').trim();
+
+  if (configuredCode) {
+    const match = candidates.find((account) => String(account.code || '').trim() === configuredCode && account.is_active !== false);
+    if (match) return match;
+  }
+
+  const directMatches = [
+    '1005',
+    'Kurax Savings',
+    'Savings',
+    'Savings Account',
+    'Operating Savings'
+  ];
+
+  for (const candidate of directMatches) {
+    const match = candidates.find((account) => {
+      if (account.is_active === false) return false;
+      const codeMatches = String(account.code || '').trim() === String(candidate).trim();
+      const label = String(account.name || account.account_name || '').trim().toLowerCase();
+      return codeMatches || label.includes(String(candidate).trim().toLowerCase());
+    });
+    if (match) return match;
+  }
+
+  return candidates.find((account) => {
+    const label = String(account.name || account.account_name || '').trim().toLowerCase();
+    return account.category === 'Asset' && /kurax.*savings|savings/.test(label) && account.is_active !== false;
+  }) || null;
+}
+
+export function resolveAccountTransferTargets({ sourceName, destinationName, sourceAccountCode, destinationAccountCode, accounts = DEFAULT_ACCOUNTS }) {
+  const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  const candidates = Array.isArray(accounts) && accounts.length ? accounts : DEFAULT_ACCOUNTS;
+  const matchAccount = (needle, exactCode = null) => {
+    if (!needle && !exactCode) return null;
+    const normalizedNeedle = normalize(needle || exactCode);
+    return candidates.find((account) => {
+      const matchesCode = exactCode && String(account.code || '').trim() === String(exactCode).trim();
+      const accountName = normalize(account.name || account.account_name || '');
+      const normalizedAlias = accountName.replace(/\baccount\b/g, '').trim();
+      const normalizedSearchAlias = normalizedNeedle.replace(/\baccount\b/g, '').trim();
+      const matchesName = normalizedNeedle && (
+        accountName.includes(normalizedNeedle)
+        || normalizedNeedle.includes(accountName)
+        || normalizedAlias === normalizedSearchAlias
+        || accountName.includes(normalizedSearchAlias)
+        || normalizedSearchAlias.includes(accountName)
+      );
+      return matchesCode || matchesName;
+    }) || null;
+  };
+
+  let sourceAccount = matchAccount(sourceName, sourceAccountCode);
+  let destinationAccount = matchAccount(destinationName, destinationAccountCode);
+
+  if (!sourceAccount && sourceAccountCode) {
+    sourceAccount = candidates.find((account) => String(account.code || '').trim() === String(sourceAccountCode).trim()) || null;
+  }
+  if (!destinationAccount && destinationAccountCode) {
+    destinationAccount = candidates.find((account) => String(account.code || '').trim() === String(destinationAccountCode).trim()) || null;
+  }
+
+  if (!sourceAccount && sourceName) {
+    throw new Error(`Source account ${sourceName} was not found in the chart of accounts.`);
+  }
+  if (!destinationAccount && destinationName) {
+    throw new Error(`Destination account ${destinationName} was not found in the chart of accounts.`);
+  }
+
+  if (!sourceAccount || !destinationAccount) {
+    throw new Error('Both source and destination accounts are required for an internal transfer.');
+  }
+  if (String(sourceAccount.code) === String(destinationAccount.code)) {
+    throw new Error('Source and destination accounts must be different.');
+  }
+  if (!isEligibleInternalTransferAccount(sourceAccount)) {
+    throw new Error(`Source account ${sourceAccount.name} is not eligible for internal transfers.`);
+  }
+  if (!isEligibleInternalTransferAccount(destinationAccount)) {
+    throw new Error(`Destination account ${destinationAccount.name} is not eligible for internal transfers.`);
+  }
+
+  return { source: sourceAccount, destination: destinationAccount };
+}
+
+export function buildAccountTransferJournalLines({ amount, sourceAccount, destinationAccount, description = 'Cash deposit' }) {
+  const sanitizedAmount = Number(amount);
+  if (!Number.isFinite(sanitizedAmount) || sanitizedAmount <= 0 || sanitizedAmount > 9999999999.99) {
+    throw new Error('Enter a valid transfer amount.');
+  }
+  if (!sourceAccount || !destinationAccount) {
+    throw new Error('Both source and destination accounts are required for an internal transfer.');
+  }
+  if (String(sourceAccount.code || sourceAccount.account_code) === String(destinationAccount.code || destinationAccount.account_code)) {
+    throw new Error('Source and destination accounts must be different.');
+  }
+
+  const normalizedAmount = Math.round(sanitizedAmount * 100) / 100;
+  const finalDescription = String(description || '').trim() || 'Cash deposit';
+
+  return [
+    { accountCode: String(destinationAccount.code || destinationAccount.account_code), accountName: destinationAccount.name || destinationAccount.account_name || 'Destination Account', debit: normalizedAmount, description: finalDescription },
+    { accountCode: String(sourceAccount.code || sourceAccount.account_code), accountName: sourceAccount.name || sourceAccount.account_name || 'Source Account', credit: normalizedAmount, description: finalDescription },
+  ];
+}
+
+export function buildSavingsDepositJournalLines({ amount, sourceAccount, destinationAccount = resolveSavingsAccount(), description = 'Deposit into savings' }) {
+  const savingsAccount = destinationAccount || resolveSavingsAccount();
+  if (!savingsAccount) {
+    throw new Error('A valid Kurax Savings account is required for this deposit.');
+  }
+  if (!sourceAccount) {
+    throw new Error('A valid source or classification account is required for a savings deposit.');
+  }
+  if (String(sourceAccount.code || sourceAccount.account_code) === String(savingsAccount.code || savingsAccount.account_code)) {
+    throw new Error('The source and destination accounts must be different for a savings deposit.');
+  }
+
+  const normalized = Number(amount);
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    throw new Error('Enter a valid savings deposit amount.');
+  }
+
+  return [
+    { accountCode: String(savingsAccount.code || savingsAccount.account_code), accountName: savingsAccount.name || savingsAccount.account_name || 'Kurax Savings', debit: Math.round(normalized * 100) / 100, description: String(description || '').trim() || 'Deposit into savings' },
+    { accountCode: String(sourceAccount.code || sourceAccount.account_code), accountName: sourceAccount.name || sourceAccount.account_name || 'Source Account', credit: Math.round(normalized * 100) / 100, description: String(description || '').trim() || 'Deposit into savings' },
+  ];
+}
+
+export function buildSavingsWithdrawalJournalLines({ amount, sourceAccount = resolveSavingsAccount(), destinationAccount, description = 'Withdrawal from savings' }) {
+  const savingsAccount = sourceAccount || resolveSavingsAccount();
+  if (!savingsAccount) {
+    throw new Error('A valid Kurax Savings account is required for this withdrawal.');
+  }
+  if (!destinationAccount) {
+    throw new Error('A valid destination account is required for a savings withdrawal.');
+  }
+  if (String(sourceAccount?.code || sourceAccount?.account_code || savingsAccount.code) === String(destinationAccount.code || destinationAccount.account_code)) {
+    throw new Error('The source and destination accounts must be different for a savings withdrawal.');
+  }
+
+  const normalized = Number(amount);
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    throw new Error('Enter a valid savings withdrawal amount.');
+  }
+
+  return [
+    { accountCode: String(destinationAccount.code || destinationAccount.account_code), accountName: destinationAccount.name || destinationAccount.account_name || 'Destination Account', debit: Math.round(normalized * 100) / 100, description: String(description || '').trim() || 'Withdrawal from savings' },
+    { accountCode: String(savingsAccount.code || savingsAccount.account_code), accountName: savingsAccount.name || savingsAccount.account_name || 'Kurax Savings', credit: Math.round(normalized * 100) / 100, description: String(description || '').trim() || 'Withdrawal from savings' },
+  ];
 }
 
 export async function getAccountByCode(code) {
@@ -649,6 +814,168 @@ export function resolveExpenseAccountCode(category = '') {
   if (normalized.includes('other')) return '5009';
 
   return '5008';
+}
+
+export async function createAccountTransactionJournalEntry({
+  amount,
+  sourceAccountCode,
+  destinationAccountCode,
+  transactionDate,
+  businessTime = null,
+  description = 'Cash deposit',
+  referenceNumber = null,
+  postedBy = 'Accountant',
+  transactionType = 'Transfer',
+  sourceAccountName = null,
+  destinationAccountName = null,
+}) {
+  const normalizedType = String(transactionType || 'Transfer').trim() || 'Transfer';
+  const supportedTypes = new Set(['transfer', 'deposit', 'withdrawal']);
+  if (!supportedTypes.has(normalizedType.toLowerCase())) {
+    throw Object.assign(new Error('This accounting module supports Transfer, Deposit, and Withdrawal transactions only.'), { statusCode: 400 });
+  }
+
+  const date = String(transactionDate || '').trim();
+  const parsedDate = new Date(`${date}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)
+    || !Number.isFinite(parsedDate.getTime())
+    || parsedDate.toISOString().slice(0, 10) !== date) {
+    throw Object.assign(new Error('Enter a valid transaction date.'), { statusCode: 400 });
+  }
+
+  const now = new Date();
+  const kampalaParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Kampala', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now);
+  const today = `${kampalaParts.find((part) => part.type === 'year').value}-${kampalaParts.find((part) => part.type === 'month').value}-${kampalaParts.find((part) => part.type === 'day').value}`;
+  if (date > today) {
+    throw Object.assign(new Error('A transaction cannot be posted to a future business date.'), { statusCode: 400 });
+  }
+
+  const accounts = await listAccounts();
+  const targetAccounts = resolveAccountTransferTargets({
+    sourceName: sourceAccountName || sourceAccountCode,
+    destinationName: destinationAccountName || destinationAccountCode,
+    sourceAccountCode,
+    destinationAccountCode,
+    accounts,
+  });
+  const journalLines = buildAccountTransferJournalLines({
+    amount,
+    sourceAccount: targetAccounts.source,
+    destinationAccount: targetAccounts.destination,
+    description,
+  });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const periodResult = await client.query(
+      `SELECT period_name, status FROM public.accounting_periods
+       WHERE $1::date BETWEEN start_date AND end_date
+       ORDER BY start_date DESC LIMIT 1 FOR SHARE`,
+      [date]
+    );
+    if (!periodResult.rows.length) {
+      throw Object.assign(new Error('No accounting period is configured for this transaction date. Create or open the appropriate period before posting.'), { statusCode: 409 });
+    }
+    if (periodResult.rows[0].status !== 'Open') {
+      throw Object.assign(new Error(`${periodResult.rows[0].period_name} is a closed accounting period. Authorization or controlled reopening is required to post this transaction.`), { statusCode: 409 });
+    }
+
+    const dedupKey = `account_transaction:${crypto.createHash('sha256').update(JSON.stringify({
+      amount: Number(amount),
+      sourceAccountCode: targetAccounts.source.code,
+      destinationAccountCode: targetAccounts.destination.code,
+      transactionDate: date,
+    })).digest('hex').slice(0, 24)}`;
+
+    const existingResult = await client.query(
+      `SELECT * FROM public.journal_entries WHERE source_transaction = $1 LIMIT 1 FOR UPDATE`,
+      [dedupKey]
+    );
+    if (existingResult.rows.length) {
+      await client.query('COMMIT');
+      return { journal: existingResult.rows[0], duplicate: true, preview: journalLines, source_transaction: dedupKey };
+    }
+
+    const reference = `${normalizedType.toUpperCase().slice(0, 3)}-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const finalDescription = String(description || '').trim() || 'Cash deposit';
+    const finalReferenceNumber = referenceNumber && String(referenceNumber).trim() ? String(referenceNumber).trim() : null;
+    const journalResult = await client.query(
+      `INSERT INTO public.journal_entries (
+         reference, entry_date, business_time, description, source_transaction, posted_by, status, system_type
+       ) VALUES ($1, $2, $3, $4, $5, $6, 'Posted', 'MAIN') RETURNING *`,
+      [reference, date, businessTime || null, finalDescription, dedupKey, String(postedBy || 'Accountant').slice(0, 120) || 'Accountant']
+    );
+    const journal = journalResult.rows[0];
+
+    for (const line of journalLines) {
+      const account = await getAccountByCode(line.accountCode);
+      if (!account) {
+        throw Object.assign(new Error(`Account code ${line.accountCode} is not active in the chart of accounts.`), { statusCode: 400 });
+      }
+      await client.query(
+        `INSERT INTO public.general_ledger (
+           journal_entry_id, account_code, account_name, debit, credit,
+           entry_date, business_time, description, source_transaction, posted_by
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [journal.id, account.code, account.name, line.debit || 0, line.credit || 0, date, businessTime || null, finalDescription, dedupKey, String(postedBy || 'Accountant').slice(0, 120) || 'Accountant']
+      );
+    }
+
+    await client.query(
+      `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
+       VALUES ('journal_entry', $1, 'account_transaction_posted', $2, $3)`,
+      [journal.id, String(postedBy || 'Accountant').slice(0, 120) || 'Accountant', JSON.stringify({
+        transaction_type: normalizedType,
+        source_account: targetAccounts.source.code,
+        destination_account: targetAccounts.destination.code,
+        transaction_date: date,
+        amount: Number(amount),
+        reference_number: finalReferenceNumber,
+        description: finalDescription,
+        source_transaction: dedupKey,
+      })]
+    );
+
+    await client.query('COMMIT');
+    return { journal, duplicate: false, preview: journalLines, source_transaction: dedupKey };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function createInternalTransferJournalEntry({
+  amount,
+  sourceAccountCode,
+  destinationAccountCode,
+  transactionDate,
+  businessTime = null,
+  description = 'Cash deposit',
+  referenceNumber = null,
+  postedBy = 'Accountant',
+  transactionType = 'Transfer',
+  sourceAccountName = null,
+  destinationAccountName = null,
+}) {
+  return createAccountTransactionJournalEntry({
+    amount,
+    sourceAccountCode,
+    destinationAccountCode,
+    transactionDate,
+    businessTime,
+    description,
+    referenceNumber,
+    postedBy,
+    transactionType,
+    sourceAccountName,
+    destinationAccountName,
+  });
 }
 
 export async function createExpenseJournalEntry({

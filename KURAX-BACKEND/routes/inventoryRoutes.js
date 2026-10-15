@@ -9,11 +9,8 @@ import { consumeSoldOrderItems, convertRecipeQuantity } from '../helpers/recipeC
 const router = express.Router();
 
 const ROLE_STATIONS = {
-  CHEF: 'KITCHEN',
   KITCHEN_HOD: 'KITCHEN',
-  BARMAN: 'BAR',
   BAR_HOD: 'BAR',
-  BARISTA: 'BARISTA',
   BARISTA_HOD: 'BARISTA',
 };
 const HOD_STATION_ROLES = {

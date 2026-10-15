@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, BarChart3, CreditCard,
   History, Target, Bell, Menu, X, LogOut, Bike,
-  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet, CircleDollarSign, ClipboardList
+  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet, CircleDollarSign, ClipboardList, Flame
 } from "lucide-react";
 
 // ── Local components ──────────────────────────────────────────────────────────
@@ -27,6 +27,7 @@ import StaffSalesPerformance from "../components/StaffSalesPerformance";
 import DepartmentHod from "../DepartmentHod";
 import AccountingAuditTrail from "../components/AccountingAuditTrail";
 import ReportsPanel from "../Accountant/ReportsPanel";
+import ShishaSalesReports from "../Shisha/ShishaSalesReports";
 
 // ── CREDIT STATUS BADGE COMPONENT ────────────────────────────────────────────
 function CreditStatusBadge({ status }) {
@@ -58,6 +59,7 @@ const NAV = [
   { icon: <CreditCard size={18} />,      label: "Finance & Credits",  tab: "FINANCES"  },
   { icon: <BarChart3 size={18} />,       label: "Staff Performance",   tab: "PERFORMANCE" },
   { icon: <CircleDollarSign size={18} />, label: "Department Reports", tab: "DEPARTMENT_REPORTS" },
+  { icon: <Flame size={18} />, label: "Shisha Sales", tab: "SHISHA_SALES" },
   { icon: <Users size={18} />,           label: "Staff",      tab: "STAFF"     },
   { icon: <Bike size={18} />,            label: "Riders",     tab: "RIDERS"    },
   { icon: <ClipboardList size={18} />, label: "Audit Trail", tab: "AUDIT_TRAIL" },
@@ -426,6 +428,7 @@ export default function DirectorDashboard() {
             )}
 
             {activeTab === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded />}
+            {activeTab === "SHISHA_SALES" && <ShishaSalesReports />}
             {activeTab === "MENU_PROFITABILITY" && <ReportsPanel hideFinancialTabs />}
             {activeTab === "AUDIT_TRAIL" && <AccountingAuditTrail />}
           </div>

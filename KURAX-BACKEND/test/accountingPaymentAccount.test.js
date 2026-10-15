@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   aggregateIncomeStatementRevenue,
+  buildAccountTransferJournalLines,
+  resolveAccountTransferTargets,
   resolveIncomeStatementRevenueCode,
   resolvePaymentDebitAccountCode,
   resolveRevenueAccountCode,
@@ -47,4 +49,29 @@ test('non-card receipts use their payment method account', () => {
 
 test('unknown payment methods are rejected rather than posted to cash', () => {
   assert.throws(() => resolvePaymentDebitAccountCode('Unknown tender'), /Unsupported payment method/);
+});
+
+test('internal cash-to-bank transfers resolve the correct chart-of-accounts entries and balanced journal lines', () => {
+  const source = resolveAccountTransferTargets({ sourceName: 'Counter Cash', destinationName: 'Bank Account' });
+  const lines = buildAccountTransferJournalLines({
+    amount: 500000,
+    sourceAccount: source.source,
+    destinationAccount: source.destination,
+    description: 'Cash deposit',
+  });
+
+  assert.equal(source.source.code, '1001');
+  assert.equal(source.destination.code, '1002');
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].accountCode, '1002');
+  assert.equal(lines[0].debit, 500000);
+  assert.equal(lines[1].accountCode, '1001');
+  assert.equal(lines[1].credit, 500000);
+  assert.equal(lines.reduce((sum, line) => sum + (line.debit || 0) - (line.credit || 0), 0), 0);
+});
+
+test('transfer validation rejects same accounts, unsupported account types, and malformed amounts', () => {
+  assert.throws(() => resolveAccountTransferTargets({ sourceName: 'Counter Cash', destinationName: 'Counter Cash' }), /different/i);
+  assert.throws(() => resolveAccountTransferTargets({ sourceName: 'Food Sales', destinationName: 'Bank' }), /eligible/i);
+  assert.throws(() => buildAccountTransferJournalLines({ amount: 0, sourceAccount: { code: '1001' }, destinationAccount: { code: '1002' } }), /valid.*amount/i);
 });

@@ -3,7 +3,9 @@ import pool from '../db.js';
 import logActivity, { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
 import { createPettyExpense, getCounterCash } from '../helpers/pettyCash.js';
 import {
+  buildAccountTransferJournalLines,
   createExpenseJournalEntry,
+  createInternalTransferJournalEntry,
   createSalesJournalEntry,
   ensureAccountingDataModel,
   getAuditTrail,
@@ -15,6 +17,7 @@ import {
   getTrialBalance,
   listAccounts,
   postBackdatedExpense,
+  resolveAccountTransferTargets,
   resolveRevenueAccountCode,
   reverseJournalEntry,
 } from '../helpers/accounting.js';
@@ -787,6 +790,108 @@ router.post('/accounting/chart-of-accounts', async (req, res) => {
   } catch (err) {
     console.error('Create account error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/accounting/account-transactions/preview', async (req, res) => {
+  const { transactionType = 'Transfer', amount, sourceAccountCode, destinationAccountCode, sourceAccountName, destinationAccountName, transactionDate, description } = req.body || {};
+  try {
+    const accounts = await listAccounts();
+    const targetAccounts = resolveAccountTransferTargets({
+      sourceName: sourceAccountName || sourceAccountCode,
+      destinationName: destinationAccountName || destinationAccountCode,
+      sourceAccountCode,
+      destinationAccountCode,
+      accounts,
+    });
+    const lines = buildAccountTransferJournalLines({ amount, sourceAccount: targetAccounts.source, destinationAccount: targetAccounts.destination, description });
+    const totalDebit = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
+    const totalCredit = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
+    res.json({
+      valid: true,
+      transactionType,
+      transactionDate: transactionDate || null,
+      source: targetAccounts.source,
+      destination: targetAccounts.destination,
+      lines,
+      total_debit: totalDebit,
+      total_credit: totalCredit,
+      balance: totalDebit - totalCredit,
+    });
+  } catch (err) {
+    console.error('Account transfer preview error:', err.message);
+    res.status(err.statusCode || 400).json({ error: err.message });
+  }
+});
+
+router.get('/accounting/account-transactions', async (req, res) => {
+  const { startDate, endDate, limit } = req.query;
+  try {
+    const params = [];
+    let query = `SELECT je.id, je.reference, je.entry_date, je.business_time, je.description, je.source_transaction,
+                        je.posted_by, je.status, je.posted_at,
+                        json_agg(gl ORDER BY gl.id) AS lines
+                 FROM public.journal_entries je
+                 LEFT JOIN public.general_ledger gl ON gl.journal_entry_id = je.id
+                 WHERE je.system_type = 'MAIN'
+                   AND (
+                     je.source_transaction LIKE 'account_transaction:%'
+                     OR je.source_transaction LIKE 'account_transfer:%'
+                   )`;
+
+    if (startDate && endDate) {
+      query += ` AND je.entry_date BETWEEN $1 AND $2`;
+      params.push(startDate, endDate);
+    }
+
+    query += ` GROUP BY je.id ORDER BY je.entry_date DESC, je.id DESC`;
+    if (limit) {
+      query += ` LIMIT $${params.length + 1}`;
+      params.push(Number(limit));
+    }
+
+    const result = await pool.query(query, params);
+    res.json({ entries: result.rows });
+  } catch (err) {
+    console.error('Account transfer list error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/accounting/account-transactions', async (req, res) => {
+  const {
+    transactionType = 'Transfer',
+    transactionDate,
+    amount,
+    sourceAccountCode,
+    destinationAccountCode,
+    sourceAccountName,
+    destinationAccountName,
+    referenceNumber,
+    description = 'Cash deposit',
+    businessTime,
+    postedBy,
+  } = req.body || {};
+
+  try {
+    const result = await createInternalTransferJournalEntry({
+      amount,
+      sourceAccountCode,
+      destinationAccountCode,
+      sourceAccountName,
+      destinationAccountName,
+      transactionDate,
+      businessTime,
+      description,
+      referenceNumber,
+      postedBy: req.user?.name || postedBy || 'Accountant',
+      transactionType,
+    });
+
+    res.status(201).json({ success: true, transaction: result, journal: result.journal, preview: result.preview });
+  } catch (err) {
+    console.error('Account transfer post error:', err.message);
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 

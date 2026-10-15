@@ -480,8 +480,8 @@ export default function PerformanceDashboard({ theme = "light" }) {
           <div className="flex items-center gap-3 min-w-0">
             
             <div className="min-w-0">
-              <p className="text-[10px] sm:text-[19px] text-yellow-900 font-medium uppercase tracking-wider">
-                ✨ Today's Motivation ✨
+              <p className="text-[10px] sm:text-[19px] text-yellow-900 font-medium uppercase tracking-wider flex items-center gap-2">
+                <Sparkles size={14} /> Today's Motivation <Sparkles size={14} />
               </p>
               <p className="text-xs sm:text-sm font-medium text-zinc-700 leading-tight mt-0.5">
                 {dailyMotivation?.text || "You're amazing! Keep serving with excellence!"}
@@ -500,7 +500,9 @@ export default function PerformanceDashboard({ theme = "light" }) {
                 <span className="px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-700 text-[8px] font-bold uppercase tracking-wider">
                   {staffRole}
                 </span>
-                <span className="text-[8px] text-emerald-500 font-bold">✓ Active</span>
+                <span className="text-[8px] text-emerald-500 font-bold flex items-center gap-1">
+                  <CheckCircle2 size={8} /> Active
+                </span>
               </div>
             </div>
             <div className="relative flex-shrink-0">
@@ -724,19 +726,19 @@ export default function PerformanceDashboard({ theme = "light" }) {
                 icon: <Target size={13} className="text-yellow-500" />,
                 label: "Daily Target", color: "text-yellow-600", bg: "bg-yellow-50",
                 text: dailyStaffOrdersCount >= orderTarget && orderTarget > 0
-                  ? "🎉 Daily order target achieved!"
+                  ? "Daily order target achieved!"
                   : orderTarget > 0
-                    ? `📋 ${orderTarget - dailyStaffOrdersCount} more order${orderTarget - dailyStaffOrdersCount !== 1 ? "s" : ""} to reach today's target`
-                    : "📋 No daily target set",
+                    ? `${orderTarget - dailyStaffOrdersCount} more order${orderTarget - dailyStaffOrdersCount !== 1 ? "s" : ""} to reach today's target`
+                    : "No daily target set",
               },
               {
                 icon: <TrendingUp size={13} className="text-emerald-500" />,
                 label: "Monthly Revenue", color: "text-emerald-600", bg: "bg-emerald-50",
                 text: monthlyRevenue >= revenueTarget && revenueTarget > 0
-                  ? "🏆 Monthly revenue target exceeded!"
+                  ? "Monthly revenue target exceeded!"
                   : revenueTarget > 0
-                    ? `💰 ${Math.round(revenueProgress)}% of monthly target reached`
-                    : "💰 No monthly target set",
+                    ? `${Math.round(revenueProgress)}% of monthly target reached`
+                    : "No monthly target set",
               },
               {
                 icon: <Calendar size={13} className="text-blue-500" />,
@@ -749,8 +751,8 @@ export default function PerformanceDashboard({ theme = "light" }) {
                 icon: <BookOpen size={13} className="text-purple-500" />,
                 label: "Credit Summary", color: "text-purple-600", bg: "bg-purple-50",
                 text: creditStats.total > 0
-                  ? `💳 ${creditStats.settled.count} settled · ${creditStats.outstanding.count} outstanding`
-                  : "💳 No credit records for today",
+                  ? `${creditStats.settled.count} settled · ${creditStats.outstanding.count} outstanding`
+                  : "No credit records for today",
               },
             ].map(({ icon, label, color, bg, text }) => (
               <div key={label} className={`p-3 sm:p-4 rounded-xl ${bg}`}>
@@ -771,10 +773,10 @@ export default function PerformanceDashboard({ theme = "light" }) {
               <Award size={18} className="text-black" />
               <span className="text-[11px] font-black text-black uppercase tracking-wider">
                 {orderProgress >= 100 && revenueProgress >= 100
-                  ? "🏆 Double Achievement! Both targets crushed!"
+                  ? "Double Achievement! Both targets crushed!"
                   : orderProgress >= 100
-                    ? "🎯 Daily target achieved!"
-                    : "🎯 Monthly revenue target achieved!"}
+                    ? "Daily target achieved!"
+                    : "Monthly revenue target achieved!"}
               </span>
             </div>
           </div>

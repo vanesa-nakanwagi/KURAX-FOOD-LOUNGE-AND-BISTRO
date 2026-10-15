@@ -13,6 +13,7 @@ const router = express.Router();
 const scrypt = promisify(scryptCallback);
 const SHISHA_ROLES = ['SHISHA_HOD', 'SHISHA_WAITER', 'SHISHA_CHEF'];
 const REPORT_ROLES = ['DIRECTOR', 'MANAGER', 'ACCOUNTANT'];
+const SHISHA_REPORT_ROLES = [...REPORT_ROLES, 'SUPERVISOR'];
 const PAYMENT_METHODS = ['MTN_MOBILE_MONEY', 'AIRTEL_MONEY', 'CARD', 'CASH', 'CREDIT'];
 const uploadDirectory = path.join(process.cwd(), 'uploads', 'shisha');
 fs.mkdirSync(uploadDirectory, { recursive: true });
@@ -151,7 +152,8 @@ async function authenticate(req, res, next) {
     } else if (session.scope === 'restaurant') {
       const result = await pool.query('SELECT id, name, role FROM public.staff WHERE id = $1 AND is_active = true', [session.id]);
       const staff = result.rows[0];
-      if (!staff || staff.role !== session.role || !REPORT_ROLES.includes(staff.role)) {
+      const supervisorReportAccess = staff?.role === 'SUPERVISOR' && req.path === '/reports';
+      if (!staff || staff.role !== session.role || (!REPORT_ROLES.includes(staff.role) && !supervisorReportAccess)) {
         return fail(res, 403, 'Management reporting access is required.');
       }
       req.actor = { ...staff, scope: 'restaurant' };
@@ -720,7 +722,7 @@ router.get('/orders/:id/history', requireRoles(...SHISHA_ROLES), async (req, res
 
 router.get('/reports', async (req, res) => {
   const canView = (actorIsShisha(req) && req.actor.role === 'SHISHA_HOD') ||
-    (req.actor.scope === 'restaurant' && REPORT_ROLES.includes(req.actor.role));
+    (req.actor.scope === 'restaurant' && SHISHA_REPORT_ROLES.includes(req.actor.role));
   if (!canView) return fail(res, 403, 'Shisha financial reports are restricted to the HOD and management.');
 
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());

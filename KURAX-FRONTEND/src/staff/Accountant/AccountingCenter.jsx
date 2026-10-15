@@ -18,6 +18,7 @@ import ReportsPanel from "./ReportsPanel";
 
 const VIEWS = [
   { key: "accounts", label: "Chart of Accounts", icon: BookOpen },
+  { key: "transactions", label: "Account Transactions", icon: Landmark },
   { key: "cash", label: "Cash / Bank", icon: Wallet },
   { key: "journals", label: "Journal Entries", icon: FileText },
   { key: "ledger", label: "General Ledger", icon: Landmark },
@@ -47,6 +48,31 @@ function getAccountantName() {
   } catch {
     return "Accountant";
   }
+}
+
+function findAccountBySelection(accounts, value) {
+  if (!value) return null;
+  const search = String(value).trim().toLowerCase();
+  if (!search) return null;
+
+  return accounts.find((account) => {
+    const name = String(account.name || "").toLowerCase();
+    const code = String(account.code || "").toLowerCase();
+    const label = `${account.name} (${account.code})`.toLowerCase();
+    return name.includes(search) || code.includes(search) || label.includes(search);
+  }) || null;
+}
+
+function getFilteredAccountOptions(accounts, searchValue) {
+  const query = String(searchValue || '').trim().toLowerCase();
+  if (!query) return accounts.filter((account) => account.is_active);
+
+  return accounts.filter((account) => {
+    const name = String(account.name || '').toLowerCase();
+    const code = String(account.code || '').toLowerCase();
+    const label = `${account.name} (${account.code})`.toLowerCase();
+    return account.is_active && (name.includes(query) || code.includes(query) || label.includes(query));
+  });
 }
 
 function formatUGX(value) {
@@ -82,6 +108,46 @@ function formatSourceReference(source) {
   return value;
 }
 
+function formatAuditDetails(details) {
+  let value = details;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return String(value || "-");
+
+  const labels = {
+    amount: "Amount",
+    description: "Description",
+    source_account: "Source account",
+    destination_account: "Destination account",
+    source_account_name: "Source account",
+    destination_account_name: "Destination account",
+    reference_number: "Reference number",
+    transaction_date: "Transaction date",
+    transaction_type: "Transaction type",
+    source_transaction: "Origin",
+  };
+  const accountNames = { "1001": "Counter Cash", "1002": "Bank", "1003": "Mobile Money", "1005": "Kurax Savings" };
+
+  return Object.entries(value).map(([key, item]) => {
+    const label = labels[key] || key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+    let displayValue = item;
+    if (key === "amount" && Number.isFinite(Number(item))) displayValue = formatUGX(item);
+    else if (["source_account", "destination_account"].includes(key) && accountNames[String(item)]) displayValue = `${accountNames[String(item)]} (${item})`;
+    else if (key === "transaction_date" && item) {
+      const date = new Date(item);
+      if (!Number.isNaN(date.getTime())) displayValue = date.toLocaleDateString("en-GB", { timeZone: "Africa/Kampala", day: "2-digit", month: "short", year: "numeric" });
+    } else if (key === "source_transaction" && typeof item === "string") {
+      displayValue = item.replace(/^account_transfer:/i, "Account transfer reference ").replace(/^account_transaction:/i, "Account transaction reference ");
+    } else if (item === null || item === "") displayValue = "Not provided";
+    return `${label}: ${typeof displayValue === "object" ? JSON.stringify(displayValue) : displayValue}`;
+  }).join("\n");
+}
+
 function getTableModel(view, data) {
   if (!data) return { columns: [], rows: [] };
 
@@ -102,6 +168,29 @@ function getTableModel(view, data) {
     return {
       columns: ["Code", "Account", "Account Type", "Balance (UGX)"],
       rows: accounts.map((account) => [account.code, account.name, account.account_type, Number(balances.get(account.code) || 0)]),
+    };
+  }
+
+  if (view === "transactions") {
+    return {
+      columns: ["Date", "Type", "Reference", "Description", "Source", "Destination", "Amount (UGX)", "Status", "Posted By"],
+      rows: (data.entries || []).map((entry) => {
+        const lines = Array.isArray(entry.lines) ? entry.lines : [];
+        const sourceLine = lines.find((line) => Number(line.credit || 0) > 0) || {};
+        const destinationLine = lines.find((line) => Number(line.debit || 0) > 0) || {};
+        const amount = Number(destinationLine.debit || sourceLine.credit || 0);
+        return [
+          entry.entry_date?.slice(0, 10),
+          entry.description?.toLowerCase().includes('cash deposit') ? 'Transfer' : 'Internal Transfer',
+          entry.reference,
+          entry.description,
+          sourceLine.account_name || "Counter Cash",
+          destinationLine.account_name || "Bank",
+          amount,
+          entry.status,
+          entry.posted_by || "",
+        ];
+      }),
     };
   }
 
@@ -164,7 +253,7 @@ function getTableModel(view, data) {
   if (view === "audit") {
     return {
       columns: ["Date", "Entity", "Entity ID", "Action", "Actor", "Details"],
-      rows: (data.entries || []).map((entry) => [entry.created_at?.toString().slice(0, 19), entry.entity_type, entry.entity_id, entry.action, entry.actor, typeof entry.details === "string" ? entry.details : JSON.stringify(entry.details || {})]),
+      rows: (data.entries || []).map((entry) => [entry.created_at?.toString().slice(0, 19), entry.entity_type, entry.entity_id, entry.action, entry.actor, formatAuditDetails(entry.details)]),
     };
   }
 
@@ -195,6 +284,25 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
   const [reversalForm, setReversalForm] = useState(null);
   const [savingReversal, setSavingReversal] = useState(false);
   const [notice, setNotice] = useState("");
+  const [transferAccounts, setTransferAccounts] = useState([]);
+  const [transferForm, setTransferForm] = useState({
+    transactionType: "Transfer",
+    transactionDate: today,
+    amount: "500000",
+    sourceAccountCode: "",
+    destinationAccountCode: "",
+    sourceAccountName: "",
+    destinationAccountName: "",
+    referenceNumber: "",
+    description: "Cash deposit",
+    businessTime: "",
+  });
+  const [transferPreview, setTransferPreview] = useState(null);
+  const [postingTransfer, setPostingTransfer] = useState(false);
+  const [sourceAccountInput, setSourceAccountInput] = useState("");
+  const [destinationAccountInput, setDestinationAccountInput] = useState("");
+  const [showSourceAccountMenu, setShowSourceAccountMenu] = useState(false);
+  const [showDestinationAccountMenu, setShowDestinationAccountMenu] = useState(false);
 
   useEffect(() => {
     if (initialDateRange?.start && initialDateRange?.end) setDateRange(initialDateRange);
@@ -219,6 +327,13 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
     try {
       let result;
       if (targetView === "accounts") result = await requestJSON(`${base}/chart-of-accounts`);
+      if (targetView === "transactions") {
+        const [accounts, entries] = await Promise.all([
+          requestJSON(`${base}/chart-of-accounts`),
+          requestJSON(`${base}/account-transactions?${query}&limit=100`),
+        ]);
+        result = { accounts: accounts.accounts, entries: entries.entries || [] };
+      }
       if (targetView === "cash") {
         const [accounts, balanceSheet] = await Promise.all([
           requestJSON(`${base}/chart-of-accounts`),
@@ -244,11 +359,114 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
   }, [dateRange, timeRange, view]);
 
   useEffect(() => {
+    if (view === "transactions") {
+      requestJSON(`${API_URL}/api/accountant/accounting/chart-of-accounts`)
+        .then((result) => setTransferAccounts(result.accounts || []))
+        .catch(() => setTransferAccounts([]));
+    }
+  }, [view]);
+
+  useEffect(() => {
     loadView(view);
   }, [view, loadView]);
 
+  const previewTransfer = async () => {
+    try {
+      const result = await requestJSON(`${API_URL}/api/accountant/accounting/account-transactions/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transactionType: transferForm.transactionType,
+          transactionDate: transferForm.transactionDate,
+          amount: transferForm.amount,
+          sourceAccountCode: transferForm.sourceAccountCode,
+          destinationAccountCode: transferForm.destinationAccountCode,
+          sourceAccountName: transferForm.sourceAccountName,
+          destinationAccountName: transferForm.destinationAccountName,
+          description: transferForm.description,
+        }),
+      });
+      setTransferPreview(result);
+      setNotice("Preview generated successfully.");
+      setError("");
+    } catch (previewError) {
+      setTransferPreview(null);
+      setError(previewError.message);
+    }
+  };
+
+  const submitTransfer = async (event) => {
+    event.preventDefault();
+    setPostingTransfer(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await requestJSON(`${API_URL}/api/accountant/accounting/account-transactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transactionType: transferForm.transactionType,
+          transactionDate: transferForm.transactionDate,
+          amount: transferForm.amount,
+          sourceAccountCode: transferForm.sourceAccountCode,
+          destinationAccountCode: transferForm.destinationAccountCode,
+          sourceAccountName: transferForm.sourceAccountName,
+          destinationAccountName: transferForm.destinationAccountName,
+          referenceNumber: transferForm.referenceNumber,
+          description: transferForm.description,
+          businessTime: transferForm.businessTime,
+          postedBy: getAccountantName(),
+        }),
+      });
+      setNotice(`Transfer posted successfully. Journal reference: ${result.journal.reference}.`);
+      setTransferPreview(null);
+      await loadView("transactions");
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setPostingTransfer(false);
+    }
+  };
+
   const table = getTableModel(view, data);
   const viewLabel = VIEWS.find((item) => item.key === view)?.label || "Accounting";
+
+  const setSelectedAccount = (field, account) => {
+    if (!account) return;
+
+    if (field === "source") {
+      setTransferForm((current) => ({
+        ...current,
+        sourceAccountCode: account.code,
+        sourceAccountName: account.name,
+      }));
+      setSourceAccountInput(`${account.name} (${account.code})`);
+      setShowSourceAccountMenu(false);
+      return;
+    }
+
+    setTransferForm((current) => ({
+      ...current,
+      destinationAccountCode: account.code,
+      destinationAccountName: account.name,
+    }));
+    setDestinationAccountInput(`${account.name} (${account.code})`);
+    setShowDestinationAccountMenu(false);
+  };
+
+  useEffect(() => {
+    if (transferAccounts.length) {
+      const sourceAccount = findAccountBySelection(transferAccounts, transferForm.sourceAccountCode) || transferAccounts.find((account) => account.code === transferForm.sourceAccountCode);
+      const destinationAccount = findAccountBySelection(transferAccounts, transferForm.destinationAccountCode) || transferAccounts.find((account) => account.code === transferForm.destinationAccountCode);
+
+      if (sourceAccount) {
+        setSourceAccountInput(`${sourceAccount.name} (${sourceAccount.code})`);
+      }
+      if (destinationAccount) {
+        setDestinationAccountInput(`${destinationAccount.name} (${destinationAccount.code})`);
+      }
+    }
+  }, [transferAccounts, transferForm.sourceAccountCode, transferForm.destinationAccountCode]);
 
   const exportPDF = () => {
     if (!table.rows.length) return;
@@ -389,6 +607,164 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
 
           {error && <p role="alert" className="border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
           {notice && <p role="status" className="border-l-4 border-green-600 bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</p>}
+          {view === "transactions" && (
+            <form onSubmit={submitTransfer} className="space-y-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-black text-gray-900">Internal account transfer</h3>
+                  <p className="text-sm text-gray-500">Post a balanced transfer between eligible internal cash/bank accounts while preserving the historical business date.</p>
+                </div>
+                <button type="button" onClick={previewTransfer} className="rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700">Preview journal</button>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <label className="text-[10px] font-bold uppercase text-gray-500">Transaction Type
+                  <select value={transferForm.transactionType} onChange={(event) => setTransferForm((current) => ({ ...current, transactionType: event.target.value }))} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900">
+                    <option value="Transfer">Transfer</option>
+                    <option value="Deposit">Deposit</option>
+                    <option value="Withdrawal">Withdrawal</option>
+                  </select>
+                </label>
+                <label className="text-[10px] font-bold uppercase text-gray-500">Transaction Date
+                  <input type="date" value={transferForm.transactionDate} onChange={(event) => setTransferForm((current) => ({ ...current, transactionDate: event.target.value }))} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900" required />
+                </label>
+                <label className="text-[10px] font-bold uppercase text-gray-500">Amount (UGX)
+                  <input type="number" min="1" step="0.01" value={transferForm.amount} onChange={(event) => setTransferForm((current) => ({ ...current, amount: event.target.value }))} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900" required />
+                </label>
+                <div className="text-[10px] font-bold uppercase text-gray-500">Source account
+                  <div className="relative mt-1">
+                    <input
+                      type="text"
+                      value={sourceAccountInput}
+                      onFocus={() => setShowSourceAccountMenu(true)}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setSourceAccountInput(nextValue);
+                        setShowSourceAccountMenu(true);
+                        const selected = findAccountBySelection(transferAccounts, nextValue);
+                        if (selected) {
+                          setTransferForm((current) => ({
+                            ...current,
+                            sourceAccountCode: selected.code,
+                            sourceAccountName: selected.name,
+                          }));
+                        }
+                      }}
+                      placeholder="Select source account from chart of accounts"
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-yellow-500 focus:outline-none"
+                    />
+                    {showSourceAccountMenu && (
+                      <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-gray-300 bg-white shadow-lg">
+                        {getFilteredAccountOptions(transferAccounts, sourceAccountInput).map((account) => (
+                          <button
+                            key={`source-${account.code}`}
+                            type="button"
+                            onClick={() => setSelectedAccount("source", account)}
+                            className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${transferForm.sourceAccountCode === account.code ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-100"}`}
+                          >
+                            <span>{account.name} ({account.code})</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{account.account_type || account.category}</span>
+                          </button>
+                        ))}
+                        {!getFilteredAccountOptions(transferAccounts, sourceAccountInput).length && (
+                          <div className="px-3 py-2 text-xs text-gray-500">No matching account found.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="text-[10px] font-bold uppercase text-gray-500">Destination account
+                  <div className="relative mt-1">
+                    <input
+                      type="text"
+                      value={destinationAccountInput}
+                      onFocus={() => setShowDestinationAccountMenu(true)}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setDestinationAccountInput(nextValue);
+                        setShowDestinationAccountMenu(true);
+                        const selected = findAccountBySelection(transferAccounts, nextValue);
+                        if (selected) {
+                          setTransferForm((current) => ({
+                            ...current,
+                            destinationAccountCode: selected.code,
+                            destinationAccountName: selected.name,
+                          }));
+                        }
+                      }}
+                      placeholder="Select destination account from chart of accounts"
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-yellow-500 focus:outline-none"
+                    />
+                    {showDestinationAccountMenu && (
+                      <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-gray-300 bg-white shadow-lg">
+                        {getFilteredAccountOptions(transferAccounts, destinationAccountInput).map((account) => (
+                          <button
+                            key={`destination-${account.code}`}
+                            type="button"
+                            onClick={() => setSelectedAccount("destination", account)}
+                            className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${transferForm.destinationAccountCode === account.code ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-100"}`}
+                          >
+                            <span>{account.name} ({account.code})</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{account.account_type || account.category}</span>
+                          </button>
+                        ))}
+                        {!getFilteredAccountOptions(transferAccounts, destinationAccountInput).length && (
+                          <div className="px-3 py-2 text-xs text-gray-500">No matching account found.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <label className="text-[10px] font-bold uppercase text-gray-500">Business time
+                  <input type="time" value={transferForm.businessTime} onChange={(event) => setTransferForm((current) => ({ ...current, businessTime: event.target.value }))} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900" />
+                </label>
+                <label className="text-[10px] font-bold uppercase text-gray-500 md:col-span-2 xl:col-span-3">Reference number
+                  <input type="text" value={transferForm.referenceNumber} onChange={(event) => setTransferForm((current) => ({ ...current, referenceNumber: event.target.value }))} placeholder="Optional" className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900" />
+                </label>
+                <label className="text-[10px] font-bold uppercase text-gray-500 md:col-span-2 xl:col-span-3">Description / reason
+                  <input type="text" value={transferForm.description} onChange={(event) => setTransferForm((current) => ({ ...current, description: event.target.value }))} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900" required />
+                </label>
+              </div>
+
+              {transferPreview && (
+                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                  <h4 className="text-sm font-black uppercase tracking-widest text-yellow-700">Journal preview</h4>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full text-left text-xs text-gray-700">
+                      <thead>
+                        <tr className="border-b border-yellow-200">
+                          <th className="px-2 py-2 font-bold">Account</th>
+                          <th className="px-2 py-2 font-bold">Debit</th>
+                          <th className="px-2 py-2 font-bold">Credit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transferPreview.lines.map((line) => (
+                          <tr key={`${line.accountCode}-${line.debit || line.credit}`} className="border-b border-yellow-100">
+                            <td className="px-2 py-2">{line.accountName}</td>
+                            <td className="px-2 py-2">{Number(line.debit || 0).toLocaleString()}</td>
+                            <td className="px-2 py-2">{Number(line.credit || 0).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-gray-700">
+                    <span>Business date: {transferPreview.transactionDate || transferForm.transactionDate}</span>
+                    <span>Debits: UGX {Number(transferPreview.total_debit || 0).toLocaleString()}</span>
+                    <span>Credits: UGX {Number(transferPreview.total_credit || 0).toLocaleString()}</span>
+                    <span>Balanced: {transferPreview.balance === 0 ? 'Yes' : 'No'}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <button type="submit" disabled={postingTransfer} className="rounded-md bg-yellow-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">{postingTransfer ? 'Posting...' : 'Post transaction'}</button>
+                <button type="button" onClick={() => setTransferPreview(null)} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700">Cancel</button>
+              </div>
+            </form>
+          )}
+
           {view === "trial" && data && (
             <div className="flex flex-wrap gap-6 text-sm font-semibold text-gray-700">
               <span>Total debits: {formatUGX(data.total_debits)}</span>
@@ -438,7 +814,7 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
                 <thead><tr className="border-b border-gray-300">{table.columns.map((column) => <th key={column} className="whitespace-nowrap px-3 py-3 text-xs font-bold text-gray-600">{column}</th>)}{view === "journals" && <th className="px-3 py-3 text-xs font-bold text-gray-600">Actions</th>}</tr></thead>
                 <tbody>{table.rows.map((row, rowIndex) => (
                   <tr key={`${view}-${rowIndex}`} className="border-b border-gray-100 hover:bg-gray-50">
-                    {row.map((value, columnIndex) => <td key={`${view}-${rowIndex}-${columnIndex}`} className="max-w-[320px] px-3 py-3 text-gray-800">{typeof value === "number" ? formatUGX(value) : value || "-"}</td>)}
+                    {row.map((value, columnIndex) => <td key={`${view}-${rowIndex}-${columnIndex}`} className={`max-w-[320px] px-3 py-3 text-gray-800 ${view === "audit" && columnIndex === 5 ? "min-w-[320px] whitespace-pre-wrap break-words" : ""}`}>{typeof value === "number" ? formatUGX(value) : value || "-"}</td>)}
                     {view === "journals" && (
                       <td className="px-3 py-3">
                         {data.entries[rowIndex]?.status === "Posted" && !data.entries[rowIndex]?.reversal_of && (

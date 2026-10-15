@@ -242,7 +242,7 @@ export default function StaffTargets() {
                             {s.role}
                           </span>
                           {active && <div className="w-1 h-1 rounded-full bg-black/40" />}
-                          {active && <span className="text-[8px] font-bold text-black/60">✓ Active</span>}
+                          {active && <span className="text-[8px] font-bold text-black/60 flex items-center gap-1"><Check size={8} /> Active</span>}
                         </div>
                       </div>
                     </button>
@@ -441,7 +441,7 @@ export default function StaffTargets() {
                 <InsightCard 
                   icon={<Zap size={16} className="text-emerald-600"/>} 
                   label="Current Status" 
-                  value={selected.daily_order_target > 50 ? "On Fire 🔥" : "On Track ✓"} 
+                  value={selected.daily_order_target > 50 ? "On Fire" : "On Track"} 
                   accent="emerald"
                   metric={`${selected.daily_order_target || 0} orders/day goal`}
                 />
@@ -456,7 +456,9 @@ export default function StaffTargets() {
                     <Star size={18} className="text-yellow-600" />
                   </div>
                   <div>
-                    <p className="text-[10px] font-black text-yellow-700 uppercase tracking-wider">🏆 Elite Performance</p>
+                    <p className="text-[10px] font-black text-yellow-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Award size={12} /> Elite Performance
+                    </p>
                     <p className="text-[9px] text-gray-600 mt-0.5">This staff member is exceeding expectations! Outstanding contribution to Kurax.</p>
                   </div>
                 </div>

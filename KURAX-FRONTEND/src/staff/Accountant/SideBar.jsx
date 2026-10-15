@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   Receipt, Calculator, CheckCircle2, FileText, X, LogOut,
   RotateCcw, BookOpen, Wallet, Sparkles, Menu, CircleDollarSign, Settings,
-  BarChart3, Boxes,
+  BarChart3, Boxes, Flame,
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
@@ -17,6 +17,7 @@ const DESKTOP_MENU_ITEMS = [
   { key: "MONTHLY_COSTS",     label: "Monthly Costs",      icon: Wallet },
   { key: "CREDITS",           label: "Credits",            icon: BookOpen },
   { key: "DEPARTMENT_REPORTS", label: "Department Reports", icon: CircleDollarSign },
+  { key: "SHISHA_SALES",      label: "Shisha Sales",       icon: Flame },
   { key: "REPORTS",           label: "Accounting",         icon: FileText },
   { key: "STAFF_PERFORMANCE", label: "Staff Sales Performance", icon: BarChart3 },
   { key: "SYSTEM_CONFIGURATION", label: "System Configuration", icon: Settings },
@@ -52,7 +53,7 @@ export default function SideBar({
 
   const dark = isDark || theme === "dark";
   const visibleMenuItems = historicalMode
-    ? DESKTOP_MENU_ITEMS.filter(item => ["DASHBOARD", "INVENTORY", "REPORTS", "STAFF_PERFORMANCE", "DEPARTMENT_REPORTS", "SYSTEM_CONFIGURATION"].includes(item.key))
+    ? DESKTOP_MENU_ITEMS.filter(item => ["DASHBOARD", "INVENTORY", "REPORTS", "STAFF_PERFORMANCE", "DEPARTMENT_REPORTS", "SHISHA_SALES", "SYSTEM_CONFIGURATION"].includes(item.key))
     : DESKTOP_MENU_ITEMS;
   const visibleDrawerItems = visibleMenuItems.filter(item => !BOTTOM_NAV_ITEMS.some(nav => nav.key === item.key));
   const visibleBottomItems = historicalMode
@@ -79,7 +80,7 @@ export default function SideBar({
       setIsOpen(false);
       return;
     }
-    if (historicalMode && !["DASHBOARD", "INVENTORY", "REPORTS", "STAFF_PERFORMANCE", "DEPARTMENT_REPORTS", "SYSTEM_CONFIGURATION"].includes(key)) return;
+    if (historicalMode && !["DASHBOARD", "INVENTORY", "REPORTS", "STAFF_PERFORMANCE", "DEPARTMENT_REPORTS", "SHISHA_SALES", "SYSTEM_CONFIGURATION"].includes(key)) return;
     if (location.pathname.startsWith("/accountant/inventory")) {
       navigate("/accountant", { state: { activeSection: key } });
     }

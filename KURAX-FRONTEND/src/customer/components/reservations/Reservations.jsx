@@ -42,7 +42,7 @@ export default function ReservationsPage() {
 
   const buildWhatsAppMessage = (data) => {
     const lines = [
-      `*New Table Reservation* 🍽️`,
+      `*New Table Reservation*`,
       ``,
       `*Name:* ${data.name}`,
       `*Email:* ${data.email}`,

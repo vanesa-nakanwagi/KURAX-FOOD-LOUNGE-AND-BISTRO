@@ -378,7 +378,7 @@ function TableCard({ table, isDark, creditInfo }) {
 
   const statusLabel = () => {
     if (isVoided)        return { text: "Cancelled",            color: "text-zinc-500",    bg: "bg-zinc-500/10 border-zinc-500/20" };
-    if (isCreditSettled) return { text: "Credit · Settled ✓",  color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
+    if (isCreditSettled) return { text: "Credit · Settled",  color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
     if (isCredited)      return { text: "Credit · Outstanding", color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/20" };
     if (isPaid)          return { text: "Paid",                 color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
     if (isServed)        return { text: "Served",               color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/20" };
@@ -500,7 +500,7 @@ function TableCard({ table, isDark, creditInfo }) {
           </div>
           <div className={`px-3 py-1.5 ${isDark ? "bg-white/2" : "bg-white"}`}>
             <p className={`text-[8px] font-bold italic ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-              {isCreditSettled ? "✓ Settled by accountant" : "Clears at month-end · Contact accountant to settle"}
+              {isCreditSettled ? "Settled by accountant" : "Clears at month-end · Contact accountant to settle"}
             </p>
           </div>
         </div>

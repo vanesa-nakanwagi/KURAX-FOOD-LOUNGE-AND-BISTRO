@@ -204,8 +204,8 @@ function OrderCard({ order, onUpdateStatus, onAssignChef, canAssign }) {
               <div className="shrink-0">
                 {item.assignedTo ? (
                   <div className="flex flex-col items-end gap-0.5">
-                    <span className="bg-emerald-500/10 text-emerald-400 text-[8px] font-black px-2 py-1 rounded-full border border-emerald-500/20 whitespace-nowrap">
-                      👨‍🍳 {item.assignedTo}
+                    <span className="bg-emerald-500/10 text-emerald-400 text-[8px] font-black px-2 py-1 rounded-full border border-emerald-500/20 whitespace-nowrap flex items-center gap-1">
+                      <ChefHat size={10} /> {item.assignedTo}
                     </span>
                     {item.assignedAt && (
                       <span className="text-[7px] text-zinc-500 font-bold">
@@ -514,10 +514,6 @@ export default function KitchenDisplay() {
           <button onClick={handleShiftReset}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50 transition-all text-[10px] font-black uppercase shrink-0">
             <RotateCcw size={13}/> End Shift
-          </button>
-          <button onClick={() => navigate('/kitchen/inventory')}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-amber-400 text-zinc-950 hover:bg-amber-300 transition-all text-[10px] font-black uppercase shrink-0">
-            Inventory
           </button>
           <button onClick={handleLogout}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white transition-all text-[10px] font-black uppercase italic shrink-0">

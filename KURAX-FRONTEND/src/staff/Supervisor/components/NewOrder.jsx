@@ -378,9 +378,10 @@ function CartModal({
               </div>
             )}
 
-            <p className={`text-[10px] mt-1.5 ml-1 font-bold transition-colors
+            <p className={`text-[10px] mt-1.5 ml-1 font-bold transition-colors flex items-center gap-1
               ${tableInput ? "text-yellow-500" : isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-              {tableInput ? `✓ Sending to: ${tableInput.toUpperCase()}` : "Type any name — existing table or new"}
+              {tableInput && <CheckCircle size={10} className="shrink-0" />}
+              {tableInput ? `Sending to: ${tableInput.toUpperCase()}` : "Type any name — existing table or new"}
             </p>
           </div>
         </div>

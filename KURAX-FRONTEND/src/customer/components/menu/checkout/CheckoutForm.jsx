@@ -53,8 +53,9 @@ function MerchantCodeModal({ provider, amount, onConfirm, onCancel }) {
         </div>
 
         <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 mb-5">
-          <p className="text-xs text-blue-700 dark:text-blue-300 text-center">
-            📱 Dial {ussdCode}, enter {merchantCode}, amount, and your PIN on your phone.
+          <p className="text-xs text-blue-700 dark:text-blue-300 text-center flex items-center justify-center gap-2">
+            <Smartphone className="w-3.5 h-3.5" />
+            Dial {ussdCode}, enter {merchantCode}, amount, and your PIN on your phone.
           </p>
         </div>
 
@@ -96,7 +97,7 @@ function SuccessModal({ customerDetails, totalAmount, cartItems, onClose }) {
       : "  • (no item details)";
 
     const message = encodeURIComponent(
-      `*New Order Received* 🛒\n\n` +
+      `*New Order Received*\n\n` +
       `*Customer:* ${customerDetails.firstName} ${customerDetails.lastName}\n` +
       `*Email:* ${customerDetails.email}\n` +
       `*City:* ${customerDetails.city}\n` +
