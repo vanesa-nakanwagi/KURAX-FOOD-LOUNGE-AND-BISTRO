@@ -3,8 +3,11 @@ import pool from '../db.js';
 import logActivity, { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
 import { createPettyExpense, getCounterCash } from '../helpers/pettyCash.js';
 import { getPageWindow, parsePagination, toSearchPattern } from '../helpers/pagination.js';
+import { readSessionToken } from '../middleware/sessionTokens.js';
 import {
+  buildAccountTransactionJournalLines,
   buildAccountTransferJournalLines,
+  createAccountTransactionJournalEntry,
   createExpenseJournalEntry,
   createInternalTransferJournalEntry,
   createSalesJournalEntry,
@@ -17,6 +20,8 @@ import {
   getJournalEntries,
   getTrialBalance,
   listAccounts,
+  listPostableAccounts,
+  getAccountTransactionOptions,
   postBackdatedExpense,
   resolveAccountTransferTargets,
   resolveRevenueAccountCode,
@@ -24,16 +29,54 @@ import {
 } from '../helpers/accounting.js';
 
 const router = express.Router();
+const ACCOUNTING_VIEW_ROLES = new Set(['ACCOUNTANT', 'DIRECTOR', 'MANAGER']);
+
+async function authenticateAccountingStaff(req, res, next) {
+  const token = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7)
+    : null;
+  if (!token) return res.status(401).json({ error: 'Sign in to access account transactions.' });
+
+  try {
+    const session = readSessionToken(token);
+    if (session.scope !== 'restaurant' || !session.id) {
+      return res.status(401).json({ error: 'Invalid staff session.' });
+    }
+    const result = await pool.query(
+      'SELECT id, name, role, is_active FROM public.staff WHERE id = $1',
+      [session.id]
+    );
+    const actor = result.rows[0];
+    if (!actor || actor.is_active === false || actor.role !== session.role) {
+      return res.status(401).json({ error: 'Staff account is inactive or has changed.' });
+    }
+    if (!ACCOUNTING_VIEW_ROLES.has(actor.role)) {
+      return res.status(403).json({ error: 'You are not authorized to access account transactions.' });
+    }
+    req.accountingActor = actor;
+    return next();
+  } catch {
+    return res.status(401).json({ error: 'Session expired. Sign in again.' });
+  }
+}
+
+function requireAccountantPosting(req, res, next) {
+  if (req.accountingActor?.role !== 'ACCOUNTANT') {
+    return res.status(403).json({ error: 'Only an authorized accountant can post account transactions.' });
+  }
+  return next();
+}
+
 ensureAccountingDataModel().catch((error) => {
   console.error('Accounting schema bootstrap warning:', error.message);
 });
 
 // ─── HELPER: Kampala date (YYYY-MM-DD) ──────────────────────────────────────
 function kampalaDate(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: process.env.KURAX_BUSINESS_TIME_ZONE || 'Africa/Kampala',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date);
 }
 
 // ─── 0. TEST ROUTE ──────────────────────────────────────────────────────────
@@ -759,6 +802,19 @@ router.get('/accounting/chart-of-accounts', async (req, res) => {
   }
 });
 
+router.get('/accounting/account-transactions/options', authenticateAccountingStaff, async (_req, res) => {
+  try {
+    const accounts = await listPostableAccounts();
+    const businessTimeZone = process.env.KURAX_BUSINESS_TIME_ZONE || 'Africa/Kampala';
+    const businessDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: businessTimeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    res.json({ ...getAccountTransactionOptions(accounts), businessDate, businessTimeZone });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/accounting/chart-of-accounts', async (req, res) => {
   const { code, name, category, account_type, normal_balance, description, created_by } = req.body;
   if (!code || !name || !category) {
@@ -794,26 +850,61 @@ router.post('/accounting/chart-of-accounts', async (req, res) => {
   }
 });
 
-router.post('/accounting/account-transactions/preview', async (req, res) => {
-  const { transactionType = 'Transfer', amount, sourceAccountCode, destinationAccountCode, sourceAccountName, destinationAccountName, transactionDate, description } = req.body || {};
+router.post('/accounting/account-transactions/preview', authenticateAccountingStaff, requireAccountantPosting, async (req, res) => {
+  const {
+    transactionType = 'Transfer', amount, sourceAccountCode, destinationAccountCode,
+    accountCode, counterpartAccountCode, classification, transactionDate, description, referenceNumber,
+  } = req.body || {};
   try {
-    const accounts = await listAccounts();
-    const targetAccounts = resolveAccountTransferTargets({
-      sourceName: sourceAccountName || sourceAccountCode,
-      destinationName: destinationAccountName || destinationAccountCode,
-      sourceAccountCode,
-      destinationAccountCode,
-      accounts,
-    });
-    const lines = buildAccountTransferJournalLines({ amount, sourceAccount: targetAccounts.source, destinationAccount: targetAccounts.destination, description });
+    const date = String(transactionDate || '').trim();
+    const parsedDate = new Date(`${date}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)
+      || !Number.isFinite(parsedDate.getTime())
+      || parsedDate.toISOString().slice(0, 10) !== date) {
+      return res.status(400).json({ error: 'Enter a valid transaction date.' });
+    }
+    const businessDate = kampalaDate();
+    if (date > businessDate) return res.status(400).json({ error: 'A transaction cannot be posted to a future business date.' });
+    const period = await pool.query(
+      `SELECT period_name, status FROM public.accounting_periods
+       WHERE $1::date BETWEEN start_date AND end_date
+       ORDER BY start_date DESC LIMIT 1`, [date]
+    );
+    if (!period.rows.length || period.rows[0].status !== 'Open') {
+      return res.status(409).json({ error: period.rows[0]
+        ? `${period.rows[0].period_name} is a closed accounting period.`
+        : 'No open accounting period is configured for this transaction date.' });
+    }
+    const accounts = await listPostableAccounts();
+    let targetAccounts = {};
+    let lines;
+    if (String(transactionType).toLowerCase() === 'transfer') {
+      targetAccounts = resolveAccountTransferTargets({ sourceAccountCode, destinationAccountCode, accounts });
+      lines = buildAccountTransferJournalLines({ amount, sourceAccount: targetAccounts.source, destinationAccount: targetAccounts.destination, description });
+    } else {
+      const account = accounts.find((item) => String(item.code) === String(accountCode));
+      const counterpart = accounts.find((item) => String(item.code) === String(counterpartAccountCode));
+      const normalizedType = String(transactionType).toLowerCase();
+      const selectedOption = getAccountTransactionOptions(accounts)[normalizedType]
+        ?.find((option) => option.value === classification && option.counterpartAccountCode === String(counterpart?.code || ''));
+      if (selectedOption?.requiresReference && !String(referenceNumber || '').trim()) {
+        return res.status(400).json({ error: 'A receivable or supplier invoice reference is required.' });
+      }
+      lines = buildAccountTransactionJournalLines({
+        transactionType, amount, account, counterpartAccount: counterpart, classification, description,
+      });
+      targetAccounts = { account, counterpart };
+    }
     const totalDebit = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
     const totalCredit = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
     res.json({
       valid: true,
       transactionType,
       transactionDate: transactionDate || null,
-      source: targetAccounts.source,
-      destination: targetAccounts.destination,
+      source: targetAccounts.source || null,
+      destination: targetAccounts.destination || null,
+      account: targetAccounts.account || null,
+      counterpart: targetAccounts.counterpart || null,
       lines,
       total_debit: totalDebit,
       total_credit: totalCredit,
@@ -825,7 +916,7 @@ router.post('/accounting/account-transactions/preview', async (req, res) => {
   }
 });
 
-router.get('/accounting/account-transactions', async (req, res) => {
+router.get('/accounting/account-transactions', authenticateAccountingStaff, async (req, res) => {
   const { startDate, endDate, limit } = req.query;
   let pagination;
   try {
@@ -846,7 +937,9 @@ router.get('/accounting/account-transactions', async (req, res) => {
     }
     const whereClause = conditions.join(' AND ');
     let query = `SELECT je.id, je.reference, je.entry_date, je.business_time, je.description, je.source_transaction,
-                        je.posted_by, je.status, je.posted_at,
+              je.transaction_type, je.transaction_amount, je.selected_account_code,
+              je.counterpart_account_code, je.classification, je.reference_number,
+              je.transaction_request_id, je.posted_by_id, je.posted_by, je.status, je.posted_at,
                         json_agg(gl ORDER BY gl.id) AS lines
                  FROM public.journal_entries je
                  LEFT JOIN public.general_ledger gl ON gl.journal_entry_id = je.id
@@ -886,33 +979,37 @@ router.get('/accounting/account-transactions', async (req, res) => {
   }
 });
 
-router.post('/accounting/account-transactions', async (req, res) => {
+router.post('/accounting/account-transactions', authenticateAccountingStaff, requireAccountantPosting, async (req, res) => {
   const {
     transactionType = 'Transfer',
     transactionDate,
     amount,
+    accountCode,
+    counterpartAccountCode,
+    classification,
     sourceAccountCode,
     destinationAccountCode,
-    sourceAccountName,
-    destinationAccountName,
     referenceNumber,
-    description = 'Cash deposit',
+    description,
     businessTime,
-    postedBy,
+    requestId,
   } = req.body || {};
 
   try {
-    const result = await createInternalTransferJournalEntry({
+    const result = await createAccountTransactionJournalEntry({
       amount,
+      accountCode,
+      counterpartAccountCode,
+      classification,
       sourceAccountCode,
       destinationAccountCode,
-      sourceAccountName,
-      destinationAccountName,
       transactionDate,
       businessTime,
       description,
       referenceNumber,
-      postedBy: req.user?.name || postedBy || 'Accountant',
+      requestId,
+      postedBy: req.accountingActor.name,
+      postedById: String(req.accountingActor.id),
       transactionType,
     });
 
@@ -1274,25 +1371,30 @@ router.get('/accounting/accounts-receivable', async (req, res) => {
   const { startDate, endDate } = req.query;
   try {
     const params = [];
-    const dateFilter = startDate && endDate ? ` AND c.created_at::date BETWEEN $1 AND $2` : '';
+    const dateFilter = startDate && endDate ? ` WHERE c.created_at::date BETWEEN $1 AND $2` : '';
+    const creditDateFilter = startDate && endDate ? ` AND c.created_at::date BETWEEN $1 AND $2` : '';
     if (startDate && endDate) params.push(startDate, endDate);
     const rows = await pool.query(
       `SELECT
-         COALESCE(c.cashier_queue_id::text, 'CREDIT-' || c.id::text) AS reference,
-         c.client_name AS customer_name,
+         c.reference,
+         c.customer_name,
          c.amount,
          COALESCE(c.amount_paid, 0) AS amount_paid,
-         GREATEST(c.amount - COALESCE(c.amount_paid, 0), 0) AS outstanding_balance,
-         CASE
-           WHEN c.amount - COALESCE(c.amount_paid, 0) <= 0 THEN 'Fully Settled'
-           WHEN COALESCE(c.amount_paid, 0) > 0 THEN 'Partially Paid'
-           ELSE 'Outstanding'
-         END AS status,
-         c.pay_by AS due_date,
+         GREATEST(COALESCE(c.outstanding_balance, c.amount - COALESCE(c.amount_paid, 0)), 0) AS outstanding_balance,
+         c.status,
+         NULL::date AS due_date,
          c.created_at
+       FROM public.accounts_receivable c ${dateFilter}
+       UNION ALL
+       SELECT COALESCE(c.cashier_queue_id::text, 'CREDIT-' || c.id::text) AS reference,
+         c.client_name AS customer_name, c.amount, COALESCE(c.amount_paid, 0) AS amount_paid,
+         GREATEST(c.amount - COALESCE(c.amount_paid, 0), 0) AS outstanding_balance,
+         CASE WHEN c.amount - COALESCE(c.amount_paid, 0) <= 0 THEN 'Fully Settled'
+              WHEN COALESCE(c.amount_paid, 0) > 0 THEN 'Partially Paid' ELSE 'Outstanding' END AS status,
+         c.pay_by AS due_date, c.created_at
        FROM public.credits c
        WHERE c.status IN ('Approved', 'PartiallySettled', 'FullySettled')
-       ${dateFilter}
+       ${creditDateFilter}
        ORDER BY c.created_at DESC`,
       params
     );
@@ -1314,9 +1416,12 @@ router.get('/accounting/accounts-payable', async (req, res) => {
               c.status, c.due_date, c.payment_method, c.created_at, c.updated_at
        FROM public.accounts_payable c ${dateFilter}
        UNION ALL
-       SELECT 'INV-PUR-' || pr.id::text AS reference, s.name AS supplier_name,
-              pr.total_amount AS amount, 0 AS amount_paid, pr.total_amount AS outstanding_balance,
-              'Unpaid' AS status, NULL::date AS due_date, pr.payment_method,
+      SELECT 'INV-PUR-' || pr.id::text AS reference, s.name AS supplier_name,
+        pr.total_amount AS amount, COALESCE(pr.amount_paid, 0) AS amount_paid,
+        GREATEST(pr.total_amount - COALESCE(pr.amount_paid, 0), 0) AS outstanding_balance,
+        CASE WHEN pr.total_amount - COALESCE(pr.amount_paid, 0) <= 0 THEN 'Fully Paid'
+             WHEN COALESCE(pr.amount_paid, 0) > 0 THEN 'Partially Paid' ELSE 'Unpaid' END AS status,
+        NULL::date AS due_date, pr.payment_method,
               pr.created_at, pr.created_at AS updated_at
        FROM public.purchase_receipts pr
        LEFT JOIN public.suppliers s ON s.id = pr.supplier_id
