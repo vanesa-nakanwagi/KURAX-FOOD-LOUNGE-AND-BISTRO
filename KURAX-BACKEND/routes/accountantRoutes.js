@@ -3,13 +3,8 @@ import pool from '../db.js';
 import logActivity, { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
 import { createPettyExpense, getCounterCash } from '../helpers/pettyCash.js';
 import { getPageWindow, parsePagination, toSearchPattern } from '../helpers/pagination.js';
-import { readSessionToken } from '../middleware/sessionTokens.js';
 import {
-  buildAccountTransactionJournalLines,
-  buildAccountTransferJournalLines,
-  createAccountTransactionJournalEntry,
   createExpenseJournalEntry,
-  createInternalTransferJournalEntry,
   createSalesJournalEntry,
   ensureAccountingDataModel,
   getAuditTrail,
@@ -21,51 +16,12 @@ import {
   getTrialBalance,
   listAccounts,
   listPostableAccounts,
-  getAccountTransactionOptions,
   postBackdatedExpense,
-  resolveAccountTransferTargets,
   resolveRevenueAccountCode,
   reverseJournalEntry,
 } from '../helpers/accounting.js';
 
 const router = express.Router();
-const ACCOUNTING_VIEW_ROLES = new Set(['ACCOUNTANT', 'DIRECTOR', 'MANAGER']);
-
-async function authenticateAccountingStaff(req, res, next) {
-  const token = req.headers.authorization?.startsWith('Bearer ')
-    ? req.headers.authorization.slice(7)
-    : null;
-  if (!token) return res.status(401).json({ error: 'Sign in to access account transactions.' });
-
-  try {
-    const session = readSessionToken(token);
-    if (session.scope !== 'restaurant' || !session.id) {
-      return res.status(401).json({ error: 'Invalid staff session.' });
-    }
-    const result = await pool.query(
-      'SELECT id, name, role, is_active FROM public.staff WHERE id = $1',
-      [session.id]
-    );
-    const actor = result.rows[0];
-    if (!actor || actor.is_active === false || actor.role !== session.role) {
-      return res.status(401).json({ error: 'Staff account is inactive or has changed.' });
-    }
-    if (!ACCOUNTING_VIEW_ROLES.has(actor.role)) {
-      return res.status(403).json({ error: 'You are not authorized to access account transactions.' });
-    }
-    req.accountingActor = actor;
-    return next();
-  } catch {
-    return res.status(401).json({ error: 'Session expired. Sign in again.' });
-  }
-}
-
-function requireAccountantPosting(req, res, next) {
-  if (req.accountingActor?.role !== 'ACCOUNTANT') {
-    return res.status(403).json({ error: 'Only an authorized accountant can post account transactions.' });
-  }
-  return next();
-}
 
 ensureAccountingDataModel().catch((error) => {
   console.error('Accounting schema bootstrap warning:', error.message);
@@ -802,19 +758,6 @@ router.get('/accounting/chart-of-accounts', async (req, res) => {
   }
 });
 
-router.get('/accounting/account-transactions/options', authenticateAccountingStaff, async (_req, res) => {
-  try {
-    const accounts = await listPostableAccounts();
-    const businessTimeZone = process.env.KURAX_BUSINESS_TIME_ZONE || 'Africa/Kampala';
-    const businessDate = new Intl.DateTimeFormat('en-CA', {
-      timeZone: businessTimeZone, year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date());
-    res.json({ ...getAccountTransactionOptions(accounts), businessDate, businessTimeZone });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.post('/accounting/chart-of-accounts', async (req, res) => {
   const { code, name, category, account_type, normal_balance, description, created_by } = req.body;
   if (!code || !name || !category) {
@@ -847,176 +790,6 @@ router.post('/accounting/chart-of-accounts', async (req, res) => {
   } catch (err) {
     console.error('Create account error:', err.message);
     res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/accounting/account-transactions/preview', authenticateAccountingStaff, requireAccountantPosting, async (req, res) => {
-  const {
-    transactionType = 'Transfer', amount, sourceAccountCode, destinationAccountCode,
-    accountCode, counterpartAccountCode, classification, transactionDate, description, referenceNumber,
-  } = req.body || {};
-  try {
-    const date = String(transactionDate || '').trim();
-    const parsedDate = new Date(`${date}T00:00:00.000Z`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)
-      || !Number.isFinite(parsedDate.getTime())
-      || parsedDate.toISOString().slice(0, 10) !== date) {
-      return res.status(400).json({ error: 'Enter a valid transaction date.' });
-    }
-    const businessDate = kampalaDate();
-    if (date > businessDate) return res.status(400).json({ error: 'A transaction cannot be posted to a future business date.' });
-    const period = await pool.query(
-      `SELECT period_name, status FROM public.accounting_periods
-       WHERE $1::date BETWEEN start_date AND end_date
-       ORDER BY start_date DESC LIMIT 1`, [date]
-    );
-    if (!period.rows.length || period.rows[0].status !== 'Open') {
-      return res.status(409).json({ error: period.rows[0]
-        ? `${period.rows[0].period_name} is a closed accounting period.`
-        : 'No open accounting period is configured for this transaction date.' });
-    }
-    const accounts = await listPostableAccounts();
-    let targetAccounts = {};
-    let lines;
-    if (String(transactionType).toLowerCase() === 'transfer') {
-      targetAccounts = resolveAccountTransferTargets({ sourceAccountCode, destinationAccountCode, accounts });
-      lines = buildAccountTransferJournalLines({ amount, sourceAccount: targetAccounts.source, destinationAccount: targetAccounts.destination, description });
-    } else {
-      const account = accounts.find((item) => String(item.code) === String(accountCode));
-      const counterpart = accounts.find((item) => String(item.code) === String(counterpartAccountCode));
-      const normalizedType = String(transactionType).toLowerCase();
-      const selectedOption = getAccountTransactionOptions(accounts)[normalizedType]
-        ?.find((option) => option.value === classification && option.counterpartAccountCode === String(counterpart?.code || ''));
-      if (selectedOption?.requiresReference && !String(referenceNumber || '').trim()) {
-        return res.status(400).json({ error: 'A receivable or supplier invoice reference is required.' });
-      }
-      lines = buildAccountTransactionJournalLines({
-        transactionType, amount, account, counterpartAccount: counterpart, classification, description,
-      });
-      targetAccounts = { account, counterpart };
-    }
-    const totalDebit = lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
-    const totalCredit = lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
-    res.json({
-      valid: true,
-      transactionType,
-      transactionDate: transactionDate || null,
-      source: targetAccounts.source || null,
-      destination: targetAccounts.destination || null,
-      account: targetAccounts.account || null,
-      counterpart: targetAccounts.counterpart || null,
-      lines,
-      total_debit: totalDebit,
-      total_credit: totalCredit,
-      balance: totalDebit - totalCredit,
-    });
-  } catch (err) {
-    console.error('Account transfer preview error:', err.message);
-    res.status(err.statusCode || 400).json({ error: err.message });
-  }
-});
-
-router.get('/accounting/account-transactions', authenticateAccountingStaff, async (req, res) => {
-  const { startDate, endDate, limit } = req.query;
-  let pagination;
-  try {
-    pagination = parsePagination(req.query);
-  } catch (error) {
-    return res.status(400).json({ error: error.message });
-  }
-  try {
-    const params = [];
-    const conditions = [`je.system_type = 'MAIN'`, `(je.source_transaction LIKE 'account_transaction:%' OR je.source_transaction LIKE 'account_transfer:%')`];
-    if (startDate && endDate) {
-      params.push(startDate, endDate);
-      conditions.push(`je.entry_date BETWEEN $${params.length - 1} AND $${params.length}`);
-    }
-    if (pagination?.search) {
-      params.push(toSearchPattern(pagination.search));
-      conditions.push(`(je.reference ILIKE $${params.length} ESCAPE '!' OR je.description ILIKE $${params.length} ESCAPE '!' OR je.source_transaction ILIKE $${params.length} ESCAPE '!')`);
-    }
-    const whereClause = conditions.join(' AND ');
-    let query = `SELECT je.id, je.reference, je.entry_date, je.business_time, je.description, je.source_transaction,
-              je.transaction_type, je.transaction_amount, je.selected_account_code,
-              je.counterpart_account_code, je.classification, je.reference_number,
-              je.transaction_request_id, je.posted_by_id, je.posted_by, je.status, je.posted_at,
-                        json_agg(gl ORDER BY gl.id) AS lines
-                 FROM public.journal_entries je
-                 LEFT JOIN public.general_ledger gl ON gl.journal_entry_id = je.id
-                 WHERE ${whereClause}`;
-    query += ` GROUP BY je.id ORDER BY je.entry_date DESC, je.id DESC`;
-    let pageWindow;
-    if (pagination) {
-      const count = await pool.query(
-        `SELECT COUNT(DISTINCT je.id) AS total_records FROM public.journal_entries je WHERE ${whereClause}`,
-        params
-      );
-      pageWindow = getPageWindow(Number(count.rows[0]?.total_records || 0), pagination);
-      const sortColumns = { entry_date: 'je.entry_date', reference: 'je.reference', description: 'je.description' };
-      const orderColumn = sortColumns[pagination.sortBy] || 'je.entry_date';
-      const direction = pagination.sortOrder.toUpperCase();
-      query = query.replace('ORDER BY je.entry_date DESC, je.id DESC', `ORDER BY ${orderColumn} ${direction}, je.id ${direction}`);
-      query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-      params.push(pageWindow.pageSize, pageWindow.offset);
-    } else if (limit) {
-      query += ` LIMIT $${params.length + 1}`;
-      params.push(Number(limit));
-    }
-
-    const result = await pool.query(query, params);
-    res.json({
-      entries: result.rows,
-      ...(pageWindow ? { pagination: {
-        totalRecords: pageWindow.totalRecords,
-        currentPage: pageWindow.currentPage,
-        totalPages: pageWindow.totalPages,
-        pageSize: pageWindow.pageSize,
-      } } : {}),
-    });
-  } catch (err) {
-    console.error('Account transfer list error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/accounting/account-transactions', authenticateAccountingStaff, requireAccountantPosting, async (req, res) => {
-  const {
-    transactionType = 'Transfer',
-    transactionDate,
-    amount,
-    accountCode,
-    counterpartAccountCode,
-    classification,
-    sourceAccountCode,
-    destinationAccountCode,
-    referenceNumber,
-    description,
-    businessTime,
-    requestId,
-  } = req.body || {};
-
-  try {
-    const result = await createAccountTransactionJournalEntry({
-      amount,
-      accountCode,
-      counterpartAccountCode,
-      classification,
-      sourceAccountCode,
-      destinationAccountCode,
-      transactionDate,
-      businessTime,
-      description,
-      referenceNumber,
-      requestId,
-      postedBy: req.accountingActor.name,
-      postedById: String(req.accountingActor.id),
-      transactionType,
-    });
-
-    res.status(201).json({ success: true, transaction: result, journal: result.journal, preview: result.preview });
-  } catch (err) {
-    console.error('Account transfer post error:', err.message);
-    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 

@@ -3,10 +3,19 @@ import assert from 'node:assert/strict';
 
 import {
   buildAccountTransferJournalLines,
-  createInternalTransferJournalEntry,
+  createAccountTransactionJournalEntry,
+  ensureAccountingDataModel,
   resolveAccountTransferTargets,
   resolveSavingsAccount,
 } from '../helpers/accounting.js';
+
+const databaseUrl = process.env.DATABASE_URL || '';
+const isLocalDatabase = databaseUrl.includes('localhost')
+  || databaseUrl.includes('127.0.0.1')
+  || databaseUrl.includes('@database:');
+const databaseTestOptions = {
+  skip: process.env.RUN_ACCOUNTING_DB_TESTS !== 'true' || !isLocalDatabase,
+};
 
 test('sample cash deposit uses the Counter Cash to Bank internal transfer journal pattern', () => {
   const source = resolveAccountTransferTargets({
@@ -35,34 +44,37 @@ test('sample cash deposit uses the Counter Cash to Bank internal transfer journa
   assert.equal(lines.reduce((sum, line) => sum + (line.debit || 0) - (line.credit || 0), 0), 0);
 });
 
-test('internal transfers are valid across active asset accounts, not only cash and bank', () => {
-  const target = resolveAccountTransferTargets({
+test('internal transfers reject operating and fixed asset accounts', () => {
+  assert.throws(() => resolveAccountTransferTargets({
     sourceName: 'Inventory',
     destinationName: 'Equipment',
-  });
-
-  assert.equal(target.source.code, '1201');
-  assert.equal(target.destination.code, '1501');
-  assert.equal(target.source.category, 'Asset');
-  assert.equal(target.destination.category, 'Asset');
+  }), /eligible for internal transfers/i);
 });
 
-test('deposit and withdrawal use the same balanced account transaction posting flow', async () => {
+test('deposit and withdrawal post through the central journal flow using one selected account', databaseTestOptions, async () => {
+  await ensureAccountingDataModel();
   const baseAmount = 250000 + (Date.now() % 2000);
-  for (const [transactionType, amount] of [['Deposit', baseAmount], ['Withdrawal', baseAmount + 25000]]) {
-    const result = await createInternalTransferJournalEntry({
+  for (const [transactionType, amount, accountCode, counterpartAccountCode, classification] of [
+    ['Deposit', baseAmount, '1005', '3001', 'OWNER_CAPITAL:3001'],
+    ['Withdrawal', baseAmount + 25000, '1002', '5003', 'EXPENSE_PAYMENT:5003'],
+  ]) {
+    const result = await createAccountTransactionJournalEntry({
       amount,
-      sourceAccountCode: '1001',
-      destinationAccountCode: '1002',
-      sourceAccountName: 'Counter Cash',
-      destinationAccountName: 'Bank',
+      accountCode,
+      counterpartAccountCode,
+      classification,
       transactionDate: '2026-10-14',
       description: transactionType === 'Deposit' ? 'Cash deposit' : 'Cash withdrawal',
       postedBy: 'Accountant',
       transactionType,
+      requestId: `account-test-${Date.now()}-${transactionType.toLowerCase()}-${amount}`,
     });
 
     assert.equal(result.duplicate, false);
+    assert.deepEqual(
+      [result.journal.entry_date.getFullYear(), result.journal.entry_date.getMonth() + 1, result.journal.entry_date.getDate()],
+      [2026, 10, 14],
+    );
     assert.equal(result.preview.length, 2);
     assert.equal(result.preview.reduce((sum, line) => sum + (line.debit || 0) - (line.credit || 0), 0), 0);
     assert.match(result.journal.source_transaction, /^account_transaction:/);
@@ -98,33 +110,28 @@ test('Kurax Savings resolves as an eligible asset account and supports savings t
   );
 });
 
-test('reposting the same account movement under different labels is treated as a duplicate', async () => {
+test('an identical transaction retry is a duplicate and a changed payload conflicts', databaseTestOptions, async () => {
+  await ensureAccountingDataModel();
   const uniqueAmount = 250000 + (Date.now() % 1000);
-  const first = await createInternalTransferJournalEntry({
+  const requestId = `account-test-retry-${Date.now()}`;
+  const transaction = {
     amount: uniqueAmount,
     sourceAccountCode: '1001',
     destinationAccountCode: '1002',
-    sourceAccountName: 'Counter Cash',
-    destinationAccountName: 'Bank',
     transactionDate: '2026-10-15',
     description: 'Cash deposit',
     postedBy: 'Accountant',
     transactionType: 'Transfer',
-  });
-
-  const second = await createInternalTransferJournalEntry({
-    amount: uniqueAmount,
-    sourceAccountCode: '1001',
-    destinationAccountCode: '1002',
-    sourceAccountName: 'Counter Cash',
-    destinationAccountName: 'Bank',
-    transactionDate: '2026-10-15',
-    description: 'Cash withdrawal',
-    postedBy: 'Accountant',
-    transactionType: 'Withdrawal',
-  });
+    requestId,
+  };
+  const first = await createAccountTransactionJournalEntry(transaction);
+  const second = await createAccountTransactionJournalEntry(transaction);
 
   assert.equal(first.duplicate, false);
   assert.equal(second.duplicate, true);
   assert.equal(second.journal.id, first.journal.id);
+  await assert.rejects(
+    createAccountTransactionJournalEntry({ ...transaction, description: 'Changed transaction payload' }),
+    { statusCode: 409 },
+  );
 });

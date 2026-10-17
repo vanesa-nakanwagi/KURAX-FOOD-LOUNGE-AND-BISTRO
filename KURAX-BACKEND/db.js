@@ -581,6 +581,7 @@ export async function ensureDatabaseSchema() {
       receipt_number TEXT,
       payment_method TEXT DEFAULT 'Cash',
       total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0,
       business_date DATE NOT NULL DEFAULT CURRENT_DATE,
       notes TEXT,
       created_by TEXT,
@@ -691,6 +692,15 @@ export async function ensureDatabaseSchema() {
       entry_date DATE NOT NULL,
       description TEXT NOT NULL,
       source_transaction TEXT,
+      transaction_type TEXT,
+      transaction_amount NUMERIC(12,2),
+      selected_account_code TEXT,
+      counterpart_account_code TEXT,
+      classification TEXT,
+      reference_number TEXT,
+      transaction_request_id TEXT,
+      transaction_payload_hash TEXT,
+      posted_by_id TEXT,
       posted_by TEXT NOT NULL DEFAULT 'System',
       approved_by TEXT,
       approved_at TIMESTAMPTZ,
@@ -764,6 +774,8 @@ export async function ensureDatabaseSchema() {
       console.error('Schema bootstrap warning:', error.message);
     }
   }
+
+  await pool.query(`ALTER TABLE public.purchase_receipts ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0`);
 
   const indexStatements = [
     'CREATE INDEX IF NOT EXISTS idx_inventory_consumptions_recipe_business_date ON public.inventory_consumptions (recipe_id, business_date);',

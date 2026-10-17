@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   aggregateIncomeStatementRevenue,
+  buildAccountTransactionJournalLines,
   buildAccountTransferJournalLines,
+  getAccountTransactionOptions,
   resolveAccountTransferTargets,
   resolveIncomeStatementRevenueCode,
   resolvePaymentDebitAccountCode,
@@ -74,4 +76,78 @@ test('transfer validation rejects same accounts, unsupported account types, and 
   assert.throws(() => resolveAccountTransferTargets({ sourceName: 'Counter Cash', destinationName: 'Counter Cash' }), /different/i);
   assert.throws(() => resolveAccountTransferTargets({ sourceName: 'Food Sales', destinationName: 'Bank' }), /eligible/i);
   assert.throws(() => buildAccountTransferJournalLines({ amount: 0, sourceAccount: { code: '1001' }, destinationAccount: { code: '1002' } }), /valid.*amount/i);
+});
+
+test('classified deposits debit the selected cash account and credit the capital source', () => {
+  const lines = buildAccountTransactionJournalLines({
+    transactionType: 'Deposit',
+    amount: 1000000,
+    account: { code: '1005', name: 'Kurax Savings', category: 'Asset', account_type: 'Savings', is_active: true },
+    counterpartAccount: { code: '3001', name: "Owner's Capital", category: 'Equity', account_type: 'Capital', is_active: true },
+    classification: 'OWNER_CAPITAL:3001',
+  });
+
+  assert.deepEqual(lines.map(({ accountCode, debit, credit }) => ({ accountCode, debit, credit })), [
+    { accountCode: '1005', debit: 1000000, credit: 0 },
+    { accountCode: '3001', debit: 0, credit: 1000000 },
+  ]);
+});
+
+test('classified withdrawals debit an expense and credit the selected paying account', () => {
+  const lines = buildAccountTransactionJournalLines({
+    transactionType: 'Withdrawal',
+    amount: 80000,
+    account: { code: '1002', name: 'Bank', category: 'Asset', account_type: 'Bank', is_active: true },
+    counterpartAccount: { code: '5003', name: 'Utilities', category: 'Expense', account_type: 'Operating Expense', is_active: true },
+    classification: 'EXPENSE_PAYMENT:5003',
+  });
+
+  assert.deepEqual(lines.map(({ accountCode, debit, credit }) => ({ accountCode, debit, credit })), [
+    { accountCode: '5003', debit: 80000, credit: 0 },
+    { accountCode: '1002', debit: 0, credit: 80000 },
+  ]);
+});
+
+test('classified transactions reject unknown purposes and mismatched counterpart accounts', () => {
+  const input = {
+    transactionType: 'Deposit',
+    amount: 1000,
+    account: { code: '1001', name: 'Counter Cash', category: 'Asset', account_type: 'Cash', is_active: true },
+    counterpartAccount: { code: '4001', name: 'Food Sales', category: 'Revenue', account_type: 'Sales', is_active: true },
+  };
+  assert.throws(() => buildAccountTransactionJournalLines({ ...input, classification: '' }), /classification/i);
+  assert.throws(() => buildAccountTransactionJournalLines({ ...input, classification: 'OWNER_CAPITAL:3001' }), /does not match/i);
+});
+
+test('transaction options only offer active postable mappings from the Chart of Accounts', () => {
+  const options = getAccountTransactionOptions([
+    { code: '1001', name: 'Counter Cash', category: 'Asset', account_type: 'Cash', is_active: true, is_postable: true },
+    { code: '1002', name: 'Bank', category: 'Asset', account_type: 'Bank Account', is_active: true, is_postable: true },
+    { code: '2001', name: 'Accounts Payable', category: 'Liability', account_type: 'Payable', is_active: true, is_postable: true },
+    { code: '2101', name: 'Loan Payable', category: 'Liability', account_type: 'Loan', is_active: true, is_postable: true },
+    { code: '3001', name: "Owner's Capital", category: 'Equity', account_type: 'Capital', is_active: true, is_postable: true },
+    { code: '4006', name: 'Other Income', category: 'Revenue', account_type: 'Other Income', is_active: true, is_postable: true },
+    { code: '5003', name: 'Utilities', category: 'Expense', account_type: 'Operating Expense', is_active: true, is_postable: true },
+    { code: '5004', name: 'Inactive expense', category: 'Expense', account_type: 'Expense', is_active: false, is_postable: true },
+    { code: '5005', name: 'Parent expense', category: 'Expense', account_type: 'Expense', is_active: true, is_postable: false },
+  ]);
+
+  assert.deepEqual(options.moneyAccounts.map((account) => account.code), ['1001', '1002']);
+  assert.ok(options.deposit.some((option) => option.value === 'OWNER_CAPITAL:3001'));
+  assert.ok(options.deposit.some((option) => option.value === 'LOAN_PROCEEDS:2101'));
+  assert.ok(options.deposit.some((option) => option.value === 'OTHER_INCOME:4006'));
+  assert.ok(options.withdrawal.some((option) => option.value === 'SUPPLIER_SETTLEMENT:2001' && option.requiresReference));
+  assert.ok(options.withdrawal.some((option) => option.value === 'EXPENSE_PAYMENT:5003'));
+  assert.ok(!options.withdrawal.some((option) => ['5004', '5005'].includes(option.counterpartAccountCode)));
+});
+
+test('deposit and withdrawal require a cash-like selected account and positive amount', () => {
+  const input = {
+    transactionType: 'Deposit',
+    amount: 1000,
+    counterpartAccount: { code: '3001', name: "Owner's Capital", category: 'Equity', account_type: 'Capital', is_active: true },
+    classification: 'OWNER_CAPITAL:3001',
+  };
+  assert.throws(() => buildAccountTransactionJournalLines({ ...input, account: { code: '1201', category: 'Asset', account_type: 'Inventory', is_active: true } }), /cash, bank/i);
+  assert.throws(() => buildAccountTransactionJournalLines({ ...input, amount: -1, account: { code: '1001', name: 'Counter Cash', category: 'Asset', account_type: 'Cash', is_active: true } }), /valid transaction amount/i);
 });

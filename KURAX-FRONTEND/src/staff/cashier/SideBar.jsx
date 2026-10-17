@@ -38,7 +38,7 @@ export default function SideBar({
   creditBadge   = 0,
 }) {
   const { theme } = useTheme();
-  const { currentUser } = useData();
+  const { currentUser, setCurrentUser } = useData();
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
@@ -62,7 +62,8 @@ export default function SideBar({
     setShowLogoutDialog(false);
     localStorage.removeItem("user");
     localStorage.removeItem("kurax_user");
-    navigate("/staff/login");
+    setCurrentUser(null);
+    navigate("/staff/login", { replace: true });
   };
 
   const NavButton = ({ item, showLabel = true, onClick, isActive, badge }) => {
