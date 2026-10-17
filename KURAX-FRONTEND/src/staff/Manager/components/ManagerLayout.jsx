@@ -134,14 +134,14 @@ export default function ManagerLayout() {
       />
 
       {/* 3. ASIDE (Sidebar Container) */}
-      <aside className={`fixed inset-y-0 left-0 z-[70] w-72 transform lg:relative lg:translate-x-0 transition-all duration-500 ease-in-out border-r ${
+      <aside className={`fixed inset-y-0 left-0 z-[70] w-72 transform lg:relative lg:h-full lg:shrink-0 lg:translate-x-0 transition-all duration-500 ease-in-out border-r ${
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       } ${isDark ? 'bg-zinc-950 border-white/5' : 'bg-white border-black/5'}`}>
         <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} />
       </aside>
 
       {/* 4. MAIN CONTENT AREA */}
-      <main className={`flex-1 h-full overflow-y-auto flex flex-col min-w-0 transition-all duration-500 relative ${
+      <main className={`flex-1 h-full overflow-auto flex flex-col min-w-0 transition-all duration-500 relative ${
         isDark ? 'bg-[#0c0c0c]' : 'bg-zinc-50'
       }`}>
         
@@ -160,7 +160,7 @@ export default function ManagerLayout() {
         </div>
 
         {/* Dynamic Content Wrapper */}
-        <div className="flex-1 pb-10 px-4 pt-20 lg:pt-10">
+        <div className="flex-1 min-w-0 w-full max-w-full pb-10 px-4 pt-20 lg:pt-10">
           {renderContent()}
         </div>
       </main>

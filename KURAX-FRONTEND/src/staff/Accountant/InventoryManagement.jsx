@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRightLeft, Boxes, Package, Plus, TrendingUp } from 
 import { useLocation, useNavigate } from 'react-router-dom';
 import API_URL from '../../config/api';
 import InventoryWorkflows from './InventoryWorkflows';
+import Pagination from '../components/Pagination';
 
 const defaultForm = {
   item_name: '',
@@ -67,6 +68,8 @@ export default function InventoryManagement() {
     total_waste: 0,
   });
   const [items, setItems] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
@@ -74,6 +77,10 @@ export default function InventoryManagement() {
   const [relatedData, setRelatedData] = useState({});
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
+
+  useEffect(() => {
+    setPage(1);
+  }, [currentSection.slug]);
 
   const loadData = async () => {
     setLoading(true);
@@ -167,6 +174,11 @@ export default function InventoryManagement() {
     if (currentSection.slug === 'reports') return lowStockItems;
     return items;
   }, [currentSection.slug, items, lowStockItems]);
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(visibleItems.length / pageSize)));
+  const paginatedItems = useMemo(
+    () => visibleItems.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [visibleItems, currentPage, pageSize]
+  );
   const isStockSection = ['', 'items', 'main-store', 'kitchen', 'bar', 'barista', 'valuation'].includes(currentSection.slug);
   const showPurchaseForm = currentSection.slug === '';
   const workflowSections = ['purchases', 'transfers', 'recipes', 'consumption', 'waste', 'stock-counts', 'adjustments', 'reports'];
@@ -297,7 +309,7 @@ export default function InventoryManagement() {
                       <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">No inventory items found.</td>
                     </tr>
                   ) : (
-                    visibleItems.map((item) => (
+                    paginatedItems.map((item) => (
                       <tr key={item.id} className="border-b border-zinc-100 align-top">
                         <td className="px-3 py-3">
                           <div className="font-bold text-zinc-800">{item.item_name}</div>
@@ -319,6 +331,13 @@ export default function InventoryManagement() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              page={currentPage}
+              pageSize={pageSize}
+              totalRecords={visibleItems.length}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            />
           </div>
           </>}
 

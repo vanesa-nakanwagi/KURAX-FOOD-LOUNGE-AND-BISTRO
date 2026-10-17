@@ -19,6 +19,7 @@ import {
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
+import LogoutConfirmDialog from "../../components/LogoutConfirmDialog";
 
 const NAV_ITEMS = [
   { id: "target", label: "Dashboard", short: "Home", icon: LayoutDashboard },
@@ -40,12 +41,18 @@ export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   const isDark = theme === "dark";
   const fullName = currentUser?.name || "Manager";
   const firstName = fullName.split(" ")[0];
 
   const handleLogout = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutDialog(false);
     localStorage.removeItem("kurax_user");
     navigate("/staff/login");
   };
@@ -92,7 +99,7 @@ export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 
 
   const DesktopSidebar = () => (
     <div
-      className={`hidden md:flex flex-col h-full w-full transition-all duration-300
+      className={`hidden md:flex flex-col h-full min-h-0 w-full transition-all duration-300
         ${isDark ? "bg-zinc-950" : "bg-white border-r border-gray-200"}`}
     >
       {/* Logo area – now matches Director exactly */}
@@ -133,14 +140,14 @@ export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 
       
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 min-h-0 px-3 py-4 space-y-1 overflow-y-auto overscroll-contain">
         {NAV_ITEMS.map((item) => (
           <NavBtn key={item.id} item={item} showLabel={!collapsed} />
         ))}
       </nav>
 
       {/* Logout */}
-      <div className={`px-3 pb-5 pt-3 border-t ${isDark ? "border-white/5" : "border-gray-200"}`}>
+      <div className={`shrink-0 px-3 pb-5 pt-3 border-t ${isDark ? "border-white/5" : "border-gray-200"}`}>
         <button
           onClick={handleLogout}
           className={`
@@ -163,7 +170,7 @@ export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 
         <div className="fixed inset-0 z-50 flex md:hidden">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <aside
-            className={`relative z-10 w-72 h-full flex flex-col shadow-2xl
+            className={`relative z-10 w-72 h-dvh min-h-0 flex flex-col shadow-2xl
               ${isDark ? "bg-zinc-950" : "bg-white border-r border-gray-200"}`}
           >
             <div
@@ -214,13 +221,13 @@ export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 
               </div>
             </div>
 
-            <nav className="flex-1 px-4 py-3 space-y-1 overflow-y-auto">
+            <nav className="flex-1 min-h-0 px-4 py-3 space-y-1 overflow-y-auto overscroll-contain">
               {NAV_ITEMS.map((item) => (
                 <NavBtn key={item.id} item={item} showLabel={true} />
               ))}
             </nav>
 
-            <div className={`px-4 pb-6 pt-3 border-t ${isDark ? "border-white/5" : "border-gray-200"}`}>
+            <div className={`shrink-0 px-4 pb-6 pt-3 border-t ${isDark ? "border-white/5" : "border-gray-200"}`}>
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-gray-500 hover:text-red-600 hover:bg-gray-100 dark:hover:bg-white/5"

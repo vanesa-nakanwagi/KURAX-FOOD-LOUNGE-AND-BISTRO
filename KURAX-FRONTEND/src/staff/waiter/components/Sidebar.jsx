@@ -12,6 +12,7 @@ import {
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { useData } from "../../../customer/components/context/DataContext";
+import LogoutConfirmDialog from "../../components/LogoutConfirmDialog";
 
 // ✅ Store component FUNCTIONS, not JSX
 const DEFAULT_MENU = [
@@ -39,6 +40,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   const isDark = theme === "dark";
   const fullName = currentUser?.name || "Waiter";
@@ -60,6 +62,11 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
   }, [isMenuOpen]);
 
   const handleLogout = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutDialog(false);
     localStorage.removeItem("user");
     localStorage.removeItem("kurax_user");
     if (onLogout) onLogout();
@@ -95,6 +102,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
   if (isMobile) {
     return (
       <>
+        <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
         {/* Floating menu button */}
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -205,10 +213,12 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
 
   // ========== DESKTOP VIEW ==========
   return (
-    <div
-      className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
-        ${isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
-    >
+    <>
+      <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
+      <div
+        className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
+          ${isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
+      >
       {/* Logo header – unified */}
       <div className={`flex items-center gap-3 p-5 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
         <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30 shrink-0" />
@@ -260,6 +270,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
           Logout
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

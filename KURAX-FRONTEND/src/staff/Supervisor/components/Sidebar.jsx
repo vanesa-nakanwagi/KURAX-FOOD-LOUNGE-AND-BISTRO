@@ -55,10 +55,17 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
   }, [isMenuOpen]);
 
   const handleLogout = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutDialog(false);
     localStorage.removeItem("user");
     localStorage.removeItem("kurax_user");
     navigate("/staff/login");
   };
+
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   // Unified NavButton – expects item.icon to be a component function
   const NavButton = ({ item, showLabel = true, onClick, isActive }) => {
@@ -87,6 +94,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
   if (isMobile) {
     return (
       <>
+        <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className={`fixed top-4 right-4 z-50 p-2 rounded-xl transition-all ${
@@ -188,10 +196,12 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
 
   // ========== DESKTOP VIEW ==========
   return (
-    <div
-      className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
-        ${isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
-    >
+    <>
+      <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
+      <div
+        className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
+          ${isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
+      >
       <div className={`flex items-center gap-3 p-5 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
         <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30 shrink-0" />
         <div className="min-w-0">
@@ -242,6 +252,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
           Logout
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

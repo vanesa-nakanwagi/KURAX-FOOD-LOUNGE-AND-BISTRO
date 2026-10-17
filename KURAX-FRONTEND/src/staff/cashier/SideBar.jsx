@@ -6,6 +6,7 @@ import {
 import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
 import { useData } from "../../customer/components/context/DataContext";
+import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
 
 
 const MENU_ITEMS = [
@@ -40,6 +41,7 @@ export default function SideBar({
   const { currentUser } = useData();
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   const isDark = theme === "dark";
   const fullName = currentUser?.name || "Cashier";
@@ -53,6 +55,11 @@ export default function SideBar({
   }, []);
 
   const handleLogout = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutDialog(false);
     localStorage.removeItem("user");
     localStorage.removeItem("kurax_user");
     navigate("/staff/login");
@@ -97,6 +104,7 @@ export default function SideBar({
   if (isMobile) {
     return (
       <>
+        <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
         {/* Floating menu button */}
         <button
           onClick={() => setIsOpen(!isOpen)}

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import pool from '../db.js';
+import { toSearchPattern } from './pagination.js';
 
 export const DEFAULT_ACCOUNTS = [
   { code: '1001', name: 'Counter Cash', category: 'Asset', account_type: 'Cash', normal_balance: 'Debit', description: 'Cash on hand' },
@@ -1388,7 +1389,7 @@ export async function getCashFlowStatement(startDate, endDate, startTime = null,
   };
 }
 
-export async function getJournalEntries({ startDate, endDate, startTime, endTime, limit } = {}) {
+export async function getJournalEntries({ startDate, endDate, startTime, endTime, limit, offset = 0, search, sortBy = 'entry_date', sortOrder = 'desc' } = {}) {
   let query = `SELECT je.*,
                       original.reference AS reversal_of_reference,
                       (SELECT reversal.reference FROM public.journal_entries reversal WHERE reversal.reversal_of = je.id LIMIT 1) AS reversed_by_reference,
@@ -1406,20 +1407,29 @@ export async function getJournalEntries({ startDate, endDate, startTime, endTime
     params.push(startDate, endDate, startTime || null, endTime || null);
   }
 
+  if (search) {
+    params.push(toSearchPattern(search));
+    query += ` AND (je.reference ILIKE $${params.length} ESCAPE '!' OR je.description ILIKE $${params.length} ESCAPE '!' OR je.source_transaction ILIKE $${params.length} ESCAPE '!')`;
+  }
+
   query += ` GROUP BY je.id, original.reference`;
 
+  const sortColumns = { entry_date: 'je.entry_date', posted_at: 'je.posted_at', reference: 'je.reference' };
+  const orderColumn = sortColumns[sortBy] || 'je.entry_date';
+  const direction = sortOrder === 'asc' ? 'ASC' : 'DESC';
+
   if (limit) {
-    query += ` ORDER BY je.entry_date DESC, je.id DESC LIMIT $${params.length + 1}`;
-    params.push(limit);
+    query += ` ORDER BY ${orderColumn} ${direction}, je.id ${direction} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(limit, offset);
   } else {
-    query += ` ORDER BY je.entry_date DESC, je.id DESC`;
+    query += ` ORDER BY ${orderColumn} ${direction}, je.id ${direction}`;
   }
 
   const result = await pool.query(query, params);
   return result.rows;
 }
 
-export async function getGeneralLedger(startDate, endDate, startTime = null, endTime = null) {
+export async function getGeneralLedger(startDate, endDate, startTime = null, endTime = null, options = {}) {
   let query = `SELECT gl.* FROM public.general_ledger gl
                JOIN public.journal_entries je ON je.id = gl.journal_entry_id
                WHERE je.system_type = 'MAIN' AND gl.account_code <> '4004'`;
@@ -1432,16 +1442,26 @@ export async function getGeneralLedger(startDate, endDate, startTime = null, end
     params.push(startDate, endDate, startTime, endTime);
   }
 
-  query += ` ORDER BY gl.entry_date DESC, gl.id DESC`;
+  if (options.search) {
+    params.push(toSearchPattern(options.search));
+    query += ` AND (gl.account_name ILIKE $${params.length} ESCAPE '!' OR gl.account_code ILIKE $${params.length} ESCAPE '!' OR gl.description ILIKE $${params.length} ESCAPE '!' OR gl.source_transaction ILIKE $${params.length} ESCAPE '!')`;
+  }
+
+  const sortColumns = { entry_date: 'gl.entry_date', created_at: 'gl.created_at', account_code: 'gl.account_code', debit: 'gl.debit', credit: 'gl.credit' };
+  const orderColumn = sortColumns[options.sortBy] || 'gl.entry_date';
+  const direction = options.sortOrder === 'asc' ? 'ASC' : 'DESC';
+  query += ` ORDER BY ${orderColumn} ${direction}, gl.id ${direction}`;
+  if (options.limit) {
+    query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(options.limit, options.offset || 0);
+  }
 
   const result = await pool.query(query, params);
   return result.rows;
 }
 
-export async function getAuditTrail() {
-  const result = await pool.query(
-    `SELECT entity_type, entity_id, action, actor, details, created_at
-     FROM (
+export async function getAuditTrail({ limit, offset = 0, search, startDate, endDate } = {}) {
+  const auditEntries = `WITH audit_entries AS (
        SELECT entity_type, entity_id, action, actor, details, created_at
        FROM public.accounting_audit_log
        UNION ALL
@@ -1467,9 +1487,35 @@ export async function getAuditTrail() {
          WHERE audit.entity_type = 'inventory_adjustment'
            AND audit.entity_id = ia.id
        )
-     ) audit_entries
-     ORDER BY created_at DESC
-     LIMIT 100`
+     )`;
+  const conditions = [];
+  const searchParams = [];
+  if (search) {
+    searchParams.push(toSearchPattern(search));
+    conditions.push(`(entity_type ILIKE $${searchParams.length} ESCAPE '!' OR entity_id::text ILIKE $${searchParams.length} ESCAPE '!' OR action ILIKE $${searchParams.length} ESCAPE '!' OR actor ILIKE $${searchParams.length} ESCAPE '!' OR details::text ILIKE $${searchParams.length} ESCAPE '!')`);
+  }
+  if (startDate && endDate) {
+    searchParams.push(startDate, endDate);
+    conditions.push(`created_at::date BETWEEN $${searchParams.length - 1} AND $${searchParams.length}`);
+  }
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const pageParams = [...searchParams];
+  const queryLimit = limit || 100;
+  pageParams.push(queryLimit, offset);
+  const pageClause = `LIMIT $${pageParams.length - 1} OFFSET $${pageParams.length}`;
+
+  const result = await pool.query(
+    `${auditEntries}
+     SELECT entity_type, entity_id, action, actor, details, created_at
+     FROM audit_entries ${whereClause}
+     ORDER BY created_at DESC, entity_type ASC, entity_id DESC ${pageClause}`,
+    pageParams
   );
-  return result.rows;
+  if (!limit) return result.rows;
+
+  const countResult = await pool.query(
+    `${auditEntries} SELECT COUNT(*) AS total_records FROM audit_entries ${whereClause}`,
+    searchParams
+  );
+  return { entries: result.rows, totalRecords: Number(countResult.rows[0]?.total_records || 0) };
 }

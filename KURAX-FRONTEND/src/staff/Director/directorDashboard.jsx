@@ -28,6 +28,7 @@ import DepartmentHod from "../DepartmentHod";
 import AccountingAuditTrail from "../components/AccountingAuditTrail";
 import ReportsPanel from "../Accountant/ReportsPanel";
 import ShishaSalesReports from "../Shisha/ShishaSalesReports";
+import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
 
 // ── CREDIT STATUS BADGE COMPONENT ────────────────────────────────────────────
 function CreditStatusBadge({ status }) {
@@ -77,6 +78,7 @@ export default function DirectorDashboard() {
   const [creditsData,     setCreditsData]    = useState([]);
   const [creditsLoading,  setCreditsLoading] = useState(false);
   const [creditsError,    setCreditsError]   = useState(null);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   const { staffList, setStaffList, orders = [] } = useData();
 
@@ -260,7 +262,15 @@ export default function DirectorDashboard() {
     } catch { alert("Connection error."); }
   };
 
-  const handleLogout   = () => { localStorage.removeItem("kurax_user"); navigate("/staff/login"); };
+  const handleLogout   = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutDialog(false);
+    localStorage.removeItem("kurax_user");
+    navigate("/staff/login");
+  };
   const handleCardClick = useCallback((staff, stats) => setStaffModal({ staff, stats }), []);
 
   // ── Loading spinner ────────────────────────────────────────────────────────
@@ -271,7 +281,9 @@ export default function DirectorDashboard() {
   );
 
   return (
-    <div className="flex h-[100dvh] bg-gray-50 text-gray-900 font-[Outfit] overflow-hidden">
+    <>
+      <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
+      <div className="flex h-[100dvh] bg-gray-50 text-gray-900 font-[Outfit] overflow-hidden">
 
       {/* Sidebar overlay (mobile) */}
       {isSidebarOpen && (
@@ -281,9 +293,9 @@ export default function DirectorDashboard() {
 
       {/* ── SIDEBAR ─────────────────────────────────────────────────────────── */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 p-5 flex flex-col
+        fixed inset-y-0 left-0 z-50 w-64 h-dvh overflow-hidden bg-white border-r border-gray-200 p-5 flex flex-col
         transition-transform duration-300 shadow-lg
-        ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} md:h-full md:shrink-0
         md:relative md:translate-x-0
       `}>
         <div className="flex items-center justify-between mb-8">
@@ -299,7 +311,7 @@ export default function DirectorDashboard() {
           </button>
         </div>
 
-        <nav className="flex flex-col gap-1.5">
+        <nav className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain">
           {NAV.map(({ icon, label, tab }) => (
             <button key={tab}
               onClick={() => handleNavigation(tab)}
@@ -312,7 +324,7 @@ export default function DirectorDashboard() {
           ))}
         </nav>
 
-        <div className="mt-auto pt-5 border-t border-gray-200">
+        <div className="mt-auto shrink-0 pt-5 border-t border-gray-200">
           <button onClick={handleLogout}
             className="flex items-center gap-3 text-gray-500 hover:text-red-600 transition-colors text-sm font-bold w-full px-3 py-2.5 rounded-xl hover:bg-gray-100">
             <LogOut size={15} /> Logout
@@ -376,8 +388,8 @@ export default function DirectorDashboard() {
         </div>
 
         {/* Scrollable body */}
-        <main className="flex-1 overflow-y-auto overscroll-contain">
-          <div className="p-3 sm:p-5 md:p-8 max-w-[1600px] mx-auto w-full pb-24 md:pb-8">
+        <main className="flex-1 min-w-0 overflow-auto overscroll-contain">
+          <div className="p-3 sm:p-5 md:p-8 max-w-[1600px] mx-auto w-full min-w-0 pb-24 md:pb-8">
 
             {activeTab === "OVERVIEW" && (
               <OverviewSection onViewRegistry={() => setActiveTab("HISTORY")} />
@@ -454,6 +466,7 @@ export default function DirectorDashboard() {
           onClose={() => setStaffModal(null)}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }

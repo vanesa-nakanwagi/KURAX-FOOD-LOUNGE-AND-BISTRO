@@ -67,7 +67,7 @@ app.use(cors({
     if (isAllowed) {
       callback(null, true);
     } else {
-      console.log('⚠️ CORS Request from Origin:', origin);
+      console.log(' CORS Request from Origin:', origin);
       callback(null, true); // allow all for testing without breaking existing clients
     }
   },
@@ -132,22 +132,22 @@ const verifyDB = async () => {
     await pool.query('SELECT NOW()');
     console.log(
       process.env.DATABASE_URL?.includes('localhost')
-        ? '✅ Database connected to local Postgres'
-        : '✅ Database connected to Neon'
+        ? 'Database connected to local Postgres'
+        : 'Database connected to Neon'
     );
     await ensureDatabaseSchema();
-    console.log('✅ Database schema verified/bootstrapped');
+    console.log('Database schema verified/bootstrapped');
     await initCreditTables();
-    console.log('✅ Credit tables verified/initialized');
+    console.log('Credit tables verified/initialized');
     await initShishaTables();
-    console.log('✅ Shisha department tables verified/initialized');
+    console.log(' Shisha department tables verified/initialized');
     await ensureAccountingDataModel();
-    console.log('✅ Accounting schema verified/initialized');
+    console.log(' Accounting schema verified/initialized');
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.warn('⚠️ Shisha PIN email is disabled: configure EMAIL_USER and EMAIL_PASS in the backend environment.');
+      console.warn(' Shisha PIN email is disabled: configure EMAIL_USER and EMAIL_PASS in the backend environment.');
     }
   } catch (err) {
-    console.error('❌ DB/Init Error:', err.message);
+    console.error(' DB/Init Error:', err.message);
   }
 };
 

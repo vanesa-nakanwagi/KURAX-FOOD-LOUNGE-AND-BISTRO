@@ -734,9 +734,9 @@ export default function AccountantLayout() {
   }, []);
 
   return (
-    <div className={`flex flex-row min-h-screen ${bgClass} font-[Outfit] transition-colors duration-300`}>
+    <div className={`flex h-dvh min-h-0 flex-row overflow-hidden ${bgClass} font-[Outfit] transition-colors duration-300`}>
       {/* Sidebar - Sticky/fixed so it doesn't scroll */}
-      <div className="sticky top-0 h-screen flex-shrink-0">
+      <div className="sticky top-0 h-dvh flex-shrink-0">
         <SideBar
           activeSection={isInventoryRoute ? "INVENTORY" : activeSection}
           setActiveSection={setActiveSection}
@@ -750,8 +750,8 @@ export default function AccountantLayout() {
       </div>
 
       {/* Main content area - This scrolls */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto h-screen">
-        <main className="p-4 md:p-10 space-y-8 flex-1 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        <main className="p-4 md:p-10 space-y-8 flex-1 min-h-0 min-w-0 overflow-auto">
           {businessSettings.mode === "HISTORICAL" && (
             <div role="alert" className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-l-4 border-amber-600 bg-amber-100 px-4 py-3 text-sm font-black text-amber-950 shadow-sm">
               <AlertTriangle size={17} /> HISTORICAL BUSINESS DATE: {businessDate}

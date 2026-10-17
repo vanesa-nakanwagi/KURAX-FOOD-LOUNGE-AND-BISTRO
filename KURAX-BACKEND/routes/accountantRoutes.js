@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db.js';
 import logActivity, { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
 import { createPettyExpense, getCounterCash } from '../helpers/pettyCash.js';
+import { getPageWindow, parsePagination, toSearchPattern } from '../helpers/pagination.js';
 import {
   buildAccountTransferJournalLines,
   createExpenseJournalEntry,
@@ -826,32 +827,59 @@ router.post('/accounting/account-transactions/preview', async (req, res) => {
 
 router.get('/accounting/account-transactions', async (req, res) => {
   const { startDate, endDate, limit } = req.query;
+  let pagination;
+  try {
+    pagination = parsePagination(req.query);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
   try {
     const params = [];
+    const conditions = [`je.system_type = 'MAIN'`, `(je.source_transaction LIKE 'account_transaction:%' OR je.source_transaction LIKE 'account_transfer:%')`];
+    if (startDate && endDate) {
+      params.push(startDate, endDate);
+      conditions.push(`je.entry_date BETWEEN $${params.length - 1} AND $${params.length}`);
+    }
+    if (pagination?.search) {
+      params.push(toSearchPattern(pagination.search));
+      conditions.push(`(je.reference ILIKE $${params.length} ESCAPE '!' OR je.description ILIKE $${params.length} ESCAPE '!' OR je.source_transaction ILIKE $${params.length} ESCAPE '!')`);
+    }
+    const whereClause = conditions.join(' AND ');
     let query = `SELECT je.id, je.reference, je.entry_date, je.business_time, je.description, je.source_transaction,
                         je.posted_by, je.status, je.posted_at,
                         json_agg(gl ORDER BY gl.id) AS lines
                  FROM public.journal_entries je
                  LEFT JOIN public.general_ledger gl ON gl.journal_entry_id = je.id
-                 WHERE je.system_type = 'MAIN'
-                   AND (
-                     je.source_transaction LIKE 'account_transaction:%'
-                     OR je.source_transaction LIKE 'account_transfer:%'
-                   )`;
-
-    if (startDate && endDate) {
-      query += ` AND je.entry_date BETWEEN $1 AND $2`;
-      params.push(startDate, endDate);
-    }
-
+                 WHERE ${whereClause}`;
     query += ` GROUP BY je.id ORDER BY je.entry_date DESC, je.id DESC`;
-    if (limit) {
+    let pageWindow;
+    if (pagination) {
+      const count = await pool.query(
+        `SELECT COUNT(DISTINCT je.id) AS total_records FROM public.journal_entries je WHERE ${whereClause}`,
+        params
+      );
+      pageWindow = getPageWindow(Number(count.rows[0]?.total_records || 0), pagination);
+      const sortColumns = { entry_date: 'je.entry_date', reference: 'je.reference', description: 'je.description' };
+      const orderColumn = sortColumns[pagination.sortBy] || 'je.entry_date';
+      const direction = pagination.sortOrder.toUpperCase();
+      query = query.replace('ORDER BY je.entry_date DESC, je.id DESC', `ORDER BY ${orderColumn} ${direction}, je.id ${direction}`);
+      query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+      params.push(pageWindow.pageSize, pageWindow.offset);
+    } else if (limit) {
       query += ` LIMIT $${params.length + 1}`;
       params.push(Number(limit));
     }
 
     const result = await pool.query(query, params);
-    res.json({ entries: result.rows });
+    res.json({
+      entries: result.rows,
+      ...(pageWindow ? { pagination: {
+        totalRecords: pageWindow.totalRecords,
+        currentPage: pageWindow.currentPage,
+        totalPages: pageWindow.totalPages,
+        pageSize: pageWindow.pageSize,
+      } } : {}),
+    });
   } catch (err) {
     console.error('Account transfer list error:', err.message);
     res.status(500).json({ error: err.message });
@@ -897,9 +925,48 @@ router.post('/accounting/account-transactions', async (req, res) => {
 
 router.get('/accounting/general-ledger', async (req, res) => {
   const { startDate, endDate, startTime, endTime } = req.query;
+  let pagination;
   try {
-    const entries = await getGeneralLedger(startDate || null, endDate || null, startTime || null, endTime || null);
-    res.json({ entries });
+    pagination = parsePagination(req.query);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  try {
+    const params = [];
+    const conditions = [`je.system_type = 'MAIN'`, `gl.account_code <> '4004'`];
+    if (startDate && endDate) {
+      params.push(startDate, endDate, startTime || null, endTime || null);
+      conditions.push(`gl.entry_date BETWEEN $1 AND $2 AND ($3::time IS NULL OR gl.business_time >= $3::time) AND ($4::time IS NULL OR gl.business_time <= $4::time)`);
+    }
+    if (pagination?.search) {
+      params.push(toSearchPattern(pagination.search));
+      conditions.push(`(gl.account_name ILIKE $${params.length} ESCAPE '!' OR gl.account_code ILIKE $${params.length} ESCAPE '!' OR gl.description ILIKE $${params.length} ESCAPE '!' OR gl.source_transaction ILIKE $${params.length} ESCAPE '!')`);
+    }
+    const whereClause = conditions.join(' AND ');
+    let pageWindow;
+    if (pagination) {
+      const count = await pool.query(
+        `SELECT COUNT(*) AS total_records FROM public.general_ledger gl JOIN public.journal_entries je ON je.id = gl.journal_entry_id WHERE ${whereClause}`,
+        params
+      );
+      pageWindow = getPageWindow(Number(count.rows[0]?.total_records || 0), pagination);
+    }
+    const entries = await getGeneralLedger(
+      startDate || null,
+      endDate || null,
+      startTime || null,
+      endTime || null,
+      pagination ? { ...pagination, limit: pageWindow.pageSize, offset: pageWindow.offset } : {}
+    );
+    res.json({
+      entries,
+      ...(pageWindow ? { pagination: {
+        totalRecords: pageWindow.totalRecords,
+        currentPage: pageWindow.currentPage,
+        totalPages: pageWindow.totalPages,
+        pageSize: pageWindow.pageSize,
+      } } : {}),
+    });
   } catch (err) {
     console.error('General ledger error:', err.message);
     res.status(500).json({ error: err.message });
@@ -908,9 +975,51 @@ router.get('/accounting/general-ledger', async (req, res) => {
 
 router.get('/accounting/journal-entries', async (req, res) => {
   const { startDate, endDate, startTime, endTime, limit } = req.query;
+  let pagination;
   try {
-    const journal = await getJournalEntries({ startDate: startDate || null, endDate: endDate || null, startTime: startTime || null, endTime: endTime || null, limit: limit ? Number(limit) : null });
-    res.json({ entries: journal });
+    pagination = parsePagination(req.query);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  try {
+    let journal;
+    let pageWindow;
+    if (pagination) {
+      const params = [];
+      const conditions = [`je.system_type = 'MAIN'`];
+      if (startDate && endDate) {
+        params.push(startDate, endDate, startTime || null, endTime || null);
+        conditions.push(`je.entry_date BETWEEN $1 AND $2 AND ($3::time IS NULL OR je.business_time >= $3::time) AND ($4::time IS NULL OR je.business_time <= $4::time)`);
+      }
+      if (pagination.search) {
+        params.push(toSearchPattern(pagination.search));
+        conditions.push(`(je.reference ILIKE $${params.length} ESCAPE '!' OR je.description ILIKE $${params.length} ESCAPE '!' OR je.source_transaction ILIKE $${params.length} ESCAPE '!')`);
+      }
+      const count = await pool.query(`SELECT COUNT(*) AS total_records FROM public.journal_entries je WHERE ${conditions.join(' AND ')}`, params);
+      pageWindow = getPageWindow(Number(count.rows[0]?.total_records || 0), pagination);
+      journal = await getJournalEntries({
+        startDate: startDate || null,
+        endDate: endDate || null,
+        startTime: startTime || null,
+        endTime: endTime || null,
+        search: pagination.search,
+        sortBy: pagination.sortBy || 'entry_date',
+        sortOrder: pagination.sortOrder,
+        limit: pageWindow.pageSize,
+        offset: pageWindow.offset,
+      });
+    } else {
+      journal = await getJournalEntries({ startDate: startDate || null, endDate: endDate || null, startTime: startTime || null, endTime: endTime || null, limit: limit ? Number(limit) : null });
+    }
+    res.json({
+      entries: journal,
+      ...(pageWindow ? { pagination: {
+        totalRecords: pageWindow.totalRecords,
+        currentPage: pageWindow.currentPage,
+        totalPages: pageWindow.totalPages,
+        pageSize: pageWindow.pageSize,
+      } } : {}),
+    });
   } catch (err) {
     console.error('Journal entry fetch error:', err.message);
     res.status(500).json({ error: err.message });
@@ -1280,9 +1389,41 @@ router.post('/accounting/periods', async (req, res) => {
 });
 
 router.get('/accounting/audit-trail', async (req, res) => {
+  let pagination;
   try {
-    const rows = await getAuditTrail();
-    res.json({ entries: rows });
+    pagination = parsePagination(req.query);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  try {
+    const result = pagination
+      ? await getAuditTrail({
+        limit: pagination.pageSize,
+        offset: (pagination.page - 1) * pagination.pageSize,
+        search: pagination.search,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      })
+      : await getAuditTrail();
+    const pageWindow = pagination ? getPageWindow(result.totalRecords, pagination) : null;
+    if (pageWindow && pageWindow.offset !== (pagination.page - 1) * pagination.pageSize) {
+      const corrected = await getAuditTrail({ limit: pageWindow.pageSize, offset: pageWindow.offset, search: pagination.search });
+      return res.json({ entries: corrected.entries, pagination: {
+        totalRecords: pageWindow.totalRecords,
+        currentPage: pageWindow.currentPage,
+        totalPages: pageWindow.totalPages,
+        pageSize: pageWindow.pageSize,
+      } });
+    }
+    res.json({
+      entries: pagination ? result.entries : result,
+      ...(pageWindow ? { pagination: {
+        totalRecords: pageWindow.totalRecords,
+        currentPage: pageWindow.currentPage,
+        totalPages: pageWindow.totalPages,
+        pageSize: pageWindow.pageSize,
+      } } : {}),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

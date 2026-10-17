@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import LogoutConfirmDialog from './components/LogoutConfirmDialog';
 import { ArrowRight, Boxes, Check, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Users, Wine } from 'lucide-react';
 import API_URL from '../config/api';
 import { downloadReportPdf } from './reportExport';
@@ -80,6 +81,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   const [reportLoading, setReportLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   useEffect(() => {
     if (initialRange?.start && initialRange?.end) {
@@ -326,12 +328,17 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   }
 
   function signOut() {
+    setShowLogoutDialog(true);
+  }
+
+  function confirmLogout() {
+    setShowLogoutDialog(false);
     localStorage.removeItem('kurax_user');
     navigate('/staff/login');
   }
 
-  if (!session?.token) return <main className="min-h-screen bg-white p-8 text-black">Sign in to continue.</main>;
-  if (!allowed) return <main className="min-h-screen bg-white p-8 text-black">This account cannot access this department.</main>;
+  if (!session?.token) return <><LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} /><main className="min-h-screen bg-white p-8 text-black">Sign in to continue.</main></>;
+  if (!allowed) return <><LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} /><main className="min-h-screen bg-white p-8 text-black">This account cannot access this department.</main></>;
 
   const departments = report?.departments || [];
   const summary = report?.summary || {};

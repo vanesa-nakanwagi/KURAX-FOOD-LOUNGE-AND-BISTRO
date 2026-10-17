@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { Clock, Banknote, User, Hash, CheckCircle2, XCircle, AlertCircle, Loader2 } from "lucide-react";
 import { useData } from "../../../customer/components/context/DataContext"; // adjust path to your DataContext
+import Pagination from "../../components/Pagination";
 
-const PER_PAGE = 20;
+const DEFAULT_PAGE_SIZE = 20;
 
 // ── Payment method config ─────────────────────────────────────────────────────
 const METHOD_CONFIG = {
@@ -130,6 +131,7 @@ export default function HistorySection() {
   // Use the filtered orders from context (they already respect day closure)
   const { orders, dayClosed, isLoading: contextLoading } = useData();
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   // For credit settlements, we still need to fetch them separately (they are not in `orders`).
   // However, if you also want credit settlements to be included in the history table,
@@ -138,8 +140,8 @@ export default function HistorySection() {
   
   // Use the filtered orders from context directly
   const displayedOrders = orders; // orders is already filtered by the context
-  const paginated = displayedOrders.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-  const totalPages = Math.max(1, Math.ceil(displayedOrders.length / PER_PAGE));
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(displayedOrders.length / pageSize)));
+  const paginated = displayedOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const HEADERS = ["ID", "Staff", "Method", "Amount", "Time", "Status"];
 
   if (contextLoading) {
@@ -232,37 +234,13 @@ export default function HistorySection() {
         </table>
       </div>
 
-      {paginated.length > 0 && (
-        <div className="flex items-center justify-between pt-1">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Page {page} of {totalPages} · {displayedOrders.length} records</p>
-          {totalPages > 1 && (
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage(p => Math.max(1, p-1))}
-                disabled={page === 1}
-                className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${
-                  page === 1
-                    ? "opacity-25 cursor-not-allowed text-gray-400"
-                    : "bg-yellow-500 text-black hover:bg-yellow-400 shadow-sm shadow-yellow-500/20"
-                }`}
-              >
-                Prev
-              </button>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p+1))}
-                disabled={page === totalPages}
-                className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${
-                  page === totalPages
-                    ? "opacity-25 cursor-not-allowed text-gray-400"
-                    : "bg-yellow-500 text-black hover:bg-yellow-400 shadow-sm shadow-yellow-500/20"
-                }`}
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      <Pagination
+        page={currentPage}
+        pageSize={pageSize}
+        totalRecords={displayedOrders.length}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+      />
     </div>
   );
 }

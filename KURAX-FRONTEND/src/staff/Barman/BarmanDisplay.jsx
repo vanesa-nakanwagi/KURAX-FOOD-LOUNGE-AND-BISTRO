@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../../customer/components/context/DataContext";
+import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
 import {
   Clock, CheckCircle, Play, AlertCircle,
   Search, RotateCcw, Trophy, UserPlus,
@@ -268,7 +269,13 @@ export default function BarmanDisplay() {
   const barmanName     = savedUser.name || "Head Barman";
   const canAssign      = savedUser.role === "BAR_HOD";
   const barmanInitials = barmanName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-  const handleLogout   = () => { localStorage.removeItem("kurax_user"); navigate("/staff/login"); };
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const handleLogout   = () => setShowLogoutDialog(true);
+  const confirmLogout  = () => {
+    setShowLogoutDialog(false);
+    localStorage.removeItem("kurax_user");
+    navigate("/staff/login");
+  };
 
   const [audioEnabled,  setAudioEnabled]  = useState(false);
   const [searchQuery,   setSearchQuery]   = useState("");

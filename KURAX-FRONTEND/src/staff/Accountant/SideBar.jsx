@@ -8,6 +8,7 @@ import {
 import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
 import { useData } from "../../customer/components/context/DataContext";
+import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
 
 const DESKTOP_MENU_ITEMS = [
   { key: "DASHBOARD",         label: "Dashboard",           icon: Receipt },
@@ -50,6 +51,7 @@ export default function SideBar({
   const location = useLocation();
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   const dark = isDark || theme === "dark";
   const visibleMenuItems = historicalMode
@@ -70,6 +72,11 @@ export default function SideBar({
   }, []);
 
   const handleLogout = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutDialog(false);
     localStorage.removeItem('kurax_user');
     navigate('/staff/login');
   };
@@ -119,6 +126,7 @@ export default function SideBar({
   if (isMobile) {
     return (
       <>
+        <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
         {/* Floating menu button */}
         <button
           onClick={() => setIsOpen(!isOpen)}
@@ -138,7 +146,7 @@ export default function SideBar({
             onClick={() => setIsOpen(false)}
           />
           <div
-            className={`absolute right-0 top-0 h-full w-72 transition-transform duration-300 flex flex-col shadow-2xl
+            className={`absolute right-0 top-0 h-dvh w-72 min-h-0 transition-transform duration-300 flex flex-col shadow-2xl
               ${isOpen ? "translate-x-0" : "translate-x-full"}
               ${dark ? "bg-zinc-950 border-l border-white/5" : "bg-white border-l border-gray-200"}`}
           >
@@ -152,7 +160,7 @@ export default function SideBar({
               </div>
             </div>
 
-            <nav className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
+            <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-3 space-y-1">
               {visibleDrawerItems.map((item) => {
                 let badge = null;
                 if (item.key === "LIVE_AUDIT") badge = voidCount;
@@ -170,7 +178,7 @@ export default function SideBar({
               })}
             </nav>
 
-            <div className={`p-4 border-t ${dark ? "border-white/5" : "border-gray-200"}`}>
+            <div className={`shrink-0 p-4 border-t ${dark ? "border-white/5" : "border-gray-200"}`}>
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-gray-500 hover:text-red-600 hover:bg-gray-100 dark:hover:bg-white/5"
@@ -224,10 +232,12 @@ export default function SideBar({
 
   // ========== DESKTOP VIEW ==========
   return (
-    <div
-      className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
-        ${dark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
-    >
+    <>
+      <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
+      <div
+        className={`w-64 h-dvh min-h-0 flex flex-col border-r transition-colors duration-300
+          ${dark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
+      >
       <div className={`flex items-center gap-3 p-5 border-b ${dark ? "border-white/5" : "border-gray-200"}`}>
         <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30 shrink-0" />
         <div className="min-w-0">
@@ -242,7 +252,7 @@ export default function SideBar({
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 min-h-0 px-3 py-4 space-y-1 overflow-y-auto overscroll-contain">
         {visibleMenuItems.map((item) => {
           let badge = null;
           if (item.key === "LIVE_AUDIT") badge = voidCount;
@@ -260,7 +270,7 @@ export default function SideBar({
         })}
       </nav>
 
-      <div className={`px-3 pb-5 pt-3 border-t ${dark ? "border-white/5" : "border-gray-200"}`}>
+      <div className={`shrink-0 px-3 pb-5 pt-3 border-t ${dark ? "border-white/5" : "border-gray-200"}`}>
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all text-gray-500 hover:text-red-600 hover:bg-gray-100 dark:hover:bg-white/5"
@@ -270,5 +280,6 @@ export default function SideBar({
         </button>
       </div>
     </div>
+    </>
   );
 }

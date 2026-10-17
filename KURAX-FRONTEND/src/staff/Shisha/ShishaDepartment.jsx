@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import LogoutConfirmDialog from '../components/LogoutConfirmDialog';
 import {
   ArrowLeft, ArrowRight, Check, ChefHat, CircleDollarSign, ClipboardList, Eye, EyeOff, Flame, LogOut,
   Download, Package, Plus, RefreshCw, Users, Wallet,
@@ -124,6 +125,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   const role = String(session?.role || '').toUpperCase();
   const routeRoleMismatch = Boolean(session?.token && requiredRole && role !== requiredRole);
@@ -232,10 +234,15 @@ export default function ShishaDepartment({ requiredRole = null }) {
   }
 
   function signOut() {
-    if (session?.scope === 'shisha') localStorage.removeItem('kurax_shisha_session');
-    else localStorage.removeItem('kurax_user');
+    setShowLogoutDialog(true);
+  }
+
+  function confirmLogout() {
+    setShowLogoutDialog(false);
+    localStorage.removeItem('kurax_shisha_session');
+    localStorage.removeItem('kurax_user');
     setSession(null);
-    navigate('/');
+    navigate('/shisha', { replace: true });
   }
 
   function updateCart(product, quantity) {
@@ -407,7 +414,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
             </form>
           </div>
 
-          <div className="relative z-10 mt-2 flex flex-col items-center gap-2 text-center"><p className="text-[10px] font-medium uppercase tracking-widest text-zinc-700">© 2026 Kurax Lounge &amp; Bistro</p><button type="button" onClick={() => navigate('/')} className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 transition hover:text-amber-800"><ArrowLeft size={14} /> Back to home</button></div>
+          <div className="relative z-10 mt-2 flex flex-col items-center gap-2 text-center"><p className="text-[10px] font-medium uppercase tracking-widest text-zinc-700">© 2026 Kurax Lounge &amp; Bistro</p><button type="button" onClick={() => navigate('/shisha', { replace: true })} className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 transition hover:text-amber-800"><ArrowLeft size={14} /> Back to shisha login</button></div>
         </div>
         <div className="relative hidden h-full flex-1 lg:block"><ImageCarousel /></div>
       </div>
@@ -415,11 +422,17 @@ export default function ShishaDepartment({ requiredRole = null }) {
   }
 
   if (routeRoleMismatch) {
-    return <main className="grid min-h-screen place-items-center bg-[#f4f3ef] p-6 text-zinc-900"><section className="max-w-md rounded-xl border border-zinc-200 bg-white p-6 text-center"><h1 className="text-xl font-black">Different Shisha role</h1><p className="mt-2 text-sm text-zinc-600">This route is for {loginAudience} accounts.</p><button onClick={() => { localStorage.removeItem('kurax_shisha_session'); setSession(null); }} className="mt-4 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950">Sign in with another account</button></section></main>;
+    return <main className="grid min-h-screen place-items-center bg-[#f4f3ef] p-6 text-zinc-900"><section className="max-w-md rounded-xl border border-zinc-200 bg-white p-6 text-center"><h1 className="text-xl font-black">Different Shisha role</h1><p className="mt-2 text-sm text-zinc-600">This route is for {loginAudience} accounts.</p><button onClick={() => { localStorage.removeItem('kurax_shisha_session'); setSession(null); navigate('/shisha', { replace: true }); }} className="mt-4 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950">Sign in with another account</button></section></main>;
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f3ef] text-zinc-900">
+    <>
+      <LogoutConfirmDialog
+        open={showLogoutDialog}
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutDialog(false)}
+      />
+      <main className="min-h-screen bg-[#f4f3ef] text-zinc-900">
       <header className="border-b border-zinc-200 bg-white">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-4 md:px-8">
           <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-900 text-amber-300"><Flame size={21} /></span><div><p className="text-xs font-black uppercase tracking-[0.18em]">Kurax · Internal</p><p className="text-xs text-zinc-500">Shisha Department</p></div></div>
@@ -475,7 +488,8 @@ export default function ShishaDepartment({ requiredRole = null }) {
 
         {tab === 'reports' && canReport && <ReportsPanel report={report} mode={reportMode} setMode={chooseReportMode} from={reportFrom} to={reportTo} setFrom={setReportFrom} setTo={setReportTo} reportMonth={reportMonth} setReportMonth={value => { if (!value) return; setReportMonth(value); const [from, to] = rangeForMonth(value); setReportFrom(from); setReportTo(to); }} onDownload={downloadShishaReport} />}
       </div>
-    </main>
+      </main>
+    </>
   );
 }
 

@@ -15,6 +15,7 @@ import * as XLSX from "xlsx";
 import API_URL from "../../config/api";
 import { downloadReportPdf } from "../reportExport";
 import ReportsPanel from "./ReportsPanel";
+import Pagination from "../components/Pagination";
 
 const VIEWS = [
   { key: "accounts", label: "Chart of Accounts", icon: BookOpen },
@@ -279,6 +280,10 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [periodForm, setPeriodForm] = useState({ period_name: today.slice(0, 7), start_date: monthStart, end_date: today });
   const [savingPeriod, setSavingPeriod] = useState(false);
   const [reversalForm, setReversalForm] = useState(null);
@@ -308,10 +313,23 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
     if (initialDateRange?.start && initialDateRange?.end) setDateRange(initialDateRange);
   }, [initialDateRange?.start, initialDateRange?.end]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [timeRange?.start, timeRange?.end]);
+
   const changeDateRange = (nextRange) => {
     setDateRange(nextRange);
+    setPage(1);
     onDateRangeChange?.(nextRange);
   };
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
 
   const loadView = useCallback(async (targetView = view) => {
     if (["statements", "expenses"].includes(targetView)) return;
@@ -320,6 +338,11 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
     const query = new URLSearchParams({ startDate: dateRange.start, endDate: dateRange.end });
     if (timeRange?.start) query.set("startTime", timeRange.start);
     if (timeRange?.end) query.set("endTime", timeRange.end);
+    if (["transactions", "journals", "ledger", "audit"].includes(targetView)) {
+      query.set("page", String(page));
+      query.set("limit", String(pageSize));
+      if (search) query.set("search", search);
+    }
     const asOfQuery = new URLSearchParams({ asOfDate: dateRange.end });
     if (timeRange?.start) asOfQuery.set("startTime", timeRange.start);
     if (timeRange?.end) asOfQuery.set("endTime", timeRange.end);
@@ -330,9 +353,9 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
       if (targetView === "transactions") {
         const [accounts, entries] = await Promise.all([
           requestJSON(`${base}/chart-of-accounts`),
-          requestJSON(`${base}/account-transactions?${query}&limit=100`),
+          requestJSON(`${base}/account-transactions?${query}`),
         ]);
-        result = { accounts: accounts.accounts, entries: entries.entries || [] };
+        result = { accounts: accounts.accounts, entries: entries.entries || [], pagination: entries.pagination };
       }
       if (targetView === "cash") {
         const [accounts, balanceSheet] = await Promise.all([
@@ -341,9 +364,9 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
         ]);
         result = { accounts: accounts.accounts, balanceSheet };
       }
-      if (targetView === "journals") result = await requestJSON(`${base}/journal-entries?${query}&limit=500`);
+      if (targetView === "journals") result = await requestJSON(`${base}/journal-entries?${query}`);
       if (targetView === "ledger") result = await requestJSON(`${base}/general-ledger?${query}`);
-      if (targetView === "audit") result = await requestJSON(`${base}/audit-trail`);
+      if (targetView === "audit") result = await requestJSON(`${base}/audit-trail?${query}`);
       if (targetView === "trial") result = await requestJSON(`${base}/trial-balance?${query}`);
       if (targetView === "receivable") result = await requestJSON(`${base}/accounts-receivable?${query}`);
       if (targetView === "payable") result = await requestJSON(`${base}/accounts-payable?${query}`);
@@ -356,7 +379,7 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
     } finally {
       setLoading(false);
     }
-  }, [dateRange, timeRange, view]);
+  }, [dateRange, timeRange, view, page, pageSize, search]);
 
   useEffect(() => {
     if (view === "transactions") {
@@ -431,6 +454,13 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
   const table = getTableModel(view, data);
   const viewLabel = VIEWS.find((item) => item.key === view)?.label || "Accounting";
 
+  const changeView = (nextView) => {
+    setView(nextView);
+    setPage(1);
+    setSearchInput("");
+    setSearch("");
+  };
+
   const setSelectedAccount = (field, account) => {
     if (!account) return;
 
@@ -468,40 +498,78 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
     }
   }, [transferAccounts, transferForm.sourceAccountCode, transferForm.destinationAccountCode]);
 
-  const exportPDF = () => {
-    if (!table.rows.length) return;
-    downloadReportPdf({
-      filename: `${view.replaceAll("_", "-")}_${dateRange.end}.pdf`,
-      title: viewLabel,
-      companyName: "KURAX FOOD LOUNGE AND BISTRO",
-      periodText: `Period: ${dateRange.start} to ${dateRange.end}${timeRange?.start || timeRange?.end ? `, ${timeRange.start || "00:00"} to ${timeRange.end || "23:59"}` : ""}`,
-      footerLabel: "Accounting Report",
-      from: dateRange.start,
-      to: dateRange.end,
-      orientation: table.columns.length > 5 ? "landscape" : "portrait",
-      sections: [{
-        title: viewLabel,
-        columns: table.columns,
-        rows: table.rows.map((row) => row.map((value) => typeof value === "number" ? formatUGX(value) : value ?? "")),
-      }],
-    });
+  const getCompleteTable = async () => {
+    if (!data?.pagination || data.pagination.totalRecords <= pageSize) return table;
+    const endpointByView = {
+      transactions: "account-transactions",
+      journals: "journal-entries",
+      ledger: "general-ledger",
+      audit: "audit-trail",
+    };
+    const endpoint = endpointByView[view];
+    if (!endpoint) return table;
+    const allEntries = [];
+    const exportPages = Math.ceil(data.pagination.totalRecords / 50);
+    for (let exportPage = 1; exportPage <= exportPages; exportPage += 1) {
+      const query = new URLSearchParams({
+        startDate: dateRange.start,
+        endDate: dateRange.end,
+        page: String(exportPage),
+        limit: "50",
+      });
+      if (timeRange?.start) query.set("startTime", timeRange.start);
+      if (timeRange?.end) query.set("endTime", timeRange.end);
+      if (search) query.set("search", search);
+      const result = await requestJSON(`${API_URL}/api/accountant/accounting/${endpoint}?${query}`);
+      allEntries.push(...(result.entries || []));
+    }
+    return getTableModel(view, { entries: allEntries });
   };
 
-  const exportExcel = () => {
-    if (!table.rows.length) return;
-    const worksheet = XLSX.utils.aoa_to_sheet([
-      [viewLabel],
-      ["KURAX FOOD LOUNGE AND BISTRO"],
-      ["Period", `${dateRange.start} to ${dateRange.end}`],
-      ...(timeRange?.start || timeRange?.end ? [["Time", `${timeRange.start || "00:00"} to ${timeRange.end || "23:59"}`]] : []),
-      [],
-      table.columns,
-      ...table.rows,
-    ]);
-    worksheet["!cols"] = table.columns.map((column) => ({ wch: Math.max(16, column.length + 4) }));
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Accounting");
-    XLSX.writeFile(workbook, `${view.replaceAll("_", "-")}_${dateRange.end}.xlsx`);
+  const exportPDF = async () => {
+    try {
+      const exportTable = await getCompleteTable();
+      if (!exportTable.rows.length) return;
+      downloadReportPdf({
+        filename: `${view.replaceAll("_", "-")}_${dateRange.end}.pdf`,
+        title: viewLabel,
+        companyName: "KURAX FOOD LOUNGE AND BISTRO",
+        periodText: `Period: ${dateRange.start} to ${dateRange.end}${timeRange?.start || timeRange?.end ? `, ${timeRange.start || "00:00"} to ${timeRange.end || "23:59"}` : ""}`,
+        footerLabel: "Accounting Report",
+        from: dateRange.start,
+        to: dateRange.end,
+        orientation: exportTable.columns.length > 5 ? "landscape" : "portrait",
+        sections: [{
+          title: viewLabel,
+          columns: exportTable.columns,
+          rows: exportTable.rows.map((row) => row.map((value) => typeof value === "number" ? formatUGX(value) : value ?? "")),
+        }],
+      });
+    } catch (exportError) {
+      setError(exportError.message || "Unable to export the complete accounting history.");
+    }
+  };
+
+  const exportExcel = async () => {
+    try {
+      const exportTable = await getCompleteTable();
+      if (!exportTable.rows.length) return;
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        [viewLabel],
+        ["KURAX FOOD LOUNGE AND BISTRO"],
+        ["Period", `${dateRange.start} to ${dateRange.end}`],
+        ...(timeRange?.start || timeRange?.end ? [["Time", `${timeRange.start || "00:00"} to ${timeRange.end || "23:59"}`]] : []),
+        [],
+        exportTable.columns,
+        ...exportTable.rows,
+      ]);
+      worksheet["!cols"] = exportTable.columns.map((column) => ({ wch: Math.max(16, column.length + 4) }));
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Accounting");
+      XLSX.writeFile(workbook, `${view.replaceAll("_", "-")}_${dateRange.end}.xlsx`);
+    } catch (exportError) {
+      setError(exportError.message || "Unable to export the complete accounting history.");
+    }
   };
 
   const savePeriod = async (event) => {
@@ -558,7 +626,7 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
           return (
             <button
               key={item.key}
-              onClick={() => setView(item.key)}
+              onClick={() => changeView(item.key)}
               className={`inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-2 text-xs font-bold transition-colors ${view === item.key ? "border-yellow-500 text-gray-900" : "border-transparent text-gray-500 hover:text-gray-900"}`}
             >
               <Icon size={15} /> {item.label}
@@ -596,6 +664,18 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
               <button onClick={() => loadView()} disabled={loading} className="inline-flex items-center gap-2 rounded-md bg-yellow-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Load data
               </button>
+              {["transactions", "journals", "ledger", "audit"].includes(view) && (
+                <label className="text-[10px] font-bold uppercase text-gray-500">
+                  Search records
+                  <input
+                    type="search"
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    placeholder="Reference, description, account..."
+                    className="mt-1 block w-64 max-w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case text-gray-900"
+                  />
+                </label>
+              )}
             </div>
             {!!table.rows.length && (
               <div className="flex gap-2">
@@ -834,6 +914,15 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
                   : `No ${viewLabel.toLowerCase()} records for this selection.`}
               </p>
             ) : null}
+            {data?.pagination && ["transactions", "journals", "ledger", "audit"].includes(view) && (
+              <Pagination
+                page={page}
+                pageSize={pageSize}
+                totalRecords={data.pagination.totalRecords}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+              />
+            )}
           </div>
         </section>
       )}
