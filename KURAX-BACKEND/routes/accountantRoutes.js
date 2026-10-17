@@ -1155,7 +1155,7 @@ router.get('/accounting/accounts-receivable', async (req, res) => {
          COALESCE(c.amount_paid, 0) AS amount_paid,
          GREATEST(COALESCE(c.outstanding_balance, c.amount - COALESCE(c.amount_paid, 0)), 0) AS outstanding_balance,
          c.status,
-         NULL::date AS due_date,
+         NULL::text AS due_date,
          c.created_at
        FROM public.accounts_receivable c ${dateFilter}
        UNION ALL
@@ -1164,11 +1164,11 @@ router.get('/accounting/accounts-receivable', async (req, res) => {
          GREATEST(c.amount - COALESCE(c.amount_paid, 0), 0) AS outstanding_balance,
          CASE WHEN c.amount - COALESCE(c.amount_paid, 0) <= 0 THEN 'Fully Settled'
               WHEN COALESCE(c.amount_paid, 0) > 0 THEN 'Partially Paid' ELSE 'Outstanding' END AS status,
-         c.pay_by AS due_date, c.created_at
+         c.pay_by::text AS due_date, c.created_at
        FROM public.credits c
        WHERE c.status IN ('Approved', 'PartiallySettled', 'FullySettled')
        ${creditDateFilter}
-       ORDER BY c.created_at DESC`,
+      ORDER BY created_at DESC`,
       params
     );
     res.json({ entries: rows.rows });

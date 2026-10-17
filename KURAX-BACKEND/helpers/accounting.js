@@ -98,6 +98,14 @@ export function safeMoney(value) {
   return Number.isFinite(asNumber) ? asNumber : 0;
 }
 
+function normalizeTransactionAmount(amount) {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0 || value > 9999999999.99) {
+    throw new Error('Enter a valid transaction amount.');
+  }
+  return Math.round(value * 100) / 100;
+}
+
 export async function ensureAccountingDataModel() {
   const statements = [
     `CREATE TABLE IF NOT EXISTS public.chart_of_accounts (
@@ -269,9 +277,12 @@ export async function ensureAccountingDataModel() {
 export function isEligibleInternalTransferAccount(account = null) {
   if (!account) return false;
   const category = String(account.category || '').trim();
-  if (category !== 'Asset' || account.is_active === false) return false;
-
-  return true;
+  const accountType = String(account.account_type || '').trim().toLowerCase();
+  const eligibleTypes = new Set(['cash', 'bank', 'bank account', 'mobile money', 'clearing', 'savings']);
+  return category === 'Asset'
+    && account.is_active !== false
+    && account.is_postable !== false
+    && eligibleTypes.has(accountType);
 }
 
 export function resolveSavingsAccount(accounts = DEFAULT_ACCOUNTS, explicitCode = process.env.KURAX_SAVINGS_ACCOUNT_CODE || null) {
@@ -383,6 +394,91 @@ export function buildAccountTransferJournalLines({ amount, sourceAccount, destin
   ];
 }
 
+export function getAccountTransactionOptions(accounts = []) {
+  const postableAccounts = (Array.isArray(accounts) ? accounts : []).filter((account) =>
+    account.is_active !== false && account.is_postable !== false);
+  const moneyAccounts = postableAccounts.filter(isEligibleInternalTransferAccount);
+  const deposit = [];
+  const withdrawal = [];
+
+  for (const account of postableAccounts) {
+    const code = String(account.code || account.account_code || '');
+    const type = String(account.account_type || '').toLowerCase();
+    if (account.category === 'Equity' && /capital/.test(type)) {
+      deposit.push({ value: `OWNER_CAPITAL:${code}`, label: account.name, counterpartAccountCode: code });
+    }
+    if (account.category === 'Liability' && /loan/.test(type)) {
+      deposit.push({ value: `LOAN_PROCEEDS:${code}`, label: account.name, counterpartAccountCode: code });
+    }
+    if (account.category === 'Revenue' && /other income/.test(type)) {
+      deposit.push({ value: `OTHER_INCOME:${code}`, label: account.name, counterpartAccountCode: code });
+    }
+    if (account.category === 'Asset' && /receivable/.test(type)) {
+      deposit.push({ value: `RECEIVABLE_COLLECTION:${code}`, label: account.name, counterpartAccountCode: code, requiresReference: true });
+    }
+    if (account.category === 'Liability' && /payable/.test(type)) {
+      withdrawal.push({ value: `SUPPLIER_SETTLEMENT:${code}`, label: account.name, counterpartAccountCode: code, requiresReference: true });
+    }
+    if (account.category === 'Expense') {
+      withdrawal.push({ value: `EXPENSE_PAYMENT:${code}`, label: account.name, counterpartAccountCode: code });
+    }
+  }
+
+  return { moneyAccounts, deposit, withdrawal };
+}
+
+export function buildAccountTransactionJournalLines({
+  transactionType,
+  amount,
+  account,
+  counterpartAccount,
+  classification,
+  sourceAccount,
+  destinationAccount,
+  description,
+}) {
+  const type = String(transactionType || '').trim().toLowerCase();
+  const normalizedAmount = normalizeTransactionAmount(amount);
+  const finalDescription = String(description || '').trim() || 'Account transaction';
+
+  if (type === 'transfer') {
+    return buildAccountTransferJournalLines({ amount: normalizedAmount, sourceAccount, destinationAccount, description: finalDescription });
+  }
+  if (!['deposit', 'withdrawal'].includes(type)) {
+    throw new Error('Transaction type must be Deposit, Withdrawal, or Transfer.');
+  }
+  if (!isEligibleInternalTransferAccount(account)) {
+    throw new Error('The selected account must be an active cash, bank, mobile money, clearing, or savings account.');
+  }
+  if (!classification) throw new Error('Select a transaction classification.');
+  if (!counterpartAccount || String(classification).split(':')[1] !== String(counterpartAccount.code || counterpartAccount.account_code)) {
+    throw new Error('The classification does not match the selected counterpart account.');
+  }
+
+  const classificationType = String(classification).split(':')[0];
+  const allowed = type === 'deposit'
+    ? new Set(['OWNER_CAPITAL', 'LOAN_PROCEEDS', 'OTHER_INCOME', 'RECEIVABLE_COLLECTION'])
+    : new Set(['EXPENSE_PAYMENT', 'SUPPLIER_SETTLEMENT']);
+  if (!allowed.has(classificationType)) throw new Error('Select a valid transaction classification.');
+
+  const cashLine = {
+    accountCode: String(account.code || account.account_code),
+    accountName: account.name || account.account_name || 'Cash Account',
+    debit: type === 'deposit' ? normalizedAmount : 0,
+    credit: type === 'withdrawal' ? normalizedAmount : 0,
+    description: finalDescription,
+  };
+  const counterpartLine = {
+    accountCode: String(counterpartAccount.code || counterpartAccount.account_code),
+    accountName: counterpartAccount.name || counterpartAccount.account_name || 'Counterpart Account',
+    debit: type === 'withdrawal' ? normalizedAmount : 0,
+    credit: type === 'deposit' ? normalizedAmount : 0,
+    description: finalDescription,
+  };
+
+  return type === 'deposit' ? [cashLine, counterpartLine] : [counterpartLine, cashLine];
+}
+
 export function buildSavingsDepositJournalLines({ amount, sourceAccount, destinationAccount = resolveSavingsAccount(), description = 'Deposit into savings' }) {
   const savingsAccount = destinationAccount || resolveSavingsAccount();
   if (!savingsAccount) {
@@ -442,6 +538,13 @@ export async function listAccounts() {
     `SELECT * FROM public.chart_of_accounts WHERE is_active = true ORDER BY code ASC`
   );
   return result.rows;
+}
+
+export async function listPostableAccounts(queryable = pool) {
+  const result = await queryable.query(
+    `SELECT * FROM public.chart_of_accounts WHERE is_active = true ORDER BY code ASC`
+  );
+  return result.rows.filter((account) => account.is_postable !== false);
 }
 
 export async function createJournalEntry({
