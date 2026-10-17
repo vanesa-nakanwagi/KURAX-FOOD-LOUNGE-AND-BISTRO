@@ -5,11 +5,22 @@ import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { 
   Plus, Trash2, Send, X, RefreshCcw, ArrowLeft,
-  ShoppingCart, UtensilsCrossed, Check, Printer, Search, LayoutGrid, ChevronDown, ChevronUp
+  ShoppingCart, UtensilsCrossed, Check, CheckCircle, Printer, Search, LayoutGrid, ChevronDown, ChevronUp
 } from "lucide-react";
 import ThemeToggle from "../../../customer/components/context/ThemeToggle";
 import { getImageSrc } from "../../../utils/imageHelper";
 import API_URL from "../../../config/api";
+
+function readSavedCart(key) {
+  try {
+    const saved = localStorage.getItem(key);
+    const cart = saved ? JSON.parse(saved) : [];
+    return Array.isArray(cart) ? cart.filter(item => item && typeof item === "object") : [];
+  } catch (error) {
+    console.error("Unable to restore saved waiter cart:", error);
+    return [];
+  }
+}
 
 export default function NewOrder({ preSelectedTable, onClearSelection, staffRole: staffRoleOverride = "WAITER" }) {
   const { orders = [], setOrders, menus = [], currentUser } = useData() || { setOrders: () => {}, orders: [], menus: [] };
@@ -26,10 +37,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
   
   // --- 1. STATE ---
   const [tableName, setTableName]           = useState(() => localStorage.getItem(TABLE_KEY) || "");
-  const [cart, setCart]                     = useState(() => {
-    const saved = localStorage.getItem(CART_KEY);
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [cart, setCart]                     = useState(() => readSavedCart(CART_KEY));
   const [existingItems, setExistingItems]   = useState([]);
   const [searchQuery, setSearchQuery]       = useState("");
   const [isCartOpen, setIsCartOpen]         = useState(false);
@@ -37,8 +45,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
   const [activeCategory, setActiveCategory] = useState("Starters");
 
   useEffect(() => {
-    const savedCart = localStorage.getItem(CART_KEY);
-    setCart(savedCart ? JSON.parse(savedCart) : []);
+    setCart(readSavedCart(CART_KEY));
     setTableName(localStorage.getItem(TABLE_KEY) || "");
   }, [CART_KEY, TABLE_KEY]);
 
@@ -73,20 +80,23 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
   , [cart]);
 
   const activeTables = useMemo(() => [
-    ...new Set(orders
+    ...new Set((orders || [])
       .filter(o => !["Paid", "Cancelled"].includes(o.status))
-      .map(o => o.tableName?.toUpperCase()))
+      .map(o => String(o.tableName ?? "").trim().toUpperCase())
+      .filter(Boolean))
   ].filter(Boolean), [orders]);
 
   const activeMenus = useMemo(() => (menus || []).filter(item => {
+    if (!item || typeof item !== "object") return false;
+    const itemName = String(item.name ?? "").trim();
     const isLive    = item.status === 'live' || item.published === true || item.published === 't';
-    const itemCat   = item.category?.toLowerCase().trim() || "";
+    const itemCat   = String(item.category ?? "").toLowerCase().trim();
     const activeCat = activeCategory?.toLowerCase().trim() || "";
-    return isLive && itemCat === activeCat && item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return isLive && itemName && itemCat === activeCat && itemName.toLowerCase().includes(searchQuery.toLowerCase());
   }), [menus, activeCategory, searchQuery]);
 
   // --- 5. HANDLERS ---
-  const handleSelectTable = (name) => setTableName(name.toUpperCase());
+  const handleSelectTable = (name) => setTableName(String(name ?? "").toUpperCase());
 
   const addToCart = (item) => {
     setCart(prev => {
@@ -105,7 +115,8 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
   };
 
   const handleProcessOrder = async () => {
-    if (!tableName) return alert("Please assign a table name.");
+    const normalizedTableName = tableName.trim().toUpperCase();
+    if (!normalizedTableName) return alert("Please assign a table name.");
     if (cart.length === 0) return alert("Cart is empty.");
     const staffId = Number(staffUser?.id);
     if (!Number.isInteger(staffId) || staffId <= 0) return alert("Your staff account could not be identified. Sign in again before placing an order.");
@@ -114,7 +125,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
       staffId,
       staffName: staffUser?.name || staffRole,
       staffRole,
-      tableName: tableName.toUpperCase(),
+      tableName: normalizedTableName,
       items:     cart,
       total:     cartTotal,
       status:    "Pending",
@@ -146,7 +157,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
   };
 
   return (
-    <div className={`flex flex-col h-screen font-[Outfit] overflow-hidden transition-colors duration-500 ${
+    <div className={`flex h-full min-h-0 flex-col font-[Outfit] overflow-hidden transition-colors duration-500 ${
       theme === 'dark' ? 'bg-black text-white' : 'bg-gray-50 text-black'
     }`}>
       
@@ -171,8 +182,8 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* --- DYNAMIC HEADER --- */}
-        <div className={`p-6 border-b ${theme === 'dark' ? 'bg-black/80 border-white/5' : 'bg-white border-black/5'}`}>
-          <div className="flex items-center justify-between mb-6">
+        <div className={`p-4 sm:p-6 border-b ${theme === 'dark' ? 'bg-black/80 border-white/5' : 'bg-white border-black/5'}`}>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
             <div className="flex items-center gap-4">
               {/* Conditional Arrow: Only shows if coming from a pre-selected table action */}
               {preSelectedTable && (
@@ -188,15 +199,15 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
               
               <div className="flex items-center gap-3">
                 <div className="w-1.5 h-8 bg-yellow-500 rounded-full" />
-                <h2 className="text-3xl font-light text-yellow-900 uppercase tracking-widest leading-none">Explore Menu</h2>
+                <h2 className="text-xl sm:text-3xl font-light text-yellow-900 uppercase tracking-[0.16em] sm:tracking-widest leading-none">Explore Menu</h2>
               </div>
             </div>
 
             {tableName && (
-              <div className="bg-yellow-500/10 border border-yellow-500/20 px-4 py-2 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-right">
-                <div className="flex flex-col">
+              <div className="max-w-full bg-yellow-500/10 border border-yellow-500/20 px-3 sm:px-4 py-2 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-right">
+                <div className="flex flex-col min-w-0">
                   <span className="text-[8px] font-black uppercase text-yellow-600 tracking-widest">Active Table</span>
-                  <span className="text-sm font-black text-yellow-500">{tableName}</span>
+                  <span className="text-sm font-black text-yellow-500 truncate">{tableName.trim()}</span>
                 </div>
                 <button onClick={() => { setTableName(""); setExistingItems([]); }} className="text-yellow-500 hover:text-white">
                   <X size={14}/>
@@ -211,7 +222,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
               <input 
                 type="text" placeholder="Search menu..." value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={`w-full border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-bold outline-none transition-all ${
+                className={`w-full border-none rounded-2xl py-3 sm:py-4 pl-12 pr-4 text-sm font-bold outline-none transition-all ${
                   theme === 'dark' ? 'bg-zinc-900 text-white focus:ring-1 ring-yellow-500/50' : 'bg-zinc-100 text-zinc-900 focus:ring-1 ring-yellow-500'
                 }`}
               />
@@ -236,7 +247,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 custom-scrollbar">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 md:px-6 pt-4 sm:pt-6 pb-24 md:pb-6 custom-scrollbar">
           <StaffOrderMenu 
             onAddItem={addToCart} 
             searchQuery={searchQuery}
@@ -271,13 +282,13 @@ function CartModal({
   const isDark = theme === "dark";
 
   const suggestions = activeTables.filter(t =>
-    t.toLowerCase().includes(tableInput.toLowerCase()) && tableInput.length > 0
+    String(t).toLowerCase().includes(tableInput.toLowerCase()) && tableInput.length > 0
   );
 
   const handleInputChange = (val) => {
     setTableInput(val);
     setShowDropdown(true);
-    handleSelectTable(val.toUpperCase().trim());
+    handleSelectTable(val.toUpperCase());
   };
 
   const handlePickSuggestion = (t) => {
@@ -354,7 +365,7 @@ function CartModal({
                 onChange={(e) => handleInputChange(e.target.value)}
                 onFocus={() => setShowDropdown(true)}
                 onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
-                className="bg-transparent outline-none flex-1 text-sm font-black uppercase tracking-wide placeholder:text-zinc-500 placeholder:font-medium placeholder:normal-case"
+                className="min-w-0 w-full bg-transparent outline-none flex-1 text-sm font-black uppercase tracking-wide placeholder:text-zinc-500 placeholder:font-medium placeholder:normal-case"
               />
               {tableInput ? (
                 <button onClick={handleClear} className="text-zinc-500 hover:text-rose-400 transition-colors shrink-0">
@@ -396,7 +407,7 @@ function CartModal({
         </div>
 
         {/* ── SCROLL AREA ── */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-3">
 
           {/* ── EXISTING ITEMS (read-only context) ── */}
           {existingItems.length > 0 && (

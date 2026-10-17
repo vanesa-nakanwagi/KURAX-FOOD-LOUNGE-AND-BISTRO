@@ -1247,7 +1247,7 @@ export default function OrderHistory({ onAddItems }) {
   }, [enrichedGroups, voidedItemsList, creditsData, totalPaidItemsCount, orders]);
 
   return (
-    <div className={`min-h-screen font-[Outfit] pb-20 sm:pb-28 ${theme === "dark" ? "bg-zinc-950 text-white" : "bg-zinc-50 text-zinc-900"}`}>
+    <div className={`min-h-full font-[Outfit] pb-20 sm:pb-28 ${theme === "dark" ? "bg-zinc-950 text-white" : "bg-zinc-50 text-zinc-900"}`}>
       <div className={`sticky top-0 z-20 w-full border-b px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between
         ${theme === "dark" ? "bg-zinc-950/80 backdrop-blur-xl border-white/5" : "bg-white/80 backdrop-blur-xl border-black/5"}`}>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">

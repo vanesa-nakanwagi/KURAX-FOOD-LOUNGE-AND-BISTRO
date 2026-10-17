@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kurax-v4';
+const CACHE_NAME = 'kurax-v5';
 try {
   importScripts('/firebase-config.js');
   const config = self.KURAX_FIREBASE_CONFIG;
@@ -39,7 +39,7 @@ self.addEventListener('fetch', event => {
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: 'no-store' })
         .then(response => {
           if (response.ok) {
             const copy = response.clone();

@@ -42,7 +42,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
   }, [items]);
 
   const filteredMenus = items.filter((item) => {
-  const matchesQuery = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+  const matchesQuery = String(item?.name ?? "").toLowerCase().includes(searchQuery.toLowerCase());
   const matchesCategory = item.category === activeCategory;
   return matchesQuery && matchesCategory;
 });
@@ -92,7 +92,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 md:gap-5 pb-20">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 md:gap-5 pb-6">
           {filteredMenus.map((item) => {
             const isNew = item.created_at && (new Date() - new Date(item.created_at)) / (1000 * 60 * 60) <= 168;
             return (
@@ -101,7 +101,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                 className={`group relative font-outfit flex flex-col rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border transition-all duration-500 hover:-translate-y-2
                   ${theme === "dark" ? "bg-[#0A0A0A] border-zinc-800/40" : "bg-white border-zinc-100"}`}
               >
-                <div className="relative h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
+                <div className="relative h-44 sm:h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
                   <div className="absolute top-2.5 left-2.5 right-2.5 flex justify-end items-start z-10">
                     {isNew && (
                       <div className="bg-yellow-500 text-black text-[9px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 uppercase tracking-wider border border-white/10 shadow">
@@ -117,7 +117,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
                 </div>
-                <div className="p-6 flex-1 flex flex-col justify-between">
+                <div className="p-4 sm:p-6 flex-1 flex flex-col justify-between">
                   <div className="space-y-2 text-left">
                     <h4 className={`text-lg font-[Outfit] tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1 ${theme === "dark" ? "text-white" : "text-yellow-700"}`}>
                       {item.name}

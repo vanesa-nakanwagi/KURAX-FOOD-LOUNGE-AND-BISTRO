@@ -7,6 +7,7 @@ import {
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
+import LogoutConfirmDialog from "../../components/LogoutConfirmDialog";
 
 //  Store component FUNCTIONS, not JSX
 const DEFAULT_MENU = [

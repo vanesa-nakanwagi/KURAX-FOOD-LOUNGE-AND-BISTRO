@@ -329,13 +329,20 @@ router.post('/staff', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, role, is_active, created_at`,
       [name, email, role, salt, hash]
     );
-    let emailSent = false;
-    try {
-      emailSent = await emailShishaPin({ name, email, role, pin });
-    } catch (emailError) {
-      console.error('Shisha PIN email failed:', emailError.message);
+
+    const emailConfigured = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+    const staff = result.rows[0];
+
+    if (emailConfigured) {
+      void emailShishaPin({ name, email, role, pin }).catch((emailError) => {
+        console.error('Shisha PIN email failed:', emailError.message);
+      });
     }
-    return res.status(201).json({ staff: result.rows[0], emailSent });
+
+    return res.status(201).json({
+      staff,
+      emailSent: emailConfigured,
+    });
   } catch (error) {
     if (error.code === '23505') return fail(res, 409, 'That email already has a Shisha account.');
     console.error('Create Shisha staff error:', error.message);

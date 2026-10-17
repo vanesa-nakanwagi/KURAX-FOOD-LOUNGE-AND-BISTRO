@@ -447,7 +447,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
   }).format(new Date());
 
   return (
-    <div className="min-h-screen bg-zinc-50 font-[Outfit]">
+    <div className="min-h-full bg-zinc-50 font-[Outfit] pb-24 sm:pb-28">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-4 sm:space-y-6">
         {/* ── HEADER (no emojis) ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

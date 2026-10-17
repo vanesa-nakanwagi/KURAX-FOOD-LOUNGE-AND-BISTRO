@@ -303,6 +303,12 @@ export default function CashierDashboard() {
     const isMomo = order.method === "Momo-MTN" || order.method === "Momo-Airtel";
     const isSplit = order.split_payments && order.split_payments.length > 0;
     if (!isSplit && isMomo && !momoTransactionId.trim()) return;
+
+    const confirmed = window.confirm("Are you sure you have received this payment?");
+    if (!confirmed) {
+      return;
+    }
+
     setConfirming(true);
     setAnimatingIds(prev => [...prev, order.id]);
     try {

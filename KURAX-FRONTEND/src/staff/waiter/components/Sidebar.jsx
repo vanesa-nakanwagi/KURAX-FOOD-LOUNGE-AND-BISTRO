@@ -205,8 +205,6 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
           })}
         </div>
 
-        {/* Bottom spacing for content */}
-        <div className="pb-20" />
       </>
     );
   }
@@ -216,7 +214,7 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
     <>
       <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
       <div
-        className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
+        className={`w-56 shrink-0 h-full flex flex-col border-r transition-colors duration-300
           ${isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
       >
       {/* Logo header – unified */}

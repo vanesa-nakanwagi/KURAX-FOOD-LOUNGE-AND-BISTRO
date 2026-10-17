@@ -190,6 +190,28 @@ function FailureModal({ onRetry, onCancel }) {
   );
 }
 
+function ComingSoonModal({ onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-200 dark:border-zinc-700 text-center">
+        <div className="flex justify-center mb-4">
+          <AlertCircle className="w-10 h-10 text-yellow-500" />
+        </div>
+        <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Coming soon!</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          This payment flow is not available yet. We will enable it soon.
+        </p>
+        <button
+          onClick={onClose}
+          className="w-full py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black font-semibold rounded-lg transition"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main CheckoutForm (with local state for instant typing) ─────────────────
 export default function CheckoutForm({
   customerDetails: externalDetails,
@@ -243,7 +265,7 @@ export default function CheckoutForm({
       return;
     }
     setErrors({});
-    setModal("merchant");
+    setModal("comingSoon");
   };
 
   const handleMerchantConfirm = async () => {
@@ -366,6 +388,11 @@ export default function CheckoutForm({
         <FailureModal
           onRetry={handleRetry}
           onCancel={() => setModal(null)}
+        />
+      )}
+      {modal === "comingSoon" && (
+        <ComingSoonModal
+          onClose={() => setModal(null)}
         />
       )}
     </div>

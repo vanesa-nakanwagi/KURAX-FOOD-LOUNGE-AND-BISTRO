@@ -353,6 +353,11 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
 
   return (
     <main className={`min-h-screen ${isManagement ? 'bg-white text-black' : 'bg-[#f4f3ef] text-zinc-900'}`}>
+      <LogoutConfirmDialog
+        open={showLogoutDialog}
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutDialog(false)}
+      />
       {!isManagement ? (
         <header className="border-b border-zinc-200 bg-white">
           <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-4 md:px-8">

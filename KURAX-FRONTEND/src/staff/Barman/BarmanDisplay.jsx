@@ -449,6 +449,11 @@ export default function BarmanDisplay() {
 
   return (
     <div className="h-screen bg-[#f4f3ef] p-3 md:p-5 overflow-hidden flex flex-col font-[Outfit] relative text-zinc-900">
+      <LogoutConfirmDialog
+        open={showLogoutDialog}
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutDialog(false)}
+      />
 
       {!audioEnabled && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center">

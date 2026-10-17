@@ -274,6 +274,11 @@ export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 
 
   return (
     <>
+      <LogoutConfirmDialog
+        open={showLogoutDialog}
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutDialog(false)}
+      />
       <DesktopSidebar />
       <MobileNav />
     </>

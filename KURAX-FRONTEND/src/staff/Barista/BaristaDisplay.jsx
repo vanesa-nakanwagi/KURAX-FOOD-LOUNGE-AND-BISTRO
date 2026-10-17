@@ -463,6 +463,11 @@ export default function BaristaDisplay() {
 
   return (
     <div className="h-screen bg-[#f4f3ef] p-3 md:p-5 overflow-hidden flex flex-col font-[Outfit] relative text-zinc-900">
+      <LogoutConfirmDialog
+        open={showLogoutDialog}
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutDialog(false)}
+      />
 
       {/* ── AUDIO GATE ── */}
       {!audioEnabled && (
