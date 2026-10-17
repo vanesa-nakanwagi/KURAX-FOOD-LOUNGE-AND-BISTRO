@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react'
 import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
 import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles, Loader2 } from 'lucide-react'
-import Footer from "../../../customer/components/common/Foooter";
 import { getImageSrc } from "../../../utils/imageHelper";
 import API_URL from "../../../config/api";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
@@ -446,7 +445,6 @@ export default function Menus() {
             })}
           </div>
         </main>
-        <Footer />
       </div>
     </div>
   )

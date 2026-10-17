@@ -10,7 +10,6 @@ import {
   Bike, CircleDollarSign, Award, Target, Activity, Sparkles,
   Zap, ArrowUpRight, Coffee
 } from "lucide-react";
-import Footer from "../../customer/components/common/Foooter";
 import API_URL from "../../config/api";
 import PettyCashPanel from "./PettyCashPanel";
 import DeliveryModal from "./DeliveryModal";
@@ -772,8 +771,6 @@ export default function CashierDashboard() {
             </div>
           )}
         </main>
-
-        <Footer />
       </div>
 
       {/* Payment Modal (unchanged) – but we already prevented opening if dayClosed */}

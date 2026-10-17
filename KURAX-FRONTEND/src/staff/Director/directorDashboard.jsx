@@ -20,7 +20,6 @@ import RiderLedger   from "./components/RiderLedger";
 // ── Shared app context ────────────────────────────────────────────────────────
 import { useData }  from "../../customer/components/context/DataContext";
 import Logo         from "../../customer/assets/images/logo.jpeg";
-import Footer       from "../../customer/components/common/Foooter";
 import API_URL      from "../../config/api";
 import ReconciliationViewer from "../Accountant/sections/ReconciliationViewer";
 import StaffSalesPerformance from "../components/StaffSalesPerformance";
@@ -444,7 +443,6 @@ export default function DirectorDashboard() {
             {activeTab === "MENU_PROFITABILITY" && <ReportsPanel hideFinancialTabs />}
             {activeTab === "AUDIT_TRAIL" && <AccountingAuditTrail />}
           </div>
-          <Footer />
         </main>
 
       </div>

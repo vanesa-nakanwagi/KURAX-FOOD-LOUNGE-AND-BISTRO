@@ -12,7 +12,6 @@ import {
 import { useData } from "../../customer/components/context/DataContext";
 import SideBar from "./SideBar";
 import MonthlyCosts from "./MonthlyCosts";
-import Footer from "../../customer/components/common/Foooter";
 import API_URL from "../../config/api";
 import ReportsPanel from "./ReportsPanel";
 
@@ -1917,7 +1916,6 @@ export default function AccountantDashboard() {
           )}
 
         </main>
-        <Footer isDark={isDark} />
       </div>
 
       <ReopenDayModal

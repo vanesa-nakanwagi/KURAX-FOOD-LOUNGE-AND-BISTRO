@@ -4,7 +4,6 @@ import axios from "axios";
 import Sidebar from "../components/Sidebar";
 import StatsCard from "../components/StatsCard";
 import { useData } from "../../../customer/components/context/DataContext";
-import Footer from "../../../customer/components/common/Foooter";
 import {
   BarChart3, Utensils, Search, Heart, Eye, 
   Calendar, Clock, X, MapPin, Edit3, ArrowRight, Power
@@ -213,7 +212,6 @@ export default function Dashboard() {
             )}
           </div>
         </main>
-        <Footer />
       </div>
 
       {/* DETAIL MODAL - Light Theme */}

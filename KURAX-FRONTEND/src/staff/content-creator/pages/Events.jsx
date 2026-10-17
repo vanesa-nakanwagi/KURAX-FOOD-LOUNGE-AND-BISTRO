@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
 import { Plus, Calendar, MapPin, Clock, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Loader2 } from 'lucide-react'
-import Footer from "../../../customer/components/common/Foooter";
 import API_URL from "../../../config/api";
 
 export default function Events() {
@@ -380,7 +379,6 @@ export default function Events() {
             ))}
           </div>
         </main>
-        <Footer />
       </div>
     </div>
   )

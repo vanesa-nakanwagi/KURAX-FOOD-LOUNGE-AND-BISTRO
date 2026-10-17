@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom";
 import { Menu, RefreshCw, AlertTriangle, RotateCcw, Sparkles } from "lucide-react";
 import { useData } from "../../customer/components/context/DataContext";
 import SideBar from "./SideBar";
-import Footer from "../../customer/components/common/Foooter";
 import API_URL from "../../config/api";
 
 // Import all section components
@@ -984,7 +983,6 @@ export default function AccountantLayout() {
           )}
           </>}
         </main>
-        <Footer isDark={false} />
       </div>
 
       <ReopenDayModal

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import API_URL from '../../../config/api';
-import Footer from '../../../customer/components/common/Foooter';
 import { getImageSrc } from '../../../utils/imageHelper';
 import { Loader2, Plus, Trash2, Box, CheckCircle2, AlertCircle, ImagePlus, Edit2, ImageIcon, X } from 'lucide-react';
 
@@ -424,7 +423,6 @@ export default function Combos() {
             </div>
           )}
       </main>
-        <Footer />
       </div>
     </div>
   );
