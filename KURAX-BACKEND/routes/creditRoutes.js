@@ -4,6 +4,7 @@ import express from 'express';
 import pool    from '../db.js';
 import logActivity from '../utils/logsActivity.js';
 import { updateDailySummary } from '../helpers/summaryHelper.js';
+import { buildSalesRevenueBreakdown, createReceivableSettlementJournalEntry, createSalesJournalEntry } from '../helpers/accounting.js';
 
 const router = express.Router();
 
@@ -418,11 +419,38 @@ router.patch('/:id/approve', async (req, res) => {
       RETURNING *
     `, [approved_by || 'Manager', id]);
 
-    if (!result.rows.length)
-      return res.status(404).json({ error: 'Credit not found or not pending manager' });
+    let credit = result.rows[0];
+    if (!credit) {
+      const existing = await pool.query(
+        `SELECT * FROM credits WHERE id = $1 AND status = 'Approved'`,
+        [id]
+      );
+      credit = existing.rows[0];
+      if (!credit) return res.status(404).json({ error: 'Credit not found or not pending manager' });
+    }
 
-    const credit = result.rows[0];
-
+    let saleItems = [];
+    if (credit.order_id) {
+      const orderRes = await pool.query('SELECT items FROM public.orders WHERE id = $1', [credit.order_id]);
+      const orderItems = orderRes.rows[0]?.items;
+      if (Array.isArray(orderItems)) saleItems = orderItems;
+      else if (typeof orderItems === 'string') {
+        try {
+          const parsed = JSON.parse(orderItems);
+          if (Array.isArray(parsed)) saleItems = parsed;
+        } catch (error) {
+          console.error(`Could not parse items for approved credit #${credit.id}:`, error.message);
+        }
+      }
+    }
+    await createSalesJournalEntry({
+      amount: credit.amount,
+      paymentMethod: 'Credit',
+      revenueBreakdown: buildSalesRevenueBreakdown(saleItems, credit.amount),
+      description: `Approved credit sale · ${credit.client_name || credit.table_name || credit.id}`,
+      sourceTransaction: `credit:${credit.id}`,
+      postedBy: approved_by || 'Manager',
+    });
     // Mark items in the order as credit requested
     if (credit.order_id) {
       const orderRes = await pool.query(
@@ -459,7 +487,7 @@ router.patch('/:id/approve', async (req, res) => {
       meta:    { credit_id: id, amount: credit.amount },
     });
 
-    res.json(result.rows[0]);
+    res.json(credit);
   } catch (err) {
     console.error('Approve credit error:', err.message);
     res.status(500).json({ error: err.message });
@@ -513,7 +541,7 @@ router.patch('/:id/settle', async (req, res) => {
   const { amount_paid, method, transaction_id, notes, settled_by } = req.body;
 
   const payment = Number(amount_paid);
-  if (!payment || payment <= 0)
+  if (!Number.isFinite(payment) || payment <= 0)
     return res.status(400).json({ error: 'amount_paid must be a positive number' });
 
   const client = await pool.connect();
@@ -540,6 +568,10 @@ router.patch('/:id/settle', async (req, res) => {
 
     const prevPaid    = Number(credit.amount_paid) || 0;
     const totalAmount = Number(credit.amount);
+    if (payment > totalAmount - prevPaid) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Settlement amount exceeds the outstanding credit balance' });
+    }
     const newPaid     = Math.min(prevPaid + payment, totalAmount);
     const newBalance  = totalAmount - newPaid;
     const newStatus   = newBalance <= 0 ? 'FullySettled' : 'PartiallySettled';
@@ -551,6 +583,14 @@ router.patch('/:id/settle', async (req, res) => {
       VALUES ($1,$2,$3,$4,$5,$6,NOW())
       RETURNING *
     `, [id, payment, method || 'Cash', transaction_id || null, notes || null, settled_by || 'Cashier']);
+
+    await createReceivableSettlementJournalEntry({
+      amount: payment,
+      paymentMethod: method || 'Cash',
+      sourceTransaction: `credit_settlement:${settlementRes.rows[0].id}`,
+      postedBy: settled_by || 'Cashier',
+      queryable: client,
+    });
 
     // 2. Update the credit record
     await client.query(`

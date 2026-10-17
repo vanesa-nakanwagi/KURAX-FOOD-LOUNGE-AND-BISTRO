@@ -215,6 +215,7 @@ export default function SideBar({
       className={`w-64 h-screen flex flex-col border-r transition-colors duration-300
         ${isDark ? "bg-zinc-950 border-white/5" : "bg-white border-gray-200"}`}
     >
+      <LogoutConfirmDialog open={showLogoutDialog} onConfirm={confirmLogout} onCancel={() => setShowLogoutDialog(false)} />
       {/* Logo header – unified */}
       <div className={`flex items-center gap-3 p-5 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
         <img src={logo} alt="Kurax" className="w-10 h-10 rounded-xl object-cover border border-yellow-500/30 shrink-0" />

@@ -2,6 +2,7 @@ import express from "express";
 import pool from "../db.js";
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
+import { createSalesJournalEntry, resolveRevenueAccountCode } from '../helpers/accounting.js';
 import logActivity from '../utils/logsActivity.js';
 
 const router = express.Router();
@@ -79,6 +80,53 @@ function parseOrderIds(order_ids) {
   return order_ids.map(id => parseInt(id));
 }
 
+async function getSaleRevenueBreakdown(orderIds, { item, isItem, amount }) {
+  const itemTotals = new Map();
+  const addItem = (orderItem) => {
+    if (!orderItem || orderItem.voidProcessed === true || orderItem.status === 'VOIDED'
+      || orderItem._rowPaid === true || orderItem.creditRequested === true
+      || String(orderItem.payment_method || '').toUpperCase().includes('CREDIT')) return;
+    const station = String(orderItem.station || 'kitchen').trim().toLowerCase();
+    const department = ['kitchen', 'food', 'bar', 'barman', 'barista', 'other'].includes(station)
+      ? station
+      : 'other';
+    const accountCode = resolveRevenueAccountCode(department);
+    const itemAmount = (Number(orderItem.price || orderItem.unit_price) || 0)
+      * (Number(orderItem.quantity) || 1);
+    if (itemAmount > 0) itemTotals.set(accountCode, (itemTotals.get(accountCode) || 0) + itemAmount);
+  };
+
+  if (isItem && item) {
+    addItem(item);
+  } else if (orderIds.length) {
+    const result = await pool.query(
+      'SELECT items FROM public.orders WHERE id = ANY($1::int[])',
+      [orderIds]
+    );
+    for (const row of result.rows) {
+      let items = row.items;
+      if (typeof items === 'string') {
+        try { items = JSON.parse(items); } catch { items = []; }
+      }
+      if (Array.isArray(items)) items.forEach(addItem);
+    }
+  }
+
+  const total = Number(amount);
+  const sourceTotal = [...itemTotals.values()].reduce((sum, value) => sum + value, 0);
+  if (!itemTotals.size || sourceTotal <= 0) return [{ accountCode: '4001', amount: total }];
+
+  const entries = [...itemTotals.entries()];
+  let allocated = 0;
+  return entries.map(([accountCode, value], index) => {
+    const allocatedAmount = index === entries.length - 1
+      ? Math.round((total - allocated) * 100) / 100
+      : Math.round((total * value / sourceTotal) * 100) / 100;
+    allocated += allocatedAmount;
+    return { accountCode, amount: allocatedAmount };
+  }).filter((line) => line.amount > 0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/cashier-ops/send-to-cashier
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,16 +160,41 @@ router.post("/send-to-cashier", async (req, res) => {
         const paymentMethod  = payment.method.toLowerCase();
         const paymentAmount  = payment.amount;
         const transactionId  = payment.transaction_id || null;
-
-        const orderResult = await pool.query(
-          `INSERT INTO orders 
-             (original_order_ids, table_name, payment_method, total, status,
-              staff_name, staff_id, payment_confirmed, paid_at, transaction_id, is_archived, created_at)
-           VALUES ($1::jsonb, $2, $3, $4, 'Paid', $5, $6, true, NOW(), $7, false, NOW())
-           RETURNING id`,
-          [JSON.stringify(formattedOrderIds), table_name, paymentMethod, paymentAmount, waiterName, staff_id || null, transactionId]
-        );
-        console.log(`✅ SPLIT: Created PAID order #${orderResult.rows[0].id} for UGX ${paymentAmount} via ${paymentMethod} (waiter: ${waiterName})`);
+        const client = await pool.connect();
+        let splitOrderId;
+        try {
+          await client.query('BEGIN');
+          const orderResult = await client.query(
+            `INSERT INTO orders
+               (original_order_ids, table_name, payment_method, total, status,
+                staff_name, staff_id, payment_confirmed, paid_at, transaction_id, is_archived, created_at)
+             VALUES ($1::jsonb, $2, $3, $4, 'Paid', $5, $6, true, NOW(), $7, false, NOW())
+             RETURNING id`,
+            [JSON.stringify(formattedOrderIds), table_name, paymentMethod, paymentAmount, waiterName, staff_id || null, transactionId]
+          );
+          splitOrderId = orderResult.rows[0].id;
+          const revenueBreakdown = await getSaleRevenueBreakdown(formattedOrderIds, {
+            item: null,
+            isItem: false,
+            amount: paymentAmount,
+          });
+          await createSalesJournalEntry({
+            amount: paymentAmount,
+            paymentMethod: payment.method,
+            revenueBreakdown,
+            description: `Cashier split sale · ${table_name}`,
+            sourceTransaction: `cashier_split:${splitOrderId}`,
+            postedBy: requested_by || 'Cashier',
+            queryable: client,
+          });
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
+        } finally {
+          client.release();
+        }
+        console.log(`✅ SPLIT: Created PAID order #${splitOrderId} for UGX ${paymentAmount} via ${paymentMethod} (waiter: ${waiterName})`);
         await updateDailySummary({ amount: paymentAmount, method: paymentMethod });
       }
 
@@ -252,18 +325,34 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
 
     console.log(`📋 Queue item: method=${q.method}, amount=${q.amount}, is_item=${q.is_item}, requested_by=${q.requested_by}`);
 
-    if (q.status === 'Confirmed') {
-      return res.json({ success: true, message: "Already confirmed" });
-    }
-
     if (q.method === "Credit") {
       return res.status(400).json({
         error: "Credit payments require manager approval — use Request Approval instead"
       });
     }
 
-    if ((q.method === "Momo-MTN" || q.method === "Momo-Airtel") && !transaction_id) {
+    if (q.status !== 'Confirmed'
+      && (q.method === "Momo-MTN" || q.method === "Momo-Airtel")
+      && !transaction_id) {
       return res.status(400).json({ error: "Transaction ID is required for Momo payments" });
+    }
+
+    const revenueBreakdown = await getSaleRevenueBreakdown(parseOrderIds(q.order_ids || []), {
+      item: q.item,
+      isItem: q.is_item,
+      amount: q.amount,
+    });
+    await createSalesJournalEntry({
+      amount: q.amount,
+      paymentMethod: q.method,
+      revenueBreakdown,
+      description: `Cashier sale · ${q.table_name || 'WALK-IN'}`,
+      sourceTransaction: `cashier_queue:${id}`,
+      postedBy: confirmed_by || 'Cashier',
+    });
+
+    if (q.status === 'Confirmed') {
+      return res.json({ success: true, message: "Already confirmed" });
     }
 
     await pool.query(
@@ -737,6 +826,25 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
     if (!tableName) {
       return res.status(400).json({ error: "Cannot approve credit: table_name is missing." });
     }
+
+    const creditRecord = await pool.query(
+      'SELECT id FROM public.credits WHERE cashier_queue_id = $1 ORDER BY id LIMIT 1',
+      [id]
+    );
+    const creditId = creditRecord.rows[0]?.id;
+    const creditRevenue = await getSaleRevenueBreakdown(parseOrderIds(q.order_ids || []), {
+      item: q.item,
+      isItem: q.is_item,
+      amount: q.amount,
+    });
+    await createSalesJournalEntry({
+      amount: q.amount,
+      paymentMethod: 'Credit',
+      revenueBreakdown: creditRevenue,
+      description: `Approved credit sale · ${q.credit_name || tableName}`,
+      sourceTransaction: creditId ? `credit:${creditId}` : `credit_queue:${id}`,
+      postedBy: approved_by || 'Manager',
+    });
 
     await pool.query(
       `UPDATE cashier_queue

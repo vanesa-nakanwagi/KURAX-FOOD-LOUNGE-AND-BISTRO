@@ -105,7 +105,7 @@ async function inventoryReport(station, from, to) {
 }
 
 async function menuItemReport(department, from, to) {
-  const result = await pool.query(
+  const [salesResult, voidedResult] = await Promise.all([pool.query(
     `SELECT item->>'name' AS menu_item,
             COALESCE(SUM(COALESCE(
               NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
@@ -116,12 +116,77 @@ async function menuItemReport(department, from, to) {
      FROM public.${department.table} t
      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
      WHERE t.ticket_date BETWEEN $1::date AND $2::date
+       AND COALESCE(item->>'voidProcessed','false') <> 'true'
+       AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
+       AND ${approvedVoidExclusion('t.order_id')}
        AND ${department.paidItemFilter}
      GROUP BY item->>'name'
      ORDER BY sales DESC, menu_item`,
     [from, to]
+  ), pool.query(
+    `SELECT vr.item_name AS menu_item,
+            COALESCE(SUM(COALESCE(vr.original_price,0) * COALESCE(vr.original_quantity,1)),0) AS voided_total,
+            COALESCE(SUM(COALESCE(vr.original_quantity,1)),0) AS voided_quantity
+     FROM public.void_requests vr
+     WHERE vr.status = 'Approved'
+       AND (vr.resolved_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date
+       AND EXISTS (
+         SELECT 1
+         FROM public.${department.table} t
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
+         WHERE t.order_id = vr.order_id
+           AND LOWER(BTRIM(COALESCE(item->>'name',''))) = LOWER(BTRIM(vr.item_name))
+           AND ${department.paidItemFilter}
+       )
+     GROUP BY vr.item_name`,
+    [from, to]
+  )]);
+  const rows = new Map();
+  for (const row of salesResult.rows) {
+    rows.set(row.menu_item, {
+      menu_item: row.menu_item,
+      sales: Number(row.sales || 0),
+      quantity: Number(row.quantity || 0),
+      voided_total: 0,
+      voided_quantity: 0,
+    });
+  }
+  for (const row of voidedResult.rows) {
+    const menuItem = rows.get(row.menu_item) || {
+      menu_item: row.menu_item,
+      sales: 0,
+      quantity: 0,
+      voided_total: 0,
+      voided_quantity: 0,
+    };
+    menuItem.voided_total = Number(row.voided_total || 0);
+    menuItem.voided_quantity = Number(row.voided_quantity || 0);
+    rows.set(row.menu_item, menuItem);
+  }
+  return [...rows.values()].sort((a, b) => b.sales - a.sales || a.menu_item.localeCompare(b.menu_item));
+}
+
+async function departmentVoidedTotals(department, from, to) {
+  const result = await pool.query(
+    `SELECT COALESCE(SUM(COALESCE(vr.original_price,0) * COALESCE(vr.original_quantity,1)),0) AS voided_total,
+            COALESCE(SUM(COALESCE(vr.original_quantity,1)),0) AS voided_quantity
+     FROM public.void_requests vr
+     WHERE vr.status = 'Approved'
+       AND (vr.resolved_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date
+       AND EXISTS (
+         SELECT 1
+         FROM public.${department.table} t
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
+         WHERE t.order_id = vr.order_id
+           AND LOWER(BTRIM(COALESCE(item->>'name',''))) = LOWER(BTRIM(vr.item_name))
+           AND ${department.paidItemFilter}
+       )`,
+    [from, to]
   );
-  return result.rows.map((row) => ({ ...row, sales: Number(row.sales || 0), quantity: Number(row.quantity || 0) }));
+  return {
+    voided_total: Number(result.rows[0]?.voided_total || 0),
+    voided_quantity: Number(result.rows[0]?.voided_quantity || 0),
+  };
 }
 
 async function departmentCreditReport(department, from, to) {
@@ -169,6 +234,9 @@ function departmentPaymentJoin(department) {
     FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb)) AS source_items(item)
     WHERE (item->>'_rowPaid'='true' OR item->>'is_partially_paid'='true'
       OR item->>'creditRequested'='true' OR ${hasCredit})
+      AND COALESCE(item->>'voidProcessed','false') <> 'true'
+      AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
+      AND ${approvedVoidExclusion('o.id')}
       AND ${department.paidItemFilter}
   ) paid ON true`;
 }
@@ -186,6 +254,18 @@ function parseOrderItems(value) {
 
 function itemTotal(item) {
   return (Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1);
+}
+
+function approvedVoidExclusion(orderId) {
+  return `NOT EXISTS (
+    SELECT 1 FROM public.void_requests vr
+    WHERE vr.order_id = ${orderId}
+      AND UPPER(COALESCE(vr.status,'')) = 'APPROVED'
+      AND LOWER(BTRIM(COALESCE(vr.item_name,''))) = LOWER(BTRIM(COALESCE(item->>'name','')))
+      AND COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric,0)
+        = COALESCE(vr.original_price,0)
+      AND COALESCE(NULLIF(item->>'quantity','')::numeric,1) = COALESCE(vr.original_quantity,1)
+  )`;
 }
 
 function requireDepartmentHod(req, res, next) {
@@ -218,6 +298,35 @@ router.get('/:department/staff', requireDepartmentHod, async (req, res) => {
   } catch (error) {
     console.error('Department staff list error:', error.message);
     return fail(res, 500, 'Could not load department staff.');
+  }
+});
+
+router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
+  const date = req.query.date || today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+    return fail(res, 400, 'Provide a valid ticket date.');
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT t.*,
+              COALESCE(
+                array_agg(DISTINCT a.assigned_to ORDER BY a.assigned_to)
+                  FILTER (WHERE a.assigned_to IS NOT NULL AND BTRIM(a.assigned_to) <> ''),
+                ARRAY[]::text[]
+              ) AS workers
+       FROM public.${req.department.table} t
+       LEFT JOIN public.${req.department.assignments} a ON a.ticket_id = t.id
+       WHERE t.ticket_date = $1::date
+       GROUP BY t.id
+       ORDER BY t.created_at ASC`,
+      [date]
+    );
+    return res.json(result.rows);
+  } catch (error) {
+    console.error('Department tickets error:', error.message);
+    return fail(res, 500, 'Could not load department tickets and worker assignments.');
   }
 });
 
@@ -394,7 +503,7 @@ router.get('/reports/consolidated', async (req, res) => {
   const summaryOnly = req.query.summary_only === 'true';
   try {
     const reports = await Promise.all(Object.entries(DEPARTMENTS).map(async ([key, department]) => {
-      const [result, performance, menuItems, inventory, creditSummary] = await Promise.all([
+      const [result, performance, menuItems, inventory, creditSummary, voidedTotals] = await Promise.all([
         pool.query(
         `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(sales.sales_amount),0) AS total_sales,
           COALESCE(SUM(LEAST(sales.sales_amount, paid.collected_amount)),0) AS amount_collected,
@@ -407,7 +516,10 @@ router.get('/reports/consolidated', async (req, res) => {
                * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
            )),0) AS sales_amount
            FROM jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
-           WHERE ${department.paidItemFilter}
+           WHERE COALESCE(item->>'voidProcessed','false') <> 'true'
+             AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
+             AND ${approvedVoidExclusion('t.order_id')}
+             AND ${department.paidItemFilter}
          ) sales ON true
          ${departmentPaymentJoin(department)}
          WHERE t.ticket_date BETWEEN $1::date AND $2::date`,
@@ -416,7 +528,7 @@ router.get('/reports/consolidated', async (req, res) => {
         pool.query(
           `SELECT COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) AS staff_name,
             COUNT(*)::int AS items_assigned,
-            COUNT(*) FILTER (WHERE t.status IN ('Ready','Served','Paid'))::int AS completed_items,
+            COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(t.status,''))) IN ('ready','served','paid','closed'))::int AS completed_items,
             COALESCE(SUM(COALESCE(
               NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
               COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
@@ -425,6 +537,9 @@ router.get('/reports/consolidated', async (req, res) => {
            FROM public.${department.table} t
            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
            WHERE t.ticket_date BETWEEN $1::date AND $2::date
+             AND COALESCE(item->>'voidProcessed','false') <> 'true'
+             AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
+             AND ${approvedVoidExclusion('t.order_id')}
              AND COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) IS NOT NULL
              AND ${department.paidItemFilter}
            GROUP BY COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to',''))
@@ -436,6 +551,7 @@ router.get('/reports/consolidated', async (req, res) => {
           ? Promise.resolve({})
           : inventoryReport(department.station, range.from, range.to),
         departmentCreditReport(department, range.from, range.to),
+        departmentVoidedTotals(department, range.from, range.to),
       ]);
       const summary = result.rows[0];
       const inventoryData = inventory;
@@ -446,6 +562,7 @@ router.get('/reports/consolidated', async (req, res) => {
         total_sales: Number(summary.total_sales || 0),
         ...inventoryData,
         ...creditSummary,
+        ...voidedTotals,
         gross_profit: summaryOnly ? null : Number(summary.total_sales || 0) - inventoryData.cogs,
         menu_items: menuItems,
         staff_performance: performance.rows.map(person => ({ ...person, worker_role: department.staffRole })),
@@ -485,6 +602,8 @@ router.get('/reports/consolidated', async (req, res) => {
     const totals = reports.reduce((total, row) => ({
       total_orders: total.total_orders + Number(row.total_orders || 0),
       total_sales: total.total_sales + Number(row.total_sales || 0),
+      voided_total: total.voided_total + Number(row.voided_total || 0),
+      voided_quantity: total.voided_quantity + Number(row.voided_quantity || 0),
       cogs: total.cogs + Number(row.cogs || 0),
       gross_profit: total.gross_profit + Number(row.gross_profit || 0),
       consumption_value: total.consumption_value + Number(row.consumption_value || 0),
@@ -498,7 +617,7 @@ router.get('/reports/consolidated', async (req, res) => {
       settled_credit_amount: total.settled_credit_amount + Number(row.settled_credit_amount || 0),
       outstanding_credit_count: total.outstanding_credit_count + Number(row.outstanding_credit_count || 0),
       outstanding_credit_balance: total.outstanding_credit_balance + Number(row.outstanding_credit_balance || 0),
-    }), { total_orders: 0, total_sales: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, partially_paid_credit_balance: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
+    }), { total_orders: 0, total_sales: 0, voided_total: 0, voided_quantity: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, partially_paid_credit_balance: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
     const response = {
       ...range,
       departments: reports,
@@ -526,7 +645,7 @@ router.get('/:department/reports', async (req, res) => {
   if (!range) return undefined;
 
   try {
-    const [summary, performance, menuItems, inventory, creditSummary] = await Promise.all([
+    const [summary, performance, menuItems, inventory, creditSummary, voidedTotals] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS total_orders,
           COALESCE(SUM(sales.sales_amount),0) AS total_sales,
@@ -534,7 +653,7 @@ router.get('/:department/reports', async (req, res) => {
           COALESCE(SUM(GREATEST(sales.sales_amount - LEAST(sales.sales_amount, paid.collected_amount),0)),0) AS outstanding_balance,
           COUNT(*) FILTER (WHERE t.status='Pending')::int AS pending_orders,
           COUNT(*) FILTER (WHERE t.status='Preparing')::int AS preparing_orders,
-          COUNT(*) FILTER (WHERE t.status IN ('Ready','Served','Paid'))::int AS completed_orders
+          COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(t.status,''))) IN ('ready','served','paid','closed'))::int AS completed_orders
          FROM public.${department.table} t
          LEFT JOIN public.orders o ON o.id=t.order_id
          LEFT JOIN LATERAL (
@@ -544,7 +663,10 @@ router.get('/:department/reports', async (req, res) => {
                * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
            )),0) AS sales_amount
            FROM jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
-           WHERE ${department.paidItemFilter}
+           WHERE COALESCE(item->>'voidProcessed','false') <> 'true'
+             AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
+             AND ${approvedVoidExclusion('t.order_id')}
+             AND ${department.paidItemFilter}
          ) sales ON true
          ${departmentPaymentJoin(department)}
          WHERE t.ticket_date BETWEEN $1::date AND $2::date`,
@@ -553,7 +675,7 @@ router.get('/:department/reports', async (req, res) => {
       pool.query(
         `SELECT COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) AS staff_name,
           COUNT(*)::int AS items_assigned,
-          COUNT(*) FILTER (WHERE t.status IN ('Ready','Served','Paid'))::int AS completed_items,
+          COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(t.status,''))) IN ('ready','served','paid','closed'))::int AS completed_items,
           COALESCE(SUM(COALESCE(
             NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
             COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
@@ -562,6 +684,9 @@ router.get('/:department/reports', async (req, res) => {
          FROM public.${department.table} t
          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
          WHERE t.ticket_date BETWEEN $1::date AND $2::date
+           AND COALESCE(item->>'voidProcessed','false') <> 'true'
+           AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
+           AND ${approvedVoidExclusion('t.order_id')}
            AND COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) IS NOT NULL
            AND ${department.paidItemFilter}
          GROUP BY COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to',''))
@@ -571,6 +696,7 @@ router.get('/:department/reports', async (req, res) => {
       menuItemReport(department, range.from, range.to),
       inventoryReport(department.station, range.from, range.to),
       departmentCreditReport(department, range.from, range.to),
+      departmentVoidedTotals(department, range.from, range.to),
     ]);
     const departmentSummary = summary.rows[0];
     const inventoryData = inventory;
@@ -582,6 +708,7 @@ router.get('/:department/reports', async (req, res) => {
         total_sales: Number(departmentSummary.total_sales || 0),
         ...inventoryData,
         ...creditSummary,
+        ...voidedTotals,
         gross_profit: Number(departmentSummary.total_sales || 0) - inventoryData.cogs,
       },
       menu_items: menuItems,

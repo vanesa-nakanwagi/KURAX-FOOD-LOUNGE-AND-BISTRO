@@ -5,6 +5,7 @@ import {
   aggregateIncomeStatementRevenue,
   buildAccountTransactionJournalLines,
   buildAccountTransferJournalLines,
+  buildSalesRevenueBreakdown,
   getAccountTransactionOptions,
   resolveAccountTransferTargets,
   resolveIncomeStatementRevenueCode,
@@ -35,9 +36,23 @@ test('income statement keeps paid sales and approved credit sales in their depar
   assert.equal(resolveIncomeStatementRevenueCode('', 'Coffee'), '4003');
 });
 
-test('card receipts stay in clearing until explicitly settled', () => {
-  assert.equal(resolvePaymentDebitAccountCode('Card'), '1004');
-  assert.equal(resolvePaymentDebitAccountCode('Visa', 'Pending'), '1004');
+test('sales revenue is proportionally assigned to item departments and excludes voided items', () => {
+  const breakdown = buildSalesRevenueBreakdown([
+    { station: 'Kitchen', price: 10000, quantity: 2 },
+    { station: 'Bar', price: 5000, quantity: 1 },
+    { station: 'Barista', price: 5000, quantity: 1, status: 'VOIDED' },
+  ], 25000);
+
+  assert.deepEqual(breakdown, [
+    { accountCode: '4001', amount: 20000 },
+    { accountCode: '4002', amount: 5000 },
+  ]);
+  assert.equal(breakdown.reduce((sum, line) => sum + line.amount, 0), 25000);
+});
+
+test('all card receipts post directly to the bank account', () => {
+  assert.equal(resolvePaymentDebitAccountCode('Card'), '1002');
+  assert.equal(resolvePaymentDebitAccountCode('Visa', 'Pending'), '1002');
   assert.equal(resolvePaymentDebitAccountCode('Card', 'Settled'), '1002');
   assert.equal(resolvePaymentDebitAccountCode('Credit Card', 'fully settled'), '1002');
 });

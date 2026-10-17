@@ -316,7 +316,8 @@ router.patch('/credits/:id/settle', async (req, res) => {
   const { id } = req.params;
   const { amount_paid, method, transaction_id, settled_by, settlement_status = 'Pending' } = req.body;
 
-  if (!amount_paid || amount_paid <= 0) {
+  const paidAmt = Number(amount_paid);
+  if (!Number.isFinite(paidAmt) || paidAmt <= 0) {
     return res.status(400).json({ error: 'Valid amount_paid is required' });
   }
   if (!method) {
@@ -338,10 +339,17 @@ router.patch('/credits/:id/settle', async (req, res) => {
     }
 
     const credit           = creditRes.rows[0];
-    const paidAmt           = Number(amount_paid);
     const currentAmountPaid = Number(credit.amount_paid || 0);
     const totalAmount       = Number(credit.amount      || 0);
-    const newAmountPaid     = currentAmountPaid + Number(amount_paid);
+    if (!['Approved', 'PartiallySettled'].includes(credit.status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `Cannot settle a credit with status: ${credit.status}` });
+    }
+    if (paidAmt > totalAmount - currentAmountPaid) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Settlement amount exceeds the outstanding credit balance' });
+    }
+    const newAmountPaid     = currentAmountPaid + paidAmt;
     const remainingBalance  = totalAmount - newAmountPaid;
 
     let newStatus = credit.status;
@@ -369,19 +377,21 @@ router.patch('/credits/:id/settle', async (req, res) => {
       [newAmountPaid, remainingBalance, newStatus, method, transaction_id || null, settled_by, id]
     );
 
-    await client.query(
+    const settlementRes = await client.query(
       `INSERT INTO credit_settlements (credit_id, amount_paid, method, transaction_id, settled_by)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, amount_paid, method, transaction_id || null, settled_by]
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [id, paidAmt, method, transaction_id || null, settled_by]
     );
 
     await createReceivableSettlementJournalEntry({
       amount: paidAmt,
       paymentMethod: method,
       settlementStatus: settlement_status,
-      sourceTransaction: `credit_settlement:${id}`,
+      sourceTransaction: `credit_settlement:${settlementRes.rows[0].id}`,
       postedBy: settled_by || 'Cashier',
       entryDate: kampalaDate(),
+      queryable: client,
     });
 
     const today   = kampalaDate();

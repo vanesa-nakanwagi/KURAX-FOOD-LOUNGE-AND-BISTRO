@@ -32,7 +32,7 @@ const VIEWS = [
   { key: "expenses", label: "Expense Management", icon: CircleDollarSign },
 ];
 
-const today = new Date().toISOString().slice(0, 10);
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Kampala" }).format(new Date());
 const monthStart = `${today.slice(0, 7)}-01`;
 
 async function requestJSON(url, options) {

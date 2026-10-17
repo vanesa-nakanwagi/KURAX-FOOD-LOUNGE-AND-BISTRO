@@ -13,14 +13,22 @@ import API_URL from "../../../config/api";
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function getTodayLocal() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return formatOrderDate(new Date());
 }
 
 function formatOrderDate(dateStr) {
   if (!dateStr) return null;
-  const d = new Date(dateStr);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  if (typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const date = dateStr instanceof Date ? dateStr : new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Africa/Kampala",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function fmtUGX(n) {
@@ -326,7 +334,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
 
   const fetchConfirmedQueue = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/orders/cashier-history`);
+      const res = await fetch(`${API_URL}/api/orders/cashier-history?date=${encodeURIComponent(currentDayDate)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const allQueue = await res.json();
       setConfirmedQueue(allQueue.filter(item => {

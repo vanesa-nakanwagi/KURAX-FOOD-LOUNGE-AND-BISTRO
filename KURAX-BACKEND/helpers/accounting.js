@@ -35,7 +35,6 @@ export const DEFAULT_ACCOUNTS = [
 ];
 
 const CARD_PAYMENT_METHODS = new Set(['card', 'bankcard', 'creditcard', 'debitcard', 'visa', 'mastercard', 'pos']);
-const SETTLED_STATUSES = new Set(['settled', 'fullysettled', 'cleared', 'deposited', 'banked']);
 
 export function resolveRevenueAccountCode(department = '') {
   const normalized = String(department || '').trim().toLowerCase();
@@ -61,6 +60,33 @@ export function resolveIncomeStatementRevenueCode(station = '', category = '') {
   return '4001';
 }
 
+export function buildSalesRevenueBreakdown(items = [], amount) {
+  const total = safeMoney(amount);
+  const totals = new Map();
+  for (const item of items) {
+    if (!item || item.voidProcessed === true || item.status === 'VOIDED') continue;
+    const station = String(item.station || 'kitchen').trim().toLowerCase();
+    const department = ['kitchen', 'food', 'bar', 'barman', 'barista', 'other'].includes(station)
+      ? station
+      : 'other';
+    const accountCode = resolveRevenueAccountCode(department);
+    const itemAmount = (safeMoney(item.price || item.unit_price)) * (safeMoney(item.quantity) || 1);
+    if (itemAmount > 0) totals.set(accountCode, (totals.get(accountCode) || 0) + itemAmount);
+  }
+
+  const sourceTotal = [...totals.values()].reduce((sum, value) => sum + value, 0);
+  if (sourceTotal <= 0 || total <= 0) return [{ accountCode: '4001', amount: total }];
+  const entries = [...totals.entries()];
+  let allocated = 0;
+  return entries.map(([accountCode, value], index) => {
+    const allocatedAmount = index === entries.length - 1
+      ? Math.round((total - allocated) * 100) / 100
+      : Math.round((total * value / sourceTotal) * 100) / 100;
+    allocated += allocatedAmount;
+    return { accountCode, amount: allocatedAmount };
+  }).filter((line) => line.amount > 0);
+}
+
 export function aggregateIncomeStatementRevenue(rows = []) {
   return rows.reduce((totals, row) => {
     const code = resolveIncomeStatementRevenueCode(row.station, row.category);
@@ -71,10 +97,8 @@ export function aggregateIncomeStatementRevenue(rows = []) {
 
 export function resolvePaymentDebitAccountCode(paymentMethod = 'Cash', settlementStatus = 'Pending') {
   const method = String(paymentMethod || 'Cash').trim().toLowerCase().replace(/[\s_-]+/g, '');
-  const status = String(settlementStatus ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '');
-  const isSettled = settlementStatus === true || SETTLED_STATUSES.has(status);
 
-  if (CARD_PAYMENT_METHODS.has(method)) return isSettled ? '1002' : '1004';
+  if (CARD_PAYMENT_METHODS.has(method)) return '1002';
 
   const accountByMethod = {
     cash: '1001',
@@ -1124,35 +1148,82 @@ export async function createSalesJournalEntry({
   settlementStatus = 'Pending',
   businessTime,
   revenueAccountCode = '4001',
+  revenueBreakdown,
   description,
   sourceTransaction,
   postedBy = 'System',
   entryDate,
+  queryable,
 }) {
   const numericAmount = safeMoney(amount);
+  if (numericAmount <= 0) throw new Error('Sales amount must be greater than zero.');
   const debitAccountCode = resolvePaymentDebitAccountCode(paymentMethod, settlementStatus);
-  const debitAccount = await getAccountByCode(debitAccountCode);
-  const revenueAccount = await getAccountByCode(revenueAccountCode);
-
-  if (!debitAccount) {
-    throw new Error(`Sales debit account ${debitAccountCode} is not defined in the chart of accounts.`);
+  const normalizedBreakdown = Array.isArray(revenueBreakdown) && revenueBreakdown.length
+    ? revenueBreakdown.map((line) => ({
+        accountCode: String(line.accountCode || '').trim(),
+        amount: safeMoney(line.amount),
+      }))
+    : [{ accountCode: revenueAccountCode, amount: numericAmount }];
+  const breakdownTotal = normalizedBreakdown.reduce((sum, line) => sum + line.amount, 0);
+  if (normalizedBreakdown.some((line) => !line.accountCode || line.amount <= 0)
+    || Math.abs(breakdownTotal - numericAmount) > 0.01) {
+    throw new Error('Sales revenue breakdown must contain positive amounts equal to the sale total.');
   }
 
-  if (!revenueAccount) {
-    throw new Error(`Revenue account ${revenueAccountCode} is not defined in the chart of accounts.`);
-  }
+  const createEntry = async (client) => {
+    const source = sourceTransaction || `sale:${(paymentMethod || 'Cash').toLowerCase()}:${crypto.randomUUID()}`;
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`accounting-sale:${source}`]);
+    const existing = await client.query(
+      `SELECT * FROM public.journal_entries
+       WHERE source_transaction = $1 AND system_type = 'MAIN' AND status <> 'Voided'
+       ORDER BY id LIMIT 1`,
+      [source]
+    );
+    if (existing.rows[0]) return existing.rows[0];
 
-  return createJournalEntry({
-    entryDate,
-    businessTime,
-    description: description || `Sales - ${paymentMethod || 'Cash'}`,
-    sourceTransaction: sourceTransaction || `sale:${(paymentMethod || 'Cash').toLowerCase()}`,
-    postedBy,
-    lines: [
-      { accountCode: debitAccountCode, accountName: debitAccount.name, debit: numericAmount },
-      { accountCode: revenueAccountCode, accountName: revenueAccount.name, credit: numericAmount },
-    ],
-  });
+    const debitAccount = await getAccountByCode(debitAccountCode);
+    if (!debitAccount) {
+      throw new Error(`Sales debit account ${debitAccountCode} is not defined in the chart of accounts.`);
+    }
+    const lines = [{ accountCode: debitAccountCode, accountName: debitAccount.name, debit: numericAmount }];
+    for (const revenueLine of normalizedBreakdown) {
+      const revenueAccount = await getAccountByCode(revenueLine.accountCode);
+      if (!revenueAccount) {
+        throw new Error(`Revenue account ${revenueLine.accountCode} is not defined in the chart of accounts.`);
+      }
+      lines.push({
+        accountCode: revenueAccount.code,
+        accountName: revenueAccount.name,
+        credit: revenueLine.amount,
+      });
+    }
+    return createJournalEntry({
+      entryDate: entryDate || new Intl.DateTimeFormat('en-CA', {
+        timeZone: process.env.KURAX_BUSINESS_TIME_ZONE || 'Africa/Kampala',
+      }).format(new Date()),
+      businessTime,
+      description: description || `Sales - ${paymentMethod || 'Cash'}`,
+      sourceTransaction: source,
+      postedBy,
+      lines,
+      queryable: client,
+    });
+  };
+
+  if (queryable) return createEntry(queryable);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const journal = await createEntry(client);
+    await client.query('COMMIT');
+    return journal;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function createReceivableSettlementJournalEntry({
@@ -1162,8 +1233,10 @@ export async function createReceivableSettlementJournalEntry({
   sourceTransaction,
   postedBy = 'System',
   entryDate,
+  queryable = pool,
 }) {
   const numericAmount = safeMoney(amount);
+  if (numericAmount <= 0) throw new Error('Credit settlement amount must be greater than zero.');
   const accountCode = resolvePaymentDebitAccountCode(paymentMethod, settlementStatus);
   const debitAccount = await getAccountByCode(accountCode);
   const receivableAccount = await getAccountByCode('1101');
@@ -1173,15 +1246,83 @@ export async function createReceivableSettlementJournalEntry({
   }
 
   return createJournalEntry({
-    entryDate,
+    entryDate: entryDate || new Intl.DateTimeFormat('en-CA', {
+      timeZone: process.env.KURAX_BUSINESS_TIME_ZONE || 'Africa/Kampala',
+    }).format(new Date()),
     description: `Credit settlement via ${paymentMethod}`,
-    sourceTransaction: sourceTransaction || `credit_settlement:${paymentMethod.toLowerCase()}`,
+    sourceTransaction: sourceTransaction || `credit_settlement:${paymentMethod.toLowerCase()}:${crypto.randomUUID()}`,
     postedBy,
     lines: [
       { accountCode: accountCode, accountName: debitAccount.name, debit: numericAmount },
       { accountCode: '1101', accountName: receivableAccount.name, credit: numericAmount },
     ],
+    queryable,
   });
+}
+
+export async function syncConfirmedCashierSales({ startDate, endDate, limit = 500 } = {}) {
+  const params = [];
+  let dateFilter = '';
+  if (startDate && endDate) {
+    params.push(startDate, endDate);
+    dateFilter = `AND (cq.confirmed_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date`;
+  }
+  params.push(Math.max(1, Math.min(Number(limit) || 500, 2000)));
+  const result = await pool.query(
+    `SELECT cq.id, cq.amount, cq.method, cq.table_name, cq.order_ids, cq.item, cq.is_item,
+            cq.confirmed_by, cq.confirmed_at
+     FROM public.cashier_queue cq
+     WHERE cq.status = 'Confirmed'
+       AND cq.amount > 0
+       AND LOWER(COALESCE(cq.method, '')) <> 'credit'
+       ${dateFilter}
+       AND NOT EXISTS (
+         SELECT 1 FROM public.journal_entries je
+         WHERE je.source_transaction = 'cashier_queue:' || cq.id::text
+           AND je.system_type = 'MAIN' AND je.status <> 'Voided'
+       )
+     ORDER BY cq.confirmed_at, cq.id
+     LIMIT $${params.length}`,
+    params
+  );
+
+  let posted = 0;
+  for (const sale of result.rows) {
+    let saleItems = [];
+    if (sale.is_item && sale.item) {
+      saleItems = [sale.item];
+    } else if (Array.isArray(sale.order_ids) && sale.order_ids.length) {
+      const orders = await pool.query(
+        'SELECT items FROM public.orders WHERE id = ANY($1::int[])',
+        [sale.order_ids]
+      );
+      saleItems = orders.rows.flatMap((order) => {
+        if (Array.isArray(order.items)) return order.items;
+        if (typeof order.items === 'string') {
+          try {
+            const parsed = JSON.parse(order.items);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        }
+        return [];
+      });
+    }
+    await createSalesJournalEntry({
+      amount: sale.amount,
+      paymentMethod: sale.method,
+      revenueBreakdown: buildSalesRevenueBreakdown(saleItems, sale.amount),
+      description: `Cashier sale · ${sale.table_name || 'WALK-IN'}`,
+      sourceTransaction: `cashier_queue:${sale.id}`,
+      postedBy: sale.confirmed_by || 'System',
+      entryDate: sale.confirmed_at
+        ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date(sale.confirmed_at))
+        : undefined,
+    });
+    posted += 1;
+  }
+  return posted;
 }
 
 export async function getTrialBalance(startDate, endDate, startTime = null, endTime = null) {

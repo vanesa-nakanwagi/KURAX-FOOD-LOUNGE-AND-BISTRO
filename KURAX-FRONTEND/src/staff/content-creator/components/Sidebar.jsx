@@ -10,10 +10,12 @@ import {
   Sparkles,
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
+import { useData } from "../../../customer/components/context/DataContext";
 
 export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { setCurrentUser } = useData();
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -49,7 +51,9 @@ export default function Sidebar() {
 
   const handleLogout = () => {
     localStorage.removeItem("user");
-    navigate("/staff/login");
+    localStorage.removeItem("kurax_user");
+    setCurrentUser(null);
+    navigate("/staff/login", { replace: true });
     setIsOpen(false);
   };
 

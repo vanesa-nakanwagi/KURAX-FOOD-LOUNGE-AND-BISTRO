@@ -40,11 +40,17 @@ function fmtUGX(n) {
 
 function getItemCount(items) {
   if (!items) return 0;
-  if (Array.isArray(items)) return items.length;
+  if (Array.isArray(items)) {
+    return items.reduce((count, item) => {
+      if (!item || item.voidProcessed === true || item.status === "VOIDED") return count;
+      const quantity = Number(item.quantity);
+      return count + (Number.isFinite(quantity) && quantity > 0 ? quantity : 1);
+    }, 0);
+  }
   if (typeof items === "string") {
     try {
       const parsed = JSON.parse(items);
-      return Array.isArray(parsed) ? parsed.length : 0;
+      return Array.isArray(parsed) ? getItemCount(parsed) : 0;
     } catch { return 0; }
   }
   return 0;
@@ -232,7 +238,7 @@ function MobileOrderRow({ item }) {
 // ─── MAIN COMPONENT (using DataContext) ───────────────────────────────────────
 export default function PerformanceDashboard({ theme = "light" }) {
   // Use context for orders, day closure, and refresh
-  const { orders: allOrders, dayClosed, globalResetKey, refreshData, currentUser } = useData();
+  const { dayClosed, globalResetKey, refreshData } = useData();
   
   // Local state for data that still comes from separate APIs (targets, credits, etc.)
   const [staffTargets, setStaffTargets] = useState({ daily_order_target: null, monthly_income_target: null });
@@ -245,6 +251,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
   const [currentDayDate, setCurrentDayDate] = useState(getTodayLocal());
   const [activeDay, setActiveDay] = useState(null);
   const [dailyMotivation, setDailyMotivation] = useState(null);
+  const [dailyOrders, setDailyOrders] = useState([]);
 
   // Get current staff details from context or localStorage
   const savedUser = useMemo(() => {
@@ -261,17 +268,35 @@ export default function PerformanceDashboard({ theme = "light" }) {
     setDailyMotivation(getDailyMotivation());
   }, []);
 
-  // ─── Helper to filter orders for this staff and current day ──────────────
-  const staffOrders = useMemo(() => {
-    if (!allOrders) return [];
-    const today = currentDayDate;
-    return allOrders.filter(order => {
-      const orderDate = formatOrderDate(order.timestamp || order.created_at);
-      const matchStaff = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase() ||
-                         Number(order.staff_id) === Number(currentStaffId);
-      return matchStaff && orderDate === today && getItemCount(order.items) > 0;
-    });
-  }, [allOrders, currentDayDate, currentStaffName, currentStaffId]);
+  useEffect(() => {
+    if (!currentStaffId) {
+      setDailyOrders([]);
+      return undefined;
+    }
+    let mounted = true;
+    const loadStaffOrders = async () => {
+      try {
+        const query = new URLSearchParams({
+          staff_id: String(currentStaffId),
+          date: currentDayDate,
+        });
+        const response = await fetch(`${API_URL}/api/orders?${query}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const result = await response.json();
+        if (mounted) {
+          setDailyOrders(Array.isArray(result) ? result.filter(order => getItemCount(order.items) > 0) : []);
+          setFetchError(null);
+        }
+      } catch (error) {
+        if (mounted) setFetchError(`Could not load today's orders: ${error.message}`);
+      }
+    };
+    loadStaffOrders();
+    const interval = setInterval(loadStaffOrders, 30000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, [currentStaffId, currentDayDate]);
+
+  const staffOrders = dailyOrders;
 
   // ─── Compute daily items count from staffOrders (using order.items) ──────
   const dailyStaffItemsCount = useMemo(() => {
@@ -312,7 +337,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
 
   const fetchConfirmedQueue = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/orders/cashier-history`);
+      const res = await fetch(`${API_URL}/api/orders/cashier-history?date=${encodeURIComponent(currentDayDate)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const allQueue = await res.json();
       setConfirmedQueue(allQueue.filter(item => {

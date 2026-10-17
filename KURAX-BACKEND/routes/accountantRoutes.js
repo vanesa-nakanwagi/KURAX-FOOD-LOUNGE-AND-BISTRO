@@ -19,13 +19,19 @@ import {
   postBackdatedExpense,
   resolveRevenueAccountCode,
   reverseJournalEntry,
+  syncConfirmedCashierSales,
 } from '../helpers/accounting.js';
 
 const router = express.Router();
 
-ensureAccountingDataModel().catch((error) => {
-  console.error('Accounting schema bootstrap warning:', error.message);
-});
+ensureAccountingDataModel()
+  .then(() => syncConfirmedCashierSales())
+  .then((posted) => {
+    if (posted) console.log(`Accounting reconciliation posted ${posted} missing confirmed sale(s).`);
+  })
+  .catch((error) => {
+    console.error('Accounting schema or sales reconciliation error:', error.message);
+  });
 
 // ─── HELPER: Kampala date (YYYY-MM-DD) ──────────────────────────────────────
 function kampalaDate(date = new Date()) {
@@ -802,6 +808,7 @@ router.get('/accounting/general-ledger', async (req, res) => {
     return res.status(400).json({ error: error.message });
   }
   try {
+    await syncConfirmedCashierSales({ startDate, endDate });
     const params = [];
     const conditions = [`je.system_type = 'MAIN'`, `gl.account_code <> '4004'`];
     if (startDate && endDate) {
@@ -852,6 +859,7 @@ router.get('/accounting/journal-entries', async (req, res) => {
     return res.status(400).json({ error: error.message });
   }
   try {
+    await syncConfirmedCashierSales({ startDate, endDate });
     let journal;
     let pageWindow;
     if (pagination) {

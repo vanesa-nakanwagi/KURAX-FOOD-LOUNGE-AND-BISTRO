@@ -4,6 +4,7 @@ import pool from '../db.js';
 import { consumeSoldOrderItems, reverseConsumedOrderItem } from '../helpers/recipeConsumption.js';
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { buildOpenShiftOrderClause } from '../helpers/shiftVisibility.js';
+import { buildSalesRevenueBreakdown, createSalesJournalEntry } from '../helpers/accounting.js';
 import logActivity from '../utils/logsActivity.js';
 
 const router = express.Router();
@@ -20,6 +21,27 @@ function kampalaDate() {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
+    const staffId = req.query.staff_id;
+    const orderDate = req.query.date;
+    if (staffId !== undefined && (!/^\d+$/.test(String(staffId)) || Number(staffId) <= 0)) {
+      return res.status(400).json({ error: 'staff_id must be a positive integer.' });
+    }
+    if (orderDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(orderDate))) {
+      return res.status(400).json({ error: 'date must use YYYY-MM-DD format.' });
+    }
+
+    const filters = [];
+    const values = [];
+    if (staffId !== undefined) {
+      values.push(Number(staffId));
+      filters.push(`o.staff_id = $${values.length}`);
+    }
+    if (orderDate !== undefined) {
+      values.push(orderDate);
+      filters.push(`DATE(COALESCE(o.created_at, o.timestamp) AT TIME ZONE 'Africa/Kampala') = $${values.length}::date`);
+    }
+    const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const limitClause = staffId !== undefined && orderDate !== undefined ? '' : 'LIMIT 200';
     const result = await pool.query(
             `SELECT o.*, s.name as staff_name, s.role as staff_role_name,
               (SELECT status FROM kitchen_tickets WHERE order_id = o.id ORDER BY id DESC LIMIT 1) AS kitchen_ticket_status,
@@ -27,8 +49,10 @@ router.get('/', async (req, res) => {
               (SELECT status FROM barista_tickets WHERE order_id = o.id ORDER BY id DESC LIMIT 1) AS barista_ticket_status
        FROM orders o
        LEFT JOIN staff s ON o.staff_id = s.id
+       ${whereClause}
        ORDER BY o.id DESC 
-       LIMIT 200`
+       ${limitClause}`,
+      values
     );
     
     const parsedOrders = result.rows.map(order => {
@@ -163,6 +187,13 @@ router.get('/tables/all', async (req, res) => {
 // GET /api/orders/cashier-history - Fetch cashier confirmation history
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/cashier-history', async (req, res) => {
+  const businessDate = String(req.query.date || kampalaDate());
+  const parsedBusinessDate = new Date(`${businessDate}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)
+    || !Number.isFinite(parsedBusinessDate.getTime())
+    || parsedBusinessDate.toISOString().slice(0, 10) !== businessDate) {
+    return res.status(400).json({ error: 'A valid business date is required.' });
+  }
   try {
     const result = await pool.query(
       `SELECT
@@ -172,10 +203,11 @@ router.get('/cashier-history', async (req, res) => {
          cq.credit_pay_by  AS pay_by
        FROM cashier_queue cq
        WHERE cq.status IN ('Confirmed', 'Rejected')
-         AND (cq.created_at AT TIME ZONE 'Africa/Nairobi')::date = CURRENT_DATE
+         AND (COALESCE(cq.confirmed_at, cq.created_at) AT TIME ZONE 'Africa/Kampala')::date = $1::date
          AND cq.shift_cleared = FALSE
        ORDER BY cq.confirmed_at DESC NULLS LAST
-       LIMIT 500`
+       LIMIT 500`,
+      [businessDate]
     );
     
     const parsedHistory = result.rows.map(history => {
@@ -803,21 +835,37 @@ router.patch('/:id/pay', async (req, res) => {
  
     await updateDailySummary({ amount: paidNow, method: payment_method });
  
-    try {
-      await pool.query(
+    if (paidNow > 0) {
+      const cashierEntry = await pool.query(
         `INSERT INTO cashier_queue 
-           (order_ids, table_name, label, method, amount, status, confirmed_by, confirmed_at, created_at)
-         VALUES ($1, $2, $3, $4, $5, 'Confirmed', 'Cashier', NOW(), NOW())`,
+             (order_ids, table_name, label, method, amount, status, requested_by, staff_id, confirmed_by, confirmed_at, created_at)
+           VALUES ($1, $2, $3, $4, $5, 'Confirmed', $6, $7, 'Cashier', NOW(), NOW())
+         RETURNING id`,
         [
           JSON.stringify([updatedOrder.id]),
           updatedOrder.table_name || 'WALK-IN',
           `Order #${updatedOrder.id}`,
           payment_method,
           paidNow,
+          updatedOrder.staff_name || null,
+          updatedOrder.staff_id || null,
         ]
       );
-    } catch (err) {
-      console.warn('Failed to record in cashier_queue:', err.message);
+      const saleItems = updatedItems.filter(item =>
+        item._rowPaid === true
+        && item.creditRequested !== true
+        && !String(item.payment_method || '').toUpperCase().includes('CREDIT')
+        && item.status !== 'VOIDED'
+        && item.voidProcessed !== true
+      );
+      await createSalesJournalEntry({
+        amount: paidNow,
+        paymentMethod: payment_method,
+        revenueBreakdown: buildSalesRevenueBreakdown(saleItems, paidNow),
+        description: `Order payment · ${updatedOrder.table_name || 'WALK-IN'}`,
+        sourceTransaction: `cashier_queue:${cashierEntry.rows[0].id}`,
+        postedBy: 'Cashier',
+      });
     }
  
     await logActivity(pool, {

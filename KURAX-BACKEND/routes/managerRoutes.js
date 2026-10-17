@@ -1,5 +1,6 @@
 import express from 'express';
 import pool from '../db.js';
+import { buildSalesRevenueBreakdown, createSalesJournalEntry } from '../helpers/accounting.js';
 import PDFDocument from 'pdfkit';
 import { getCounterCash } from '../helpers/pettyCash.js';
 import { calculateMonthlyFinancials, getMonthlyFinancials } from '../helpers/monthlyFinancials.js';
@@ -1868,6 +1869,28 @@ router.patch('/credits/:id/approve', async (req, res) => {
   try {
     const creditRes = await pool.query(`SELECT * FROM credits WHERE id = $1`, [id]);
     if (creditRes.rows.length === 0) return res.status(404).json({ error: 'Credit not found' });
+    let saleItems = [];
+    if (creditRes.rows[0].order_id) {
+      const orderRes = await pool.query('SELECT items FROM public.orders WHERE id = $1', [creditRes.rows[0].order_id]);
+      const items = orderRes.rows[0]?.items;
+      if (Array.isArray(items)) saleItems = items;
+      else if (typeof items === 'string') {
+        try {
+          const parsed = JSON.parse(items);
+          if (Array.isArray(parsed)) saleItems = parsed;
+        } catch (error) {
+          console.error(`Could not parse items for approved credit #${id}:`, error.message);
+        }
+      }
+    }
+    await createSalesJournalEntry({
+      amount: creditRes.rows[0].amount,
+      paymentMethod: 'Credit',
+      revenueBreakdown: buildSalesRevenueBreakdown(saleItems, creditRes.rows[0].amount),
+      description: `Approved credit sale · ${creditRes.rows[0].client_name || creditRes.rows[0].table_name || id}`,
+      sourceTransaction: `credit:${id}`,
+      postedBy: approved_by || 'Manager',
+    });
     await pool.query(
       `UPDATE credits SET status = 'Approved', approved_by = $1, approved_at = NOW(), updated_at = NOW() WHERE id = $2`,
       [approved_by || 'Manager', id]
