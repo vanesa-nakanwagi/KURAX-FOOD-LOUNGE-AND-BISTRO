@@ -548,11 +548,11 @@ function CartModal({
           </div>
 
           <button
-            onClick={handleProcessOrder}
-            disabled={cart.length === 0 || !tableInput.trim()}
+            onClick={cart.length === 0 ? onClose : handleProcessOrder}
+            disabled={!tableInput.trim()}
             className={`w-full py-4 font-black rounded-2xl flex items-center justify-center gap-3
               uppercase tracking-widest text-sm transition-all active:scale-[0.98]
-              ${cart.length > 0 && tableInput.trim()
+              ${tableInput.trim()
                 ? "bg-yellow-500 text-black shadow-lg shadow-yellow-500/20 hover:bg-yellow-400"
                 : "bg-zinc-800 text-zinc-600 cursor-not-allowed"}`}
           >

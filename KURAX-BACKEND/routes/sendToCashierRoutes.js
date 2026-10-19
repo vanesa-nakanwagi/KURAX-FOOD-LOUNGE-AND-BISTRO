@@ -4,6 +4,7 @@ import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
 import { createSalesJournalEntry, resolveRevenueAccountCode } from '../helpers/accounting.js';
 import logActivity from '../utils/logsActivity.js';
+import requireCashier from '../middleware/cashierAuth.js';
 
 const router = express.Router();
 
@@ -312,9 +313,11 @@ router.post("/send-to-cashier", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/cashier-ops/cashier-queue/:id/confirm
 // ─────────────────────────────────────────────────────────────────────────────
-router.patch("/cashier-queue/:id/confirm", async (req, res) => {
+router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
   const { id } = req.params;
-  const { confirmed_by, transaction_id, split_payments } = req.body || {};
+  const { transaction_id, split_payments } = req.body || {};
+  const confirmed_by = req.cashier.name;
+  const transactionId = String(transaction_id || '').trim();
 
   console.log(`🔵 CONFIRMING payment for queue item #${id} by ${confirmed_by || 'Cashier'}`);
 
@@ -331,10 +334,14 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
       });
     }
 
-    if (q.status !== 'Confirmed'
-      && (q.method === "Momo-MTN" || q.method === "Momo-Airtel")
-      && !transaction_id) {
-      return res.status(400).json({ error: "Transaction ID is required for Momo payments" });
+    if (q.status === 'Confirmed') {
+      return res.json({ success: true, message: "Already confirmed" });
+    }
+
+    if (q.method === "Momo-MTN" || q.method === "Momo-Airtel") {
+      if (!/^[A-Za-z0-9-]{4,100}$/.test(transactionId)) {
+        return res.status(400).json({ error: "Enter a valid transaction ID for Momo payments" });
+      }
     }
 
     const revenueBreakdown = await getSaleRevenueBreakdown(parseOrderIds(q.order_ids || []), {
@@ -351,15 +358,11 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
       postedBy: confirmed_by || 'Cashier',
     });
 
-    if (q.status === 'Confirmed') {
-      return res.json({ success: true, message: "Already confirmed" });
-    }
-
     await pool.query(
       `UPDATE cashier_queue
        SET status = 'Confirmed', confirmed_by = $1, confirmed_at = NOW(), transaction_id = $2
        WHERE id = $3`,
-      [confirmed_by || "Cashier", transaction_id || null, id]
+      [confirmed_by || "Cashier", transactionId || null, id]
     );
 
     const paymentMethod = q.method.toLowerCase();
@@ -376,12 +379,12 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
     const newOrderRes = await pool.query(
       `INSERT INTO orders
          (table_name, payment_method, total, status, is_paid, payment_confirmed,
-          staff_name, staff_id, original_order_ids,
+          staff_name, staff_id, original_order_ids, transaction_id,
           paid_at, created_at, updated_at, sent_to_cashier, is_archived)
-       VALUES ($1, $2, $3, 'Paid', true, true, $4, $5, $6::jsonb,
+       VALUES ($1, $2, $3, 'Paid', true, true, $4, $5, $6::jsonb, $7,
                NOW(), NOW(), NOW(), false, false)
        RETURNING id`,
-      [q.table_name, paymentMethod, q.amount, waiterName, q.staff_id || null, JSON.stringify(q.order_ids || [])]
+      [q.table_name, paymentMethod, q.amount, waiterName, q.staff_id || null, JSON.stringify(q.order_ids || []), transactionId || null]
     );
     const newOrderId = newOrderRes.rows[0].id;
     console.log(`✅ Created paid order #${newOrderId} for UGX ${q.amount} via ${paymentMethod}, staff_name="${waiterName}"`);
@@ -412,6 +415,7 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
               newItem.paid_at           = new Date().toISOString();
               newItem.payment_confirmed = true;
               newItem.payment_method    = paymentMethod;
+              newItem.transaction_id   = transactionId || null;
             }
             if (item.paymentRequested === true) {
               updated = true;
@@ -430,6 +434,7 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
               newItem.paid_at           = new Date().toISOString();
               newItem.payment_confirmed = true;
               newItem.payment_method    = paymentMethod;
+              newItem.transaction_id   = transactionId || null;
             }
             if (item.paymentRequested === true) {
               updated = true;
@@ -524,12 +529,30 @@ router.patch("/cashier-queue/:id/confirm", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/cashier-ops/cashier-queue
 // ─────────────────────────────────────────────────────────────────────────────
-router.get("/cashier-queue", async (req, res) => {
+router.get("/cashier-queue", requireCashier, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM cashier_queue
-       WHERE status IN ('Pending','PendingManagerApproval')
-       ORDER BY created_at ASC`
+      `SELECT cq.*,
+              (p.id IS NOT NULL) AS is_public_order,
+              p.customer_name,
+              p.customer_email,
+              p.mobile_money_number,
+              p.payment_provider,
+              p.delivery_type,
+              p.city,
+              p.location_desc,
+              p.items AS order_items,
+              p.status AS public_payment_status,
+              p.preparation_status,
+              p.reject_reason AS public_reject_reason
+       FROM public.cashier_queue cq
+       LEFT JOIN public.public_payment_requests p ON p.cashier_queue_id = cq.id
+       WHERE (
+          cq.status IN ('Pending', 'PendingManagerApproval')
+          AND (p.id IS NULL OR p.preparation_status IN ('NotSent', 'Ready'))
+       ) OR p.status = 'Rejected'
+       ORDER BY cq.created_at ASC
+       LIMIT 500`
     );
     res.json(result.rows);
   } catch (err) {
@@ -541,7 +564,7 @@ router.get("/cashier-queue", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/cashier-ops/cashier-queue/:id/request-approval
 // ─────────────────────────────────────────────────────────────────────────────
-router.patch("/cashier-queue/:id/request-approval", async (req, res) => {
+router.patch("/cashier-queue/:id/request-approval", requireCashier, async (req, res) => {
   const { id } = req.params;
   const { requested_by } = req.body || {};
 
@@ -693,7 +716,7 @@ router.patch("/cashier-queue/cancel-pending", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/cashier-ops/cashier-queue/:id/reject
 // ─────────────────────────────────────────────────────────────────────────────
-router.patch("/cashier-queue/:id/reject", async (req, res) => {
+router.patch("/cashier-queue/:id/reject", requireCashier, async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body || {};
 

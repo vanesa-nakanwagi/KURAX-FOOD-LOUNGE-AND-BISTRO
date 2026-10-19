@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from 'react-router-dom';
-import StaffOrderMenu from "./StaffOrderMenu";
+import StaffOrderMenu, { getEffectiveCategory } from "./StaffOrderMenu";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { 
@@ -89,8 +89,8 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
   const activeMenus = useMemo(() => (menus || []).filter(item => {
     if (!item || typeof item !== "object") return false;
     const itemName = String(item.name ?? "").trim();
-    const isLive    = item.status === 'live' || item.published === true || item.published === 't';
-    const itemCat   = String(item.category ?? "").toLowerCase().trim();
+    const isLive    = String(item.status ?? "").toLowerCase() === 'live' || item.published === true || item.published === 'true' || item.published === 't';
+    const itemCat   = getEffectiveCategory(item).toLowerCase();
     const activeCat = activeCategory?.toLowerCase().trim() || "";
     return isLive && itemName && itemCat === activeCat && itemName.toLowerCase().includes(searchQuery.toLowerCase());
   }), [menus, activeCategory, searchQuery]);
@@ -568,11 +568,11 @@ function CartModal({
           </div>
 
           <button
-            onClick={handleProcessOrder}
-            disabled={cart.length === 0 || !tableInput.trim()}
+            onClick={cart.length === 0 ? onClose : handleProcessOrder}
+            disabled={!tableInput.trim()}
             className={`w-full py-4 font-black rounded-2xl flex items-center justify-center gap-3
               uppercase tracking-widest text-sm transition-all active:scale-[0.98]
-              ${cart.length > 0 && tableInput.trim()
+              ${tableInput.trim()
                 ? "bg-yellow-500 text-black shadow-lg shadow-yellow-500/20 hover:bg-yellow-400"
                 : "bg-zinc-800 text-zinc-600 cursor-not-allowed"}`}
           >

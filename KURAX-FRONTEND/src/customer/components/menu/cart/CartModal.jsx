@@ -209,6 +209,7 @@ export default function CartModal({
             customerDetails={customerDetails}
             setCustomerDetails={setCustomerDetails}
             totalAmount={totalAmount}
+            cartItems={cart}
             onBack={() => setCheckoutStep(1)}
           />
         )}

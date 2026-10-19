@@ -264,7 +264,10 @@ export default function Home() {
 
       if (menuResult.status === 'fulfilled') {
         const menuItems = Array.isArray(menuResult.value.data) ? menuResult.value.data : [];
-        setDbMenus(menuItems.filter(item => item.status === 'live').slice(0, 4));
+        setDbMenus(menuItems
+          .filter(item => item.website_published === true && item.is_available !== false)
+          .map(item => ({ ...item, price: Number(item.website_price ?? item.price) }))
+          .slice(0, 4));
       } else {
         console.error("❌ MENU FETCH ERROR:", menuResult.reason);
       }
@@ -272,10 +275,9 @@ export default function Home() {
       if (comboResult.status === 'fulfilled') {
         const combos = Array.isArray(comboResult.value.data) ? comboResult.value.data : [];
         setDbCombos(combos.filter(combo =>
-          combo.published === true &&
-          combo.customer_visible !== false &&
+          combo.website_published === true &&
           combo.is_available !== false
-        ).slice(0, 4));
+        ).map(combo => ({ ...combo, price: Number(combo.website_price ?? combo.price) })).slice(0, 4));
       } else {
         console.error("❌ COMBO FETCH ERROR:", comboResult.reason);
       }

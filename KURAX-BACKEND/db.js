@@ -2,6 +2,14 @@
 import pkg from 'pg';
 const { Pool } = pkg;
 import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
+const rootEnvPath = path.resolve(backendDirectory, '..', '.env');
+const backendEnvPath = path.join(backendDirectory, '.env');
+dotenv.config({ path: rootEnvPath });
+dotenv.config({ path: backendEnvPath });
 dotenv.config();
 
 // Only use SSL for remote (Neon) connections — local Postgres doesn't support/require it
@@ -61,6 +69,7 @@ export async function ensureDatabaseSchema() {
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS original_order_ids JSONB DEFAULT '[]'::jsonb;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS transaction_id TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS public_order_ref TEXT;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS sent_to_cashier BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;`,
@@ -110,6 +119,8 @@ export async function ensureDatabaseSchema() {
       is_available BOOLEAN DEFAULT true,
       published BOOLEAN DEFAULT false,
       customer_visible BOOLEAN DEFAULT false,
+      website_published BOOLEAN NOT NULL DEFAULT false,
+      website_extra_fee NUMERIC(12,2) NOT NULL DEFAULT 0,
       is_active BOOLEAN DEFAULT true,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -130,6 +141,8 @@ export async function ensureDatabaseSchema() {
       is_available BOOLEAN NOT NULL DEFAULT true,
       published BOOLEAN NOT NULL DEFAULT false,
       customer_visible BOOLEAN NOT NULL DEFAULT true,
+      website_published BOOLEAN NOT NULL DEFAULT false,
+      website_extra_fee NUMERIC(12,2) NOT NULL DEFAULT 0,
       regular_total NUMERIC(12,2) NOT NULL DEFAULT 0,
       discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
       discount_percentage NUMERIC(12,2) NOT NULL DEFAULT 0,
@@ -234,6 +247,42 @@ export async function ensureDatabaseSchema() {
       shift_cleared BOOLEAN DEFAULT false
     );`,
     `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS settlement_status TEXT NOT NULL DEFAULT 'Pending';`,
+    `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS public_order_ref TEXT;`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS cashier_queue_public_order_ref_unique
+       ON public.cashier_queue (public_order_ref) WHERE public_order_ref IS NOT NULL;`,
+    `CREATE TABLE IF NOT EXISTS public.public_payment_requests (
+      id SERIAL PRIMARY KEY,
+      cashier_queue_id INTEGER NOT NULL UNIQUE REFERENCES public.cashier_queue(id) ON DELETE CASCADE,
+      public_order_ref TEXT NOT NULL UNIQUE,
+      request_key TEXT,
+      status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Confirmed', 'Rejected')),
+      customer_name TEXT NOT NULL,
+      customer_email TEXT NOT NULL,
+      mobile_money_number TEXT NOT NULL,
+      payment_provider TEXT NOT NULL CHECK (payment_provider IN ('MTN', 'AIRTEL')),
+      delivery_type TEXT NOT NULL CHECK (delivery_type IN ('Home', 'Store')),
+      city TEXT NOT NULL,
+      location_desc TEXT NOT NULL DEFAULT '',
+      items JSONB NOT NULL,
+      total NUMERIC(12,2) NOT NULL CHECK (total > 0),
+      order_id INTEGER,
+      transaction_id TEXT,
+      confirmed_by TEXT,
+      confirmed_at TIMESTAMPTZ,
+      rejected_by TEXT,
+      rejected_at TIMESTAMPTZ,
+      reject_reason TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+    `ALTER TABLE IF EXISTS public.public_payment_requests ADD COLUMN IF NOT EXISTS request_key TEXT;`,
+    `ALTER TABLE IF EXISTS public.public_payment_requests ADD COLUMN IF NOT EXISTS preparation_status TEXT NOT NULL DEFAULT 'NotSent';`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS public_payment_requests_request_key_unique
+       ON public.public_payment_requests (request_key) WHERE request_key IS NOT NULL;`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS public_payment_requests_transaction_id_unique
+       ON public.public_payment_requests (LOWER(transaction_id)) WHERE transaction_id IS NOT NULL;`,
+    `CREATE INDEX IF NOT EXISTS public_payment_requests_status_idx
+       ON public.public_payment_requests (status, created_at DESC);`,
 
     `CREATE TABLE IF NOT EXISTS public.credits (
       id SERIAL PRIMARY KEY,
@@ -774,6 +823,26 @@ export async function ensureDatabaseSchema() {
       console.error('Schema bootstrap warning:', error.message);
     }
   }
+
+  await pool.query(`ALTER TABLE public.menus
+    ADD COLUMN IF NOT EXISTS website_published BOOLEAN,
+    ADD COLUMN IF NOT EXISTS website_extra_fee NUMERIC(12,2) NOT NULL DEFAULT 0`);
+  await pool.query(`UPDATE public.menus
+    SET website_published = COALESCE(published, false)
+    WHERE website_published IS NULL`);
+  await pool.query(`ALTER TABLE public.menus
+    ALTER COLUMN website_published SET DEFAULT false,
+    ALTER COLUMN website_published SET NOT NULL`);
+
+  await pool.query(`ALTER TABLE public.combos
+    ADD COLUMN IF NOT EXISTS website_published BOOLEAN,
+    ADD COLUMN IF NOT EXISTS website_extra_fee NUMERIC(12,2) NOT NULL DEFAULT 0`);
+  await pool.query(`UPDATE public.combos
+    SET website_published = COALESCE(published, false)
+    WHERE website_published IS NULL`);
+  await pool.query(`ALTER TABLE public.combos
+    ALTER COLUMN website_published SET DEFAULT false,
+    ALTER COLUMN website_published SET NOT NULL`);
 
   await pool.query(`ALTER TABLE public.purchase_receipts ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0`);
 

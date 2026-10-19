@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useData } from "../../../customer/components/context/DataContext";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import {
-  Utensils, ChevronUp, ChevronDown, CheckCircle,
+  Utensils, Plus, ChevronUp, ChevronDown, CheckCircle,
   AlertTriangle, Clock, Receipt, Banknote,
   User, BookOpen, ClipboardList, Search, Hourglass,
   CheckCircle2, XCircle, CircleDollarSign
@@ -41,7 +41,7 @@ function getCreditStatusDisplay(credit) {
 }
 
 // ─── SUPERVISOR ORDER CARD (read‑only) ─────────────────────────────────────
-function SupervisorOrderCard({ order, theme, onServeItem }) {
+function SupervisorOrderCard({ order, theme, onServeItem, onAddItems }) {
   const [expanded, setExpanded] = useState(false);
   const isDark = theme === "dark";
 
@@ -121,6 +121,14 @@ function SupervisorOrderCard({ order, theme, onServeItem }) {
             ${isDark ? "bg-white/5 text-zinc-400" : "bg-zinc-50 text-yellow-900"}`}>
           <Utensils size={10} /> {expanded ? "Hide Items" : "View Items"} {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
         </button>
+        {onAddItems && (
+          <button
+            onClick={() => onAddItems(order)}
+            className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl bg-yellow-500 text-black text-[8px] sm:text-[9px] font-black uppercase tracking-widest transition-all hover:bg-yellow-400"
+          >
+            <Plus size={10} /> Add Items
+          </button>
+        )}
       </div>
 
       {expanded && (
@@ -381,7 +389,7 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
 }
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
-export default function SupervisorDashboard() {
+export default function SupervisorDashboard({ onAddItems }) {
   const { orders = [], refreshData, currentUser } = useData() || {};
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -692,7 +700,13 @@ export default function SupervisorDashboard() {
             {(activeTab === "Live" || activeTab === "Served") && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
                 {filteredOrders.map(order => (
-                  <SupervisorOrderCard key={order.tableName} order={order} theme={theme} onServeItem={handleServeItem} />
+                  <SupervisorOrderCard
+                    key={order.tableName}
+                    order={order}
+                    theme={theme}
+                    onServeItem={handleServeItem}
+                    onAddItems={onAddItems}
+                  />
                 ))}
                 {filteredOrders.length === 0 && (
                   <div className="col-span-full py-20 sm:py-32 text-center opacity-30">

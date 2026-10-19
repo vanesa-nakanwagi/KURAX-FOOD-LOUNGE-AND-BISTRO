@@ -29,6 +29,7 @@ export default function ManagerLayout() {
   const [activeTab, setActiveTab] = useState("target");
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [openMenuRequest, setOpenMenuRequest] = useState(0);
   const [isArchiving,      setIsArchiving]      = useState(false);
   
   const { theme } = useTheme();
@@ -89,6 +90,8 @@ export default function ManagerLayout() {
           localStorage.setItem(`kurax_table_${currentStaffId}`, order.tableName);
         }
         setActiveTab("order");
+        setIsMobileMenuOpen(true);
+        setOpenMenuRequest(request => request + 1);
       }} />;
       case "reports": return <StaffSalesPerformance role="MANAGER" />;
       case "department-reports": return <DepartmentHod department="all" embedded />;
@@ -137,7 +140,11 @@ export default function ManagerLayout() {
       <aside className={`fixed inset-y-0 left-0 z-[70] w-72 transform lg:relative lg:h-full lg:shrink-0 lg:translate-x-0 transition-all duration-500 ease-in-out border-r ${
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       } ${isDark ? 'bg-zinc-950 border-white/5' : 'bg-white border-black/5'}`}>
-        <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} />
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={handleTabChange}
+          openMenuRequest={openMenuRequest}
+        />
       </aside>
 
       {/* 4. MAIN CONTENT AREA */}

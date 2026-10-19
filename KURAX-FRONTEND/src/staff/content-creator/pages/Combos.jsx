@@ -11,11 +11,12 @@ const createEmptyComboForm = () => ({
   category: 'Combos',
   station: 'Kitchen',
   price: '',
+  website_extra_fee: '0',
   image_file: null,
   image_url: '',
   published: false,
   is_available: true,
-  customer_visible: true,
+  website_published: false,
   components: [],
 });
 
@@ -114,9 +115,10 @@ export default function Combos() {
       const payload = {
         ...form,
         price: Number(form.price || 0),
+        website_extra_fee: Number(form.website_extra_fee || 0),
         published: Boolean(form.published),
         is_available: Boolean(form.is_available),
-        customer_visible: Boolean(form.customer_visible),
+        website_published: Boolean(form.website_published),
       };
 
       if (!payload.name || !payload.price || (payload.components || []).length < 2) {
@@ -167,10 +169,11 @@ export default function Combos() {
       category: combo.category || 'Combos',
       station: combo.station || 'Kitchen',
       price: String(combo.price || ''),
+      website_extra_fee: String(combo.website_extra_fee || 0),
       image_url: combo.image_url || '',
       published: combo.published === true,
       is_available: combo.is_available !== false,
-      customer_visible: combo.customer_visible !== false,
+      website_published: combo.website_published === true,
       components: (combo.components || []).map((component) => ({
         menu_item_id: component.menu_item_id,
         quantity: component.quantity || 1,
@@ -266,6 +269,34 @@ export default function Combos() {
                   </label>
                 </div>
 
+                <div className="flex flex-wrap gap-4">
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={form.published} onChange={(e) => setForm((prev) => ({ ...prev, published: e.target.checked }))} />
+                    Publish combo to staff
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={form.website_published} onChange={(e) => setForm((prev) => ({ ...prev, website_published: e.target.checked }))} />
+                    Publish combo to website
+                  </label>
+                </div>
+
+                {form.website_published && (
+                  <label className="block max-w-sm space-y-2 text-sm font-medium">
+                    <span>Website price addition (UGX)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={form.website_extra_fee}
+                      onChange={(e) => setForm((prev) => ({ ...prev, website_extra_fee: e.target.value }))}
+                      className="w-full rounded-xl border px-3 py-2"
+                    />
+                    <span className="block text-xs font-normal text-slate-500">
+                      Website price: {formatUGX(Number(form.price || 0) + Number(form.website_extra_fee || 0))}. Staff continue to see {formatUGX(form.price)}.
+                    </span>
+                  </label>
+                )}
+
                 <label className="block space-y-2 text-sm font-medium">
                   <span>Combo image</span>
                   <span className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-slate-300 px-3 py-3 text-slate-600 hover:border-yellow-500">
@@ -346,16 +377,8 @@ export default function Combos() {
 
                 <div className="flex flex-wrap gap-4">
                   <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={form.published} onChange={(e) => setForm((prev) => ({ ...prev, published: e.target.checked }))} />
-                    Publish combo
-                  </label>
-                  <label className="inline-flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={form.is_available} onChange={(e) => setForm((prev) => ({ ...prev, is_available: e.target.checked }))} />
                     Available now
-                  </label>
-                  <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={form.customer_visible} onChange={(e) => setForm((prev) => ({ ...prev, customer_visible: e.target.checked }))} />
-                    Publicly visible
                   </label>
                 </div>
 

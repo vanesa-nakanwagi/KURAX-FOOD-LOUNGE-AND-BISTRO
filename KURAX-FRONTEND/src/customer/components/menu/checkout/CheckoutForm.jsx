@@ -1,311 +1,334 @@
-import { useState } from "react";
-import { CheckCircle, XCircle, Banknote, AlertCircle, Smartphone } from "lucide-react";
-import { simulateMobileMoneyPayment } from "../../utils/payment";
+import { useEffect, useRef, useState } from "react";
+import axios from "axios";
+import { AlertCircle, CheckCircle, Clock3, Smartphone, XCircle } from "lucide-react";
+import API_URL from "../../../../config/api";
 
-// ─── MERCHANT CODE MODAL (replaces PIN modal) ────────────────────────────────
-function MerchantCodeModal({ provider, amount, onConfirm, onCancel }) {
-  const providerLabel = provider === "MTN" ? "MTN Mobile Money" : "Airtel Money";
-  const ussdCode = provider === "MTN" ? "*165*3#" : "*185*9#";
-  const merchantCode = provider === "MTN" ? "KURAX-MTN-001" : "KURAX-AIR-002";
-  const [isConfirming, setIsConfirming] = useState(false);
+const MERCHANT_CODES = {
+  MTN: "678851",
+  AIRTEL: "4320340",
+};
 
-  const handleConfirm = () => {
-    setIsConfirming(true);
-    // Simulate a short delay to mimic checking payment
-    setTimeout(() => {
-      onConfirm(); // proceed to success simulation
-    }, 1500);
-  };
+const providerNames = {
+  MTN: "MTN Mobile Money",
+  AIRTEL: "Airtel Money",
+};
+const PAYMENT_REQUEST_STORAGE_KEY = "kurax_public_payment_request";
 
-  const providerColor = provider === "MTN" ? "text-yellow-500" : "text-red-500";
-
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-200 dark:border-zinc-700">
-        <div className="flex justify-center mb-3">
-          <div className={`p-3 rounded-full ${provider === "MTN" ? "bg-yellow-100" : "bg-red-100"}`}>
-            <Smartphone className={`w-6 h-6 ${providerColor}`} />
-          </div>
-        </div>
-        <p className={`text-xs font-semibold text-center uppercase tracking-widest mb-1 ${providerColor}`}>
-          {providerLabel} Payment
-        </p>
-        <h3 className="text-lg font-semibold text-center text-gray-900 dark:text-white mb-1">
-          Pay with Merchant Code
-        </h3>
-        <p className="text-center text-2xl font-bold text-yellow-500 mb-5">
-          UGX {Number(amount).toLocaleString()}
-        </p>
-
-        <div className="bg-gray-100 dark:bg-zinc-800 rounded-lg p-4 mb-5 space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600 dark:text-gray-400">USSD Code</span>
-            <span className="font-mono font-bold text-gray-900 dark:text-white">{ussdCode}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600 dark:text-gray-400">Merchant/Till Number</span>
-            <span className="font-mono font-bold text-yellow-600">{merchantCode}</span>
-          </div>
-          <div className="flex justify-between items-center pt-2 border-t border-gray-300 dark:border-zinc-700">
-            <span className="text-sm text-gray-600 dark:text-gray-400">Amount</span>
-            <span className="font-bold text-gray-900 dark:text-white">UGX {Number(amount).toLocaleString()}</span>
-          </div>
-        </div>
-
-        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 mb-5">
-          <p className="text-xs text-blue-700 dark:text-blue-300 text-center flex items-center justify-center gap-2">
-            <Smartphone className="w-3.5 h-3.5" />
-            Dial {ussdCode}, enter {merchantCode}, amount, and your PIN on your phone.
-          </p>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={isConfirming}
-            className={`flex-1 py-2.5 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-semibold text-sm active:scale-95 transition flex items-center justify-center gap-2 ${isConfirming ? "opacity-70 cursor-not-allowed" : ""}`}
-          >
-            {isConfirming ? (
-              <>
-                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                </svg>
-                Verifying...
-              </>
-            ) : (
-              "I have paid"
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+function getCartKey(items) {
+  return JSON.stringify(items.map(item => {
+    const isCombo = item.type === "combo" || Boolean(item.combo_id);
+    return {
+      type: isCombo ? "combo" : "menu",
+      id: isCombo
+        ? item.combo_id || String(item.id).replace(/^combo-/, "")
+        : item.id,
+      quantity: item.quantity,
+    };
+  }).sort((a, b) => `${a.type}:${a.id}`.localeCompare(`${b.type}:${b.id}`)));
 }
 
-// ─── Success Modal (no emojis) ────────────────────────────────────────────────
-function SuccessModal({ customerDetails, totalAmount, cartItems, onClose }) {
-  const openWhatsApp = () => {
-    const itemLines = cartItems?.length
-      ? cartItems.map((i) => `  • ${i.name} x${i.quantity} — UGX ${(i.price * i.quantity).toLocaleString()}`).join("\n")
-      : "  • (no item details)";
+function readSavedPaymentRequest(cartKey) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PAYMENT_REQUEST_STORAGE_KEY) || "null");
+    return saved?.cartKey === cartKey ? saved : null;
+  } catch (error) {
+    console.error("Unable to restore public payment status:", error);
+    return null;
+  }
+}
 
+function formatMoney(amount) {
+  return `UGX ${Number(amount || 0).toLocaleString()}`;
+}
+
+function PaymentInstructionsModal({ paymentRequest, customer, items, status, statusError, onClose }) {
+  const provider = paymentRequest.paymentProvider;
+  const ussdCode = provider === "MTN" ? "*165*3#" : "*185*9#";
+  const contactKurax = () => {
+    const itemLines = items.map(item => `${item.name} × ${item.quantity}`).join("\n");
     const message = encodeURIComponent(
-      `*New Order Received*\n\n` +
-      `*Customer:* ${customerDetails.firstName} ${customerDetails.lastName}\n` +
-      `*Email:* ${customerDetails.email}\n` +
-      `*City:* ${customerDetails.city}\n` +
-      `*Delivery:* ${customerDetails.deliveryType === "Home" ? "Home Delivery" : "Store Pickup"}\n` +
-      (customerDetails.locationDesc ? `*Location:* ${customerDetails.locationDesc}\n` : "") +
-      `*Payment:* ${customerDetails.paymentProvider} — ${customerDetails.mobileMoneyNumber}\n\n` +
-      `*Order Items:*\n${itemLines}\n\n` +
-      `*Total Paid:* UGX ${Number(totalAmount).toLocaleString()}`
+      `*Kurax Website Order Request*\n\n` +
+      `*Order reference:* ${paymentRequest.orderReference}\n` +
+      `*Customer:* ${customer.firstName} ${customer.lastName}\n` +
+      `*Email:* ${customer.email}\n` +
+      `*Delivery:* ${customer.deliveryType === "Home" ? "Home Delivery" : "Store Pickup"} · ${customer.city}${customer.locationDesc ? ` · ${customer.locationDesc}` : ""}\n` +
+      `*Payment phone:* ${customer.mobileMoneyNumber}\n` +
+      `*Status:* ${status === "Confirmed" ? "Payment confirmed" : status === "Rejected" ? "Rejected by cashier" : "Awaiting payment confirmation"}\n\n` +
+      `*Items:*\n${itemLines}\n\n` +
+      `*Amount:* ${formatMoney(paymentRequest.amount)}`
     );
-
-    window.open(`https://wa.me/256709913676?text=${message}`, "_blank");
+    window.open(`https://wa.me/256709913676?text=${message}`, "_blank", "noopener,noreferrer");
+  };
+  const stateContent = {
+    Pending: {
+      icon: <Clock3 className="h-6 w-6 text-amber-600" />,
+      title: "Order received",
+      detail: "Your order will be brought to you soon.",
+      color: "border-amber-200 bg-amber-50 text-amber-900",
+    },
+    Confirmed: {
+      icon: <CheckCircle className="h-6 w-6 text-green-600" />,
+      title: `Payment confirmed${paymentRequest.orderId ? ` · Order #${paymentRequest.orderId}` : ""}`,
+      detail: "A Kurax cashier has verified the transaction. Your order has been sent to the restaurant.",
+      color: "border-green-200 bg-green-50 text-green-900",
+    },
+    Rejected: {
+      icon: <XCircle className="h-6 w-6 text-red-600" />,
+      title: "Payment request rejected",
+      detail: paymentRequest.rejectionReason || "Please contact Kurax before submitting another payment.",
+      color: "border-red-200 bg-red-50 text-red-900",
+    },
+  }[status] || {
+    icon: <AlertCircle className="h-6 w-6 text-zinc-600" />,
+    title: "Payment status unavailable",
+    detail: "Your request remains saved. Please try checking again shortly.",
+    color: "border-zinc-200 bg-zinc-50 text-zinc-900",
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-200 dark:border-zinc-700 text-center">
-        <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center mx-auto mb-4 animate-bounce">
-          <CheckCircle className="w-10 h-10 text-green-500" />
+    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/70 p-4">
+      <div className="my-auto max-h-[95vh] w-full max-w-lg overflow-y-auto rounded-xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-yellow-600">Mobile Money</p>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Order received</h3>
+          </div>
+          <button onClick={onClose} aria-label="Close payment instructions" className="rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800">×</button>
         </div>
 
-        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-          Payment successful!
-        </h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-          UGX {Number(totalAmount).toLocaleString()} via {customerDetails.paymentProvider}
-        </p>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
-          Your order has been received. We'll be in touch shortly.
-        </p>
-
-        <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg px-4 py-3 mb-5 text-left space-y-1 text-sm text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-zinc-700">
-          <p><span className="font-semibold">Name:</span> {customerDetails.firstName} {customerDetails.lastName}</p>
-          <p><span className="font-semibold">Email:</span> {customerDetails.email}</p>
-          <p><span className="font-semibold">Delivery:</span> {customerDetails.deliveryType === "Home" ? "Home Delivery" : "Store Pickup"}</p>
-          <p><span className="font-semibold">City:</span> {customerDetails.city}</p>
-          {customerDetails.locationDesc && (
-            <p><span className="font-semibold">Location:</span> {customerDetails.locationDesc}</p>
+        <div className="mb-4 rounded-lg border p-4">
+          <div className="flex items-center gap-2">
+            <Smartphone className="h-5 w-5 text-yellow-600" />
+            <span className="font-semibold text-gray-900 dark:text-white">{providerNames[provider]}</span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-gray-500 dark:text-gray-400">Order reference</p>
+              <p className="font-mono font-bold text-gray-900 dark:text-white">{paymentRequest.orderReference}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-gray-500 dark:text-gray-400">Amount due</p>
+              <p className="font-bold text-gray-900 dark:text-white">{formatMoney(paymentRequest.amount)}</p>
+            </div>
+          </div>
+          {status === "Pending" && (
+            <p className="mt-3 border-t pt-3 text-sm text-amber-800">
+              Your order is received and awaiting payment confirmation.
+            </p>
           )}
-          <p><span className="font-semibold">Paid via:</span> {customerDetails.paymentProvider} · {customerDetails.mobileMoneyNumber}</p>
         </div>
 
-        <button
-          onClick={openWhatsApp}
-          className="w-full flex items-center justify-center gap-2 py-2.5 mb-3 bg-green-500 hover:bg-green-400 text-white font-semibold rounded-lg transition"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
-            <path d="M12 0C5.373 0 0 5.373 0 12c0 2.124.554 4.118 1.528 5.849L.057 23.571a.75.75 0 0 0 .921.921l5.704-1.47A11.955 11.955 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.718 9.718 0 0 1-4.998-1.38l-.358-.214-3.724.96.99-3.614-.234-.373A9.72 9.72 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z" />
-          </svg>
-          Send on WhatsApp
-        </button>
+        <div className="mb-4 rounded-lg bg-gray-100 p-4 text-sm dark:bg-zinc-800">
+          <p className="mb-2 font-bold text-gray-900 dark:text-white">Official Kurax merchant codes</p>
+          <p className="flex justify-between gap-3 text-gray-700 dark:text-gray-300"><span>MTN Mobile Money</span><strong className="font-mono">678851</strong></p>
+          <p className="mt-1 flex justify-between gap-3 text-gray-700 dark:text-gray-300"><span>Airtel Money</span><strong className="font-mono">4320340</strong></p>
+        </div>
 
-        <button
-          onClick={onClose}
-          className="w-full py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
-        >
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+          <p className="font-bold">How to pay</p>
+          <ol className="mt-2 list-inside list-decimal space-y-1">
+            <li>Dial {ussdCode} on the {providerNames[provider]} number shown below.</li>
+            <li>Select the merchant/till payment option and enter code {MERCHANT_CODES[provider]}.</li>
+            <li>Pay {formatMoney(paymentRequest.amount)} and keep the transaction ID from your receipt.</li>
+            <li>Kurax will confirm your payment after a cashier checks it.</li>
+          </ol>
+          <p className="mt-3 break-words"><strong>Payment phone:</strong> {customer.mobileMoneyNumber}</p>
+          <p><strong>Order reference:</strong> {paymentRequest.orderReference}</p>
+        </div>
+
+        <div className="mb-4 rounded-lg border border-gray-200 p-4 dark:border-zinc-700">
+          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">Order</p>
+          {items.map((item, index) => (
+            <p key={`${item.id}-${index}`} className="flex justify-between gap-3 py-0.5 text-sm text-gray-800 dark:text-gray-200">
+              <span>{item.name} × {item.quantity}</span>
+              <span className="shrink-0">{formatMoney(item.price * item.quantity)}</span>
+            </p>
+          ))}
+        </div>
+
+        <div className={`mb-4 flex gap-3 rounded-lg border p-4 ${stateContent.color}`}>
+          <div className="shrink-0">{stateContent.icon}</div>
+          <div>
+            <p className="font-bold">{stateContent.title}</p>
+            <p className="mt-1 text-sm">{stateContent.detail}</p>
+            {statusError && <p className="mt-2 text-xs">Status refresh failed: {statusError}</p>}
+          </div>
+        </div>
+
+        <button onClick={onClose} className="w-full rounded-lg bg-yellow-500 py-3 font-semibold text-black transition hover:bg-yellow-400">
           Done
         </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Failure Modal (no emojis) ────────────────────────────────────────────────
-function FailureModal({ onRetry, onCancel }) {
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-200 dark:border-zinc-700 text-center">
-        <div className="flex justify-center mb-4">
-          <XCircle className="w-10 h-10 text-red-500" />
-        </div>
-        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Payment not confirmed</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-          We couldn't verify your payment. Please ensure you've completed the transaction on your phone and try again.
-        </p>
-        <button
-          onClick={onRetry}
-          className="w-full py-2.5 mb-3 bg-yellow-500 hover:bg-yellow-400 text-black font-semibold rounded-lg transition"
-        >
-          Try again
-        </button>
-        <button
-          onClick={onCancel}
-          className="w-full py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
-        >
-          Cancel
+        <button onClick={contactKurax} className="mt-3 w-full rounded-lg bg-green-600 py-3 font-semibold text-white transition hover:bg-green-500">
+          Contact Kurax on WhatsApp
         </button>
       </div>
     </div>
   );
 }
 
-function ComingSoonModal({ onClose }) {
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 w-full max-w-sm shadow-2xl border border-gray-200 dark:border-zinc-700 text-center">
-        <div className="flex justify-center mb-4">
-          <AlertCircle className="w-10 h-10 text-yellow-500" />
-        </div>
-        <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Coming soon!</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-          This payment flow is not available yet. We will enable it soon.
-        </p>
-        <button
-          onClick={onClose}
-          className="w-full py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black font-semibold rounded-lg transition"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main CheckoutForm (with local state for instant typing) ─────────────────
 export default function CheckoutForm({
   customerDetails: externalDetails,
   setCustomerDetails: setExternalDetails,
   totalAmount,
-  cartItems,
+  cartItems = [],
   onBack,
 }) {
+  const cartKey = getCartKey(cartItems);
   const [localDetails, setLocalDetails] = useState(externalDetails || {});
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [modal, setModal] = useState(null); // "merchant" | "success" | "failed"
+  const [submitError, setSubmitError] = useState("");
+  const [paymentRequest, setPaymentRequest] = useState(() => readSavedPaymentRequest(cartKey));
+  const [paymentStatus, setPaymentStatus] = useState(() => readSavedPaymentRequest(cartKey)?.status || "Pending");
+  const [statusError, setStatusError] = useState("");
+  const [showInstructions, setShowInstructions] = useState(false);
+  const submitting = useRef(false);
+  const requestKey = useRef(window.crypto.randomUUID());
 
-  const updateField = (name, value) => {
-    const updated = { ...localDetails, [name]: value };
+  useEffect(() => {
+    if (paymentRequest && paymentRequest.cartKey !== cartKey) {
+      setPaymentRequest(null);
+      setPaymentStatus("Pending");
+      setShowInstructions(false);
+    }
+  }, [cartKey, paymentRequest]);
+
+  useEffect(() => {
+    if (!paymentRequest) {
+      try {
+        localStorage.removeItem(PAYMENT_REQUEST_STORAGE_KEY);
+      } catch (error) {
+        console.error("Unable to clear stale public payment status:", error);
+      }
+      return;
+    }
+    try {
+      localStorage.setItem(
+        PAYMENT_REQUEST_STORAGE_KEY,
+        JSON.stringify({ ...paymentRequest, status: paymentStatus })
+      );
+    } catch (error) {
+      console.error("Unable to save public payment status:", error);
+    }
+  }, [paymentRequest, paymentStatus]);
+
+  useEffect(() => {
+    if (!paymentRequest?.orderReference) return undefined;
+    let active = true;
+    const refreshStatus = async () => {
+      try {
+        const { data } = await axios.get(
+          `${API_URL}/api/public-orders/payment-requests/${encodeURIComponent(paymentRequest.orderReference)}`
+        );
+        if (!active) return;
+        setPaymentStatus(data.status);
+        setPaymentRequest(current => ({ ...current, ...data }));
+        setStatusError("");
+      } catch (error) {
+        console.error("Payment status refresh failed:", error);
+        if (active) setStatusError(error.response?.data?.error || "Please try again.");
+      }
+    };
+    refreshStatus();
+    const interval = window.setInterval(refreshStatus, 8000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [paymentRequest?.orderReference]);
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    const updated = {
+      ...localDetails,
+      [name]: value,
+      ...(name === "paymentProvider" ? { mobileMoneyNumber: "" } : {}),
+    };
     setLocalDetails(updated);
     setExternalDetails(updated);
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    if (name === "paymentProvider") {
-      updateField(name, value);
-      updateField("mobileMoneyNumber", "");
-    } else {
-      updateField(name, value);
-    }
-  };
-
   const validate = () => {
-    const newErrors = {};
-    if (!localDetails.firstName?.trim()) newErrors.firstName = "First name is required";
-    if (!localDetails.lastName?.trim()) newErrors.lastName = "Last name is required";
-    if (!localDetails.email?.trim()) {
-      newErrors.email = "Email is required";
-    } else if (!/^\S+@\S+\.\S+$/.test(localDetails.email)) {
-      newErrors.email = "Invalid email address";
-    }
-    if (!localDetails.city?.trim()) newErrors.city = "City / Town is required";
-    if (!localDetails.paymentProvider) newErrors.paymentProvider = "Select a payment provider";
-    if (localDetails.paymentProvider && !localDetails.mobileMoneyNumber?.trim()) {
-      newErrors.mobileMoneyNumber = "Mobile Money number is required";
-    }
-    return newErrors;
+    const validationErrors = {};
+    if (!localDetails.firstName?.trim()) validationErrors.firstName = "First name is required";
+    if (!localDetails.lastName?.trim()) validationErrors.lastName = "Last name is required";
+    if (!localDetails.email?.trim()) validationErrors.email = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(localDetails.email)) validationErrors.email = "Invalid email address";
+    if (!localDetails.city?.trim()) validationErrors.city = "City / Town is required";
+    if (!localDetails.locationDesc?.trim()) validationErrors.locationDesc = "Exact location is required";
+    if (!localDetails.paymentProvider) validationErrors.paymentProvider = "Select a payment provider";
+    if (!localDetails.mobileMoneyNumber?.trim()) validationErrors.mobileMoneyNumber = "Mobile Money number is required";
+    else if (!/^\+?[0-9][0-9\s()-]{6,18}$/.test(localDetails.mobileMoneyNumber.trim())) validationErrors.mobileMoneyNumber = "Enter a valid mobile money number";
+    if (!cartItems.length) validationErrors.cart = "Your cart is empty";
+    return validationErrors;
   };
 
-  const handlePayClick = () => {
+  const handlePayClick = async () => {
+    if (submitting.current) return;
+    if (paymentRequest && paymentStatus !== "Rejected") {
+      setShowInstructions(true);
+      return;
+    }
     const validationErrors = validate();
-    if (Object.keys(validationErrors).length > 0) {
+    if (Object.keys(validationErrors).length) {
       setErrors(validationErrors);
       return;
     }
+
     setErrors({});
-    setModal("comingSoon");
-  };
-
-  const handleMerchantConfirm = async () => {
-    // Here you could call a real API to check payment status, but for now we simulate success
-    setModal(null);
+    setSubmitError("");
+    submitting.current = true;
     setLoading(true);
-    // Simulate a short "verification" process (2 seconds)
-    setTimeout(() => {
-      // For demonstration, we assume the payment was successful.
-      // In a real implementation, you would call a backend endpoint that checks with the mobile money provider.
-      setModal("success");
+    try {
+      const { data } = await axios.post(`${API_URL}/api/public-orders/payment-requests`, {
+        customer: localDetails,
+        requestKey: requestKey.current,
+        items: cartItems.map(item => ({
+          id: item.type === "combo" || item.combo_id
+            ? item.combo_id || String(item.id).replace(/^combo-/, "")
+            : item.id,
+          combo_id: item.type === "combo" || item.combo_id
+            ? item.combo_id || String(item.id).replace(/^combo-/, "")
+            : undefined,
+          type: item.type === "combo" || item.combo_id ? "combo" : "menu",
+          quantity: item.quantity,
+          instructions: item.instructions || "",
+        })),
+      });
+      setPaymentRequest({ ...data, cartKey });
+      setPaymentStatus(data.status);
+      requestKey.current = window.crypto.randomUUID();
+      setShowInstructions(true);
+    } catch (error) {
+      console.error("Could not create public order payment request:", error);
+      setSubmitError(error.response?.data?.error || "Unable to submit your order. Please try again.");
+    } finally {
+      submitting.current = false;
       setLoading(false);
-    }, 2000);
-  };
-
-  const handleRetry = () => {
-    setModal("merchant");
+    }
   };
 
   const inputClass =
-    "w-full px-4 py-2 rounded-none bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 transition";
+    "w-full rounded-none border border-gray-300 bg-gray-100 px-4 py-2 text-gray-900 transition focus:outline-none focus:ring-2 focus:ring-yellow-500 dark:border-gray-700 dark:bg-zinc-800 dark:text-white";
 
   return (
     <div className="flex flex-col gap-4 text-gray-900 dark:text-white">
-      <h2 className="text-2xl font-serif text-yellow-500 mb-2">Checkout Details</h2>
+      <h2 className="mb-2 text-2xl font-serif text-yellow-500">Checkout Details</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
           <input name="firstName" value={localDetails.firstName || ""} onChange={handleChange} className={inputClass} placeholder="First Name" />
-          {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
+          {errors.firstName && <p className="mt-1 text-sm text-red-500">{errors.firstName}</p>}
         </div>
         <div>
           <input name="lastName" value={localDetails.lastName || ""} onChange={handleChange} className={inputClass} placeholder="Last Name" />
-          {errors.lastName && <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>}
+          {errors.lastName && <p className="mt-1 text-sm text-red-500">{errors.lastName}</p>}
         </div>
       </div>
 
       <div>
-        <input name="email" value={localDetails.email || ""} onChange={handleChange} className={inputClass} placeholder="Email" />
-        {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+        <input type="email" name="email" value={localDetails.email || ""} onChange={handleChange} className={inputClass} placeholder="Email" />
+        {errors.email && <p className="mt-1 text-sm text-red-500">{errors.email}</p>}
       </div>
 
       <div>
@@ -317,11 +340,21 @@ export default function CheckoutForm({
 
       <div>
         <input name="city" value={localDetails.city || ""} onChange={handleChange} className={inputClass} placeholder="City / Town" />
-        {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
+        {errors.city && <p className="mt-1 text-sm text-red-500">{errors.city}</p>}
       </div>
 
       <div>
-        <textarea name="locationDesc" value={localDetails.locationDesc || ""} onChange={handleChange} rows={3} placeholder="Exact location" className={`${inputClass} resize-none`} />
+        <textarea
+          name="locationDesc"
+          value={localDetails.locationDesc || ""}
+          onChange={handleChange}
+          rows={3}
+          maxLength={500}
+          required
+          placeholder="Exact location (street, building, or nearby landmark)"
+          className={`${inputClass} resize-none`}
+        />
+        {errors.locationDesc && <p className="mt-1 text-sm text-red-500">{errors.locationDesc}</p>}
       </div>
 
       <div>
@@ -330,69 +363,75 @@ export default function CheckoutForm({
           <option value="AIRTEL">Airtel Mobile Money</option>
           <option value="MTN">MTN Mobile Money</option>
         </select>
-        {errors.paymentProvider && <p className="text-red-500 text-sm mt-1">{errors.paymentProvider}</p>}
+        {errors.paymentProvider && <p className="mt-1 text-sm text-red-500">{errors.paymentProvider}</p>}
       </div>
 
       {localDetails.paymentProvider && (
         <div>
           <input
             name="mobileMoneyNumber"
+            inputMode="tel"
+            autoComplete="tel"
             value={localDetails.mobileMoneyNumber || ""}
             onChange={handleChange}
             placeholder={`${localDetails.paymentProvider} number e.g. 0771234567`}
             className={inputClass}
           />
-          {errors.mobileMoneyNumber && <p className="text-red-500 text-sm mt-1">{errors.mobileMoneyNumber}</p>}
+          {errors.mobileMoneyNumber && <p className="mt-1 text-sm text-red-500">{errors.mobileMoneyNumber}</p>}
+        </div>
+      )}
+
+      {errors.cart && <p className="text-sm text-red-500">{errors.cart}</p>}
+      {submitError && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {submitError}
+        </p>
+      )}
+
+      {paymentRequest && (
+        <div className={`rounded-lg border p-3 text-sm ${
+          paymentStatus === "Confirmed" ? "border-green-200 bg-green-50 text-green-800"
+            : paymentStatus === "Rejected" ? "border-red-200 bg-red-50 text-red-800"
+              : "border-amber-200 bg-amber-50 text-amber-900"
+        }`}>
+          <p className="font-bold">
+            {paymentStatus === "Confirmed" ? "Payment confirmed"
+              : paymentStatus === "Rejected" ? "Payment request rejected"
+                : "Order received"}
+          </p>
+          <p>Order reference: {paymentRequest.orderReference}</p>
+          <button type="button" onClick={() => setShowInstructions(true)} className="mt-2 font-semibold underline">
+            View order and payment status
+          </button>
         </div>
       )}
 
       <button
+        type="button"
         onClick={handlePayClick}
         disabled={loading}
-        className={`w-full py-3 rounded-none font-semibold text-black bg-yellow-500 hover:bg-yellow-400 active:scale-95 transition ${loading ? "cursor-not-allowed opacity-70" : ""}`}
+        className={`w-full rounded-none bg-yellow-500 py-3 font-semibold text-black transition hover:bg-yellow-400 active:scale-95 ${loading ? "cursor-not-allowed opacity-70" : ""}`}
       >
-        {loading ? (
-          <span className="flex items-center justify-center gap-2">
-            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-            </svg>
-            Verifying...
-          </span>
-        ) : (
-          `Pay UGX ${Number(totalAmount).toLocaleString()}`
-        )}
+        {loading ? "Submitting order…" : paymentRequest && paymentStatus !== "Rejected"
+          ? "View payment status"
+          : paymentRequest ? "Submit a new payment request" : `Pay ${formatMoney(totalAmount)}`}
       </button>
 
-      <button onClick={onBack} className="text-sm text-gray-500 dark:text-gray-400 mt-1 hover:underline transition">
+      <button type="button" onClick={onBack} className="mt-1 text-sm text-gray-500 transition hover:underline dark:text-gray-400">
         ← Back to Cart
       </button>
 
-      {modal === "merchant" && (
-        <MerchantCodeModal
-          provider={localDetails.paymentProvider}
-          amount={totalAmount}
-          onConfirm={handleMerchantConfirm}
-          onCancel={() => setModal(null)}
-        />
-      )}
-      {modal === "success" && (
-        <SuccessModal
-          customerDetails={localDetails}
-          totalAmount={totalAmount}
-          cartItems={cartItems}
-          onClose={() => setModal(null)}
-        />
-      )}
-      {modal === "failed" && (
-        <FailureModal
-          onRetry={handleRetry}
-          onCancel={() => setModal(null)}
-        />
-      )}
-      {modal === "comingSoon" && (
-        <ComingSoonModal
-          onClose={() => setModal(null)}
+      {showInstructions && paymentRequest && (
+        <PaymentInstructionsModal
+          paymentRequest={paymentRequest}
+          customer={{
+            ...localDetails,
+            mobileMoneyNumber: paymentRequest.mobileMoneyNumber || localDetails.mobileMoneyNumber,
+          }}
+          items={paymentRequest.items || cartItems}
+          status={paymentStatus}
+          statusError={statusError}
+          onClose={() => setShowInstructions(false)}
         />
       )}
     </div>

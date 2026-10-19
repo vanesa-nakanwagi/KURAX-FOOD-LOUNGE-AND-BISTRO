@@ -22,7 +22,7 @@ function formatMoney(value) {
 
 function isAssignedKitchenItem(item) {
   const station = String(item.station || '').trim().toLowerCase();
-  return !['barman', 'barista', 'shisha'].includes(station) && Boolean(item.assignedTo);
+  return !['barman', 'barista', 'shisha'].includes(station);
 }
 
 // ─── CHEF ASSIGN MODAL ────────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ function OrderCard({ order, onUpdateStatus, onAssignChef, canAssign }) {
                   </div>
                 ) : canAssign ? (
                   <button
-                    onClick={() => onAssignChef(order.id, order._ticketId, idx, item.name)}
+                    onClick={() => onAssignChef(order.id, order._ticketId, item._orderItemIndex ?? idx, item.name)}
                     className="bg-white text-zinc-600 text-[8px] font-black px-2 py-1 rounded-full border border-zinc-200 hover:bg-amber-400 hover:text-zinc-950 transition-all whitespace-nowrap">
                     + Assign
                   </button>
@@ -229,9 +229,9 @@ function OrderCard({ order, onUpdateStatus, onAssignChef, canAssign }) {
 
       <div className="p-4 bg-zinc-50 border-t border-zinc-100 shrink-0">
         {order.status === "Pending" && (
-          <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
+          <button disabled={Boolean(order.public_order_ref) && order.items.some(item => !item.assignedTo)} onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
             className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
-            <Flame size={16}/> Start Fire
+            <Flame size={16}/> {order.public_order_ref && order.items.some(item => !item.assignedTo) ? "Assign chef before prep" : "Start Fire"}
           </button>
         )}
         {isPreparing && (
@@ -299,7 +299,7 @@ export default function KitchenDisplay() {
   }, []);
 
   const isVisibleKitchenItem = item =>
-    isAssignedKitchenItem(item) && (canAssign || item.assignedTo === chefName);
+    isAssignedKitchenItem(item) && (canAssign || (Boolean(item.assignedTo) && item.assignedTo === chefName));
 
   // ── Filter: only kitchen-relevant, non-cleared, non-day-closed orders ──────
   // FIX: added day_cleared and shift_cleared checks so accountant close-day

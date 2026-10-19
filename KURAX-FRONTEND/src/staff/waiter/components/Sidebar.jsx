@@ -34,7 +34,7 @@ const DRAWER_MENU_ITEMS = [
   { id: "tables", label: "Manage Table", icon: LayoutGrid },
 ];
 
-export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }) {
+export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout, openMenuRequest = 0 }) {
   const { theme } = useTheme();
   const { currentUser } = useData();
   const navigate = useNavigate();
@@ -52,6 +52,10 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems, onLogout }
     window.addEventListener("resize", checkScreenSize);
     return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
+
+  useEffect(() => {
+    if (openMenuRequest > 0) setIsMenuOpen(true);
+  }, [openMenuRequest]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {

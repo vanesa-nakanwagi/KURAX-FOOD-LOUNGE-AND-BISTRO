@@ -1,13 +1,18 @@
 import express from 'express';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import {
+  randomBytes, scrypt as scryptCallback, timingSafeEqual,
+} from 'node:crypto';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import pool from '../db.js';
 import { createSessionToken, readSessionToken } from '../middleware/sessionTokens.js';
 import notificationService from '../helpers/notificationService.js';
+import {
+  decryptShishaPin, encryptShishaPin, isValidShishaPinEncryptionKey,
+} from '../helpers/shishaPinEncryption.js';
 
 const router = express.Router();
 const scrypt = promisify(scryptCallback);
@@ -36,9 +41,11 @@ export async function initShishaTables() {
     `CREATE TABLE IF NOT EXISTS public.shisha_staff (
       id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE,
       role TEXT NOT NULL CHECK (role IN ('SHISHA_HOD', 'SHISHA_WAITER', 'SHISHA_CHEF')),
-      pin_salt TEXT NOT NULL, pin_hash TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT true,
+      pin_salt TEXT NOT NULL, pin_hash TEXT NOT NULL, pin_encrypted TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    'ALTER TABLE public.shisha_staff ADD COLUMN IF NOT EXISTS pin_encrypted TEXT',
     `CREATE TABLE IF NOT EXISTS public.shisha_packages (
       id SERIAL PRIMARY KEY, name TEXT NOT NULL, description TEXT, price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
       image_url TEXT, is_available BOOLEAN NOT NULL DEFAULT true, published BOOLEAN NOT NULL DEFAULT false,
@@ -53,13 +60,33 @@ export async function initShishaTables() {
       total_amount NUMERIC(12,2) NOT NULL DEFAULT 0, order_status TEXT NOT NULL DEFAULT 'PENDING',
       assigned_chef_id INTEGER REFERENCES public.shisha_staff(id), payment_status TEXT NOT NULL DEFAULT 'UNPAID',
       amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0, outstanding_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-      notes TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      notes TEXT, day_cleared BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    'ALTER TABLE public.shisha_orders ADD COLUMN IF NOT EXISTS day_cleared BOOLEAN NOT NULL DEFAULT false',
+    `UPDATE public.shisha_orders o
+     SET day_cleared = true
+     WHERE o.day_cleared = false
+       AND EXISTS (
+         SELECT 1 FROM public.daily_summary ds
+         WHERE ds.summary_date = (o.created_at AT TIME ZONE 'Africa/Kampala')::date
+           AND ds.day_closed = true
+       )`,
     `CREATE TABLE IF NOT EXISTS public.shisha_order_items (
       id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES public.shisha_orders(id) ON DELETE CASCADE,
       shisha_package_id INTEGER REFERENCES public.shisha_packages(id) ON DELETE SET NULL,
       package_name TEXT NOT NULL, quantity INTEGER NOT NULL CHECK (quantity > 0),
       unit_price NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0), line_total NUMERIC(12,2) NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS public.shisha_void_requests (
+      id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES public.shisha_orders(id) ON DELETE CASCADE,
+      order_item_id INTEGER NOT NULL REFERENCES public.shisha_order_items(id) ON DELETE CASCADE,
+      requested_by INTEGER NOT NULL REFERENCES public.shisha_staff(id),
+      quantity INTEGER NOT NULL CHECK (quantity > 0), unit_price NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0),
+      amount NUMERIC(12,2) NOT NULL CHECK (amount >= 0), reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+      resolved_by INTEGER REFERENCES public.shisha_staff(id), resolved_by_name TEXT, resolved_by_role TEXT,
+      resolution_note TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), resolved_at TIMESTAMPTZ
     )`,
     `CREATE TABLE IF NOT EXISTS public.shisha_order_status_history (
       id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES public.shisha_orders(id) ON DELETE CASCADE,
@@ -83,6 +110,10 @@ export async function initShishaTables() {
     `CREATE INDEX IF NOT EXISTS shisha_orders_waiter_idx ON public.shisha_orders(shisha_waiter_id, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS shisha_orders_chef_idx ON public.shisha_orders(assigned_chef_id, order_status)`,
     `CREATE INDEX IF NOT EXISTS shisha_orders_created_idx ON public.shisha_orders(created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS shisha_void_requests_status_idx ON public.shisha_void_requests(status, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS shisha_void_requests_order_idx ON public.shisha_void_requests(order_id, status)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS shisha_void_requests_pending_item_idx
+      ON public.shisha_void_requests(order_item_id) WHERE status = 'PENDING'`,
     `CREATE INDEX IF NOT EXISTS shisha_payment_requests_status_idx ON public.shisha_payment_requests(status, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS shisha_payments_order_idx ON public.shisha_payments(order_id, confirmed_at DESC)`,
   ];
@@ -92,10 +123,13 @@ export async function initShishaTables() {
   if (process.env.SHISHA_ADMIN_EMAIL && process.env.SHISHA_ADMIN_PIN) {
     const salt = randomBytes(16).toString('hex');
     const hash = (await scrypt(String(process.env.SHISHA_ADMIN_PIN), salt, 64)).toString('hex');
+    const encryptedPin = isValidShishaPinEncryptionKey()
+      ? encryptShishaPin(String(process.env.SHISHA_ADMIN_PIN))
+      : null;
     await pool.query(
-      `INSERT INTO public.shisha_staff (name, email, role, pin_salt, pin_hash)
-       VALUES ($1, $2, 'SHISHA_HOD', $3, $4) ON CONFLICT (email) DO NOTHING`,
-      [process.env.SHISHA_ADMIN_NAME || 'Shisha HOD', process.env.SHISHA_ADMIN_EMAIL.toLowerCase(), salt, hash]
+      `INSERT INTO public.shisha_staff (name, email, role, pin_salt, pin_hash, pin_encrypted)
+       VALUES ($1, $2, 'SHISHA_HOD', $3, $4, $5) ON CONFLICT (email) DO NOTHING`,
+      [process.env.SHISHA_ADMIN_NAME || 'Shisha HOD', process.env.SHISHA_ADMIN_EMAIL.toLowerCase(), salt, hash, encryptedPin]
     );
   }
 }
@@ -198,7 +232,11 @@ async function loadOrder(id, client = pool) {
     `SELECT o.*, w.name AS waiter_name, c.name AS chef_name,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id', i.id, 'package_id', i.shisha_package_id, 'name', i.package_name,
-        'quantity', i.quantity, 'unit_price', i.unit_price, 'line_total', i.line_total
+        'quantity', i.quantity, 'unit_price', i.unit_price, 'line_total', i.line_total,
+        'approved_void_quantity', COALESCE((SELECT SUM(v.quantity) FROM public.shisha_void_requests v
+          WHERE v.order_item_id=i.id AND v.status='APPROVED'),0),
+        'pending_void_quantity', COALESCE((SELECT SUM(v.quantity) FROM public.shisha_void_requests v
+          WHERE v.order_item_id=i.id AND v.status='PENDING'),0)
       ) ORDER BY i.id) FROM public.shisha_order_items i WHERE i.order_id = o.id), '[]'::jsonb) AS items
      FROM public.shisha_orders o
      JOIN public.shisha_staff w ON w.id = o.shisha_waiter_id
@@ -311,6 +349,28 @@ router.get('/staff', requireRoles('SHISHA_HOD'), async (req, res) => {
   }
 });
 
+router.get('/staff/:id/pin', requireRoles('SHISHA_HOD'), async (req, res) => {
+  if (!isValidShishaPinEncryptionKey()) {
+    return fail(res, 503, 'PIN retrieval is not configured. Set SHISHA_PIN_ENCRYPTION_KEY on the backend.');
+  }
+  try {
+    const result = await pool.query(
+      `SELECT pin_encrypted FROM public.shisha_staff
+       WHERE id=$1 AND role <> 'SHISHA_HOD'`,
+      [req.params.id]
+    );
+    if (!result.rows[0]) return fail(res, 404, 'Waiter or mixer account not found.');
+    if (!result.rows[0].pin_encrypted) {
+      return fail(res, 409, 'This account has no retrievable PIN yet. Set a new PIN to enable retrieval.');
+    }
+    res.set('Cache-Control', 'no-store');
+    return res.json({ pin: decryptShishaPin(result.rows[0].pin_encrypted) });
+  } catch (error) {
+    console.error('Retrieve Shisha staff PIN error:', error.message);
+    return fail(res, 500, 'Could not retrieve the account PIN. Check the Shisha PIN encryption key.');
+  }
+});
+
 router.post('/staff', async (req, res) => {
   const role = String(req.body.role || '').toUpperCase();
   const isHodBootstrap = req.actor.scope === 'restaurant' && req.actor.role === 'DIRECTOR' && role === 'SHISHA_HOD';
@@ -322,12 +382,16 @@ router.post('/staff', async (req, res) => {
   if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\d{4,8}$/.test(pin)) {
     return fail(res, 400, 'Name, valid email, and a 4-8 digit PIN are required.');
   }
+  if (!isValidShishaPinEncryptionKey()) {
+    return fail(res, 503, 'PIN encryption is not configured. Set SHISHA_PIN_ENCRYPTION_KEY on the backend.');
+  }
   try {
+    const encryptedPin = encryptShishaPin(pin);
     const { salt, hash } = await hashPin(pin);
     const result = await pool.query(
-      `INSERT INTO public.shisha_staff (name, email, role, pin_salt, pin_hash)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, role, is_active, created_at`,
-      [name, email, role, salt, hash]
+      `INSERT INTO public.shisha_staff (name, email, role, pin_salt, pin_hash, pin_encrypted)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, role, is_active, created_at`,
+      [name, email, role, salt, hash, encryptedPin]
     );
 
     const emailConfigured = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
@@ -351,6 +415,29 @@ router.post('/staff', async (req, res) => {
 });
 
 router.patch('/staff/:id', requireRoles('SHISHA_HOD'), async (req, res) => {
+  const hasPinUpdate = Object.prototype.hasOwnProperty.call(req.body, 'pin');
+  if (hasPinUpdate) {
+    const pin = String(req.body.pin || '').trim();
+    if (!/^\d{4,8}$/.test(pin)) return fail(res, 400, 'A 4-8 digit PIN is required.');
+    if (!isValidShishaPinEncryptionKey()) {
+      return fail(res, 503, 'PIN encryption is not configured. Set SHISHA_PIN_ENCRYPTION_KEY on the backend.');
+    }
+    try {
+      const encryptedPin = encryptShishaPin(pin);
+      const { salt, hash } = await hashPin(pin);
+      const result = await pool.query(
+        `UPDATE public.shisha_staff SET pin_salt=$1, pin_hash=$2, pin_encrypted=$3, updated_at=NOW()
+         WHERE id=$4 AND role <> 'SHISHA_HOD'
+         RETURNING id, name, email, role, is_active`,
+        [salt, hash, encryptedPin, req.params.id]
+      );
+      return result.rows[0] ? res.json(result.rows[0]) : fail(res, 404, 'Waiter or mixer account not found.');
+    } catch (error) {
+      console.error('Update Shisha staff PIN error:', error.message);
+      return fail(res, 500, 'Could not update the account PIN.');
+    }
+  }
+
   try {
     const result = await pool.query(
       `UPDATE public.shisha_staff SET is_active=$1, updated_at=NOW()
@@ -384,11 +471,16 @@ router.get('/orders', requireRoles(...SHISHA_ROLES), async (req, res) => {
       `SELECT o.*, w.name AS waiter_name, c.name AS chef_name,
         COALESCE((SELECT jsonb_agg(jsonb_build_object(
           'id', i.id, 'package_id', i.shisha_package_id, 'name', i.package_name,
-          'quantity', i.quantity, 'unit_price', i.unit_price, 'line_total', i.line_total
+          'quantity', i.quantity, 'unit_price', i.unit_price, 'line_total', i.line_total,
+          'approved_void_quantity', COALESCE((SELECT SUM(v.quantity) FROM public.shisha_void_requests v
+            WHERE v.order_item_id=i.id AND v.status='APPROVED'),0),
+          'pending_void_quantity', COALESCE((SELECT SUM(v.quantity) FROM public.shisha_void_requests v
+            WHERE v.order_item_id=i.id AND v.status='PENDING'),0)
         ) ORDER BY i.id) FROM public.shisha_order_items i WHERE i.order_id=o.id), '[]'::jsonb) AS items
        FROM public.shisha_orders o JOIN public.shisha_staff w ON w.id=o.shisha_waiter_id
        LEFT JOIN public.shisha_staff c ON c.id=o.assigned_chef_id
-       ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY o.created_at DESC LIMIT 250`,
+       WHERE COALESCE(o.day_cleared, false) = false
+         ${conditions.length ? `AND ${conditions.join(' AND ')}` : ''} ORDER BY o.created_at DESC LIMIT 250`,
       values
     );
     return res.json(result.rows.map(order => ({ ...order, reference: orderReference(order.id) })));
@@ -563,6 +655,171 @@ router.post('/orders/:id/serve', requireRoles('SHISHA_WAITER'), async (req, res)
     client.release();
   }
 });
+
+router.post('/orders/:id/void-requests', requireRoles('SHISHA_WAITER'), async (req, res) => {
+  const itemId = Number(req.body.item_id);
+  const quantity = Number(req.body.quantity);
+  const reason = String(req.body.reason || '').trim();
+  if (!Number.isInteger(itemId) || itemId < 1 || !Number.isInteger(quantity) || quantity < 1 || !reason || reason.length > 500) {
+    return fail(res, 400, 'Select an item, enter a valid quantity, and provide a reason of at most 500 characters.');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const orderResult = await client.query('SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const order = orderResult.rows[0];
+    if (!order || order.shisha_waiter_id !== req.actor.id) {
+      await client.query('ROLLBACK');
+      return fail(res, 404, 'Shisha order not found.');
+    }
+    const itemResult = await client.query(
+      'SELECT * FROM public.shisha_order_items WHERE id=$1 AND order_id=$2 FOR UPDATE',
+      [itemId, order.id]
+    );
+    const item = itemResult.rows[0];
+    if (!item) {
+      await client.query('ROLLBACK');
+      return fail(res, 404, 'Shisha order item not found.');
+    }
+    const usageResult = await client.query(
+      `SELECT COALESCE(SUM(quantity) FILTER (WHERE status='APPROVED'),0) AS approved_quantity,
+        COALESCE(SUM(quantity) FILTER (WHERE status='PENDING'),0) AS pending_quantity,
+        COALESCE((SELECT SUM(amount) FROM public.shisha_void_requests
+          WHERE order_id=$2 AND status='PENDING'),0) AS order_pending_amount
+       FROM public.shisha_void_requests WHERE order_item_id=$1`,
+      [item.id, order.id]
+    );
+    const usage = usageResult.rows[0];
+    const remainingQuantity = Number(item.quantity) - Number(usage.approved_quantity) - Number(usage.pending_quantity);
+    const amount = Number((Number(item.unit_price) * quantity).toFixed(2));
+    const availableBalance = Number(order.outstanding_amount) - Number(usage.order_pending_amount);
+    if (quantity > remainingQuantity || amount > availableBalance + 0.00001 || availableBalance <= 0) {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'The requested quantity exceeds the unvoided item quantity or available order balance.');
+    }
+    const requestResult = await client.query(
+      `INSERT INTO public.shisha_void_requests
+        (order_id, order_item_id, requested_by, quantity, unit_price, amount, reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [order.id, item.id, req.actor.id, quantity, item.unit_price, amount, reason]
+    );
+    await recordHistory(client, order, order.order_status, 'VOID_REQUESTED', req.actor, `${quantity} × ${item.package_name}: ${reason}`);
+    await client.query('COMMIT');
+    void notificationService.sendToRoles(['SHISHA_HOD'], {
+      type: 'SHISHA_VOID_REQUEST',
+      title: 'Shisha Void Request',
+      body: `${req.actor.name} requested a void for ${item.package_name} on ${orderReference(order.id)}.`,
+      department: 'Shisha',
+      referenceId: requestResult.rows[0].id,
+      link: `/shisha?tab=voids`,
+    }, 'shisha');
+    return res.status(201).json(requestResult.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Create Shisha void request error:', error.message);
+    return fail(res, 500, 'Could not send the void request.');
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/void-requests', requireRoles('SHISHA_HOD'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT v.*, i.package_name, i.quantity AS item_quantity, i.unit_price,
+        o.table_id, o.total_amount, o.outstanding_amount, o.order_status,
+        w.name AS waiter_name, w.id AS waiter_id, r.name AS requested_by_name
+       FROM public.shisha_void_requests v
+       JOIN public.shisha_order_items i ON i.id=v.order_item_id
+       JOIN public.shisha_orders o ON o.id=v.order_id
+       JOIN public.shisha_staff w ON w.id=o.shisha_waiter_id
+       JOIN public.shisha_staff r ON r.id=v.requested_by
+       WHERE v.status='PENDING'
+       ORDER BY v.created_at ASC LIMIT 250`
+    );
+    return res.json(result.rows.map(row => ({ ...row, reference: orderReference(row.order_id) })));
+  } catch (error) {
+    console.error('Shisha void requests error:', error.message);
+    return fail(res, 500, 'Could not load Shisha void requests.');
+  }
+});
+
+async function resolveVoidRequest(req, res, approve) {
+  const note = String(req.body.notes || '').trim().slice(0, 500);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const lookup = await client.query('SELECT order_id FROM public.shisha_void_requests WHERE id=$1', [req.params.id]);
+    if (!lookup.rows[0]) {
+      await client.query('ROLLBACK');
+      return fail(res, 404, 'Void request not found.');
+    }
+    const orderResult = await client.query('SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE', [lookup.rows[0].order_id]);
+    const order = orderResult.rows[0];
+    const requestResult = await client.query('SELECT * FROM public.shisha_void_requests WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const voidRequest = requestResult.rows[0];
+    if (!voidRequest || voidRequest.status !== 'PENDING') {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'This void request has already been resolved.');
+    }
+
+    if (approve) {
+      const total = Number(order.total_amount);
+      const outstanding = Number(order.outstanding_amount);
+      const amount = Number(voidRequest.amount);
+      if (amount > outstanding + 0.00001 || total - amount < Number(order.amount_paid) - 0.00001) {
+        await client.query('ROLLBACK');
+        return fail(res, 409, 'The order balance has changed; this void cannot be approved without refunding a payment.');
+      }
+      const nextTotal = Number(Math.max(0, total - amount).toFixed(2));
+      const nextOutstanding = Number(Math.max(0, outstanding - amount).toFixed(2));
+      const paymentStatus = nextOutstanding === 0
+        ? 'FULLY_PAID'
+        : Number(order.amount_paid) > 0 ? 'PARTIALLY_PAID' : 'UNPAID';
+      await client.query(
+        `UPDATE public.shisha_orders SET total_amount=$1, outstanding_amount=$2, payment_status=$3, updated_at=NOW()
+         WHERE id=$4`,
+        [nextTotal, nextOutstanding, paymentStatus, order.id]
+      );
+    }
+
+    const status = approve ? 'APPROVED' : 'REJECTED';
+    const updated = await client.query(
+      `UPDATE public.shisha_void_requests SET status=$1, resolved_by=$2, resolved_by_name=$3,
+        resolved_by_role=$4, resolution_note=$5, resolved_at=NOW() WHERE id=$6 RETURNING *`,
+      [status, req.actor.id, req.actor.name, req.actor.role, note || null, voidRequest.id]
+    );
+    await recordHistory(
+      client,
+      order,
+      order.order_status,
+      approve ? 'VOID_APPROVED' : 'VOID_REJECTED',
+      req.actor,
+      `${voidRequest.quantity} × ${voidRequest.amount}; ${voidRequest.reason}${note ? `; ${note}` : ''}`
+    );
+    await client.query('COMMIT');
+
+    void notificationService.sendToUser(order.shisha_waiter_id, {
+      type: approve ? 'SHISHA_VOID_APPROVED' : 'SHISHA_VOID_REJECTED',
+      title: approve ? 'Shisha Void Approved' : 'Shisha Void Rejected',
+      body: `${orderReference(order.id)}: ${voidRequest.quantity} × ${voidRequest.amount} was ${status.toLowerCase()}.`,
+      department: 'Shisha',
+      referenceId: voidRequest.id,
+      link: `/shisha?order=${order.id}`,
+    }, 'shisha');
+    return res.json(updated.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Resolve Shisha void request error:', error.message);
+    return fail(res, 500, 'Could not resolve the void request.');
+  } finally {
+    client.release();
+  }
+}
+
+router.post('/void-requests/:id/approve', requireRoles('SHISHA_HOD'), (req, res) => resolveVoidRequest(req, res, true));
+router.post('/void-requests/:id/reject', requireRoles('SHISHA_HOD'), (req, res) => resolveVoidRequest(req, res, false));
 
 router.post('/orders/:id/payment-request', requireRoles('SHISHA_WAITER'), async (req, res) => {
   const method = normalizeMethod(req.body.payment_method);
@@ -739,7 +996,7 @@ router.get('/reports', async (req, res) => {
     return fail(res, 400, 'Provide a valid date range.');
   }
   try {
-    const [summary, waiters, methods, mixers] = await Promise.all([
+    const [summary, waiters, methods, mixers, voided, voidedItems] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(total_amount),0) AS total_sales,
           COALESCE(SUM(amount_paid),0) AS amount_collected,
@@ -755,7 +1012,9 @@ router.get('/reports', async (req, res) => {
       pool.query(
         `SELECT w.id AS waiter_id, w.name AS waiter_name, COUNT(o.id)::int AS total_orders,
           COALESCE(SUM(o.total_amount),0) AS total_sales, COALESCE(SUM(o.amount_paid),0) AS amount_collected,
-          COALESCE(SUM(o.outstanding_amount),0) AS outstanding
+          COALESCE(SUM(o.outstanding_amount),0) AS outstanding,
+          COALESCE(SUM((SELECT SUM(v.amount) FROM public.shisha_void_requests v
+            WHERE v.order_id=o.id AND v.status='APPROVED')),0) AS voided_total
          FROM public.shisha_orders o JOIN public.shisha_staff w ON w.id=o.shisha_waiter_id
          WHERE o.created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
            AND o.created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
@@ -770,15 +1029,60 @@ router.get('/reports', async (req, res) => {
       ),
       pool.query(
         `SELECT c.id AS mixer_id, c.name AS mixer_name, COUNT(o.id)::int AS total_orders,
-          COALESCE(SUM(o.total_amount),0) AS total_sales
+          COALESCE(SUM(o.total_amount),0) AS total_sales,
+          COALESCE(SUM((SELECT SUM(v.amount) FROM public.shisha_void_requests v
+            WHERE v.order_id=o.id AND v.status='APPROVED')),0) AS voided_total
          FROM public.shisha_orders o
          JOIN public.shisha_staff c ON c.id=o.assigned_chef_id
          WHERE o.created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
            AND o.created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
          GROUP BY c.id, c.name ORDER BY total_sales DESC`, [from, to]
       ),
+      pool.query(
+        `SELECT COALESCE(SUM(v.amount),0) AS voided_total,
+          COALESCE(SUM(v.quantity),0)::int AS voided_quantity
+         FROM public.shisha_void_requests v
+         JOIN public.shisha_orders o ON o.id=v.order_id
+         WHERE v.status='APPROVED'
+           AND o.created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+           AND o.created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')`,
+        [from, to]
+      ),
+      pool.query(
+        `SELECT i.package_name AS item_name, COALESCE(SUM(v.quantity),0)::int AS quantity,
+          COALESCE(SUM(v.amount),0) AS amount
+         FROM public.shisha_void_requests v
+         JOIN public.shisha_order_items i ON i.id=v.order_item_id
+         JOIN public.shisha_orders o ON o.id=v.order_id
+         WHERE v.status='APPROVED'
+           AND o.created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+           AND o.created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+         GROUP BY i.package_name ORDER BY amount DESC, item_name`,
+        [from, to]
+      ),
     ]);
-    return res.json({ from, to, summary: summary.rows[0], by_waiter: waiters.rows, by_payment_method: methods.rows, by_mixer: mixers.rows });
+    const voidedTotal = Number(voided.rows[0].voided_total || 0);
+    const reportSummary = {
+      ...summary.rows[0],
+      net_sales: Number(summary.rows[0].total_sales || 0),
+      gross_sales: Number(summary.rows[0].total_sales || 0) + voidedTotal,
+      voided_total: voidedTotal,
+      voided_quantity: Number(voided.rows[0].voided_quantity || 0),
+    };
+    const addGrossSales = row => ({
+      ...row,
+      net_sales: Number(row.total_sales || 0),
+      gross_sales: Number(row.total_sales || 0) + Number(row.voided_total || 0),
+    });
+    return res.json({
+      from,
+      to,
+      summary: reportSummary,
+      by_waiter: waiters.rows.map(addGrossSales),
+      by_payment_method: methods.rows,
+      by_mixer: mixers.rows.map(addGrossSales),
+      by_voided_item: voidedItems.rows,
+    });
   } catch (error) {
     console.error('Shisha financial report error:', error.message);
     return fail(res, 500, 'Could not load Shisha reports.');

@@ -353,31 +353,50 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
   );
 }
 
-function ConsumptionWorkflow({ records, onAction }) {
-  const [orderId, setOrderId] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState(null);
-  const submit = async (event) => {
-    event.preventDefault();
-    setSaving(true);
-    const response = await onAction('consumption', { order_id: Number(orderId) }, 'POST', 'Paid order checked. Review the result for missing recipes or stock warnings.');
-    setResult(response);
-    setSaving(false);
-  };
+function ConsumptionWorkflow({ records, menuItems = [] }) {
+  const [search, setSearch] = useState('');
+  const [selectedMenuId, setSelectedMenuId] = useState('');
+  const searchTerm = search.trim().toLowerCase();
+  const matchingMenus = menuItems.filter((menu) => String(menu.name || '').toLowerCase().includes(searchTerm));
+  const selectedMenu = menuItems.find((menu) => String(menu.id) === selectedMenuId);
+  const menuRecipes = selectedMenu ? (records.recipes || []).filter((recipe) =>
+    String(recipe.menu_item_id || '') === selectedMenuId ||
+    (!recipe.menu_item_id && recipe.menu_name?.toLowerCase() === selectedMenu.name.toLowerCase())
+  ) : [];
+  const activeRecipe = menuRecipes.find((recipe) => recipe.status === 'ACTIVE');
+  const displayedRecipe = activeRecipe || menuRecipes[0];
+  const consumptionRows = (records.consumption || []).filter((row) =>
+    !selectedMenu || row.menu_name?.toLowerCase() === selectedMenu.name.toLowerCase()
+  );
   return (
     <div className="space-y-6">
-      <Panel title="Recipe consumption" description="Paid order items and approved credit items are consumed automatically. Retry an order only to review a missing recipe or stock warning.">
-        <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-          <div className="min-w-56 flex-1"><Input label="Order ID" type="number" min="1" value={orderId} onChange={setOrderId} required /></div>
-          <SubmitButton disabled={saving || !orderId}>{saving ? 'Checking order…' : 'Check / retry order'}</SubmitButton>
-        </form>
-        {result?.entries && <div className="mt-4 space-y-2">{result.entries.map((entry, index) => (
-          <p key={index} className={`rounded-lg px-3 py-2 text-sm ${entry.status && entry.status !== 'CONSUMED' ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-900'}`}>
-            {entry.order_item}: {entry.message || entry.status || `${entry.quantity} ${entry.unit} of ${entry.ingredient}`}
-          </p>
-        ))}</div>}
+      <Panel title="Search recipe" description="Search by menu item name to view its recipe. Paid orders and approved credit items consume ingredients automatically.">
+        <Input label="Menu item name" value={search} onChange={(value) => {
+          setSearch(value);
+          setSelectedMenuId('');
+        }} />
+        {searchTerm && <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-zinc-200">
+          {matchingMenus.length ? matchingMenus.map((menu) => (
+            <button key={menu.id} type="button" onClick={() => setSelectedMenuId(String(menu.id))} className={`block w-full border-b border-zinc-100 px-3 py-2 text-left last:border-b-0 hover:bg-amber-50 ${selectedMenuId === String(menu.id) ? 'bg-amber-50' : ''}`}>
+              <span className="block text-sm font-bold text-zinc-900">{menu.name}</span>
+              <span className="block text-xs text-zinc-500">{menu.station || 'No department'} · {menu.recipe_status === 'ACTIVE' ? 'Active recipe' : menu.recipe_status === 'NOT_CONFIGURED' ? 'Recipe not configured' : `${menu.recipe_status[0]}${menu.recipe_status.slice(1).toLowerCase()} recipe`}</span>
+            </button>
+          )) : <p className="px-3 py-4 text-sm text-zinc-500">No menu items match that name.</p>}
+        </div>}
+        {selectedMenu && <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+          <h3 className="font-bold text-zinc-900">{selectedMenu.name}</h3>
+          {activeRecipe ? (
+            <ul className="mt-2 space-y-1 text-sm text-zinc-700">
+              {(activeRecipe.ingredients || []).map((ingredient, index) => (
+                <li key={ingredient.id || `${ingredient.ingredient_item_id}-${index}`}>
+                  {ingredient.ingredient_name || 'Ingredient'}: {ingredient.quantity} {ingredient.unit}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="mt-2 text-sm text-amber-800">{displayedRecipe ? `No active recipe. The latest version is ${displayedRecipe.status.toLowerCase()}.` : 'No recipe has been configured for this menu item.'}</p>}
+        </div>}
       </Panel>
-      <History title="Consumption history" rows={records.consumption || []} empty="No consumption has been recorded." columns={[
+      <History title="Consumption history" rows={consumptionRows} empty={selectedMenu ? 'No consumption has been recorded for this menu item.' : 'No consumption has been recorded.'} columns={[
         { label: 'Date', key: 'business_date' },
         { label: 'Menu item', key: 'menu_name' },
         { label: 'Ingredient', key: 'item_name' },
@@ -584,7 +603,7 @@ export default function InventoryWorkflows({ section, items, menuItems, location
   if (section === 'purchases') return <PurchaseWorkflow items={items} locations={locations} records={records} onAction={onAction} />;
   if (section === 'transfers') return <TransferWorkflow items={items} locations={locations} records={records} onAction={onAction} />;
   if (section === 'recipes') return <RecipeWorkflow items={items} menuItems={menuItems} records={records} onAction={onAction} station={station} canConfigureRecipes={canConfigureRecipes} canApproveRecipes={canApproveRecipes} />;
-  if (section === 'consumption') return <ConsumptionWorkflow records={records} onAction={onAction} />;
+  if (section === 'consumption') return <ConsumptionWorkflow records={records} menuItems={menuItems} />;
   if (section === 'waste') return <WasteWorkflow items={items} records={records} onAction={onAction} station={station} />;
   if (section === 'stock-counts') return <CountWorkflow items={items} locations={locations} records={records} onAction={onAction} />;
   if (section === 'adjustments') return <CountWorkflow items={items} locations={locations} records={records} onAction={onAction} adjustment />;

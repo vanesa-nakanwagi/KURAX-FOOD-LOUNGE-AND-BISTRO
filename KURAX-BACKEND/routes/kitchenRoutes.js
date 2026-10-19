@@ -11,6 +11,8 @@ import pool    from '../db.js';
 import logActivity from '../utils/logsActivity.js';
 import notificationService from '../helpers/notificationService.js';
 import { resolveNotificationUser } from '../middleware/notificationAuth.js';
+import { refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
+import { getAssignedStationItems, getConfirmedStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
 
 const router = express.Router();
 
@@ -31,13 +33,16 @@ router.post('/tickets', async (req, res) => {
     const orderResult = await pool.query('SELECT items FROM public.orders WHERE id=$1', [order_id]);
     if (!orderResult.rows.length) return res.status(404).json({ error: 'Order not found.' });
     const orderItems = Array.isArray(orderResult.rows[0].items) ? orderResult.rows[0].items : [];
-    const stationItems = orderItems.filter(item => !['barman', 'barista', 'shisha'].includes(String(item.station || '').toLowerCase()));
+    const stationItems = getConfirmedStationItems(orderItems, orderItems)
+      .filter(item => !['bar', 'barman', 'barista', 'shisha'].includes(String(item.station || '').toLowerCase()));
+    if (!stationItems.length) {
+      return res.status(409).json({ error: 'Cashier confirmation is required before sending items to the kitchen.' });
+    }
     const assignedItems = stationItems.filter(item => item.assignedTo || item.assigned_to);
     if (!assignedItems.length || assignedItems.length !== stationItems.length) {
       return res.status(409).json({ error: 'Kitchen HOD assignment is required before sending this order.' });
     }
-    const ticketTotal = assignedItems.reduce((sum, item) => sum +
-      (Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1), 0);
+    const ticketTotal = getStationItemsTotal(assignedItems);
     const result = await pool.query(
       `INSERT INTO kitchen_tickets (order_id, table_name, staff_name, staff_role, items, total, status, ticket_date)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -126,7 +131,13 @@ router.get('/tickets', async (req, res) => {
       : await pool.query(
         `SELECT * FROM kitchen_tickets WHERE ticket_date = $1 ORDER BY created_at ASC`, [date]
       );
-    res.json(result.rows);
+    const tickets = req.query.active === 'true'
+      ? result.rows.flatMap((ticket) => {
+        const items = getAssignedStationItems(ticket.items);
+        return items.length ? [{ ...ticket, items, total: getStationItemsTotal(items) }] : [];
+      })
+      : result.rows;
+    res.json(tickets);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -149,6 +160,8 @@ router.patch('/tickets/:id/status', async (req, res) => {
       [status, id]
     );
     const ticket = result.rows[0];
+    if (!ticket) return res.status(404).json({ error: 'Kitchen ticket not found.' });
+    await refreshPublicOrderPreparationStatus(ticket.order_id, pool);
 
     const actor = status === 'Ready' ? await resolveNotificationUser(req) : null;
     if (status === 'Ready' && actor?.scope === 'restaurant' && ['CHEF', 'KITCHEN_HOD'].includes(actor.role)) {

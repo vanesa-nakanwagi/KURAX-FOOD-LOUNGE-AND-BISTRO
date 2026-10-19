@@ -35,7 +35,11 @@ export async function getMonthlyFinancials(pool, month) {
         WHERE LOWER(COALESCE(item->>'station','')) <> 'shisha'
       ) main_items
       WHERE TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
-        AND (o.is_archived = true OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'served'))
+        AND (
+          o.public_order_ref IS NOT NULL
+          OR o.is_archived = true
+          OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'served')
+        )
         AND o.payment_confirmed = true
         AND main_items.total > 0
         AND UPPER(COALESCE(o.payment_method, '')) NOT LIKE '%CREDIT%'

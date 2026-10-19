@@ -19,6 +19,8 @@ import express from 'express';
 import pool    from '../db.js';
 import notificationService from '../helpers/notificationService.js';
 import { resolveNotificationUser } from '../middleware/notificationAuth.js';
+import { refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
+import { getAssignedStationItems, getConfirmedStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
 
 const router = express.Router();
 
@@ -41,13 +43,16 @@ router.post('/tickets', async (req, res) => {
     const orderResult = await pool.query('SELECT items FROM public.orders WHERE id=$1', [order_id]);
     if (!orderResult.rows.length) return res.status(404).json({ error: 'Order not found.' });
     const orderItems = Array.isArray(orderResult.rows[0].items) ? orderResult.rows[0].items : [];
-    const stationItems = orderItems.filter(item => String(item.station || '').toLowerCase() === 'barista');
+    const stationItems = getConfirmedStationItems(orderItems, orderItems)
+      .filter(item => String(item.station || '').toLowerCase() === 'barista');
+    if (!stationItems.length) {
+      return res.status(409).json({ error: 'Cashier confirmation is required before sending items to the barista station.' });
+    }
     const assignedItems = stationItems.filter(item => item.assignedTo || item.assigned_to);
     if (!assignedItems.length || assignedItems.length !== stationItems.length) {
       return res.status(409).json({ error: 'Barista HOD assignment is required before sending this order.' });
     }
-    const ticketTotal = assignedItems.reduce((sum, item) => sum +
-      (Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1), 0);
+    const ticketTotal = getStationItemsTotal(assignedItems);
     const result = await pool.query(
       `INSERT INTO barista_tickets
          (order_id, table_name, staff_name, items, total, status, ticket_date)
@@ -162,7 +167,13 @@ router.get('/tickets', async (req, res) => {
         `SELECT * FROM barista_tickets WHERE ticket_date = $1 ORDER BY created_at ASC`,
         [date]
       );
-    res.json(result.rows);
+    const tickets = req.query.active === 'true'
+      ? result.rows.flatMap((ticket) => {
+        const items = getAssignedStationItems(ticket.items);
+        return items.length ? [{ ...ticket, items, total: getStationItemsTotal(items) }] : [];
+      })
+      : result.rows;
+    res.json(tickets);
   } catch (err) {
     console.error('Barista fetch tickets error:', err.message);
     res.status(500).json({ error: err.message });
@@ -190,6 +201,7 @@ router.patch('/tickets/:id/status', async (req, res) => {
       [status, id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Ticket not found' });
+    await refreshPublicOrderPreparationStatus(result.rows[0].order_id, pool);
     const actor = status === 'Ready' ? await resolveNotificationUser(req) : null;
     if (status === 'Ready' && actor?.scope === 'restaurant' && ['BARISTA', 'BARISTA_HOD'].includes(actor.role)) {
       try {

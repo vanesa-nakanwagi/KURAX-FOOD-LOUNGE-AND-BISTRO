@@ -31,13 +31,22 @@ export default function WaiterLayout() {
   // 2. NAVIGATION & SHARED STATE
   const [activeTab, setActiveTab] = useState("order");
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [selectedTableData, setSelectedTableData] = useState(null);
 
   useEffect(() => {
     if (orderToOpen) setActiveTab("tables");
   }, [orderToOpen]);
-  
-  // These states allow ManageTables / OrderHistory to "push" data into NewOrder
-  const [selectedTableData, setSelectedTableData] = useState(null);
+
+  useEffect(() => {
+    if (!location.state?.tableName) return;
+
+    setSelectedTableData({ name: location.state.tableName, items: [] });
+    setActiveTab("order");
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: { ...location.state, tableName: undefined },
+    });
+  }, [location.key, location.pathname, location.search, location.state, navigate]);
 
   // 3. HANDLERS
   const handleLogout = () => {
@@ -66,6 +75,7 @@ export default function WaiterLayout() {
           activeTab={activeTab} 
           setActiveTab={setActiveTab} 
           onLogout={handleLogout}
+          openMenuRequest={location.state?.openSidebar ? 1 : 0}
         />
 
         <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">

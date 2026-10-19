@@ -14,32 +14,6 @@ export async function getStaff(authUserId) {
 }
 
 /* ==========================
-   IMAGE UPLOAD
-========================== */
-export async function uploadImage(file, folder = 'menus') {
-  if (!file) return null
-
-  const fileExt = file.name.split('.').pop()
-  const fileName = `${Date.now()}.${fileExt}`
-  const filePath = `${folder}/${fileName}`
-
-  // Upload file to Supabase Storage
-  const { data, error } = await supabase.storage
-    .from('menu-images') // or event-images bucket if you prefer
-    .upload(filePath, file)
-
-  if (error) throw error
-
-  // Get public URL
-  const { publicUrl, error: urlError } = supabase.storage
-    .from('menu-images')
-    .getPublicUrl(filePath)
-
-  if (urlError) throw urlError
-  return publicUrl
-}
-
-/* ==========================
    MENUS FUNCTIONS
 ========================== */
 export async function getMenus() {

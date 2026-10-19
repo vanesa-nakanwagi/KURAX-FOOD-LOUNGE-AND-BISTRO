@@ -1,8 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
 import pool, { ensureDatabaseSchema } from './db.js';
+import { isValidShishaPinEncryptionKey } from './helpers/shishaPinEncryption.js';
 
 // ROUTE IMPORTS
 import menuRoutes from './routes/menuRoutes.js';
@@ -32,8 +32,12 @@ import cashierExpenseRoutes from './routes/cashierExpenseRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import comboRoutes from './routes/comboRoutes.js';
+import publicOrderRoutes from './routes/publicOrderRoutes.js';
 
-dotenv.config();
+if (!isValidShishaPinEncryptionKey()) {
+  console.warn('Shisha PIN encryption is disabled: configure SHISHA_PIN_ENCRYPTION_KEY as 64 hexadecimal characters.');
+}
+
 const app = express();
 
 const configuredOrigins = (process.env.CORS_ORIGINS || '')
@@ -120,6 +124,7 @@ app.use('/api/cashier-expenses', cashierExpenseRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/combos', comboRoutes);
+app.use('/api/public-orders', publicOrderRoutes);
 
 // 6. HEALTH CHECK
 app.get('/api/health', (req, res) => {

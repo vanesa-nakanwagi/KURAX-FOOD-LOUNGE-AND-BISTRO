@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoutConfirmDialog from './components/LogoutConfirmDialog';
-import { ArrowRight, Boxes, Check, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Users, Wine } from 'lucide-react';
+import { ArrowRight, Boxes, Check, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Wine } from 'lucide-react';
 import API_URL from '../config/api';
 import { downloadReportPdf } from './reportExport';
 import DepartmentInventory from './DepartmentInventory';
@@ -80,7 +80,6 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   const [preset, setPreset] = useState(() => initialRange ? 'Custom' : 'Today');
   const [reportMonth, setReportMonth] = useState(() => kampalaToday().slice(0, 7));
   const [[from, to], setRange] = useState(() => initialRange?.start && initialRange?.end ? [initialRange.start, initialRange.end] : datesFor('Today'));
-  const [form, setForm] = useState({ name: '', email: '', pin: '' });
   const [tab, setTab] = useState(departmentKey === 'all' ? 'reports' : 'orders');
   const [ticketView, setTicketView] = useState('active');
   const [error, setError] = useState('');
@@ -165,7 +164,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           rows: [
             ['Orders', report.summary?.total_orders ?? 0],
             ['Sales', money(report.summary?.total_sales)],
-            ['Voided', `${report.summary?.voided_quantity || 0} items · ${money(report.summary?.voided_total)}`],
+            ['Voided', money(report.summary?.voided_total)],
             ['COGS', money(report.summary?.cogs)],
             ['Gross profit', money(report.summary?.gross_profit)],
             ['Inventory consumption', money(report.summary?.consumption_value)],
@@ -240,22 +239,22 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           rows: [
             ['Orders', totals.total_orders],
             ['Sales', money(totals.total_sales)],
-            ['Voided', `${totals.voided_quantity} items · ${money(totals.voided_total)}`],
+            ['Voided', money(totals.voided_total)],
             ['COGS', money(totals.cogs)],
             ['Gross profit', money(totals.gross_profit)],
             ['Inventory consumption', money(totals.consumption_value)],
             ['Waste', money(totals.waste)],
-            ['Partially paid credits', `${totals.partially_paid_credit_count} · ${money(totals.partially_paid_credit_amount)}`],
-            ['Settled credits', `${totals.settled_credit_count} · ${money(totals.settled_credit_amount)}`],
-            ['Outstanding credits', `${totals.outstanding_credit_count} · ${money(totals.outstanding_credit_balance)}`],
+            ['Partially paid credits', money(totals.partially_paid_credit_amount)],
+            ['Settled credits', money(totals.settled_credit_amount)],
+            ['Outstanding credits', money(totals.outstanding_credit_balance)],
           ],
         },
         {
           title: 'Main departments',
           columns: ['Department', 'Orders', 'Sales', 'Voided', 'Collected', 'Outstanding', 'Partial credits', 'Settled credits', 'Credit balance'],
           rows: [
-            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), `${department.voided_quantity || 0} · ${money(department.voided_total)}`, money(department.amount_collected), money(department.outstanding_balance), `${department.partially_paid_credit_count} · ${money(department.partially_paid_credit_amount)}`, `${department.settled_credit_count} · ${money(department.settled_credit_amount)}`, `${department.outstanding_credit_count} · ${money(department.outstanding_credit_balance)}`]),
-            ['Total main departments', totals.total_orders, money(totals.total_sales), `${totals.voided_quantity} · ${money(totals.voided_total)}`, money(totals.amount_collected), money(totals.outstanding_balance), `${totals.partially_paid_credit_count} · ${money(totals.partially_paid_credit_amount)}`, `${totals.settled_credit_count} · ${money(totals.settled_credit_amount)}`, `${totals.outstanding_credit_count} · ${money(totals.outstanding_credit_balance)}`],
+            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), money(department.voided_total), money(department.amount_collected), money(department.outstanding_balance), money(department.partially_paid_credit_amount), money(department.settled_credit_amount), money(department.outstanding_credit_balance)]),
+            ['Total main departments', totals.total_orders, money(totals.total_sales), money(totals.voided_total), money(totals.amount_collected), money(totals.outstanding_balance), money(totals.partially_paid_credit_amount), money(totals.settled_credit_amount), money(totals.outstanding_credit_balance)],
           ],
         },
         {
@@ -282,39 +281,6 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     }
   }
 
-  async function addStaff(event) {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      await request(`/api/departments/${departmentKey}/staff`, session.token, { method: 'POST', body: form });
-      setForm({ name: '', email: '', pin: '' });
-      setMessage('Department account created.');
-      setStaff(await request(`/api/departments/${departmentKey}/staff`, session.token));
-    } catch (actionError) {
-      setError(actionError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function toggleStaff(member) {
-    setBusy(true);
-    setError('');
-    try {
-      const updated = await request(`/api/departments/${departmentKey}/staff/${member.id}`, session.token, {
-        method: 'PATCH', body: { is_active: !member.is_active },
-      });
-      setStaff(rows => rows.map(row => row.id === updated.id ? updated : row));
-      setMessage(updated.is_active ? 'Account activated.' : 'Account deactivated.');
-    } catch (actionError) {
-      setError(actionError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function assignOrder(order) {
     const staffId = assignmentSelections[order.id];
     if (!staffId) {
@@ -328,7 +294,9 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
       const result = await request(`/api/departments/${departmentKey}/orders/${order.id}/assign`, session.token, {
         method: 'POST', body: { staff_id: Number(staffId) },
       });
-      setMessage(`Order #${order.id} assigned to ${result.assigned_to} and sent to ${config.label}.`);
+      setMessage(result.awaiting_cashier_payment
+        ? `Order #${order.id} assigned to ${result.assigned_to}. It will be released to ${config.label} after the cashier confirms payment.`
+        : `Order #${order.id} assigned to ${result.assigned_to} and sent to ${config.label}.`);
       setAssignmentSelections(current => ({ ...current, [order.id]: '' }));
       setRefreshCounter(value => value + 1);
     } catch (assignError) {
@@ -362,7 +330,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     ? assignedTickets.filter(isCompletedTicket)
     : activeTickets;
   const tabs = isManagement ? [['reports', 'Department reports', CircleDollarSign]] : [
-    ['orders', 'Orders', ClipboardList], ['team', 'Team', Users], ['inventory', 'Inventory', Boxes], ['reports', 'Reports', CircleDollarSign],
+    ['orders', 'Orders', ClipboardList], ['inventory', 'Inventory', Boxes], ['reports', 'Reports', CircleDollarSign],
   ];
 
   return (
@@ -423,19 +391,6 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           </tbody></table></div>
         </section>}
 
-        {tab === 'team' && !isManagement && <section className="grid gap-5 xl:grid-cols-[340px_1fr]">
-          <form onSubmit={addStaff} className="h-fit rounded-xl border border-zinc-200 bg-white p-5"><h2 className="text-lg font-black">Add {config.label} staff</h2><p className="mb-4 mt-1 text-sm text-zinc-500">Separate department login and PIN.</p><div className="grid gap-3">
-            <input required placeholder="Full name" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-amber-500" />
-            <input required type="email" placeholder="Email address" value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-amber-500" />
-            <input required inputMode="numeric" minLength="4" maxLength="8" pattern="[0-9]{4,8}" placeholder="4-8 digit PIN" value={form.pin} onChange={event => setForm({ ...form, pin: event.target.value })} className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-amber-500" />
-            <button disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-zinc-950 hover:bg-amber-300 disabled:opacity-50"><Check size={16} /> Create {config.workerRole} account</button>
-          </div></form>
-          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-5 py-4"><h2 className="font-black">Department accounts</h2></div><div className="divide-y divide-zinc-100">
-            {staff.map(member => <div key={member.id} className="flex items-center justify-between gap-4 px-5 py-4"><div><p className="font-bold">{member.name}</p><p className="text-xs text-zinc-500">{member.email} · {member.role}</p></div><div className="flex items-center gap-3"><span className={`text-xs font-bold ${member.is_active ? 'text-emerald-700' : 'text-zinc-400'}`}>{member.is_active ? 'Active' : 'Inactive'}</span><button disabled={busy} onClick={() => toggleStaff(member)} className="text-xs font-bold text-amber-800 underline disabled:opacity-50">{member.is_active ? 'Deactivate' : 'Activate'}</button></div></div>)}
-            {!staff.length && <p className="px-5 py-8 text-center text-sm text-zinc-400">No department accounts yet.</p>}
-          </div></div>
-        </section>}
-
   {tab === 'inventory' && !isManagement && <DepartmentInventory department={departmentKey} embedded />}
 
         {tab === 'reports' && <section>
@@ -445,8 +400,8 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             {preset === 'Custom' && <><input aria-label="From date" type="date" value={from} onChange={event => setRange([event.target.value, to])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /><input aria-label="To date" type="date" value={to} onChange={event => setRange([from, event.target.value])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /></>}
             <button type="button" onClick={isManagement ? downloadConsolidatedReport : downloadDepartmentReport} disabled={!report || report.from !== from || report.to !== to || downloadingPdf} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 ${isManagement ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-amber-400 hover:bg-amber-300'}`}><Download size={15} /> {downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}</button>
           </div></div>
-          {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[1380px] text-left text-sm"><thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr><th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th><th className="p-3">Voided</th><th className="p-3">Collected</th><th className="p-3">Unpaid balance</th><th className="p-3">Partial credits</th><th className="p-3">Settled credits</th><th className="p-3">Outstanding credits</th></tr></thead><tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200"><td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td><td className="p-3">{row.voided_quantity || 0} · {money(row.voided_total)}</td><td className="p-3">{money(row.amount_collected)}</td><td className="p-3">{money(row.outstanding_balance)}</td><td className="p-3">{row.partially_paid_credit_count || 0} · {money(row.partially_paid_credit_amount)}</td><td className="p-3">{row.settled_credit_count || 0} · {money(row.settled_credit_amount)}</td><td className="p-3">{row.outstanding_credit_count || 0} · {money(row.outstanding_credit_balance)}</td></tr>)}</tbody><tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr><td className="p-3">All departments</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.total_orders || 0), 0)}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.total_sales || 0), 0))}</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.voided_quantity || 0), 0)} · {money(departments.reduce((total, row) => total + Number(row.voided_total || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.amount_collected || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_balance || 0), 0))}</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.partially_paid_credit_count || 0), 0)} · {money(departments.reduce((total, row) => total + Number(row.partially_paid_credit_amount || 0), 0))}</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.settled_credit_count || 0), 0)} · {money(departments.reduce((total, row) => total + Number(row.settled_credit_amount || 0), 0))}</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.outstanding_credit_count || 0), 0)} · {money(departments.reduce((total, row) => total + Number(row.outstanding_credit_balance || 0), 0))}</td></tr></tfoot></table></div> : <>
-            <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Orders', summary.total_orders], ['Sales', money(summary.total_sales)], ['Voided', `${summary.voided_quantity || 0} items · ${money(summary.voided_total)}`], ['Collected', money(summary.amount_collected)], ['Outstanding', money(summary.outstanding_balance)], ['Partially paid credits', `${summary.partially_paid_credit_count || 0} · ${money(summary.partially_paid_credit_amount)}`], ['Settled credits', `${summary.settled_credit_count || 0} · ${money(summary.settled_credit_amount)}`], ['Outstanding credits', `${summary.outstanding_credit_count || 0} · ${money(summary.outstanding_credit_balance)}`]].map(([label, value]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-3 text-2xl font-black">{value}</p></article>)}</div>
+          {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[1380px] text-left text-sm"><thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr><th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th><th className="p-3">Voided</th><th className="p-3">Collected</th><th className="p-3">Unpaid balance</th><th className="p-3">Partial credits</th><th className="p-3">Settled credits</th><th className="p-3">Outstanding credits</th></tr></thead><tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200"><td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td><td className="p-3">{money(row.voided_total)}</td><td className="p-3">{money(row.amount_collected)}</td><td className="p-3">{money(row.outstanding_balance)}</td><td className="p-3">{money(row.partially_paid_credit_amount)}</td><td className="p-3">{money(row.settled_credit_amount)}</td><td className="p-3">{money(row.outstanding_credit_balance)}</td></tr>)}</tbody><tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr><td className="p-3">All departments</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.total_orders || 0), 0)}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.total_sales || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.voided_total || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.amount_collected || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_balance || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.partially_paid_credit_amount || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.settled_credit_amount || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_credit_balance || 0), 0))}</td></tr></tfoot></table></div> : <>
+            <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Orders', summary.total_orders], ['Sales', money(summary.total_sales)], ['Voided', money(summary.voided_total)], ['Collected', money(summary.amount_collected)], ['Outstanding', money(summary.outstanding_balance)], ['Partially paid credits', money(summary.partially_paid_credit_amount)], ['Settled credits', money(summary.settled_credit_amount)], ['Outstanding credits', money(summary.outstanding_credit_balance)]].map(([label, value]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-3 text-2xl font-black">{value}</p></article>)}</div>
             <h3 className="mb-3 text-lg font-black">Staff performance</h3><div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white">{(report?.staff_performance || []).map(person => <div key={person.staff_name} className="flex justify-between gap-4 p-4 text-sm"><span className="font-bold">{person.staff_name}</span><span>{person.completed_items} completed · {person.items_assigned} assigned</span></div>)}{!report?.staff_performance?.length && <p className="p-5 text-sm text-zinc-400">No assignment activity in this period.</p>}</div>
           </>}
         </section>}

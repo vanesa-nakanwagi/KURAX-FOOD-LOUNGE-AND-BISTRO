@@ -25,6 +25,7 @@ export default function Menus() {
   const [imagePreview, setImagePreview] = useState('')
   const [previewOpen, setPreviewOpen] = useState(false)
   const { theme } = useTheme();
+  const menuItems = (menus || []).filter(item => item.type !== 'combo');
 
   // 👇 New states for visual feedback
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -34,11 +35,12 @@ export default function Menus() {
     name: '',
     description: '',
     price: '',
+    website_extra_fee: '0',
     category: 'Starters',
     station: 'Kitchen',
     image_file: null,
     published: false,
-    customer_visible: false
+    website_published: false
   })
 
   const handleChange = (e) => {
@@ -74,12 +76,13 @@ export default function Menus() {
       name: '',
       description: '',
       price: '',
+      website_extra_fee: '0',
       category: 'Starters',
       station: 'Kitchen',
       image_file: null,
       published: false,
       current_image_url: '',
-      customer_visible: false
+      website_published: false
     });
   };
 
@@ -97,10 +100,11 @@ export default function Menus() {
     data.append('name', formData.name);
     data.append('description', formData.description);
     data.append('price', Number(formData.price));
+    data.append('website_extra_fee', Number(formData.website_extra_fee || 0));
     data.append('category', formData.category);
     data.append('station', formData.station);
     data.append('published', formData.published);
-    data.append('customer_visible', formData.customer_visible);
+    data.append('website_published', formData.website_published);
     data.append('image_url', formData.current_image_url || '');
 
     if (formData.image_file) {
@@ -146,12 +150,13 @@ export default function Menus() {
       name: menu.name,
       description: menu.description,
       price: menu.price,
+      website_extra_fee: String(menu.website_extra_fee || 0),
       category: menu.category,
       station: menu.station,
       published: menu.published,
       image_file: null,
       current_image_url: menu.image_url,
-      customer_visible: menu.customer_visible === true
+      website_published: menu.website_published === true
     });
     setFormVisible(true);
     document.getElementById('content-area')?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -174,11 +179,11 @@ export default function Menus() {
   };
 
   return (
-    <div className="flex h-screen font-[Outfit] bg-gray-50 text-gray-900 overflow-hidden">
+    <div className="flex h-screen w-full overflow-hidden bg-gray-50 font-[Outfit] text-gray-900">
       <Sidebar />
 
-      <div id="content-area" className="flex-1 flex flex-col overflow-y-auto">
-        <main className="p-4 md:p-8 pt-20 lg:pt-8">
+      <div id="content-area" className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <main className="w-full min-w-0 p-4 pb-24 pt-20 md:p-8 md:pb-24 lg:pt-8">
           {/* Status Toast / Banner */}
           {statusMessage.text && (
             <div className={`fixed top-20 right-4 z-50 flex items-center gap-2 p-3 rounded-xl shadow-lg animate-in slide-in-from-right-5 duration-300 ${
@@ -327,16 +332,34 @@ export default function Menus() {
                   </div>
                 )}
 
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-t border-gray-200 pt-6">
-                    <label className="flex items-center space-x-3 cursor-pointer group">
-                      <input type="checkbox" name="published" checked={formData.published} onChange={handleChange} className="w-5 h-5 accent-yellow-500 rounded" />
-                      <span className="text-gray-700 text-sm font-medium">Publish Menu</span>
-                    </label>
-                    <label className="flex items-center space-x-3 cursor-pointer group">
-                      <input type="checkbox" name="customer_visible" checked={formData.customer_visible} onChange={handleChange} className="w-5 h-5 accent-yellow-500 rounded" />
-                      <span className="text-gray-700 text-sm font-medium">Show to Customers</span>
-                    </label>
-                    <div className="flex gap-3">
+                  <div className="border-t border-gray-200 pt-6 space-y-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:gap-8">
+                      <label className="flex items-center space-x-3 cursor-pointer group">
+                        <input type="checkbox" name="published" checked={formData.published} onChange={handleChange} className="w-5 h-5 accent-yellow-500 rounded" />
+                        <span className="text-gray-700 text-sm font-medium">Publish menu to staff</span>
+                      </label>
+                      <label className="flex items-center space-x-3 cursor-pointer group">
+                        <input type="checkbox" name="website_published" checked={formData.website_published} onChange={handleChange} className="w-5 h-5 accent-yellow-500 rounded" />
+                        <span className="text-gray-700 text-sm font-medium">Publish menu to website</span>
+                      </label>
+                    </div>
+                    {formData.website_published && (
+                      <div className="max-w-sm space-y-1.5">
+                        <label htmlFor="menu-website-extra-fee" className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Website price addition (UGX)</label>
+                        <input
+                          id="menu-website-extra-fee"
+                          type="number"
+                          name="website_extra_fee"
+                          min="0"
+                          step="1"
+                          value={formData.website_extra_fee}
+                          onChange={handleChange}
+                          className="w-full bg-white border border-gray-300 p-3 rounded-xl focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30 outline-none text-sm text-gray-900"
+                        />
+                        <p className="text-xs text-gray-500">Website price: {formatUGX(Number(formData.price || 0) + Number(formData.website_extra_fee || 0))}. Staff continue to see {formatUGX(formData.price)}.</p>
+                      </div>
+                    )}
+                    <div className="flex justify-end gap-3">
                       <button type="button" onClick={resetForm} className="px-6 py-3 text-gray-500 font-bold text-sm hover:text-gray-700">
                         Cancel
                       </button>
@@ -354,15 +377,15 @@ export default function Menus() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 md:gap-8 pb-10">
-            {(menus || []).map((item) => {
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17.5rem),1fr))] gap-5 pb-10 sm:gap-6">
+            {menuItems.map((item) => {
               const isNew = item.created_at && (new Date() - new Date(item.created_at)) / (1000 * 60 * 60) <= 48;
               return (
                 <div
                   key={item.id}
                   className="group relative rounded-2xl overflow-hidden flex flex-col h-full transition-all duration-300 border shadow-sm hover:shadow-md hover:-translate-y-1 bg-white border-gray-200 hover:border-yellow-300"
                 >
-                  <div className="h-44 md:h-48 bg-gray-100 relative overflow-hidden shrink-0">
+                  <div className="relative aspect-[4/3] shrink-0 overflow-hidden bg-gray-100">
                     {/* TOP LEFT: Station Tag */}
                     <div className="absolute top-3 left-3 z-10">
                       <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border backdrop-blur-sm shadow-sm ${
@@ -409,12 +432,12 @@ export default function Menus() {
                   </div>
 
                   <div className="p-4 md:p-5 flex-1 flex flex-col items-start text-left">
-                    <div className="w-full flex justify-between items-start gap-2 mb-2 min-h-[2.5rem]">
-                      <h4 className="text-sm md:text-base font-bold uppercase tracking-tight leading-tight flex-1 text-gray-900">
+                    <div className="mb-2 flex min-h-[2.5rem] w-full items-start justify-between gap-2">
+                      <h4 className="min-w-0 flex-1 break-words text-sm font-bold uppercase leading-tight tracking-tight text-gray-900 md:text-base">
                         {item.name}
                       </h4>
-                      <div className="text-right shrink-0">
-                        <span className="text-sm md:text-base text-yellow-700 font-black tracking-tighter">
+                      <div className="shrink-0 text-right">
+                        <span className="whitespace-nowrap text-sm font-black tracking-tight text-yellow-700 md:text-base">
                           {Number(item.price).toLocaleString()}
                         </span>
                         <div className="text-[7px] font-bold text-gray-500 uppercase -mt-1">UGX</div>

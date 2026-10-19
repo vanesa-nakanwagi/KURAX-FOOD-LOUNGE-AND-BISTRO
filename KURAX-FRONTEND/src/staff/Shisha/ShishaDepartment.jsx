@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoutConfirmDialog from '../components/LogoutConfirmDialog';
 import {
-  ArrowLeft, ArrowRight, Check, ChefHat, CircleDollarSign, ClipboardList, Eye, EyeOff, Flame, LogOut,
+  ArrowLeft, ArrowRight, Ban, Check, ChefHat, CircleDollarSign, ClipboardList, Eye, EyeOff, Flame, LogOut,
   Download, Package, Plus, RefreshCw, Users, Wallet,
 } from 'lucide-react';
 import API_URL from '../../config/api';
@@ -38,9 +38,41 @@ async function request(path, token, options = {}) {
     body = JSON.stringify(body);
   }
   const response = await fetch(`${API_URL}/api/shisha${path}`, { ...options, headers, body });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Shisha request failed.');
+  const contentType = response.headers.get('content-type') || '';
+  const data = contentType.includes('application/json')
+    ? await response.json().catch(() => ({}))
+    : await response.text().then(text => (text ? { raw: text } : {})).catch(() => ({}));
+  if (!response.ok) {
+    const message = data && typeof data === 'object' && (data.error || data.message || data.details)
+      ? (data.error || data.message || data.details)
+      : 'Shisha request failed.';
+    throw new Error(message);
+  }
   return data;
+}
+
+function readList(data, key, label) {
+  const list = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.rows)
+      ? data.rows
+      : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data?.items)
+          ? data.items
+          : Array.isArray(data?.results)
+            ? data.results
+            : Array.isArray(data?.[key])
+              ? data[key]
+              : null;
+
+  if (!Array.isArray(list)) {
+    if (data && typeof data === 'object' && (data.error || data.message || data.details)) {
+      throw new Error(data.error || data.message || data.details);
+    }
+    throw new Error(`Could not load ${label}: unexpected response format.`);
+  }
+  return list;
 }
 
 function money(value) {
@@ -108,6 +140,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const [orders, setOrders] = useState([]);
   const [staff, setStaff] = useState([]);
   const [paymentRequests, setPaymentRequests] = useState([]);
+  const [voidRequests, setVoidRequests] = useState([]);
   const [report, setReport] = useState(null);
   const [reportMode, setReportMode] = useState('today');
   const [reportMonth, setReportMonth] = useState(() => todayInKampala().slice(0, 7));
@@ -122,6 +155,10 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const [packageForm, setPackageForm] = useState(null);
   const [staffForm, setStaffForm] = useState({ name: '', email: '', pin: '', role: 'SHISHA_WAITER' });
   const [showStaffPin, setShowStaffPin] = useState(false);
+  const [editingStaffId, setEditingStaffId] = useState(null);
+  const [staffEditPin, setStaffEditPin] = useState('');
+  const [showStaffEditPin, setShowStaffEditPin] = useState(false);
+  const [revealedStaffPins, setRevealedStaffPins] = useState({});
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -150,7 +187,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
       ? 'PIN must be 4-8 digits'
       : '';
   const navItems = isHod
-    ? [['station', 'Station', ClipboardList], ['packages', 'Packages', Package], ['payments', 'Payments', Wallet], ['team', 'Team', Users], ['reports', 'Reports', CircleDollarSign]]
+    ? [['station', 'Station', ClipboardList], ['voids', 'Voids', Ban], ['packages', 'Packages', Package], ['payments', 'Payments', Wallet], ['team', 'Team', Users], ['reports', 'Reports', CircleDollarSign]]
     : isWaiter
       ? [['take-order', 'Take order', Plus], ['my-orders', 'My orders', ClipboardList]]
       : isChef
@@ -166,11 +203,16 @@ export default function ShishaDepartment({ requiredRole = null }) {
   async function loadData() {
     if (!session?.token) return;
     const requests = [];
-    if (isHod || isWaiter) requests.push(request('/packages', session.token).then(setPackages));
+    if (isHod || isWaiter) requests.push(
+      request('/packages', session.token).then(data => setPackages(readList(data, 'packages', 'Shisha packages')))
+    );
     if (isHod || isWaiter || isChef) requests.push(request('/orders', session.token).then(setOrders));
     if (isHod) {
-      requests.push(request('/staff', session.token).then(setStaff));
-      requests.push(request('/payments', session.token).then(setPaymentRequests));
+      requests.push(
+        request('/staff', session.token).then(data => setStaff(readList(data, 'staff', 'Shisha staff'))),
+        request('/void-requests', session.token).then(data => setVoidRequests(readList(data, 'void_requests', 'Shisha void requests'))),
+        request('/payments', session.token).then(setPaymentRequests)
+      );
     }
     if (canReport) {
       const query = new URLSearchParams({ from: reportFrom, to: reportTo });
@@ -241,6 +283,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
     setShowLogoutDialog(false);
     localStorage.removeItem('kurax_shisha_session');
     localStorage.removeItem('kurax_user');
+    setRevealedStaffPins({});
     setSession(null);
     navigate('/shisha', { replace: true });
   }
@@ -299,6 +342,48 @@ export default function ShishaDepartment({ requiredRole = null }) {
       : 'Account created, but the PIN email could not be sent. Check backend EMAIL_USER and EMAIL_PASS, then securely give the staff member the PIN you entered.');
   }
 
+  function editStaffPin(person) {
+    setEditingStaffId(current => current === person.id ? null : person.id);
+    setStaffEditPin('');
+    setShowStaffEditPin(false);
+  }
+
+  function saveStaffPin(event, person) {
+    event.preventDefault();
+    const pinToSave = staffEditPin.trim();
+    if (!/^\d{4,8}$/.test(pinToSave)) {
+      setError('PIN must be 4-8 digits.');
+      return;
+    }
+    runAction(async () => {
+      await request(`/staff/${person.id}`, session.token, {
+        method: 'PATCH',
+        body: { pin: pinToSave },
+      });
+      setRevealedStaffPins(current => ({ ...current, [person.id]: pinToSave }));
+      setEditingStaffId(null);
+      setStaffEditPin('');
+      setShowStaffEditPin(false);
+      return `PIN updated for ${person.name}.`;
+    }, result => result);
+  }
+
+  function toggleStaffPin(person) {
+    if (Object.prototype.hasOwnProperty.call(revealedStaffPins, person.id)) {
+      setRevealedStaffPins(current => {
+        const next = { ...current };
+        delete next[person.id];
+        return next;
+      });
+      return;
+    }
+    runAction(async () => {
+      const result = await request(`/staff/${person.id}/pin`, session.token);
+      setRevealedStaffPins(current => ({ ...current, [person.id]: result.pin }));
+      return `PIN retrieved for ${person.name}.`;
+    }, result => result);
+  }
+
   function chooseReportMode(mode) {
     setReportMode(mode);
     if (mode !== 'custom') {
@@ -323,6 +408,8 @@ export default function ShishaDepartment({ requiredRole = null }) {
           rows: [
             ['Orders', summary.total_orders ?? 0],
             ['Total sales', money(summary.total_sales)],
+            ['Gross sales before voids', money(summary.gross_sales)],
+            ['Approved voids', `${money(summary.voided_total)} · ${summary.voided_quantity || 0} items`],
             ['Collected', money(summary.amount_collected)],
             ['Outstanding', money(summary.total_outstanding)],
             ['Partially paid amount', money(summary.partially_paid_amount)],
@@ -332,13 +419,18 @@ export default function ShishaDepartment({ requiredRole = null }) {
         },
         {
           title: 'Sales by Shisha waiter',
-          columns: ['Waiter', 'Orders', 'Sales', 'Collected', 'Outstanding'],
-          rows: (report.by_waiter || []).map(row => [row.waiter_name, row.total_orders, money(row.total_sales), money(row.amount_collected), money(row.outstanding)]),
+          columns: ['Waiter', 'Orders', 'Net sales', 'Voided', 'Gross sales', 'Collected', 'Outstanding'],
+          rows: (report.by_waiter || []).map(row => [row.waiter_name, row.total_orders, money(row.total_sales), money(row.voided_total), money(row.gross_sales), money(row.amount_collected), money(row.outstanding)]),
         },
         {
           title: 'Sales by Shisha mixer',
-          columns: ['Mixer', 'Orders', 'Sales'],
-          rows: (report.by_mixer || []).map(row => [row.mixer_name, row.total_orders, money(row.total_sales)]),
+          columns: ['Mixer', 'Orders', 'Net sales', 'Voided', 'Gross sales'],
+          rows: (report.by_mixer || []).map(row => [row.mixer_name, row.total_orders, money(row.total_sales), money(row.voided_total), money(row.gross_sales)]),
+        },
+        {
+          title: 'Approved voids by item',
+          columns: ['Item', 'Quantity voided', 'Amount voided'],
+          rows: (report.by_voided_item || []).map(row => [row.item_name, row.quantity, money(row.amount)]),
         },
         {
           title: 'Collected by payment method',
@@ -469,6 +561,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
           </section>
         )}
 
+        {tab === 'voids' && isHod && <VoidRequestsPanel requests={voidRequests} token={session.token} runAction={runAction} busy={busy} />}
         {tab === 'packages' && isHod && (
           <section><div className="mb-4 flex items-end justify-between"><div><h2 className="text-lg font-black">Package catalogue</h2><p className="text-sm text-zinc-500">Internal products. Publishing never makes a package public.</p></div><Button tone="accent" onClick={() => setPackageForm({ name: '', description: '', price: '', published: false, is_available: true })}><Plus size={16} /> New package</Button></div>
             {packageForm && <form onSubmit={savePackage} className="mb-5 grid gap-4 rounded-xl border border-amber-200 bg-amber-50/70 p-5 md:grid-cols-2"><Field name="name" label="Package name" defaultValue={packageForm.name} required /><Field name="price" label="Price (UGX)" type="number" min="0" step="1" defaultValue={packageForm.price} required /><label className="grid gap-1.5 text-xs font-semibold text-zinc-600">Description<textarea name="description" rows="2" defaultValue={packageForm.description} className="rounded-lg border border-zinc-200 px-3 py-2 text-sm" /></label><label className="grid gap-1.5 text-xs font-semibold text-zinc-600">Package image<input name="image" type="file" accept="image/png,image/jpeg,image/webp" className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm" /></label><div className="flex flex-wrap gap-5 text-sm"><label className="flex items-center gap-2"><input name="published" type="checkbox" defaultChecked={packageForm.published} /> Published for Shisha staff</label><label className="flex items-center gap-2"><input name="is_available" type="checkbox" defaultChecked={packageForm.is_available} /> Available</label></div><div className="flex gap-2 md:col-span-2"><Button type="submit" tone="accent" disabled={busy}>Save package</Button><Button tone="quiet" onClick={() => setPackageForm(null)}>Cancel</Button></div></form>}
@@ -480,7 +573,55 @@ export default function ShishaDepartment({ requiredRole = null }) {
 
         {tab === 'team' && isHod && (
           <section className="grid gap-5 xl:grid-cols-[340px_1fr]"><form onSubmit={saveStaff} className="h-fit rounded-xl border border-zinc-200 bg-white p-5"><h2 className="text-lg font-black">Add Shisha staff</h2><p className="mb-4 mt-1 text-sm text-zinc-500">Separate department login and PIN.</p><div className="grid gap-3"><Field label="Full name" value={staffForm.name} onChange={event => setStaffForm({ ...staffForm, name: event.target.value })} required /><Field label="Email" type="email" value={staffForm.email} onChange={event => setStaffForm({ ...staffForm, email: event.target.value })} required /><label className="grid gap-1.5 text-xs font-semibold text-zinc-600">4-8 digit PIN<div className="flex gap-2"><input type={showStaffPin ? 'text' : 'password'} inputMode="numeric" pattern="[0-9]{4,8}" maxLength={8} value={staffForm.pin} onChange={event => setStaffForm({ ...staffForm, pin: event.target.value.replace(/\\D/g, '') })} required className="min-w-0 flex-1 rounded-lg border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-amber-500" /><button type="button" title="Generate 4-digit PIN" aria-label="Generate 4-digit PIN" onClick={() => { const values = new Uint32Array(1); window.crypto.getRandomValues(values); setStaffForm({ ...staffForm, pin: String(1000 + (values[0] % 9000)) }); setShowStaffPin(true); }} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50"><RefreshCw size={15} /></button><button type="button" title={showStaffPin ? 'Hide PIN' : 'Show PIN'} aria-label={showStaffPin ? 'Hide PIN' : 'Show PIN'} onClick={() => setShowStaffPin(!showStaffPin)} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50">{showStaffPin ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label><label className="grid gap-1.5 text-xs font-semibold text-zinc-600">Role<select value={staffForm.role} onChange={event => setStaffForm({ ...staffForm, role: event.target.value })} className="rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm"><option value="SHISHA_WAITER">Shisha Waiter</option><option value="SHISHA_CHEF">Shisha Chef / Mixer</option></select></label><Button type="submit" tone="accent" disabled={busy}><Plus size={16} /> Create account</Button></div></form>
-            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-5 py-4"><h2 className="font-black">Department accounts</h2></div>{staff.map(person => <div key={person.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 px-5 py-4 last:border-0"><div><p className="font-bold">{person.name}</p><p className="text-xs text-zinc-500">{person.email} · {person.role.replaceAll('_', ' ')}</p></div><div className="flex items-center gap-3"><span className={`text-xs font-bold ${person.is_active ? 'text-emerald-700' : 'text-zinc-400'}`}>{person.is_active ? 'Active' : 'Inactive'}</span>{person.role !== 'SHISHA_HOD' && <button disabled={busy} onClick={() => runAction(() => request(`/staff/${person.id}`, session.token, { method: 'PATCH', body: { is_active: !person.is_active } }), 'Account updated.')} className="text-xs font-bold text-amber-800 underline">{person.is_active ? 'Deactivate' : 'Activate'}</button>}</div></div>)}</div>
+            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+              <div className="border-b border-zinc-100 px-5 py-4"><h2 className="font-black">Department accounts</h2></div>
+              {staff.map(person => (
+                <div key={person.id} className="border-b border-zinc-100 px-5 py-4 last:border-0">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-bold">{person.name}</p>
+                      <p className="text-xs text-zinc-500">{person.email} · {person.role.replaceAll('_', ' ')}</p>
+                      {Object.prototype.hasOwnProperty.call(revealedStaffPins, person.id) && <p className="mt-1 text-xs font-semibold text-emerald-700">PIN: {revealedStaffPins[person.id]}</p>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-bold ${person.is_active ? 'text-emerald-700' : 'text-zinc-400'}`}>{person.is_active ? 'Active' : 'Inactive'}</span>
+                      {person.role !== 'SHISHA_HOD' && <>
+                        <button disabled={busy} onClick={() => toggleStaffPin(person)} className="text-xs font-bold text-amber-800 underline">{Object.prototype.hasOwnProperty.call(revealedStaffPins, person.id) ? 'Hide PIN' : 'View PIN'}</button>
+                        <button disabled={busy} onClick={() => editStaffPin(person)} className="text-xs font-bold text-amber-800 underline">{editingStaffId === person.id ? 'Cancel PIN edit' : 'Edit PIN'}</button>
+                        <button disabled={busy} onClick={() => runAction(() => request(`/staff/${person.id}`, session.token, { method: 'PATCH', body: { is_active: !person.is_active } }), 'Account updated.')} className="text-xs font-bold text-amber-800 underline">{person.is_active ? 'Deactivate' : 'Activate'}</button>
+                      </>}
+                    </div>
+                  </div>
+                  {editingStaffId === person.id && (
+                    <form onSubmit={event => saveStaffPin(event, person)} className="mt-4 flex flex-wrap items-end gap-3">
+                      <label className="grid gap-1.5 text-xs font-semibold text-zinc-600">
+                        New 4-8 digit PIN
+                        <input
+                          type={showStaffEditPin ? 'text' : 'password'}
+                          inputMode="numeric"
+                          pattern="[0-9]{4,8}"
+                          maxLength={8}
+                          value={staffEditPin}
+                          onChange={event => setStaffEditPin(event.target.value.replace(/\D/g, ''))}
+                          required
+                          className="w-44 rounded-lg border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-amber-500"
+                        />
+                      </label>
+                      <Button type="button" tone="quiet" disabled={busy} onClick={() => {
+                        const values = new Uint32Array(1);
+                        window.crypto.getRandomValues(values);
+                        setStaffEditPin(String(1000 + (values[0] % 9000)));
+                        setShowStaffEditPin(true);
+                      }}><RefreshCw size={15} /> Generate PIN</Button>
+                      <Button type="button" tone="quiet" disabled={busy || !staffEditPin} onClick={() => setShowStaffEditPin(value => !value)}>
+                        {showStaffEditPin ? <EyeOff size={15} /> : <Eye size={15} />} {showStaffEditPin ? 'Hide' : 'Show'}
+                      </Button>
+                      <Button type="submit" tone="accent" disabled={busy || !staffEditPin}>Update PIN</Button>
+                    </form>
+                  )}
+                </div>
+              ))}
+            </div>
           </section>
         )}
 
@@ -499,12 +640,34 @@ function Empty({ text }) {
 
 function OrderCard({ order, role, mixers, assignment, setAssignment, paymentMethods, setPaymentMethods, token, runAction, busy }) {
   const [history, setHistory] = useState(null);
+  const [voidInputs, setVoidInputs] = useState({});
   const doPost = (endpoint, body, message) => runAction(() => request(endpoint, token, { method: 'POST', body }), message);
   const total = money(order.total_amount);
   return (
     <article className="rounded-xl border border-zinc-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-widest text-amber-800">{order.reference || `SH-${String(order.id).padStart(4, '0')}`} · Table {order.table_id}</p><h3 className="mt-1 text-xl font-black">{total}</h3></div><span className="rounded-full bg-zinc-100 px-3 py-1 text-[10px] font-black uppercase tracking-wider">{String(order.order_status).replaceAll('_', ' ')}</span></div>
-      <div className="my-4 space-y-2 border-y border-zinc-100 py-3">{(order.items || []).map((item, index) => <div key={item.id || index} className="flex justify-between gap-3 text-sm"><span>{item.quantity} × {item.name}</span><span className="font-semibold">{money(item.line_total)}</span></div>)}</div>
+      <div className="my-4 space-y-3 border-y border-zinc-100 py-3">{(order.items || []).map((item, index) => {
+        const approvedQuantity = Number(item.approved_void_quantity || 0);
+        const pendingQuantity = Number(item.pending_void_quantity || 0);
+        const availableQuantity = Number(item.quantity) - approvedQuantity - pendingQuantity;
+        const input = voidInputs[item.id] || { quantity: '1', reason: '' };
+        return <div key={item.id || index} className="border-b border-zinc-100 pb-3 last:border-0 last:pb-0">
+          <div className="flex justify-between gap-3 text-sm"><span>{item.quantity} × {item.name}</span><span className="font-semibold">{money(item.line_total)}</span></div>
+          {(approvedQuantity > 0 || pendingQuantity > 0) && <p className="mt-1 text-xs text-zinc-500">{approvedQuantity > 0 && `${approvedQuantity} approved void`}{approvedQuantity > 0 && pendingQuantity > 0 ? ' · ' : ''}{pendingQuantity > 0 && `${pendingQuantity} pending approval`}</p>}
+          {role === 'SHISHA_WAITER' && availableQuantity > 0 && Number(order.outstanding_amount) > 0 && <form onSubmit={event => {
+            event.preventDefault();
+            doPost(`/orders/${order.id}/void-requests`, {
+              item_id: item.id,
+              quantity: Number(input.quantity),
+              reason: input.reason,
+            }, 'Void request sent to the Shisha HOD.');
+          }} className="mt-2 grid gap-2 sm:grid-cols-[90px_1fr_auto]">
+            <input aria-label={`Void quantity for ${item.name}`} type="number" min="1" max={availableQuantity} step="1" required value={input.quantity} onChange={event => setVoidInputs(current => ({ ...current, [item.id]: { ...input, quantity: event.target.value } }))} className="w-full rounded-md border border-zinc-200 px-2 py-1.5 text-xs" />
+            <input aria-label={`Void reason for ${item.name}`} required maxLength="500" value={input.reason} onChange={event => setVoidInputs(current => ({ ...current, [item.id]: { ...input, reason: event.target.value } }))} placeholder="Reason for void" className="min-w-0 rounded-md border border-zinc-200 px-2 py-1.5 text-xs" />
+            <Button type="submit" disabled={busy}><Ban size={14} /> Request void</Button>
+          </form>}
+        </div>;
+      })}</div>
       <div className="grid gap-1 text-xs text-zinc-500"><span>Waiter: {order.waiter_name}</span>{order.chef_name && <span>Mixer: {order.chef_name}</span>}{order.notes && <span>Note: {order.notes}</span>}<span>Payment: {String(order.payment_status).replaceAll('_', ' ')} · paid {money(order.amount_paid)} · due {money(order.outstanding_amount)}</span></div>
       <div className="mt-4 flex flex-wrap gap-2">
         {role === 'SHISHA_HOD' && ['PENDING', 'ASSIGNED'].includes(order.order_status) && <><select aria-label="Assign mixer" value={assignment[order.id] || order.assigned_chef_id || ''} onChange={event => setAssignment({ ...assignment, [order.id]: event.target.value })} className="min-w-40 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm"><option value="">Choose mixer</option>{mixers.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select><Button tone="accent" disabled={busy || !assignment[order.id]} onClick={() => doPost(`/orders/${order.id}/assign`, { chef_id: assignment[order.id] }, 'Order assigned.')}>Assign</Button></>}
@@ -516,6 +679,24 @@ function OrderCard({ order, role, mixers, assignment, setAssignment, paymentMeth
       </div>
       {history && <div className="mt-4 border-t border-zinc-100 pt-3">{history.map(item => <p key={item.id} className="py-1 text-xs text-zinc-500"><strong className="text-zinc-800">{item.to_status.replaceAll('_', ' ')}</strong> · {item.actor_name} · {new Date(item.created_at).toLocaleString()}</p>)}</div>}
     </article>
+  );
+}
+
+function VoidRequestsPanel({ requests, token, runAction, busy }) {
+  return (
+    <section>
+      <div className="mb-4"><h2 className="text-lg font-black">Void requests</h2><p className="text-sm text-zinc-500">Review waiter requests before any Shisha item is voided or deducted from the order.</p></div>
+      {requests.length ? <div className="grid gap-3 lg:grid-cols-2">{requests.map(item => <article key={item.id} className="rounded-xl border border-zinc-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-widest text-amber-800">{item.reference} · Table {item.table_id}</p><h3 className="mt-1 text-lg font-black">{item.package_name}</h3></div><span className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-black uppercase text-amber-900">Pending</span></div>
+        <p className="mt-2 text-sm text-zinc-600">{item.quantity} × {money(item.unit_price)} = <strong>{money(item.amount)}</strong></p>
+        <p className="mt-1 text-xs text-zinc-500">Requested by {item.waiter_name} · Order balance {money(item.outstanding_amount)}</p>
+        <p className="mt-3 rounded-lg bg-zinc-50 p-3 text-sm">{item.reason}</p>
+        <div className="mt-4 flex gap-2">
+          <Button tone="accent" disabled={busy} onClick={() => runAction(() => request(`/void-requests/${item.id}/approve`, token, { method: 'POST', body: {} }), 'Void approved. Order balance and reports updated.')}>Approve void</Button>
+          <Button tone="quiet" disabled={busy} onClick={() => runAction(() => request(`/void-requests/${item.id}/reject`, token, { method: 'POST', body: {} }), 'Void request rejected.')}>Reject</Button>
+        </div>
+      </article>)}</div> : <Empty text="No Shisha void requests are awaiting approval." />}
+    </section>
   );
 }
 
@@ -547,6 +728,8 @@ function ReportsPanel({ report, mode, setMode, from, to, setFrom, setTo, reportM
   const stats = [
     ['Orders', summary.total_orders, ClipboardList],
     ['Total sales', money(summary.total_sales), CircleDollarSign],
+    ['Gross sales before voids', money(summary.gross_sales), CircleDollarSign],
+    ['Approved voids', `${money(summary.voided_total)} · ${summary.voided_quantity || 0} items`, Ban],
     ['Collected', money(summary.amount_collected), Wallet],
     ['Outstanding', money(summary.total_outstanding), CircleDollarSign],
     ['Partially paid', `${money(summary.partially_paid_amount)} · ${summary.partially_paid_orders || 0} orders`, ClipboardList],
@@ -557,8 +740,10 @@ function ReportsPanel({ report, mode, setMode, from, to, setFrom, setTo, reportM
       {mode === 'specific-month' && <div className="mb-4 max-w-xs"><Field label="Report month" type="month" value={reportMonth} onChange={event => setReportMonth(event.target.value)} /></div>}
       {mode === 'custom' && <div className="mb-4 flex flex-wrap gap-3"><Field label="From" type="date" value={from} onChange={event => setFrom(event.target.value)} /><Field label="To" type="date" value={to} onChange={event => setTo(event.target.value)} /></div>}
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{stats.map(([label, value, Icon]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><div className="flex items-center justify-between"><span className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</span><Icon size={16} className="text-amber-700" /></div><p className="mt-3 text-2xl font-black">{value ?? 0}</p></article>)}</div>
-      <div className="grid gap-5 xl:grid-cols-2"><div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Sales by Shisha waiter</h3></div>{(report?.by_waiter || []).map(row => <div key={row.waiter_id} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.waiter_name}</p><p className="text-xs text-zinc-500">{row.total_orders} orders · {money(row.amount_collected)} collected</p></div><p className="text-sm font-black">{money(row.total_sales)}</p></div>)}{!report?.by_waiter?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No orders in this date range.</p>}</div>
-        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Collected by payment method</h3></div>{(report?.by_payment_method || []).map(row => <div key={row.payment_method} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.payment_method.replaceAll('_', ' ')}</p><p className="text-xs text-zinc-500">{row.payment_count} confirmed payments</p></div><p className="text-sm font-black">{money(row.amount)}</p></div>)}{!report?.by_payment_method?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No confirmed payments in this date range.</p>}</div></div>
+      <div className="grid gap-5 xl:grid-cols-2"><div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Sales by Shisha waiter</h3></div>{(report?.by_waiter || []).map(row => <div key={row.waiter_id} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.waiter_name}</p><p className="text-xs text-zinc-500">{row.total_orders} orders · {money(row.amount_collected)} collected · {money(row.voided_total)} voided</p></div><p className="text-sm font-black">{money(row.total_sales)}</p></div>)}{!report?.by_waiter?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No orders in this date range.</p>}</div>
+        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Collected by payment method</h3></div>{(report?.by_payment_method || []).map(row => <div key={row.payment_method} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.payment_method.replaceAll('_', ' ')}</p><p className="text-xs text-zinc-500">{row.payment_count} confirmed payments</p></div><p className="text-sm font-black">{money(row.amount)}</p></div>)}{!report?.by_payment_method?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No confirmed payments in this date range.</p>}</div>
+        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Approved voids by item</h3></div>{(report?.by_voided_item || []).map(row => <div key={row.item_name} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.item_name}</p><p className="text-xs text-zinc-500">{row.quantity} units voided</p></div><p className="text-sm font-black">{money(row.amount)}</p></div>)}{!report?.by_voided_item?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No approved voids in this date range.</p>}</div>
+      </div>
     </section>
   );
 }

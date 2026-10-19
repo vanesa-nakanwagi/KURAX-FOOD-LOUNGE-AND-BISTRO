@@ -42,6 +42,8 @@ function reportSections(report) {
       rows: [
         ['Orders', summary.total_orders ?? 0],
         ['Total sales', currency(summary.total_sales)],
+        ['Gross sales before voids', currency(summary.gross_sales)],
+        ['Approved voids', `${currency(summary.voided_total)} (${summary.voided_quantity ?? 0} items)`],
         ['Collected', currency(summary.amount_collected)],
         ['Outstanding', currency(summary.total_outstanding)],
         ['Partially paid orders', summary.partially_paid_orders ?? 0],
@@ -52,13 +54,18 @@ function reportSections(report) {
     },
     {
       title: 'Sales by Shisha waiter',
-      columns: ['Waiter', 'Orders', 'Sales', 'Collected', 'Outstanding'],
-      rows: (report?.by_waiter || []).map(row => [row.waiter_name, row.total_orders, currency(row.total_sales), currency(row.amount_collected), currency(row.outstanding)]),
+      columns: ['Waiter', 'Orders', 'Net sales', 'Voided', 'Gross sales', 'Collected', 'Outstanding'],
+      rows: (report?.by_waiter || []).map(row => [row.waiter_name, row.total_orders, currency(row.total_sales), currency(row.voided_total), currency(row.gross_sales), currency(row.amount_collected), currency(row.outstanding)]),
     },
     {
       title: 'Sales by Shisha mixer',
-      columns: ['Mixer', 'Orders', 'Sales'],
-      rows: (report?.by_mixer || []).map(row => [row.mixer_name, row.total_orders, currency(row.total_sales)]),
+      columns: ['Mixer', 'Orders', 'Net sales', 'Voided', 'Gross sales'],
+      rows: (report?.by_mixer || []).map(row => [row.mixer_name, row.total_orders, currency(row.total_sales), currency(row.voided_total), currency(row.gross_sales)]),
+    },
+    {
+      title: 'Approved voids by item',
+      columns: ['Item', 'Quantity voided', 'Amount voided'],
+      rows: (report?.by_voided_item || []).map(row => [row.item_name, row.quantity, currency(row.amount)]),
     },
     {
       title: 'Collected by payment method',
@@ -170,6 +177,9 @@ export default function ShishaSalesReports({ dark = false }) {
         ['Metric', 'Value'],
         ['Orders', Number(summary.total_orders || 0)],
         ['Total sales (UGX)', Number(summary.total_sales || 0)],
+        ['Gross sales before voids (UGX)', Number(summary.gross_sales || 0)],
+        ['Approved voids (UGX)', Number(summary.voided_total || 0)],
+        ['Approved void quantity', Number(summary.voided_quantity || 0)],
         ['Collected (UGX)', Number(summary.amount_collected || 0)],
         ['Outstanding (UGX)', Number(summary.total_outstanding || 0)],
         ['Partially paid orders', Number(summary.partially_paid_orders || 0)],
@@ -178,12 +188,16 @@ export default function ShishaSalesReports({ dark = false }) {
         ['Outstanding orders', Number(summary.outstanding_orders || 0)],
       ]],
       ['Waiter Sales', [
-        ['Waiter', 'Orders', 'Sales (UGX)', 'Collected (UGX)', 'Outstanding (UGX)'],
-        ...(report.by_waiter || []).map(row => [row.waiter_name, Number(row.total_orders || 0), Number(row.total_sales || 0), Number(row.amount_collected || 0), Number(row.outstanding || 0)]),
+        ['Waiter', 'Orders', 'Net sales (UGX)', 'Voided (UGX)', 'Gross sales (UGX)', 'Collected (UGX)', 'Outstanding (UGX)'],
+        ...(report.by_waiter || []).map(row => [row.waiter_name, Number(row.total_orders || 0), Number(row.total_sales || 0), Number(row.voided_total || 0), Number(row.gross_sales || 0), Number(row.amount_collected || 0), Number(row.outstanding || 0)]),
       ]],
       ['Mixer Sales', [
-        ['Mixer', 'Orders', 'Sales (UGX)'],
-        ...(report.by_mixer || []).map(row => [row.mixer_name, Number(row.total_orders || 0), Number(row.total_sales || 0)]),
+        ['Mixer', 'Orders', 'Net sales (UGX)', 'Voided (UGX)', 'Gross sales (UGX)'],
+        ...(report.by_mixer || []).map(row => [row.mixer_name, Number(row.total_orders || 0), Number(row.total_sales || 0), Number(row.voided_total || 0), Number(row.gross_sales || 0)]),
+      ]],
+      ['Voided Items', [
+        ['Item', 'Quantity voided', 'Amount voided (UGX)'],
+        ...(report.by_voided_item || []).map(row => [row.item_name, Number(row.quantity || 0), Number(row.amount || 0)]),
       ]],
       ['Payment Methods', [
         ['Payment method', 'Confirmed payments', 'Amount (UGX)'],
@@ -247,13 +261,14 @@ export default function ShishaSalesReports({ dark = false }) {
         <div className="grid gap-5 xl:grid-cols-2">
           <DataTable title="Sales by waiter" columns={sections[1].columns} rows={sections[1].rows} dark={dark} />
           <DataTable title="Sales by mixer" columns={sections[2].columns} rows={sections[2].rows} dark={dark} />
-          <DataTable title="Collected by payment method" columns={sections[3].columns} rows={sections[3].rows} dark={dark} />
+          <DataTable title="Collected by payment method" columns={sections[4].columns} rows={sections[4].rows} dark={dark} />
           <DataTable title="Payment status" columns={['Metric', 'Value']} rows={[
             ['Partially paid orders', Number(summary.partially_paid_orders || 0).toLocaleString()],
             ['Partially paid amount', currency(summary.partially_paid_amount)],
             ['Fully settled orders', Number(summary.fully_settled_orders || 0).toLocaleString()],
             ['Outstanding orders', Number(summary.outstanding_orders || 0).toLocaleString()],
           ]} dark={dark} />
+          <DataTable title="Approved voids by item" columns={sections[3].columns} rows={sections[3].rows} dark={dark} />
         </div>
       </>}
     </section>

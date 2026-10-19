@@ -324,6 +324,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const allOrders = await res.json();
       setOrders(allOrders.filter(order => {
+        if (order.shift_cleared || order.day_cleared || order.is_archived) return false;
         const matchName = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase();
         const matchId = Number(order.staff_id) === Number(currentStaffId);
         return matchName || matchId;

@@ -5,6 +5,7 @@ import { Receipt, Wallet, LogOut, CheckCircle2, FileText } from "lucide-react";
 import logo from "../../../assets/images/logo.jpeg";
 import API_URL from "../../../config/api";
 import CashierExpensePanel from "./CashierExpensePanel";
+import { cashierAuthHeaders } from "./cashierApi";
 
 // ─── Kampala date helper ──────────────────────────────────────────────────────
 function getKampalaDate() {
@@ -41,7 +42,9 @@ export default function CashierLayout() {
 
  const fetchGrossCash = useCallback(async () => {
   try {
-    const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue`);
+    const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue`, {
+      headers: cashierAuthHeaders(),
+    });
     if (!res.ok) return;
 
     const rows = await res.json();

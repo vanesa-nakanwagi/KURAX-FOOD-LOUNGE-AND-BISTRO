@@ -39,12 +39,12 @@ export default function CombosPage() {
         if (!isCurrent) return;
         const publicCombos = (Array.isArray(data) ? data : [])
           .filter((combo) =>
-            combo.published === true &&
-            combo.customer_visible !== false &&
+            combo.website_published === true &&
             combo.is_available !== false
           )
           .map((combo) => ({
             ...combo,
+            price: Number(combo.website_price ?? combo.price),
             id: `combo-${combo.id}`,
             combo_id: combo.id,
             type: "combo",

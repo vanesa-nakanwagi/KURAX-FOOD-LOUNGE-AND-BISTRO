@@ -121,6 +121,16 @@ router.post('/close-day', async (req, res) => {
         AND ticket_date <= $2
     `, [actor, closingDate]);
 
+    const shishaOrdersResult = await client.query(`
+      UPDATE public.shisha_orders
+      SET day_cleared = true,
+          updated_at = NOW()
+      WHERE day_cleared = false
+        AND DATE(created_at AT TIME ZONE 'Africa/Kampala') <= $1
+      RETURNING id
+    `, [closingDate]);
+    const clearedShishaOrdersCount = shishaOrdersResult.rowCount;
+
     // Clear cashier queue (shift cleared)
     await client.query(`
       UPDATE cashier_queue
@@ -169,11 +179,12 @@ router.post('/close-day', async (req, res) => {
       type: 'DAY_CLOSED',
       actor: actor,
       role: 'ACCOUNTANT',
-      message: `Day closed for ${closingDate}. Orders archived: ${clearedOrdersCount}, Tickets cleared: ${clearedTicketsCount}`,
+      message: `Day closed for ${closingDate}. Orders archived: ${clearedOrdersCount}, Tickets cleared: ${clearedTicketsCount}, Shisha orders cleared: ${clearedShishaOrdersCount}`,
       meta: {
         closing_date: closingDate,
         cleared_orders: clearedOrdersCount,
         cleared_tickets: clearedTicketsCount,
+        cleared_shisha_orders: clearedShishaOrdersCount,
         final_cash: final_cash || 0,
         final_card: final_card || 0,
         final_mtn: final_mtn || 0,
@@ -190,6 +201,7 @@ router.post('/close-day', async (req, res) => {
       closing_date: closingDate,
       cleared_orders: clearedOrdersCount,
       cleared_tickets: clearedTicketsCount,
+      cleared_shisha_orders: clearedShishaOrdersCount,
       archived_summary: archiveResult.rows[0] || null
     });
 
@@ -395,6 +407,34 @@ router.post('/reopen-day', async (req, res) => {
             updated_at = NOW()
         WHERE ticket_date = $1
           AND cleared_by_kitchen = true
+      `, [targetDate]);
+
+      await client.query(`
+        UPDATE barista_tickets
+        SET cleared_by_kitchen = false,
+            cleared_by = NULL,
+            cleared_at = NULL,
+            updated_at = NOW()
+        WHERE ticket_date = $1
+          AND cleared_by_kitchen = true
+      `, [targetDate]);
+
+      await client.query(`
+        UPDATE barman_tickets
+        SET cleared_by_kitchen = false,
+            cleared_by = NULL,
+            cleared_at = NULL,
+            updated_at = NOW()
+        WHERE ticket_date = $1
+          AND cleared_by_kitchen = true
+      `, [targetDate]);
+
+      await client.query(`
+        UPDATE public.shisha_orders
+        SET day_cleared = false,
+            updated_at = NOW()
+        WHERE DATE(created_at AT TIME ZONE 'Africa/Kampala') = $1
+          AND day_cleared = true
       `, [targetDate]);
       
       await client.query(`

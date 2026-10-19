@@ -16,6 +16,7 @@ import DeliveryModal from "./DeliveryModal";
 import DeliveriesPanel from "./DeliveriesPanel";
 import CreditLedgerPanel from "./CreditLedgerPanel";
 import { useData } from "../../customer/components/context/DataContext";
+import { cashierAuthHeaders } from "./cashierApi";
 
 // ─── HELPERS (unchanged) ─────────────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -160,6 +161,7 @@ export default function CashierDashboard() {
   const [requestingApproval, setRequestingApproval] = useState(false);
 
   const [liveQueue,          setLiveQueue]          = useState([]);
+  const [queueError,        setQueueError]         = useState("");
   const [credits,            setCredits]            = useState([]);
   const [history,            setHistory]            = useState([]);
   const [qLoading,           setQLoading]           = useState(true);
@@ -223,13 +225,14 @@ export default function CashierDashboard() {
   const fetchAll = useCallback(async () => {
     try {
       const [qRes, cRes, hRes, pRes] = await Promise.all([
-        fetch(`${API_URL}/api/cashier-ops/cashier-queue`),
+        fetch(`${API_URL}/api/cashier-ops/cashier-queue`, { headers: cashierAuthHeaders() }),
         fetch(`${API_URL}/api/credits`),
         fetch(`${API_URL}/api/cashier-ops/cashier-history`),
         fetch(`${API_URL}/api/summaries/petty-cash?date=${today}`),
       ]);
 
       if (qRes.ok) {
+        setQueueError("");
         const rows = await qRes.json();
         setLiveQueue(rows.map(o => ({
           id:            o.id,
@@ -245,7 +248,23 @@ export default function CashierDashboard() {
           credit_phone:  o.credit_phone,
           credit_pay_by: o.credit_pay_by,
           is_item:       o.is_item,
+          is_public_order: o.is_public_order === true,
+          public_order_ref: o.public_order_ref,
+          preparation_status: o.preparation_status || "NotSent",
+          customer_name: o.customer_name,
+          customer_email: o.customer_email,
+          mobile_money_number: o.mobile_money_number,
+          payment_provider: o.payment_provider,
+          delivery_type: o.delivery_type,
+          city: o.city,
+          location_desc: o.location_desc,
+          order_items: Array.isArray(o.order_items) ? o.order_items : [],
+          public_payment_status: o.public_payment_status,
+          public_reject_reason: o.public_reject_reason,
         })));
+      } else {
+        const error = await qRes.json().catch(() => ({}));
+        setQueueError(error.error || "Unable to load cashier payment queue.");
       }
       if (cRes.ok) setCredits(await cRes.json());
       if (hRes.ok) setHistory(await hRes.json());
@@ -256,6 +275,7 @@ export default function CashierDashboard() {
       }
     } catch (e) {
       console.error("Cashier fetch failed:", e);
+      setQueueError("Unable to reach the cashier payment queue. Please retry.");
     } finally {
       setQLoading(false);
     }
@@ -304,7 +324,13 @@ export default function CashierDashboard() {
     const isSplit = order.split_payments && order.split_payments.length > 0;
     if (!isSplit && isMomo && !momoTransactionId.trim()) return;
 
-    const confirmed = window.confirm("Are you sure you have received this payment?");
+    const confirmed = window.confirm(
+      order.is_public_order
+        ? order.preparation_status === "NotSent"
+          ? "Confirm this payment and send the website order to its preparation stations?"
+          : "Confirm this payment for the website order?"
+        : "Confirm that you have received this payment? The staff order has already been sent to its preparation stations."
+    );
     if (!confirmed) {
       return;
     }
@@ -317,10 +343,13 @@ export default function CashierDashboard() {
         transaction_id: momoTransactionId.trim() || null,
       };
       if (isSplit) payload.split_payments = order.split_payments;
-      const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${order.id}/confirm`, {
+      const endpoint = order.is_public_order
+        ? `${API_URL}/api/public-orders/payment-requests/${order.id}/confirm`
+        : `${API_URL}/api/cashier-ops/cashier-queue/${order.id}/confirm`;
+      const res = await fetch(endpoint, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: cashierAuthHeaders(true),
+        body: JSON.stringify({ ...payload, confirmed_by: cashierName }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -360,7 +389,7 @@ export default function CashierDashboard() {
     try {
       const res = await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${order.id}/request-approval`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: cashierAuthHeaders(true),
         body: JSON.stringify({ 
           requested_by: cashierName,
           payment_method: "CREDIT",
@@ -395,11 +424,20 @@ export default function CashierDashboard() {
 
     setConfirming(true);
     try {
-      await fetch(`${API_URL}/api/cashier-ops/cashier-queue/${processingOrder.id}/reject`, {
+      const endpoint = processingOrder.is_public_order
+        ? `${API_URL}/api/public-orders/payment-requests/${processingOrder.id}/reject`
+        : `${API_URL}/api/cashier-ops/cashier-queue/${processingOrder.id}/reject`;
+      const response = await fetch(endpoint, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: cashierAuthHeaders(true),
         body: JSON.stringify({ reason: rejectNote || "Rejected by cashier" }),
       });
+      if (!response.ok) {
+        const error = await response.json();
+        alert(error.error || "Reject failed");
+        setConfirming(false);
+        return;
+      }
       await fetchAll();
       refreshData();
     } catch (e) { console.error("Reject failed:", e); }
@@ -438,6 +476,7 @@ export default function CashierDashboard() {
 
   const normalQueue = liveQueue.filter(r => r.status === "Pending");
   const forwardedQueue = liveQueue.filter(r => r.status === "PendingManagerApproval");
+  const rejectedPublicQueue = liveQueue.filter(r => r.is_public_order && r.status === "Rejected");
 
   const closedHistory = history.filter(h => {
     if (orderStatusFilter === "CLOSED") return h.status === "Confirmed" || h.status === "PartiallySettled";
@@ -457,7 +496,8 @@ export default function CashierDashboard() {
 
   const isMomoProcessing = processingOrder?.method === "Momo-MTN" || processingOrder?.method === "Momo-Airtel";
   const isCredit = processingOrder?.method === "Credit";
-  const canConfirm = !isMomoProcessing || momoTransactionId.trim().length > 0;
+  const canConfirm = !isMomoProcessing ||
+    (/^[A-Za-z0-9-]{4,100}$/.test(momoTransactionId.trim()));
 
   return (
     <div className="flex h-screen bg-white font-[Outfit] text-zinc-800 overflow-hidden">
@@ -654,6 +694,10 @@ export default function CashierDashboard() {
                       <div key={i} className="h-28 rounded-[2.5rem] bg-zinc-100/50 animate-pulse border border-black/5" />
                     ))}
                   </div>
+                ) : queueError ? (
+                  <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+                    {queueError}
+                  </div>
                 ) : normalQueue.length === 0 ? (
                   <div className="py-16 text-center border-2 border-dashed border-black/10 rounded-[3rem] bg-zinc-50/50">
                     <ShieldCheck size={32} className="mx-auto text-zinc-400 mb-4" />
@@ -670,6 +714,29 @@ export default function CashierDashboard() {
                         onDelivery={() => setDeliveryOrder(order)}
                         onCreditView={() => setActiveSection("CREDITS")}
                       />
+                    ))}
+                  </div>
+                )}
+                {rejectedPublicQueue.length > 0 && (
+                  <div className="mt-8 space-y-3">
+                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-red-600">
+                      Rejected website payments
+                    </h4>
+                    {rejectedPublicQueue.map(order => (
+                      <div key={order.id} className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                        <div className="flex flex-wrap justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-black text-red-700">{order.public_order_ref}</p>
+                            <p className="mt-1 text-sm font-bold text-zinc-800">{order.customer_name} · {order.mobile_money_number}</p>
+                            <p className="text-xs text-zinc-600">{order.order_items.map(item => `${item.name} × ${item.quantity}`).join(", ")}</p>
+                            {order.public_reject_reason && <p className="mt-1 text-xs text-red-700">Reason: {order.public_reject_reason}</p>}
+                          </div>
+                          <div className="text-right">
+                            <span className="rounded-full bg-red-100 px-2 py-1 text-[9px] font-black uppercase text-red-700">Rejected</span>
+                            <p className="mt-2 font-black text-zinc-900">{formatFullAmount(order.amount)}</p>
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -830,7 +897,11 @@ export default function CashierDashboard() {
             </div>
 
             <h3 className="text-2xl font-black text-black text-center uppercase italic mb-2 tracking-tighter">
-              {isCredit ? "Forward Credit to Manager" : "Confirm Receipt"}
+              {isCredit
+                ? "Forward Credit to Manager"
+                : processingOrder.is_public_order && processingOrder.preparation_status === "NotSent"
+                  ? "Confirm Payment & Send to Stations"
+                  : "Confirm Payment"}
             </h3>
 
             <div className="bg-zinc-50 border border-black/10 rounded-3xl p-6 mb-6 text-center">
@@ -841,6 +912,33 @@ export default function CashierDashboard() {
                 {formatFullAmount(processingOrder.amount)}
               </span>
             </div>
+
+            {processingOrder.is_public_order && (
+              <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 mb-6 space-y-3">
+                <p className="text-[9px] font-black text-amber-700 uppercase tracking-widest">
+                  Website order · {processingOrder.public_order_ref}
+                </p>
+                <p className="text-sm font-bold text-zinc-800">
+                  {processingOrder.customer_name} · {processingOrder.customer_email}
+                </p>
+                <p className="flex items-center gap-2 text-sm font-black text-zinc-900">
+                  <Phone size={14} className="shrink-0 text-amber-700" />
+                  Payment number: {processingOrder.mobile_money_number}
+                </p>
+                <p className="text-xs text-zinc-700">
+                  {processingOrder.delivery_type === "Home" ? "Home delivery" : "Store pickup"} · {processingOrder.city}
+                  {processingOrder.location_desc ? ` · ${processingOrder.location_desc}` : ""}
+                </p>
+                <div className="border-t border-amber-200 pt-2">
+                  <p className="mb-1 text-[9px] font-black uppercase tracking-widest text-zinc-500">Items / combos</p>
+                  {processingOrder.order_items.map((item, index) => (
+                    <p key={`${item.id}-${index}`} className="text-xs text-zinc-800">
+                      {item.name} × {item.quantity} · {formatFullAmount(item.price * item.quantity)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {isCredit && (
               <div className="bg-purple-50 border border-purple-200 rounded-3xl p-5 mb-6 space-y-2">
@@ -876,6 +974,13 @@ export default function CashierDashboard() {
 
             {isMomoProcessing && !rejecting && (
               <div className="mb-6">
+                <p className="mb-3 text-center text-xs font-semibold text-amber-800">
+                    {processingOrder.is_public_order && processingOrder.preparation_status === "NotSent"
+                      ? "Verify the payment, enter its transaction ID, then confirm to send the order to its stations."
+                    : processingOrder.is_public_order
+                      ? "Verify the payment and enter its transaction ID to confirm payment for the website order."
+                      : "Verify the payment and enter its transaction ID. The staff order has already been sent to its stations."}
+                  </p>
                 <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2">
                   {processingOrder.method === "Momo-MTN" ? "MTN" : "Airtel"} Transaction ID
                   <span className="text-red-500 ml-1">*</span>
@@ -959,7 +1064,11 @@ export default function CashierDashboard() {
                             ? "bg-yellow-500 text-black shadow-xl shadow-yellow-500/20 hover:bg-yellow-600 active:scale-[0.98]"
                             : "bg-zinc-100 text-zinc-400 cursor-not-allowed"}`}
                       >
-                        {confirming ? "Processing..." : "Finalize Settlement"}
+                        {confirming
+                          ? "Processing..."
+                          : processingOrder.is_public_order && processingOrder.preparation_status === "NotSent"
+                            ? "Confirm Payment & Send to Stations"
+                            : "Confirm Payment"}
                       </button>
                     </div>
                     <button
@@ -1072,6 +1181,25 @@ function LiveOrderCard({ order, onConfirm, onDelivery }) {
           </p>
         </div>
       </div>
+      {order.is_public_order && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-[9px] font-black uppercase tracking-widest text-amber-700">
+            Website order · {order.public_order_ref}
+          </p>
+          <p className="mt-1 text-xs font-bold text-zinc-800">{order.customer_name} · {order.customer_email}</p>
+          <p className="mt-1 flex items-center gap-1 text-xs font-black text-zinc-900">
+            <Phone size={12} /> Payment number: {order.mobile_money_number}
+          </p>
+          <p className="mt-1 text-[11px] text-zinc-700">
+            {order.order_items.map(item => `${item.name} × ${item.quantity}`).join(", ")}
+          </p>
+          <p className="mt-2 text-[10px] font-black uppercase tracking-wide text-amber-800">
+            {order.preparation_status === "NotSent"
+              ? "Verify payment and enter the transaction ID before sending to stations"
+              : "Verify payment and enter the transaction ID"}
+          </p>
+        </div>
+      )}
       <div className="flex gap-2">
         {isCredit ? (
           <>
@@ -1099,7 +1227,9 @@ function LiveOrderCard({ order, onConfirm, onDelivery }) {
               onClick={onConfirm}
               className="flex-1 py-3 bg-yellow-500 text-black font-black text-[10px] uppercase rounded-xl hover:bg-yellow-600 transition-all"
             >
-              Process Payment
+              {order.is_public_order && order.preparation_status === "NotSent"
+                ? "Confirm Payment & Send to Stations"
+                : "Confirm Payment"}
             </button>
             <button
               onClick={onDelivery}

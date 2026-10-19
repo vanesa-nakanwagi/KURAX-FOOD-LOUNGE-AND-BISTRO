@@ -47,6 +47,11 @@ function parseBoolean(value, fallback) {
   return fallback;
 }
 
+function parseWebsiteExtraFee(value) {
+  const fee = Number(value ?? 0);
+  return Number.isFinite(fee) && fee >= 0 ? fee : null;
+}
+
 function serializeCombo(row) {
   const components = Array.isArray(row.components) ? row.components : [];
   const normalized = components.map((component) => ({
@@ -58,6 +63,8 @@ function serializeCombo(row) {
   return {
     ...row,
     price: Number(row.price || 0),
+    website_extra_fee: Number(row.website_extra_fee || 0),
+    website_price: Number(row.price || 0) + Number(row.website_extra_fee || 0),
     regular_total: Number(row.regular_total || 0),
     discount_amount: Number(row.discount_amount || 0),
     discount_percentage: Number(row.discount_percentage || 0),
@@ -66,6 +73,7 @@ function serializeCombo(row) {
     margin_percentage: Number(row.margin_percentage || 0),
     is_available: row.is_available !== false,
     published: row.published === true,
+    website_published: row.website_published ?? row.published === true,
     customer_visible: row.customer_visible !== false,
     components: normalized,
   };
@@ -138,7 +146,12 @@ router.get('/:id', async (req, res) => {
 router.post('/', upload.single('image'), async (req, res) => {
   const uploadedImageUrl = req.file ? `/uploads/${req.file.filename}` : null;
   try {
-    const { name, description, price, category, station, image_url, published, is_available, customer_visible, components } = parsePayload(req.body);
+    const { name, description, price, category, station, image_url, published, is_available, website_published, website_extra_fee, components } = parsePayload(req.body);
+    const websiteExtraFee = parseWebsiteExtraFee(website_extra_fee);
+    if (websiteExtraFee === null) {
+      removeComboImage(uploadedImageUrl);
+      return res.status(400).json({ error: 'Website price addition must be a non-negative amount.' });
+    }
     const menuRows = await pool.query('SELECT id, name, price, category, station FROM public.menus WHERE is_active IS NOT FALSE OR published = true OR customer_visible = true');
     const validation = validateComboPayload({
       name,
@@ -167,9 +180,9 @@ router.post('/', upload.single('image'), async (req, res) => {
     const result = await pool.query(`
       INSERT INTO public.combos (
         name, description, price, category, station, image_url, is_available, published,
-        customer_visible, regular_total, discount_amount, discount_percentage, total_cost,
+        customer_visible, website_published, website_extra_fee, regular_total, discount_amount, discount_percentage, total_cost,
         gross_profit, margin_percentage
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *
     `, [
       String(name || '').trim(),
@@ -180,7 +193,9 @@ router.post('/', upload.single('image'), async (req, res) => {
       imageUrl,
       parseBoolean(is_available, true),
       parseBoolean(published, false),
-      parseBoolean(customer_visible, true),
+      parseBoolean(website_published, false),
+      parseBoolean(website_published, false),
+      websiteExtraFee,
       breakdown.regular_total,
       breakdown.discount_amount,
       breakdown.discount_percentage,
@@ -233,7 +248,12 @@ router.put('/:id', upload.single('image'), async (req, res) => {
   const { id } = req.params;
   const uploadedImageUrl = req.file ? `/uploads/${req.file.filename}` : null;
   try {
-    const { name, description, price, category, station, image_url, published, is_available, customer_visible, components } = parsePayload(req.body);
+    const { name, description, price, category, station, image_url, published, is_available, website_published, website_extra_fee, components } = parsePayload(req.body);
+    const websiteExtraFee = parseWebsiteExtraFee(website_extra_fee);
+    if (websiteExtraFee === null) {
+      removeComboImage(uploadedImageUrl);
+      return res.status(400).json({ error: 'Website price addition must be a non-negative amount.' });
+    }
     const menuRows = await pool.query('SELECT id, name, price, category, station FROM public.menus');
     const validation = validateComboPayload({ name, price, components }, menuRows.rows);
     if (!validation.valid) {
@@ -267,14 +287,16 @@ router.put('/:id', upload.single('image'), async (req, res) => {
           is_available = $7,
           published = $8,
           customer_visible = $9,
-          regular_total = $10,
-          discount_amount = $11,
-          discount_percentage = $12,
-          total_cost = $13,
-          gross_profit = $14,
-          margin_percentage = $15,
+          website_published = $10,
+          website_extra_fee = $11,
+          regular_total = $12,
+          discount_amount = $13,
+          discount_percentage = $14,
+          total_cost = $15,
+          gross_profit = $16,
+          margin_percentage = $17,
           updated_at = NOW()
-      WHERE id = $16
+      WHERE id = $18
       RETURNING *
     `, [
       String(name || '').trim(),
@@ -285,7 +307,9 @@ router.put('/:id', upload.single('image'), async (req, res) => {
       imageUrl,
       parseBoolean(is_available, true),
       parseBoolean(published, false),
-      parseBoolean(customer_visible, true),
+      parseBoolean(website_published, false),
+      parseBoolean(website_published, false),
+      websiteExtraFee,
       breakdown.regular_total,
       breakdown.discount_amount,
       breakdown.discount_percentage,

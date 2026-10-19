@@ -30,6 +30,8 @@ const SUPERVISOR_MENU = [
 export default function SupervisorLayout() {
   const [activeTab, setActiveTab] = useState("order");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [openMenuRequest, setOpenMenuRequest] = useState(0);
+  const [selectedTableData, setSelectedTableData] = useState(null);
 
   const { theme } = useTheme();
   const { currentUser, isGranted } = useData();
@@ -47,7 +49,13 @@ export default function SupervisorLayout() {
     switch (activeTab) {
       case "order":
         if (!isGranted) return <LockedView name={currentStaffName} role="Supervisor" />;
-        return <NewOrder staffRole="SUPERVISOR" />;
+        return (
+          <NewOrder
+            staffRole="SUPERVISOR"
+            preSelectedTable={selectedTableData}
+            onClearSelection={() => setSelectedTableData(null)}
+          />
+        );
       case "status":
         return <LiveOrderStatus />;
       case "targets":
@@ -59,7 +67,16 @@ export default function SupervisorLayout() {
       case "manage":
         return <PerformanceDashboard />;
          case "tables":
-        return <OrderHistory />;
+        return (
+          <OrderHistory
+            onAddItems={(order) => {
+              setSelectedTableData({ name: order.tableName, items: order.items || [] });
+              setActiveTab("order");
+              setIsMobileMenuOpen(true);
+              setOpenMenuRequest(request => request + 1);
+            }}
+          />
+        );
       default:
         return isGranted ? <NewOrder staffRole="SUPERVISOR" /> : <LockedView name={currentStaffName} role="Supervisor" />;
     }
@@ -94,6 +111,7 @@ export default function SupervisorLayout() {
       }`}>
         <Sidebar
           activeTab={activeTab}
+          openMenuRequest={openMenuRequest}
           setActiveTab={(tabId) => {
             setActiveTab(tabId);
             setIsMobileMenuOpen(false);

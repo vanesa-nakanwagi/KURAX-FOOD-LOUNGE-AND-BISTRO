@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS menus (
   is_available BOOLEAN    DEFAULT true,
   published   BOOLEAN     DEFAULT false,
   customer_visible BOOLEAN DEFAULT false,
+  website_published BOOLEAN,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS combos (
   is_available BOOLEAN NOT NULL DEFAULT true,
   published BOOLEAN NOT NULL DEFAULT false,
   customer_visible BOOLEAN NOT NULL DEFAULT true,
+  website_published BOOLEAN,
   regular_total NUMERIC(12,2) NOT NULL DEFAULT 0,
   discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
   discount_percentage NUMERIC(12,2) NOT NULL DEFAULT 0,
@@ -90,6 +92,34 @@ CREATE TABLE IF NOT EXISTS combo_items (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (combo_id, menu_item_id)
 );
+
+ALTER TABLE public.menus
+  ADD COLUMN IF NOT EXISTS website_extra_fee NUMERIC(12,2) NOT NULL DEFAULT 0;
+
+ALTER TABLE public.combos
+  ADD COLUMN IF NOT EXISTS website_extra_fee NUMERIC(12,2) NOT NULL DEFAULT 0;
+
+ALTER TABLE public.menus
+  ADD COLUMN IF NOT EXISTS website_published BOOLEAN;
+
+UPDATE public.menus
+SET website_published = COALESCE(published, false)
+WHERE website_published IS NULL;
+
+ALTER TABLE public.menus
+  ALTER COLUMN website_published SET DEFAULT false,
+  ALTER COLUMN website_published SET NOT NULL;
+
+ALTER TABLE public.combos
+  ADD COLUMN IF NOT EXISTS website_published BOOLEAN;
+
+UPDATE public.combos
+SET website_published = COALESCE(published, false)
+WHERE website_published IS NULL;
+
+ALTER TABLE public.combos
+  ALTER COLUMN website_published SET DEFAULT false,
+  ALTER COLUMN website_published SET NOT NULL;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 3. ORDERS
@@ -110,6 +140,15 @@ CREATE TABLE IF NOT EXISTS orders (
   -- statuses: Pending, Preparing, Ready, Delayed, Served, Paid, Mixed, Credit, Voided
   payment_method  TEXT        DEFAULT 'Cash',
   is_paid         BOOLEAN     DEFAULT false,
+  payment_confirmed BOOLEAN   DEFAULT false,
+  paid_at         TIMESTAMPTZ,
+  transaction_id  TEXT,
+  public_order_ref TEXT,
+  client_name     TEXT,
+  client_phone    TEXT,
+  order_type      TEXT        DEFAULT 'Dine-in',
+  delivery_address TEXT,
+  delivery_note   TEXT,
   sent_to_cashier BOOLEAN     DEFAULT false,
   shift_cleared   BOOLEAN     DEFAULT false,  -- waiter end-of-shift
   day_cleared     BOOLEAN     DEFAULT false,  -- accountant end-of-day
@@ -123,6 +162,8 @@ CREATE INDEX IF NOT EXISTS idx_orders_day_cleared  ON orders (day_cleared);
 CREATE INDEX IF NOT EXISTS idx_orders_timestamp     ON orders (timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_staff_id      ON orders (staff_id);
 CREATE INDEX IF NOT EXISTS idx_orders_table_name    ON orders (table_name);
+CREATE UNIQUE INDEX IF NOT EXISTS orders_public_order_ref_unique
+  ON orders (public_order_ref) WHERE public_order_ref IS NOT NULL;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 4. VOID REQUESTS
@@ -177,12 +218,45 @@ CREATE TABLE IF NOT EXISTS cashier_queue (
   credit_pay_by  TEXT,
   order_type     TEXT          DEFAULT 'dine-in',  -- dine-in | delivery
   rider_name     TEXT,
-  created_at     TIMESTAMPTZ   DEFAULT NOW(),
+  public_order_ref TEXT UNIQUE,
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
   updated_at     TIMESTAMPTZ   DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_cashier_queue_status       ON cashier_queue (status);
 CREATE INDEX IF NOT EXISTS idx_cashier_queue_requested_by ON cashier_queue (requested_by);
+
+CREATE TABLE IF NOT EXISTS public_payment_requests (
+  id SERIAL PRIMARY KEY,
+  cashier_queue_id INTEGER NOT NULL UNIQUE REFERENCES cashier_queue(id) ON DELETE CASCADE,
+  public_order_ref TEXT NOT NULL UNIQUE,
+  request_key TEXT UNIQUE,
+  status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Confirmed', 'Rejected')),
+  preparation_status TEXT NOT NULL DEFAULT 'NotSent' CHECK (preparation_status IN ('NotSent', 'Preparing', 'Ready')),
+  customer_name TEXT NOT NULL,
+  customer_email TEXT NOT NULL,
+  mobile_money_number TEXT NOT NULL,
+  payment_provider TEXT NOT NULL CHECK (payment_provider IN ('MTN', 'AIRTEL')),
+  delivery_type TEXT NOT NULL CHECK (delivery_type IN ('Home', 'Store')),
+  city TEXT NOT NULL,
+  location_desc TEXT NOT NULL DEFAULT '',
+  items JSONB NOT NULL,
+  total NUMERIC(12,2) NOT NULL CHECK (total > 0),
+  order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+  transaction_id TEXT,
+  confirmed_by TEXT,
+  confirmed_at TIMESTAMPTZ,
+  rejected_by TEXT,
+  rejected_at TIMESTAMPTZ,
+  reject_reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS public_payment_requests_transaction_id_unique
+  ON public_payment_requests (LOWER(transaction_id)) WHERE transaction_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS public_payment_requests_status_idx
+  ON public_payment_requests (status, created_at DESC);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 6. CREDITS

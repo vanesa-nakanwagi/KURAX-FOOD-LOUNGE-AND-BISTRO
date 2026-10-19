@@ -284,7 +284,10 @@ export default function PerformanceDashboard({ theme = "light" }) {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const result = await response.json();
         if (mounted) {
-          setDailyOrders(Array.isArray(result) ? result.filter(order => getItemCount(order.items) > 0) : []);
+          setDailyOrders(Array.isArray(result) ? result.filter(order =>
+            !order.shift_cleared && !order.day_cleared && !order.is_archived &&
+            getItemCount(order.items) > 0
+          ) : []);
           setFetchError(null);
         }
       } catch (error) {

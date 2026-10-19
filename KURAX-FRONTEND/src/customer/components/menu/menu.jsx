@@ -99,12 +99,17 @@ export default function Menu() {
 
   // Helper: get effective category for display based on station
   const getEffectiveCategory = (item) => {
-    // Barista / Barman always go to Drinks & Cocktails
-    if (item.station === 'Barista' || item.station === 'Barman') {
+    const station = String(item.station ?? '').trim().toLowerCase();
+    if (station === 'barista' || station === 'barman') {
       return 'Drinks & Cocktails';
     }
-    // Kitchen or undefined: keep the saved category (Starters / Local Foods)
-    return item.category;
+    const category = String(item.category ?? '').trim();
+    const knownCategories = {
+      starters: 'Starters',
+      'local foods': 'Local Foods',
+      'drinks & cocktails': 'Drinks & Cocktails',
+    };
+    return knownCategories[category.toLowerCase()] || category;
   };
 
   // Fetch menus
@@ -112,8 +117,12 @@ export default function Menu() {
     const fetchMenus = async () => {
       try {
         const res = await axios.get(`${API_URL}/api/menus`);
-        const sortedLiveItems = res.data
-          .filter((item) => item.status === "live")
+        const sortedLiveItems = (Array.isArray(res.data) ? res.data : [])
+          .filter((item) => (
+            item.is_available !== false &&
+            item.website_published === true
+          ))
+          .map((item) => ({ ...item, price: Number(item.website_price ?? item.price) }))
           .sort((a, b) => b.id - a.id);
         setDbMenus(sortedLiveItems);
       } catch (err) {
@@ -170,14 +179,18 @@ export default function Menu() {
       const query = searchQuery.toLowerCase().trim();
       results = customerVisibleMenus.filter(
         (item) =>
-          item.name.toLowerCase().includes(query) ||
-          (item.description && item.description.toLowerCase().includes(query)) ||
+          String(item.name ?? '').toLowerCase().includes(query) ||
+          String(item.description ?? '').toLowerCase().includes(query) ||
           getEffectiveCategory(item).toLowerCase().includes(query)
       );
     } else if (selectedCategory) {
-      results = customerVisibleMenus.filter((item) => getEffectiveCategory(item) === selectedCategory);
+      results = customerVisibleMenus.filter((item) =>
+        getEffectiveCategory(item).toLowerCase() === selectedCategory.toLowerCase()
+      );
     } else {
-      results = customerVisibleMenus.filter((item) => getEffectiveCategory(item) === "Starters");
+      results = customerVisibleMenus.filter((item) =>
+        getEffectiveCategory(item).toLowerCase() === "starters"
+      );
     }
     setFilteredMenus(results);
   }, [dbMenus, selectedCategory, searchQuery, isSearching]);

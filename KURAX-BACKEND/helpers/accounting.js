@@ -1275,6 +1275,7 @@ export async function syncConfirmedCashierSales({ startDate, endDate, limit = 50
      WHERE cq.status = 'Confirmed'
        AND cq.amount > 0
        AND LOWER(COALESCE(cq.method, '')) <> 'credit'
+       AND cq.public_order_ref IS NULL
        ${dateFilter}
        AND NOT EXISTS (
          SELECT 1 FROM public.journal_entries je
@@ -1410,7 +1411,10 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
          )
          OR (
            approved_credit.id IS NULL
-           AND COALESCE(item->>'_rowPaid', 'false') = 'true'
+           AND (
+             COALESCE(item->>'_rowPaid', 'false') = 'true'
+             OR (o.public_order_ref IS NOT NULL AND o.payment_confirmed = true)
+           )
            AND UPPER(COALESCE(item->>'payment_method', '')) NOT LIKE '%CREDIT%'
            AND COALESCE(NULLIF(item->>'paid_at', '')::timestamptz, o.paid_at, o.created_at) IS NOT NULL
            AND (COALESCE(NULLIF(item->>'paid_at', '')::timestamptz, o.paid_at, o.created_at) AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date

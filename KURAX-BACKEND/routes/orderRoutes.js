@@ -66,10 +66,10 @@ router.get('/', async (req, res) => {
         }
       }
       const parsedItems = Array.isArray(items) ? items.map((item, index) => {
-        const station = String(item.station || '').toLowerCase();
+        const station = String(item.station || '').trim().toLowerCase();
         const ticketStatus = station === 'barista'
           ? order.barista_ticket_status
-          : station === 'barman'
+          : ['barman', 'bar'].includes(station)
             ? order.barman_ticket_status
             : order.kitchen_ticket_status;
         return {
@@ -652,10 +652,10 @@ router.patch('/:id/items/:itemIndex/serve', async (req, res) => {
       return res.json({ success: true, served: true });
     }
 
-    const station = String(item.station || '').toLowerCase();
+    const station = String(item.station || '').trim().toLowerCase();
     const ticketTable = station === 'barista'
       ? 'barista_tickets'
-      : station === 'barman'
+      : ['barman', 'bar'].includes(station)
         ? 'barman_tickets'
         : 'kitchen_tickets';
     const ticketResult = await client.query(

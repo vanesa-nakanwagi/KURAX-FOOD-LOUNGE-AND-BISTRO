@@ -22,7 +22,7 @@ export default function Sidebar() {
   // Check screen size for mobile
   useEffect(() => {
     const checkScreenSize = () => {
-      setIsMobile(window.innerWidth < 768);
+      setIsMobile(window.innerWidth < 1024);
     };
     checkScreenSize();
     window.addEventListener("resize", checkScreenSize);

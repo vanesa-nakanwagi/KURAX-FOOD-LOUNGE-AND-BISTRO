@@ -24,7 +24,11 @@ router.get("/monthly-revenue", async (req, res) => {
         COALESCE(SUM(CASE WHEN LOWER(payment_method) IN ('mtn','momo-mtn','airtel','momo-airtel') THEN total ELSE 0 END), 0) AS momo
       FROM orders
       WHERE TO_CHAR(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
-        AND (is_archived = true OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'served'))
+        AND (
+          public_order_ref IS NOT NULL
+          OR is_archived = true
+          OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'served')
+        )
         AND payment_confirmed = true
         AND UPPER(COALESCE(payment_method, '')) NOT LIKE '%CREDIT%'
         AND NOT EXISTS (

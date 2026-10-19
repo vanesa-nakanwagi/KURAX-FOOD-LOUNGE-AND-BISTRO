@@ -585,7 +585,7 @@ function OrderCard({
   const hasPendingPayment = (order.items || []).some(item => item.paymentRequested === true && !item._rowPaid);
 
   const handleAddMore = () => {
-    navigate('/staff/waiter/menu', { state: { tableName: order.tableName, isAppending: true } });
+    navigate('/staff/waiter/menu', { state: { tableName: order.tableName, isAppending: true, openSidebar: true } });
   };
 
   const payableItems = (order.items || []).filter(item =>

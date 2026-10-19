@@ -34,6 +34,20 @@ test('department credit summary clamps overpayment and ignores non-positive cred
   assert.equal(summary.outstanding_credit_balance, 0);
 });
 
+test('department credit summary counts credits marked settled even if amount_paid is stale', () => {
+  const summary = summarizeDepartmentCredits([
+    { amount: 75, amount_paid: 0, paid: true },
+    { amount: 125, amount_paid: 25, status: 'FullySettled' },
+    { amount: 100, amount_paid: 30, status: 'PartiallySettled' },
+  ]);
+
+  assert.equal(summary.settled_credit_count, 2);
+  assert.equal(summary.settled_credit_amount, 200);
+  assert.equal(summary.partially_paid_credit_count, 1);
+  assert.equal(summary.partially_paid_credit_amount, 30);
+  assert.equal(summary.outstanding_credit_balance, 70);
+});
+
 test('partial credit settlement does not mark the item fully paid', () => {
   const [item] = updateCreditOrderItems([
     { name: 'Burger', price: 100, quantity: 2, creditRequested: true },

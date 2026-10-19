@@ -47,8 +47,8 @@ function departmentFor(value) {
 
 function itemBelongsToDepartment(item, departmentKey) {
   const station = String(item.station || '').trim().toLowerCase();
-  if (departmentKey === 'kitchen') return !['barman', 'barista', 'shisha'].includes(station);
-  if (departmentKey === 'bar') return station === 'barman';
+  if (departmentKey === 'kitchen') return !['bar', 'barman', 'barista', 'shisha'].includes(station);
+  if (departmentKey === 'bar') return station === 'barman' || station === 'bar';
   if (departmentKey === 'barista') return station === 'barista';
   return false;
 }
@@ -192,7 +192,7 @@ async function departmentVoidedTotals(department, from, to) {
 async function departmentCreditReport(department, from, to) {
   const itemFilter = department.paidItemFilter.replaceAll('item->>', 'credit_items.item->>');
   const result = await pool.query(
-    `SELECT DISTINCT c.id, c.amount, c.amount_paid
+    `SELECT DISTINCT c.id, c.amount, c.amount_paid, c.paid, c.status
      FROM public.${department.table} t
      JOIN public.credits c ON c.order_id = t.order_id
      WHERE t.ticket_date BETWEEN $1::date AND $2::date
@@ -276,6 +276,14 @@ function requireDepartmentHod(req, res, next) {
   return next();
 }
 
+function requireDepartmentDirector(req, res, next) {
+  const department = departmentFor(req.params.department);
+  if (!department) return fail(res, 404, 'Department not found.');
+  if (req.actor.role !== 'DIRECTOR') return fail(res, 403, 'Director access is required to manage department accounts.');
+  req.department = department;
+  return next();
+}
+
 function dateRange(req, res) {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
   const from = req.query.from || today;
@@ -319,6 +327,8 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
        FROM public.${req.department.table} t
        LEFT JOIN public.${req.department.assignments} a ON a.ticket_id = t.id
        WHERE t.ticket_date = $1::date
+         AND COALESCE(t.cleared_by_kitchen, false) = false
+         AND t.cleared_at IS NULL
        GROUP BY t.id
        ORDER BY t.created_at ASC`,
       [date]
@@ -406,7 +416,9 @@ router.post('/:department/orders/:orderId/assign', requireDepartmentHod, async (
       return fail(res, 409, 'This order has no unassigned items for this department.');
     }
 
-    const ticketItems = updatedItems.filter(item => itemBelongsToDepartment(item, req.params.department));
+    const ticketItems = updatedItems
+      .map((item, index) => ({ ...item, _orderItemIndex: index }))
+      .filter(item => itemBelongsToDepartment(item, req.params.department));
     const total = ticketItems.reduce((sum, item) => sum + itemTotal(item), 0);
     const ticketResult = await client.query(
       `INSERT INTO public.${req.department.table}
@@ -431,8 +443,11 @@ router.post('/:department/orders/:orderId/assign', requireDepartmentHod, async (
       'UPDATE public.orders SET items=$1, updated_at=NOW() WHERE id=$2',
       [JSON.stringify(updatedItems), order.id]
     );
+    const awaitingCashierPayment = assignedIndexes.some(
+      (index) => updatedItems[index].payment_confirmed !== true
+    );
     await client.query('COMMIT');
-    return res.status(201).json({ ticket, assigned_to: assignee.name });
+    return res.status(201).json({ ticket, assigned_to: assignee.name, awaiting_cashier_payment: awaitingCashierPayment });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('Department HOD assignment error:', error.message);
@@ -460,7 +475,7 @@ router.get('/:department/workers', async (req, res) => {
   }
 });
 
-router.post('/:department/staff', requireDepartmentHod, async (req, res) => {
+router.post('/:department/staff', requireDepartmentDirector, async (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').trim().toLowerCase();
   const pin = String(req.body.pin || '').trim();
@@ -482,15 +497,49 @@ router.post('/:department/staff', requireDepartmentHod, async (req, res) => {
   }
 });
 
-router.patch('/:department/staff/:id', requireDepartmentHod, async (req, res) => {
+router.patch('/:department/staff/:id', requireDepartmentDirector, async (req, res) => {
+  const staffId = Number(req.params.id);
+  if (!Number.isInteger(staffId) || staffId <= 0) return fail(res, 400, 'A valid department staff account is required.');
+
+  const updates = [];
+  const values = [];
+  const body = req.body || {};
+  if (Object.prototype.hasOwnProperty.call(body, 'name')) {
+    const name = String(body.name || '').trim();
+    if (!name) return fail(res, 400, 'Staff name is required.');
+    values.push(name);
+    updates.push(`name=$${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'email')) {
+    const email = String(body.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 400, 'Provide a valid staff email address.');
+    values.push(email);
+    updates.push(`email=$${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'pin') && String(body.pin || '').trim()) {
+    const pin = String(body.pin).trim();
+    if (!/^\d{4,8}$/.test(pin)) return fail(res, 400, 'PIN must contain 4-8 digits.');
+    values.push(pin);
+    updates.push(`pin=$${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'is_active')) {
+    if (typeof body.is_active !== 'boolean') return fail(res, 400, 'Account status must be active or inactive.');
+    values.push(body.is_active);
+    updates.push(`is_active=$${values.length}`);
+  }
+  if (!updates.length) return fail(res, 400, 'Provide account details or status to update.');
+
+  values.push(staffId, req.department.staffRole);
   try {
     const result = await pool.query(
-      `UPDATE public.staff SET is_active=$1, updated_at=NOW()
-       WHERE id=$2 AND role=$3 RETURNING id, name, email, role, is_active`,
-      [req.body.is_active === true, req.params.id, req.department.staffRole]
+      `UPDATE public.staff SET ${updates.join(', ')}, updated_at=NOW()
+       WHERE id=$${values.length - 1} AND role=$${values.length}
+       RETURNING id, name, email, role, is_active`,
+      values
     );
     return result.rows[0] ? res.json(result.rows[0]) : fail(res, 404, 'Department staff member not found.');
   } catch (error) {
+    if (error.code === '23505') return fail(res, 409, 'That email already has a staff account.');
     console.error('Update department staff error:', error.message);
     return fail(res, 500, 'Could not update the department account.');
   }

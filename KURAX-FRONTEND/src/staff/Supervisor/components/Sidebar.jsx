@@ -28,7 +28,7 @@ const DRAWER_MENU_ITEMS = DEFAULT_MENU.filter(
   item => !BOTTOM_NAV_ITEMS.some(nav => nav.id === item.id)
 );
 
-export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
+export default function Sidebar({ activeTab, setActiveTab, menuItems, openMenuRequest = 0 }) {
   const { theme } = useTheme();
   const { currentUser } = useData();
   const navigate = useNavigate();
@@ -46,6 +46,10 @@ export default function Sidebar({ activeTab, setActiveTab, menuItems }) {
     window.addEventListener("resize", checkScreenSize);
     return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
+
+  useEffect(() => {
+    if (openMenuRequest > 0) setIsMenuOpen(true);
+  }, [openMenuRequest]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {

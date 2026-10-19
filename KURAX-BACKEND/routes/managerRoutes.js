@@ -48,7 +48,8 @@ function calculateOrderStatusFromItems(items, currentStatus) {
 
 const PAID_ORDER_FILTER = `
   AND (
-    o.is_archived = true
+    o.public_order_ref IS NOT NULL
+    OR o.is_archived = true
     OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'credit', 'served')
   )
   AND o.payment_confirmed = true
@@ -107,6 +108,8 @@ router.get('/target-progress', async (req, res) => {
       FROM orders o
       WHERE DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') = DATE(NOW() AT TIME ZONE 'Africa/Nairobi')
         AND (
+          o.public_order_ref IS NOT NULL
+          OR
           o.is_archived = true
           OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'credit', 'served')
         )
@@ -149,12 +152,13 @@ router.get('/analytics/daily', async (req, res) => {
     const targetDate = req.query.date || new Date().toISOString().split('T')[0];
 
     const ordersResult = await pool.query(`
-      SELECT id, table_name, total, payment_method, status,
+      SELECT id, table_name, total, payment_method, status, public_order_ref,
              payment_confirmed, items, timestamp
       FROM orders 
       WHERE DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
         AND (
-          is_archived = true
+          public_order_ref IS NOT NULL
+          OR is_archived = true
           OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'credit', 'served')
         )
         AND payment_confirmed = true
@@ -172,7 +176,7 @@ router.get('/analytics/daily', async (req, res) => {
       let orderHasConfirmedPayment = false;
 
       for (const item of items) {
-        const isItemPaid = item._rowPaid === true;
+        const isItemPaid = item._rowPaid === true || Boolean(order.public_order_ref);
         if (!isItemPaid) continue;
 
         const itemTotal = (Number(item.price) || 0) * (Number(item.quantity) || 1);
@@ -261,7 +265,8 @@ router.get('/report', async (req, res) => {
     const plainCond = cond.replace(/o\./g, '');
     const plainFilter = `
       AND (
-        is_archived = true
+        public_order_ref IS NOT NULL
+        OR is_archived = true
         OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'credit', 'served')
       )
       AND payment_confirmed = true
@@ -821,7 +826,8 @@ router.get('/station-breakdown', async (req, res) => {
       SELECT items FROM orders 
       WHERE DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
         AND (
-          is_archived = true
+          public_order_ref IS NOT NULL
+          OR is_archived = true
           OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'credit', 'served')
         )
         AND payment_confirmed = true
@@ -874,7 +880,8 @@ router.get('/period-summary', async (req, res) => {
       FROM orders 
       WHERE ${dateCondition}
         AND (
-          is_archived = true
+          public_order_ref IS NOT NULL
+          OR is_archived = true
           OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'credit', 'served')
         )
         AND payment_confirmed = true
@@ -1144,7 +1151,7 @@ router.get('/export-pdf', async (req, res) => {
     }
 
    const statusFilter = `
-  AND LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'served')
+  AND (o.public_order_ref IS NOT NULL OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'served'))
   AND o.payment_confirmed = true
   AND UPPER(COALESCE(o.payment_method,'')) NOT LIKE '%CREDIT%'
 `;
@@ -1285,7 +1292,7 @@ router.get('/export-pdf', async (req, res) => {
     // ─── Summary queries (also exclude archived for daily) ──────────────────
     const plainDateCond   = dateCondition.replace(/o\./g, '').replace(/AT TIME ZONE 'Africa\/Nairobi'/g, '');
    const plainStatusFilter = `
-  AND LOWER(status) IN ('paid', 'closed', 'confirmed', 'served')
+  AND (public_order_ref IS NOT NULL OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'served'))
 `;
     const plainTimeFilter = applyTimeFilter('created_at', start_time, end_time).replace(/AT TIME ZONE 'Africa\/Nairobi'/g, '');
 

@@ -218,7 +218,7 @@ function OrderCard({ order, onUpdateStatus, onAssignBarman, canAssign }) {
                   </div>
                 ) : !isCompleted && canAssign ? (
                   <button
-                    onClick={() => onAssignBarman(order.id, order._ticketId, idx, item.name)}
+                    onClick={() => onAssignBarman(order.id, order._ticketId, item._orderItemIndex ?? idx, item.name)}
                     className="bg-white text-zinc-600 text-[8px] font-black px-2 py-1 rounded-full border border-zinc-200 hover:bg-amber-400 hover:text-zinc-950 transition-all whitespace-nowrap">
                     + Barman
                   </button>
@@ -237,9 +237,9 @@ function OrderCard({ order, onUpdateStatus, onAssignBarman, canAssign }) {
             <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Served &amp; Collected</p>
           </div>
         ) : order.status === "Pending" ? (
-          <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
+          <button disabled={Boolean(order.public_order_ref) && order.items.some(item => !item.assignedTo)} onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
             className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
-            <Wine size={16}/> Start Mixing
+            <Wine size={16}/> {order.public_order_ref && order.items.some(item => !item.assignedTo) ? "Assign barman before prep" : "Start Mixing"}
           </button>
         ) : isPreparing ? (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Ready")}
@@ -306,9 +306,9 @@ export default function BarmanDisplay() {
 
   // ✅ FIXED: only barman station, no category fallbacks
   const isBarmanItem = (item) =>
-    item.station?.toLowerCase() === "barman";
+    ["barman", "bar"].includes(String(item.station || "").trim().toLowerCase());
   const isVisibleBarmanItem = item =>
-    isBarmanItem(item) && Boolean(item.assignedTo) && (canAssign || item.assignedTo === barmanName);
+    isBarmanItem(item) && (canAssign || (Boolean(item.assignedTo) && item.assignedTo === barmanName));
 
   const filteredOrders = useMemo(() => {
     const active    = ["Pending", "Preparing"];

@@ -113,7 +113,10 @@ async function getSalesRows(startDate, endDate, category, menuName, search) {
            ) AS discounts
     FROM public.orders o
     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
-    WHERE COALESCE(item->>'_rowPaid', 'false') = 'true'
+    WHERE (
+        COALESCE(item->>'_rowPaid', 'false') = 'true'
+        OR (o.public_order_ref IS NOT NULL AND o.payment_confirmed = true)
+      )
       AND COALESCE(item->>'voidProcessed', 'false') <> 'true'
       AND UPPER(COALESCE(item->>'status', '')) <> 'VOIDED'
       AND (

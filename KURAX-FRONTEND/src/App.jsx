@@ -22,7 +22,7 @@ import BaristaRoutes from "./staff/routes/BaristaRoutes";
 import ShishaDepartment from "./staff/Shisha/ShishaDepartment.jsx";
 import SupervisorRoutes from "./staff/routes/SupervisorRoutes";
 import StaffRoutes from './staff/routes/StaffLoginRoutes';
-import NewOrder  from './staff/waiter/components/NewOrder.jsx';
+import WaiterLayout from './staff/waiter/components/WaiterLayout.jsx';
 import StaffNotificationControl from './staff/components/StaffNotificationControl.jsx';
 
 function InternalStaffNotifications() {
@@ -166,7 +166,7 @@ export default function App() {
         <Route path="/combos" element={<CombosPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/reservations" element={<ReservationsPage />} />
-        <Route path="/staff/waiter/menu" element={<NewOrder />} /> 
+        <Route path="/staff/waiter/menu" element={<WaiterLayout />} />
 
         {/* --- STAFF DIRECT URL ACCESS --- */}
         <Route path="/staff/login/*" element={<StaffRoutes />} />

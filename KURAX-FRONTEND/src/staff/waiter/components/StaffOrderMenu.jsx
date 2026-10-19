@@ -4,16 +4,18 @@ import { Plus, SearchX, UtensilsCrossed, Sparkles } from "lucide-react";
 import { getImageSrc } from "../../../utils/imageHelper";
 
 // Helper: determine which tab this item belongs to (case‑insensitive, trimmed)
-const getEffectiveCategory = (item) => {
-  const station = (item.station || "").trim().toLowerCase();
+export const getEffectiveCategory = (item) => {
+  const station = String(item.station ?? "").trim().toLowerCase();
   // Barista / Barman always go to Drinks & Cocktails
   if (station === "barista" || station === "barman") {
     return "Drinks & Cocktails";
   }
   // Otherwise use the original category (with fallback)
-  const category = (item.category || "").trim();
-  if (category === "Starters" || category === "Local Foods" || category === "Drinks & Cocktails") {
-    return category;
+  const category = String(item.category ?? "").trim().toLowerCase();
+  if (category === "starters") return "Starters";
+  if (category === "local foods") return "Local Foods";
+  if (category === "drinks & cocktails") {
+    return "Drinks & Cocktails";
   }
   return "Starters";
 };
@@ -42,10 +44,10 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
   }, [items]);
 
   const filteredMenus = items.filter((item) => {
-  const matchesQuery = String(item?.name ?? "").toLowerCase().includes(searchQuery.toLowerCase());
-  const matchesCategory = item.category === activeCategory;
-  return matchesQuery && matchesCategory;
-});
+    const matchesQuery = String(item?.name ?? "").toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = getEffectiveCategory(item).toLowerCase() === activeCategory.toLowerCase();
+    return matchesQuery && matchesCategory;
+  });
 
   return (
     <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500 px-3 sm:px-4 md:px-0">

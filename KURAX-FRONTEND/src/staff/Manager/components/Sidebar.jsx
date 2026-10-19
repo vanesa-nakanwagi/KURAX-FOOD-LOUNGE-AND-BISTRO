@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ClipboardList,
@@ -35,13 +35,17 @@ const NAV_ITEMS = [
   { id: "audit-trail", label: "Audit Trail", short: "Audit", icon: ClipboardList },
 ];
 
-export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 0 }) {
+export default function ManagerSidebar({ activeTab, setActiveTab, debtorCount = 0, openMenuRequest = 0 }) {
   const { theme } = useTheme();
   const { currentUser } = useData();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+
+  useEffect(() => {
+    if (openMenuRequest > 0) setMobileOpen(true);
+  }, [openMenuRequest]);
 
   const isDark = theme === "dark";
   const fullName = currentUser?.name || "Manager";

@@ -13,7 +13,14 @@ export function summarizeDepartmentCredits(credits = []) {
     const amount = Math.max(0, Number(credit.amount) || 0);
     if (!amount) continue;
 
-    const amountPaid = Math.min(amount, Math.max(0, Number(credit.amount_paid) || 0));
+    const status = String(credit.status || '').replace(/[\s_-]/g, '').toLowerCase();
+    const isSettled = credit.paid === true
+      || String(credit.paid).toLowerCase() === 'true'
+      || status === 'settled'
+      || status === 'fullysettled';
+    const amountPaid = isSettled
+      ? amount
+      : Math.min(amount, Math.max(0, Number(credit.amount_paid) || 0));
     const balance = amount - amountPaid;
 
     if (balance === 0) {
