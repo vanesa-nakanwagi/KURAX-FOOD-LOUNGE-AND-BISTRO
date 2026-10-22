@@ -4,8 +4,8 @@ import { useData } from "../../customer/components/context/DataContext";
 import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
 import {
   Clock, CheckCircle, Play, AlertCircle,
-  Search, RotateCcw, Trophy, UserPlus,
-  Power, X, ShieldAlert, Wine
+  Search, RotateCcw, Trophy,
+  Power, Wine
 } from "lucide-react";
 import API_URL from "../../config/api";
 
@@ -17,69 +17,6 @@ function kampalaDateStr(d = new Date()) {
 
 function formatMoney(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
-}
-
-// ─── ASSIGN MODAL ────────────────────────────────────────────────────────────
-function AssignModal({ assigningItem, onConfirm, onClose, department }) {
-  const [name, setName] = useState("");
-  const [staff, setStaff] = useState([]);
-  useEffect(() => {
-    try {
-      const token = JSON.parse(localStorage.getItem("kurax_user") || "null")?.token;
-      if (!token) return;
-      fetch(`${API_URL}/api/departments/${department}/workers`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(response => response.ok ? response.json() : [])
-        .then(rows => setStaff(Array.isArray(rows) ? rows : []))
-        .catch(() => {});
-    } catch {}
-  }, [department]);
-  const handleConfirm = () => { if (name.trim()) { onConfirm(name.trim()); setName(""); } };
-
-  return (
-    <div className="fixed inset-0 z-[500] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white border border-zinc-200 w-full max-w-sm rounded-xl p-6 shadow-2xl text-zinc-900" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3 text-amber-700">
-            <div className="w-10 h-10 bg-amber-500/10 rounded-full flex items-center justify-center">
-              <UserPlus size={20}/>
-            </div>
-            <div>
-              <h3 className="font-black uppercase italic tracking-tighter text-lg leading-none">Assign Mixologist</h3>
-              <p className="text-[10px] text-zinc-500 font-bold mt-0.5">{assigningItem.itemName}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center hover:bg-zinc-200 transition-all">
-            <X size={14} className="text-zinc-600"/>
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest ml-1 block">Mixologist's Name</label>
-          {staff.length ? <select autoFocus required value={name} onChange={e => setName(e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl py-3 px-4 text-sm font-semibold text-zinc-900 outline-none focus:border-amber-500"><option value="">Choose a mixologist</option>{staff.map(member => <option key={member.id} value={member.name}>{member.name}</option>)}</select> : <input
-            autoFocus type="text" placeholder="e.g. Alex" autoComplete="off"
-            value={name} onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleConfirm()}
-            className="w-full bg-white border border-zinc-200 rounded-xl py-3 px-4 text-sm font-semibold text-zinc-900 outline-none focus:border-amber-500 placeholder:text-zinc-400"
-          />}
-          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
-            <ShieldAlert size={14} className="text-amber-700 shrink-0 mt-0.5"/>
-            <p className="text-[10px] text-amber-800 font-bold leading-relaxed">
-              This mixologist will be held accountable for this drink. Their name is permanently recorded with the order.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 pt-1">
-            <button onClick={handleConfirm} disabled={!name.trim()}
-              className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg uppercase text-xs active:scale-95 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
-              Confirm Assignment
-            </button>
-            <button onClick={onClose} className="w-full py-3 text-zinc-500 font-bold text-[10px] uppercase tracking-widest hover:text-white transition-colors">
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ─── SHIFT SUMMARY MODAL ─────────────────────────────────────────────────────
@@ -139,7 +76,7 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 }
 
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
-function OrderCard({ order, onUpdateStatus, onAssignBarman, canAssign }) {
+function OrderCard({ order, onUpdateStatus }) {
   const minutesAgo  = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
   const orderTotal = (order.items || []).reduce((total, item) => total + Number(item.price || item.unit_price || 0) * Number(item.quantity || 1), 0);
   const isCompleted = ["Served","Paid","Closed","Credit","Mixed"].includes(order.status);
@@ -203,27 +140,6 @@ function OrderCard({ order, onUpdateStatus, onAssignBarman, canAssign }) {
                 </div>
               </div>
 
-              {/* Mixologist badge */}
-              <div className="shrink-0">
-                {item.assignedTo ? (
-                  <div className="flex flex-col items-end gap-0.5">
-                    <span className="bg-amber-50 text-amber-800 text-[8px] font-black px-2 py-1 rounded-full border border-amber-200 whitespace-nowrap flex items-center gap-1">
-                      <Wine size={10} /> {item.assignedTo}
-                    </span>
-                    {item.assignedAt && (
-                      <span className="text-[7px] text-zinc-600 font-bold">
-                        {new Date(item.assignedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    )}
-                  </div>
-                ) : !isCompleted && canAssign ? (
-                  <button
-                    onClick={() => onAssignBarman(order.id, order._ticketId, item._orderItemIndex ?? idx, item.name)}
-                    className="bg-white text-zinc-600 text-[8px] font-black px-2 py-1 rounded-full border border-zinc-200 hover:bg-amber-400 hover:text-zinc-950 transition-all whitespace-nowrap">
-                    + Barman
-                  </button>
-                ) : null}
-              </div>
             </div>
           </div>
         ))}
@@ -237,9 +153,9 @@ function OrderCard({ order, onUpdateStatus, onAssignBarman, canAssign }) {
             <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Served &amp; Collected</p>
           </div>
         ) : order.status === "Pending" ? (
-          <button disabled={Boolean(order.public_order_ref) && order.items.some(item => !item.assignedTo)} onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
+          <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
             className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
-            <Wine size={16}/> {order.public_order_ref && order.items.some(item => !item.assignedTo) ? "Assign barman before prep" : "Start Mixing"}
+            <Wine size={16}/> Start Mixing
           </button>
         ) : isPreparing ? (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Ready")}
@@ -267,7 +183,6 @@ export default function BarmanDisplay() {
     catch { return {}; }
   }, []);
   const barmanName     = savedUser.name || "Head Barman";
-  const canAssign      = savedUser.role === "BAR_HOD";
   const barmanInitials = barmanName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const handleLogout   = () => setShowLogoutDialog(true);
@@ -281,7 +196,6 @@ export default function BarmanDisplay() {
   const [searchQuery,   setSearchQuery]   = useState("");
   const [showSummary,   setShowSummary]   = useState(false);
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalDrinks: 0, barmen: [] });
-  const [assigningItem, setAssigningItem] = useState(null);
 
   const ticketMapRef = useRef({});
   const [seenOrderIds, setSeenOrderIds] = useState([]);
@@ -307,8 +221,7 @@ export default function BarmanDisplay() {
   // ✅ FIXED: only barman station, no category fallbacks
   const isBarmanItem = (item) =>
     ["barman", "bar"].includes(String(item.station || "").trim().toLowerCase());
-  const isVisibleBarmanItem = item =>
-    isBarmanItem(item) && (canAssign || (Boolean(item.assignedTo) && item.assignedTo === barmanName));
+  const isVisibleBarmanItem = item => isBarmanItem(item);
 
   const filteredOrders = useMemo(() => {
     const active    = ["Pending", "Preparing"];
@@ -365,7 +278,7 @@ export default function BarmanDisplay() {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, barman_ticket_status: newStatus } : o));
     try {
       const tId = ticketId || ticketMapRef.current[orderId];
-      if (!tId) throw new Error("The HOD-dispatched Barman ticket is not available yet.");
+      if (!tId) throw new Error("The Bar ticket is not available yet.");
       const response = await fetch(`${API_URL}/api/barman/tickets/${tId}/status`, {
         method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${savedUser.token || ""}` },
         body: JSON.stringify({ status: newStatus }),
@@ -377,41 +290,6 @@ export default function BarmanDisplay() {
       refreshData?.();
     }
   }, [setOrders, refreshData, savedUser.token]);
-
-  const handleAssignBarman = useCallback(async (nameInput) => {
-    if (!nameInput || !assigningItem) return;
-    const { orderId, ticketId, itemIdx, itemName } = assigningItem;
-    const assignedAt = new Date().toISOString();
-
-    setOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
-      const newItems = [...order.items];
-      newItems[itemIdx] = { ...newItems[itemIdx], assignedTo: nameInput, assignedAt };
-      return { ...order, items: newItems };
-    }));
-    setAssigningItem(null);
-
-    try {
-      const currentOrder = orders.find(o => o.id === orderId);
-      if (!currentOrder) return;
-      const updatedItems = currentOrder.items.map((item, i) =>
-        i === itemIdx ? { ...item, assignedTo: nameInput, assignedAt } : item
-      );
-
-      await fetch(`${API_URL}/api/orders/${orderId}/assign-chef`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: updatedItems, item_name: itemName, assigned_to: nameInput, assigned_at: assignedAt, assigned_by: barmanName }),
-      });
-
-      const tId = ticketId || ticketMapRef.current[orderId];
-      if (tId) {
-        await fetch(`${API_URL}/api/barman/tickets/${tId}/assign-barman`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items: updatedItems, item_name: itemName, assigned_to: nameInput, assigned_at: assignedAt, assigned_by: barmanName }),
-        });
-      }
-    } catch (err) { console.error("Assign barman failed:", err); }
-  }, [assigningItem, orders, setOrders, barmanName]);
 
   const handleShiftReset = async () => {
     let barmen = [];
@@ -473,9 +351,6 @@ export default function BarmanDisplay() {
         </div>
       )}
 
-      {assigningItem && (
-        <AssignModal department="bar" assigningItem={assigningItem} onConfirm={handleAssignBarman} onClose={() => setAssigningItem(null)}/>
-      )}
       {showSummary && (
         <ShiftSummaryModal stats={shiftStats} onConfirm={confirmEndShift} onClose={() => setShowSummary(false)}/>
       )}
@@ -536,10 +411,6 @@ export default function BarmanDisplay() {
               key={order.id}
               order={order}
               onUpdateStatus={updateStatus}
-              canAssign={canAssign}
-              onAssignBarman={(orderId, ticketId, itemIdx, itemName) =>
-                setAssigningItem({ orderId, ticketId, itemIdx, itemName })
-              }
             />
           ))
         )}

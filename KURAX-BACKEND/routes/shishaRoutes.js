@@ -459,9 +459,6 @@ router.get('/orders', requireRoles(...SHISHA_ROLES), async (req, res) => {
     if (req.actor.role === 'SHISHA_WAITER') {
       values.push(req.actor.id);
       conditions.push(`o.shisha_waiter_id=$${values.length}`);
-    } else if (req.actor.role === 'SHISHA_CHEF') {
-      values.push(req.actor.id);
-      conditions.push(`o.assigned_chef_id=$${values.length}`);
     }
     if (req.query.status) {
       values.push(String(req.query.status).toUpperCase());
@@ -588,10 +585,16 @@ router.post('/orders/:id/prepare', requireRoles('SHISHA_CHEF'), async (req, res)
     await client.query('BEGIN');
     const result = await client.query('SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE', [req.params.id]);
     const order = result.rows[0];
-    if (!order || order.assigned_chef_id !== req.actor.id || order.order_status !== 'ASSIGNED') {
+    if (!order
+      || !['PENDING', 'ASSIGNED'].includes(order.order_status)
+      || (order.assigned_chef_id && order.assigned_chef_id !== req.actor.id)) {
       await client.query('ROLLBACK');
-      return fail(res, 409, 'This order is not assigned to you or is not awaiting preparation.');
+      return fail(res, 409, 'This order is not available for preparation.');
     }
+    await client.query(
+      'UPDATE public.shisha_orders SET assigned_chef_id=COALESCE(assigned_chef_id,$1), updated_at=NOW() WHERE id=$2',
+      [req.actor.id, order.id]
+    );
     await recordHistory(client, order, 'PREPARING', 'PREPARATION_STARTED', req.actor);
     await client.query('COMMIT');
     return res.json({ ...(await loadOrder(order.id)), reference: orderReference(order.id) });

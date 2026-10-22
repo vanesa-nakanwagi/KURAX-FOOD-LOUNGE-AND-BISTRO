@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import { summarizeDepartmentCredits } from '../helpers/departmentCreditSummary.js';
+import { syncConfirmedStationTickets } from '../helpers/stationOrderTickets.js';
 
 const router = express.Router();
 const MANAGEMENT_ROLES = ['DIRECTOR', 'MANAGER', 'ACCOUNTANT'];
@@ -317,6 +318,7 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
   }
 
   try {
+    await syncConfirmedStationTickets(pool, req.params.department);
     const result = await pool.query(
       `SELECT t.*,
               COALESCE(

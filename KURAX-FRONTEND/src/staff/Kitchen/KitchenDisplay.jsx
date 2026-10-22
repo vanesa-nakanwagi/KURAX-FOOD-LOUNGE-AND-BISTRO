@@ -4,8 +4,8 @@ import { useData } from "../../customer/components/context/DataContext";
 import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
 import {
   Clock, CheckCircle, Play, Flame,
-  Search, RotateCcw, Trophy, UserPlus, AlertCircle,
-  ChefHat, Power, X, ShieldAlert
+  Search, RotateCcw, Trophy, AlertCircle,
+  ChefHat, Power
 } from "lucide-react";
 
 import API_URL from "../../config/api";
@@ -20,72 +20,9 @@ function formatMoney(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
 }
 
-function isAssignedKitchenItem(item) {
+function isKitchenItem(item) {
   const station = String(item.station || '').trim().toLowerCase();
   return !['barman', 'barista', 'shisha'].includes(station);
-}
-
-// ─── CHEF ASSIGN MODAL ────────────────────────────────────────────────────────
-function AssignModal({ assigningItem, onConfirm, onClose, department }) {
-  const [name, setName] = useState("");
-  const [staff, setStaff] = useState([]);
-  useEffect(() => {
-    try {
-      const token = JSON.parse(localStorage.getItem("kurax_user") || "null")?.token;
-      if (!token) return;
-      fetch(`${API_URL}/api/departments/${department}/workers`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(response => response.ok ? response.json() : [])
-        .then(rows => setStaff(Array.isArray(rows) ? rows : []))
-        .catch(() => {});
-    } catch {}
-  }, [department]);
-  const handleConfirm = () => { if (name.trim()) { onConfirm(name.trim()); setName(""); } };
-
-  return (
-    <div className="fixed inset-0 z-[500] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white border border-zinc-200 w-full max-w-sm rounded-xl p-6 shadow-2xl text-zinc-900" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3 text-amber-600">
-            <div className="w-10 h-10 bg-amber-500/10 rounded-full flex items-center justify-center">
-              <UserPlus size={20}/>
-            </div>
-            <div>
-              <h3 className="font-black uppercase italic tracking-tighter text-lg leading-none">Assign Chef</h3>
-              <p className="text-[10px] text-zinc-500 font-bold mt-0.5">{assigningItem.itemName}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center hover:bg-zinc-200 transition-all">
-            <X size={14} className="text-zinc-600"/>
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest ml-1 block">Chef's Name</label>
-          {staff.length ? <select autoFocus required value={name} onChange={e => setName(e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl py-3 px-4 text-sm font-semibold text-zinc-900 outline-none focus:border-amber-500"><option value="">Choose a chef</option>{staff.map(member => <option key={member.id} value={member.name}>{member.name}</option>)}</select> : <input
-            autoFocus type="text" placeholder="e.g. Eddy" autoComplete="off"
-            value={name} onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleConfirm()}
-            className="w-full bg-white border border-zinc-200 rounded-xl py-3 px-4 text-sm font-semibold text-zinc-900 outline-none focus:border-amber-500 placeholder:text-zinc-400"
-          />}
-          <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-3">
-            <ShieldAlert size={14} className="text-amber-400 shrink-0 mt-0.5"/>
-            <p className="text-[10px] text-amber-400/80 font-bold leading-relaxed">
-              This chef will be held accountable for this dish. Their name is permanently recorded with the order.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 pt-1">
-            <button onClick={handleConfirm} disabled={!name.trim()}
-              className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg uppercase text-xs active:scale-95 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
-              Confirm Assignment
-            </button>
-            <button onClick={onClose} className="w-full py-3 text-zinc-500 font-bold text-[10px] uppercase tracking-widest hover:text-white transition-colors">
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ─── SHIFT SUMMARY MODAL ──────────────────────────────────────────────────────
@@ -144,7 +81,7 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 }
 
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
-function OrderCard({ order, onUpdateStatus, onAssignChef, canAssign }) {
+function OrderCard({ order, onUpdateStatus }) {
   const minutesAgo = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
   const orderTotal = (order.items || []).reduce((total, item) => total + Number(item.price || item.unit_price || 0) * Number(item.quantity || 1), 0);
   const isDelayed   = minutesAgo >= 15 && order.status !== "Ready";
@@ -202,26 +139,6 @@ function OrderCard({ order, onUpdateStatus, onAssignChef, canAssign }) {
                 </div>
               </div>
 
-              <div className="shrink-0">
-                {item.assignedTo ? (
-                  <div className="flex flex-col items-end gap-0.5">
-                    <span className="bg-emerald-500/10 text-emerald-400 text-[8px] font-black px-2 py-1 rounded-full border border-emerald-500/20 whitespace-nowrap flex items-center gap-1">
-                      <ChefHat size={10} /> {item.assignedTo}
-                    </span>
-                    {item.assignedAt && (
-                      <span className="text-[7px] text-zinc-500 font-bold">
-                        {new Date(item.assignedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    )}
-                  </div>
-                ) : canAssign ? (
-                  <button
-                    onClick={() => onAssignChef(order.id, order._ticketId, item._orderItemIndex ?? idx, item.name)}
-                    className="bg-white text-zinc-600 text-[8px] font-black px-2 py-1 rounded-full border border-zinc-200 hover:bg-amber-400 hover:text-zinc-950 transition-all whitespace-nowrap">
-                    + Assign
-                  </button>
-                ) : null}
-              </div>
             </div>
           </div>
         ))}
@@ -229,9 +146,9 @@ function OrderCard({ order, onUpdateStatus, onAssignChef, canAssign }) {
 
       <div className="p-4 bg-zinc-50 border-t border-zinc-100 shrink-0">
         {order.status === "Pending" && (
-          <button disabled={Boolean(order.public_order_ref) && order.items.some(item => !item.assignedTo)} onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
+          <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
             className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
-            <Flame size={16}/> {order.public_order_ref && order.items.some(item => !item.assignedTo) ? "Assign chef before prep" : "Start Fire"}
+            <Flame size={16}/> Start Fire
           </button>
         )}
         {isPreparing && (
@@ -261,7 +178,6 @@ export default function KitchenDisplay() {
     catch { return {}; }
   }, []);
   const chefName     = savedUser.name || "Head Chef";
-  const canAssign    = savedUser.role === "KITCHEN_HOD";
   const chefInitials = chefName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const handleLogout = () => setShowLogoutDialog(true);
@@ -275,7 +191,6 @@ export default function KitchenDisplay() {
   const [searchQuery,   setSearchQuery]   = useState("");
   const [showSummary,   setShowSummary]   = useState(false);
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalItems: 0, chefs: [] });
-  const [assigningItem, setAssigningItem] = useState(null);
   const [ticketOrderIds, setTicketOrderIds] = useState([]);
 
   const ticketMapRef = useRef({});
@@ -298,8 +213,7 @@ export default function KitchenDisplay() {
     return () => { mounted = false; clearInterval(timer); };
   }, []);
 
-  const isVisibleKitchenItem = item =>
-    isAssignedKitchenItem(item) && (canAssign || (Boolean(item.assignedTo) && item.assignedTo === chefName));
+  const isVisibleKitchenItem = item => isKitchenItem(item);
 
   // ── Filter: only kitchen-relevant, non-cleared, non-day-closed orders ──────
   // FIX: added day_cleared and shift_cleared checks so accountant close-day
@@ -383,42 +297,6 @@ export default function KitchenDisplay() {
     }
   }, [setOrders, refreshData, savedUser.token]);
 
-  // ── Assign chef ───────────────────────────────────────────────────────────
-  const handleAssignChef = useCallback(async (chefInput) => {
-    if (!chefInput || !assigningItem) return;
-    const { orderId, ticketId, itemIdx, itemName } = assigningItem;
-    const assignedAt = new Date().toISOString();
-
-    setOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
-      const newItems = [...order.items];
-      newItems[itemIdx] = { ...newItems[itemIdx], assignedTo: chefInput, assignedAt };
-      return { ...order, items: newItems };
-    }));
-    setAssigningItem(null);
-
-    try {
-      const currentOrder = orders.find(o => o.id === orderId);
-      if (!currentOrder) return;
-      const updatedItems = currentOrder.items.map((item, i) =>
-        i === itemIdx ? { ...item, assignedTo: chefInput, assignedAt } : item
-      );
-
-      await fetch(`${API_URL}/api/orders/${orderId}/assign-chef`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: updatedItems, item_name: itemName, assigned_to: chefInput, assigned_at: assignedAt, assigned_by: chefName }),
-      });
-
-      const tId = ticketId || ticketMapRef.current[orderId];
-      if (tId) {
-        await fetch(`${API_URL}/api/kitchen/tickets/${tId}/assign-chef`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items: updatedItems, item_name: itemName, assigned_to: chefInput, assigned_at: assignedAt, assigned_by: chefName }),
-        });
-      }
-    } catch (err) { console.error("Assign chef failed:", err); }
-  }, [assigningItem, orders, setOrders, chefName]);
-
   // ── End Shift ─────────────────────────────────────────────────────────────
   const handleShiftReset = async () => {
     let chefs = [];
@@ -482,9 +360,6 @@ export default function KitchenDisplay() {
         </div>
       )}
 
-      {assigningItem && (
-        <AssignModal department="kitchen" assigningItem={assigningItem} onConfirm={handleAssignChef} onClose={() => setAssigningItem(null)}/>
-      )}
       {showSummary && (
         <ShiftSummaryModal stats={shiftStats} onConfirm={confirmEndShift} onClose={() => setShowSummary(false)}/>
       )}
@@ -547,10 +422,6 @@ export default function KitchenDisplay() {
               key={order.id}
               order={order}
               onUpdateStatus={updateStatus}
-              canAssign={canAssign}
-              onAssignChef={(orderId, ticketId, itemIdx, itemName) =>
-                setAssigningItem({ orderId, ticketId, itemIdx, itemName })
-              }
             />
           ))
         )}

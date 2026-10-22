@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoutConfirmDialog from './components/LogoutConfirmDialog';
-import { ArrowRight, Boxes, Check, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Wine } from 'lucide-react';
+import { ArrowRight, Boxes, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Wine } from 'lucide-react';
 import API_URL from '../config/api';
 import { downloadReportPdf } from './reportExport';
 import DepartmentInventory from './DepartmentInventory';
@@ -70,12 +70,7 @@ async function request(path, token, options = {}) {
 export default function DepartmentHod({ department: departmentKey = 'all', embedded = false, initialRange = null }) {
   const navigate = useNavigate();
   const [session] = useState(readSession);
-  const [staff, setStaff] = useState([]);
   const [tickets, setTickets] = useState([]);
-  const [assignmentQueue, setAssignmentQueue] = useState([]);
-  const [assignmentQueueError, setAssignmentQueueError] = useState('');
-  const [assignmentSelections, setAssignmentSelections] = useState({});
-  const [assigningOrderId, setAssigningOrderId] = useState(null);
   const [report, setReport] = useState(null);
   const [preset, setPreset] = useState(() => initialRange ? 'Custom' : 'Today');
   const [reportMonth, setReportMonth] = useState(() => kampalaToday().slice(0, 7));
@@ -83,8 +78,6 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   const [tab, setTab] = useState(departmentKey === 'all' ? 'reports' : 'orders');
   const [ticketView, setTicketView] = useState('active');
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
@@ -116,19 +109,10 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           const data = await request(`/api/departments/reports/consolidated?${query}`, session.token);
           if (mounted) setReport(data);
         } else {
-          const [staffRows, reportData, queueResult, ticketResponse] = await Promise.all([
-            request(`/api/departments/${departmentKey}/staff`, session.token),
-            request(`/api/departments/${departmentKey}/reports?${query}`, session.token),
-            request(`/api/departments/${departmentKey}/assignment-queue`, session.token)
-              .then(data => ({ data, error: '' }))
-              .catch(queueError => ({ data: [], error: queueError.message })),
-            request(`/api/departments/${departmentKey}/tickets?date=${kampalaToday()}`, session.token),
-          ]);
+          const ticketResponse = await request(`/api/departments/${departmentKey}/tickets?date=${kampalaToday()}`, session.token);
+          const reportData = await request(`/api/departments/${departmentKey}/reports?${query}`, session.token);
           if (mounted) {
-            setStaff(staffRows);
             setReport(reportData);
-            setAssignmentQueue(queueResult.data);
-            setAssignmentQueueError(queueResult.error);
             setTickets(Array.isArray(ticketResponse) ? ticketResponse : []);
           }
         }
@@ -281,31 +265,6 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     }
   }
 
-  async function assignOrder(order) {
-    const staffId = assignmentSelections[order.id];
-    if (!staffId) {
-      setError(`Select yourself or a ${config.workerRole} before dispatching this order.`);
-      return;
-    }
-    setAssigningOrderId(order.id);
-    setError('');
-    setMessage('');
-    try {
-      const result = await request(`/api/departments/${departmentKey}/orders/${order.id}/assign`, session.token, {
-        method: 'POST', body: { staff_id: Number(staffId) },
-      });
-      setMessage(result.awaiting_cashier_payment
-        ? `Order #${order.id} assigned to ${result.assigned_to}. It will be released to ${config.label} after the cashier confirms payment.`
-        : `Order #${order.id} assigned to ${result.assigned_to} and sent to ${config.label}.`);
-      setAssignmentSelections(current => ({ ...current, [order.id]: '' }));
-      setRefreshCounter(value => value + 1);
-    } catch (assignError) {
-      setError(assignError.message);
-    } finally {
-      setAssigningOrderId(null);
-    }
-  }
-
   function signOut() {
     setShowLogoutDialog(true);
   }
@@ -321,13 +280,9 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
 
   const departments = report?.departments || [];
   const summary = report?.summary || {};
-  const assignedTickets = tickets.filter(ticket =>
-    (Array.isArray(ticket.workers) && ticket.workers.length > 0)
-    || (ticket.items || []).some(isAssignedItem)
-  );
-  const activeTickets = assignedTickets.filter(ticket => !isCompletedTicket(ticket));
+  const activeTickets = tickets.filter(ticket => !isCompletedTicket(ticket));
   const visibleTickets = ticketView === 'completed'
-    ? assignedTickets.filter(isCompletedTicket)
+    ? tickets.filter(isCompletedTicket)
     : activeTickets;
   const tabs = isManagement ? [['reports', 'Department reports', CircleDollarSign]] : [
     ['orders', 'Orders', ClipboardList], ['inventory', 'Inventory', Boxes], ['reports', 'Reports', CircleDollarSign],
@@ -360,25 +315,13 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         {!isManagement && <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-zinc-200" aria-label="Department workspace">
           {tabs.map(([key, label, Icon]) => <button key={key} onClick={() => setTab(key)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition ${tab === key ? 'border-amber-600 text-zinc-950' : 'border-transparent text-zinc-500 hover:text-zinc-900'}`}><Icon size={16} /> {label}</button>)}
         </nav>}
-        {(error || message) && <div className={`mb-5 rounded-lg border px-4 py-3 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : isManagement ? 'border-amber-200 bg-amber-50 text-zinc-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">{error || message}</div>}
+        {error && <div className="mb-5 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">{error}</div>}
         {isManagement && reportLoading && <p role="status" className="mb-4 text-sm font-semibold text-zinc-600">Loading department report…</p>}
 
         {tab === 'orders' && !isManagement && <section>
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">Incoming and active orders</h2><p className="text-sm text-zinc-500">Updates automatically every 12 seconds.</p></div><div className="flex gap-2"><button onClick={() => setTicketView('active')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'active' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Active</button><button onClick={() => setTicketView('completed')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'completed' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Completed</button><button onClick={() => navigate(`/${config.station}`)} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950 hover:bg-amber-300">Manage station <ArrowRight size={16} /></button></div></div>
-          <div className="mb-6 overflow-hidden rounded-xl border border-amber-200 bg-white">
-            <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3"><div><h3 className="font-black">Waiting for HOD assignment</h3><p className="text-xs text-zinc-500">Orders appear at the station only after you assign them.</p></div><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900">{assignmentQueue.length}</span></div>
-            {assignmentQueueError ? <p role="alert" className="px-4 py-6 text-sm text-rose-700">{assignmentQueueError}. The assignment API must be deployed/restarted before HOD dispatch is available.</p> : assignmentQueue.length ? <div className="divide-y divide-zinc-100">
-              {assignmentQueue.map(order => <div key={order.id} className="grid gap-4 p-4 lg:grid-cols-[1fr_340px] lg:items-center">
-                <div><p className="text-sm font-black">Order #{order.id} · {order.table_name || 'Walk-in'}</p><p className="mt-0.5 text-xs text-zinc-500">Waiter: {order.staff_name || 'Staff'}</p><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">{order.items.map((item, index) => <span key={`${item.name}-${index}`} className="text-zinc-700">{item.quantity || 1} × {item.name}</span>)}</div></div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <select aria-label={`Assign order ${order.id} to yourself or a ${config.workerRole}`} value={assignmentSelections[order.id] || ''} onChange={event => setAssignmentSelections(current => ({ ...current, [order.id]: event.target.value }))} className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-amber-500"><option value="">Choose assignee</option><option value={session.id}>Assign to myself ({session.name})</option>{staff.filter(member => member.is_active).map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select>
-                  <button type="button" disabled={assigningOrderId === order.id || !assignmentSelections[order.id]} onClick={() => assignOrder(order)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-zinc-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"><Check size={15} /> {assigningOrderId === order.id ? 'Assigning' : 'Assign & send'}</button>
-                </div>
-              </div>)}
-            </div> : <p className="px-4 py-8 text-center text-sm text-zinc-400">No orders are waiting for assignment.</p>}
-          </div>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">Incoming and active orders</h2><p className="text-sm text-zinc-500">Station orders appear automatically and update every 12 seconds.</p></div><div className="flex gap-2"><button onClick={() => setTicketView('active')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'active' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Active</button><button onClick={() => setTicketView('completed')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'completed' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Completed</button><button onClick={() => navigate(`/${config.station}`)} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950 hover:bg-amber-300">Manage station <ArrowRight size={16} /></button></div></div>
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">{[
-            ['Open', activeTickets.length], ['Pending', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'pending').length], ['Preparing', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'preparing').length], ['Completed today', assignedTickets.filter(isCompletedTicket).length],
+            ['Open', activeTickets.length], ['Pending', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'pending').length], ['Preparing', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'preparing').length], ['Completed today', tickets.filter(isCompletedTicket).length],
           ].map(([label, value]) => <div key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-2 text-2xl font-black">{value}</p></div>)}</div>
           <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-zinc-50 text-xs uppercase tracking-wider text-zinc-500"><tr><th className="p-3">Order</th><th className="p-3">Table</th><th className="p-3">Waiter</th><th className="p-3">Items / assignee</th><th className="p-3">Worked by</th><th className="p-3">Status</th><th className="p-3">Total</th></tr></thead><tbody>
             {visibleTickets.map(ticket => {

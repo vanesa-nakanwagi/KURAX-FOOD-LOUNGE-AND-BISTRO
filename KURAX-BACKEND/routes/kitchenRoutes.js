@@ -12,7 +12,8 @@ import logActivity from '../utils/logsActivity.js';
 import notificationService from '../helpers/notificationService.js';
 import { resolveNotificationUser } from '../middleware/notificationAuth.js';
 import { refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
-import { getAssignedStationItems, getConfirmedStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
+import { getConfirmedStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
+import { syncConfirmedStationTickets } from '../helpers/stationOrderTickets.js';
 
 const router = express.Router();
 
@@ -38,17 +39,13 @@ router.post('/tickets', async (req, res) => {
     if (!stationItems.length) {
       return res.status(409).json({ error: 'Cashier confirmation is required before sending items to the kitchen.' });
     }
-    const assignedItems = stationItems.filter(item => item.assignedTo || item.assigned_to);
-    if (!assignedItems.length || assignedItems.length !== stationItems.length) {
-      return res.status(409).json({ error: 'Kitchen HOD assignment is required before sending this order.' });
-    }
-    const ticketTotal = getStationItemsTotal(assignedItems);
+    const ticketTotal = getStationItemsTotal(stationItems);
     const result = await pool.query(
       `INSERT INTO kitchen_tickets (order_id, table_name, staff_name, staff_role, items, total, status, ticket_date)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (order_id) DO UPDATE SET items = EXCLUDED.items, staff_name = EXCLUDED.staff_name, updated_at = NOW()
        RETURNING *`,
-      [order_id, table_name, staff_name || 'System', staff_role || 'WAITER', JSON.stringify(assignedItems), ticketTotal || Number(total), status, kampalaDate()]
+      [order_id, table_name, staff_name || 'System', staff_role || 'WAITER', JSON.stringify(stationItems), ticketTotal || Number(total), status, kampalaDate()]
     );
     const actor = await resolveNotificationUser(req);
     if (actor?.scope === 'restaurant' && ['WAITER', 'SUPERVISOR', 'MANAGER', 'DIRECTOR', 'KITCHEN_HOD'].includes(actor.role)) {
@@ -117,6 +114,7 @@ router.get('/tickets/summary', async (req, res) => {
 router.get('/tickets', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
+    await syncConfirmedStationTickets(pool, 'kitchen');
     const result = req.query.active === 'true'
       ? await pool.query(
         `SELECT t.* FROM kitchen_tickets t
@@ -131,13 +129,7 @@ router.get('/tickets', async (req, res) => {
       : await pool.query(
         `SELECT * FROM kitchen_tickets WHERE ticket_date = $1 ORDER BY created_at ASC`, [date]
       );
-    const tickets = req.query.active === 'true'
-      ? result.rows.flatMap((ticket) => {
-        const items = getAssignedStationItems(ticket.items);
-        return items.length ? [{ ...ticket, items, total: getStationItemsTotal(items) }] : [];
-      })
-      : result.rows;
-    res.json(tickets);
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -20,7 +20,8 @@ import pool    from '../db.js';
 import notificationService from '../helpers/notificationService.js';
 import { resolveNotificationUser } from '../middleware/notificationAuth.js';
 import { refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
-import { getAssignedStationItems, getConfirmedStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
+import { getConfirmedStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
+import { syncConfirmedStationTickets } from '../helpers/stationOrderTickets.js';
 
 const router = express.Router();
 
@@ -48,11 +49,7 @@ router.post('/tickets', async (req, res) => {
     if (!stationItems.length) {
       return res.status(409).json({ error: 'Cashier confirmation is required before sending items to the bar station.' });
     }
-    const assignedItems = stationItems.filter(item => item.assignedTo || item.assigned_to);
-    if (!assignedItems.length || assignedItems.length !== stationItems.length) {
-      return res.status(409).json({ error: 'Bar HOD assignment is required before sending this order.' });
-    }
-    const ticketTotal = getStationItemsTotal(assignedItems);
+    const ticketTotal = getStationItemsTotal(stationItems);
     const result = await pool.query(
       `INSERT INTO barman_tickets
          (order_id, table_name, staff_name, items, total, status, ticket_date)
@@ -62,7 +59,7 @@ router.post('/tickets', async (req, res) => {
          staff_name = EXCLUDED.staff_name,
          updated_at = NOW()
        RETURNING *`,
-      [order_id, table_name, staff_name || null, JSON.stringify(assignedItems), ticketTotal || Number(total) || 0, status, kampalaDate()]
+      [order_id, table_name, staff_name || null, JSON.stringify(stationItems), ticketTotal || Number(total) || 0, status, kampalaDate()]
     );
     const actor = await resolveNotificationUser(req);
     if (actor?.scope === 'restaurant' && ['WAITER', 'SUPERVISOR', 'MANAGER', 'DIRECTOR', 'BAR_HOD'].includes(actor.role)) {
@@ -138,6 +135,7 @@ router.get('/tickets/summary', async (req, res) => {
 router.get('/tickets', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
+    await syncConfirmedStationTickets(pool, 'bar');
     const result = req.query.active === 'true'
       ? await pool.query(
         `SELECT t.* FROM barman_tickets t
@@ -153,13 +151,7 @@ router.get('/tickets', async (req, res) => {
         `SELECT * FROM barman_tickets WHERE ticket_date = $1 ORDER BY created_at ASC`,
         [date]
       );
-    const tickets = req.query.active === 'true'
-      ? result.rows.flatMap((ticket) => {
-        const items = getAssignedStationItems(ticket.items);
-        return items.length ? [{ ...ticket, items, total: getStationItemsTotal(items) }] : [];
-      })
-      : result.rows;
-    res.json(tickets);
+    res.json(result.rows);
   } catch (err) {
     console.error('Barman fetch tickets error:', err.message);
     res.status(500).json({ error: err.message });

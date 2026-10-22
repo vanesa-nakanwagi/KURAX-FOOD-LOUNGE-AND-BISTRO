@@ -150,7 +150,6 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const [table, setTable] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
   const [paymentMethods, setPaymentMethods] = useState({});
-  const [assignment, setAssignment] = useState({});
   const [paymentInputs, setPaymentInputs] = useState({});
   const [packageForm, setPackageForm] = useState(null);
   const [staffForm, setStaffForm] = useState({ name: '', email: '', pin: '', role: 'SHISHA_WAITER' });
@@ -442,7 +441,6 @@ export default function ShishaDepartment({ requiredRole = null }) {
   }
 
   const activePackages = packages.filter(item => item.published && item.is_available);
-  const activeMixers = staff.filter(person => person.role === 'SHISHA_CHEF' && person.is_active);
   const totalInCart = cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
 
   if (!session?.token) {
@@ -557,7 +555,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
 
         {(tab === 'station' || tab === 'my-orders') && (isHod || isWaiter || isChef) && (
           <section><div className="mb-4 flex items-end justify-between"><div><h2 className="text-lg font-black">{isHod ? 'Incoming and active orders' : isWaiter ? 'Your Shisha orders' : 'Assigned preparation'}</h2><p className="text-sm text-zinc-500">Updates automatically every 12 seconds.</p></div><span className="rounded-full bg-zinc-200 px-3 py-1 text-xs font-bold">{orders.length} orders</span></div>
-            {orders.length ? <div className="grid gap-4 lg:grid-cols-2">{orders.map(order => <OrderCard key={order.id} order={order} role={role} mixers={activeMixers} assignment={assignment} setAssignment={setAssignment} paymentMethods={paymentMethods} setPaymentMethods={setPaymentMethods} token={session.token} runAction={runAction} busy={busy} />)}</div> : <Empty text="No Shisha orders yet." />}
+            {orders.length ? <div className="grid gap-4 lg:grid-cols-2">{orders.map(order => <OrderCard key={order.id} order={order} role={role} staffId={session.id} paymentMethods={paymentMethods} setPaymentMethods={setPaymentMethods} token={session.token} runAction={runAction} busy={busy} />)}</div> : <Empty text="No Shisha orders yet." />}
           </section>
         )}
 
@@ -638,7 +636,7 @@ function Empty({ text }) {
   return <div className="rounded-xl border border-dashed border-zinc-300 bg-white/60 px-5 py-14 text-center text-sm font-medium text-zinc-500">{text}</div>;
 }
 
-function OrderCard({ order, role, mixers, assignment, setAssignment, paymentMethods, setPaymentMethods, token, runAction, busy }) {
+function OrderCard({ order, role, staffId, paymentMethods, setPaymentMethods, token, runAction, busy }) {
   const [history, setHistory] = useState(null);
   const [voidInputs, setVoidInputs] = useState({});
   const doPost = (endpoint, body, message) => runAction(() => request(endpoint, token, { method: 'POST', body }), message);
@@ -670,9 +668,8 @@ function OrderCard({ order, role, mixers, assignment, setAssignment, paymentMeth
       })}</div>
       <div className="grid gap-1 text-xs text-zinc-500"><span>Waiter: {order.waiter_name}</span>{order.chef_name && <span>Mixer: {order.chef_name}</span>}{order.notes && <span>Note: {order.notes}</span>}<span>Payment: {String(order.payment_status).replaceAll('_', ' ')} · paid {money(order.amount_paid)} · due {money(order.outstanding_amount)}</span></div>
       <div className="mt-4 flex flex-wrap gap-2">
-        {role === 'SHISHA_HOD' && ['PENDING', 'ASSIGNED'].includes(order.order_status) && <><select aria-label="Assign mixer" value={assignment[order.id] || order.assigned_chef_id || ''} onChange={event => setAssignment({ ...assignment, [order.id]: event.target.value })} className="min-w-40 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm"><option value="">Choose mixer</option>{mixers.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select><Button tone="accent" disabled={busy || !assignment[order.id]} onClick={() => doPost(`/orders/${order.id}/assign`, { chef_id: assignment[order.id] }, 'Order assigned.')}>Assign</Button></>}
-        {role === 'SHISHA_CHEF' && order.order_status === 'ASSIGNED' && <Button tone="accent" disabled={busy} onClick={() => doPost(`/orders/${order.id}/prepare`, {}, 'Preparation started.')}>Start preparing</Button>}
-        {role === 'SHISHA_CHEF' && order.order_status === 'PREPARING' && <Button tone="accent" disabled={busy} onClick={() => doPost(`/orders/${order.id}/ready`, {}, 'Waiter notified: order ready.')}>Mark ready <Check size={15} /></Button>}
+        {role === 'SHISHA_CHEF' && ['PENDING', 'ASSIGNED'].includes(order.order_status) && (!order.assigned_chef_id || Number(order.assigned_chef_id) === Number(staffId)) && <Button tone="accent" disabled={busy} onClick={() => doPost(`/orders/${order.id}/prepare`, {}, 'Preparation started.')}>Start preparing</Button>}
+        {role === 'SHISHA_CHEF' && order.order_status === 'PREPARING' && Number(order.assigned_chef_id) === Number(staffId) && <Button tone="accent" disabled={busy} onClick={() => doPost(`/orders/${order.id}/ready`, {}, 'Waiter notified: order ready.')}>Mark ready <Check size={15} /></Button>}
         {role === 'SHISHA_WAITER' && order.order_status === 'READY' && <Button tone="accent" disabled={busy} onClick={() => doPost(`/orders/${order.id}/serve`, {}, 'Order marked served.')}>Serve <Check size={15} /></Button>}
         {role === 'SHISHA_WAITER' && ['SERVED', 'PARTIALLY_PAID', 'OUTSTANDING'].includes(order.order_status) && Number(order.outstanding_amount) > 0 && <><select aria-label="Payment method" value={paymentMethods[order.id] || ''} onChange={event => setPaymentMethods({ ...paymentMethods, [order.id]: event.target.value })} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm"><option value="">Payment method</option>{METHODS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Button disabled={busy || !paymentMethods[order.id]} onClick={() => doPost(`/orders/${order.id}/payment-request`, { payment_method: paymentMethods[order.id] }, 'Payment request sent to the Shisha HOD.')}>Request payment</Button></>}
         <button onClick={async () => { try { setHistory(await request(`/orders/${order.id}/history`, token)); } catch { setHistory([]); } }} className="px-2 text-xs font-bold text-zinc-500 underline">History</button>

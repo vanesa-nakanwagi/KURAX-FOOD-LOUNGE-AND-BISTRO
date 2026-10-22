@@ -370,19 +370,19 @@ export default function CashierDashboard() {
 
   const handleForwardCredit = async (order) => {
     if (order.method !== "Credit") {
-      alert("❌ This is not a credit request!");
+      alert(" This is not a credit request!");
       return;
     }
     if (!order.credit_name || order.credit_name.trim() === "") {
-      alert("❌ Client name is required for credit requests!");
+      alert(" Client name is required for credit requests!");
       return;
     }
     if (!order.credit_phone || order.credit_phone.trim() === "") {
-      alert("❌ Client phone number is required for credit requests!");
+      alert(" Client phone number is required for credit requests!");
       return;
     }
     if (!order.amount || order.amount <= 0) {
-      alert("❌ Invalid credit amount.");
+      alert(" Invalid credit amount.");
       return;
     }
     setRequestingApproval(true);
@@ -401,7 +401,7 @@ export default function CashierDashboard() {
         refreshData();
         setProcessingOrder(null);
         setRequestingApproval(false);
-        alert(`✅ Credit request forwarded to manager!\n\nClient: ${order.credit_name}\nAmount: ${formatFullAmount(order.amount)}`);
+        alert(`Credit request forwarded to manager!\n\nClient: ${order.credit_name}\nAmount: ${formatFullAmount(order.amount)}`);
         return;
       }
       const error = await res.json();
@@ -415,7 +415,7 @@ export default function CashierDashboard() {
 
   const handleReject = async () => {
     if (processingOrder?.method === "Credit") {
-      alert("❌ Cashier cannot reject a credit request. Forward it to the manager for approval or rejection.");
+      alert(" Cashier cannot reject a credit request. Forward it to the manager for approval or rejection.");
       setProcessingOrder(null);
       setRejecting(false);
       setRejectNote("");
@@ -531,9 +531,6 @@ export default function CashierDashboard() {
             </button>
             <div>
               <div className="flex items-center gap-3 mb-1">
-                <div className="w-1 h-6 bg-yellow-500 rounded-full" />
-                      <XCircle size={13} /> Manager Rejects Credit
-              </div>
               <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-black tracking-tight">
                 Welcome back, <span className="text-yellow-600 capitalize whitespace-nowrap">{cashierName}</span>
               </h2>
@@ -595,6 +592,7 @@ export default function CashierDashboard() {
             <button onClick={handleRefresh} className="p-2 bg-zinc-100 rounded-xl text-zinc-600 hover:text-black transition-all shrink-0">
               <RefreshCw size={16} className={qLoading ? "animate-spin" : ""} />
             </button>
+          </div>
           </div>
         </header>
 
@@ -742,7 +740,7 @@ export default function CashierDashboard() {
                 )}
               </div>
 
-              {/* ❌ REMOVED: "Credit Ledger" button (totalCreditsNeedingAction > 0) and "Awaiting Manager Approval" section */}
+              {/*  REMOVED: "Credit Ledger" button (totalCreditsNeedingAction > 0) and "Awaiting Manager Approval" section */}
             </div>
           )}
 
@@ -946,13 +944,13 @@ export default function CashierDashboard() {
                 <div className="flex items-center gap-2">
                   <User size={12} className="text-zinc-500 shrink-0" />
                   <span className={`text-sm font-black truncate ${processingOrder.credit_name ? "text-black" : "text-red-600"}`}>
-                    {processingOrder.credit_name || "⚠️ Missing - Required!"}
+                    {processingOrder.credit_name || " Missing - Required!"}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Phone size={12} className="text-zinc-500 shrink-0" />
                   <span className={`text-sm truncate ${processingOrder.credit_phone ? "text-zinc-700" : "text-red-600"}`}>
-                    {processingOrder.credit_phone || "⚠️ Missing - Required!"}
+                    {processingOrder.credit_phone || " Missing - Required!"}
                   </span>
                 </div>
                 {processingOrder.credit_pay_by && (
