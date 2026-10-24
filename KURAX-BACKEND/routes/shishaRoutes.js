@@ -11,7 +11,7 @@ import pool from '../db.js';
 import { createSessionToken, readSessionToken } from '../middleware/sessionTokens.js';
 import notificationService from '../helpers/notificationService.js';
 import {
-  decryptShishaPin, encryptShishaPin, isValidShishaPinEncryptionKey,
+  encryptShishaPin, isValidShishaPinEncryptionKey,
 } from '../helpers/shishaPinEncryption.js';
 
 const router = express.Router();
@@ -78,6 +78,58 @@ export async function initShishaTables() {
       package_name TEXT NOT NULL, quantity INTEGER NOT NULL CHECK (quantity > 0),
       unit_price NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0), line_total NUMERIC(12,2) NOT NULL
     )`,
+    `CREATE TABLE IF NOT EXISTS public.shisha_production_work (
+      id BIGSERIAL PRIMARY KEY,
+      order_id INTEGER NOT NULL,
+      order_item_id INTEGER NOT NULL UNIQUE,
+      item_name TEXT NOT NULL,
+      table_id TEXT,
+      order_notes TEXT,
+      unit_price NUMERIC(12,2),
+      order_created_at TIMESTAMPTZ,
+      quantity NUMERIC(12,2) NOT NULL CHECK (quantity > 0),
+      completed_quantity NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (completed_quantity >= 0),
+      staff_id INTEGER,
+      staff_name TEXT,
+      status TEXT NOT NULL DEFAULT 'Unclaimed',
+      claimed_at TIMESTAMPTZ,
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `ALTER TABLE public.shisha_production_work ADD COLUMN IF NOT EXISTS table_id TEXT`,
+    `ALTER TABLE public.shisha_production_work ADD COLUMN IF NOT EXISTS order_notes TEXT`,
+    `ALTER TABLE public.shisha_production_work ADD COLUMN IF NOT EXISTS unit_price NUMERIC(12,2)`,
+    `ALTER TABLE public.shisha_production_work ADD COLUMN IF NOT EXISTS order_created_at TIMESTAMPTZ`,
+    `ALTER TABLE public.shisha_production_work ADD COLUMN IF NOT EXISTS ready_at TIMESTAMPTZ`,
+    `ALTER TABLE public.shisha_production_work ADD COLUMN IF NOT EXISTS notification_status TEXT NOT NULL DEFAULT 'Pending'`,
+    `ALTER TABLE public.shisha_production_work ADD COLUMN IF NOT EXISTS notified_at TIMESTAMPTZ`,
+    `UPDATE public.shisha_production_work
+     SET ready_at=completed_at
+     WHERE status='Completed' AND ready_at IS NULL`,
+    `ALTER TABLE public.shisha_production_work DROP CONSTRAINT IF EXISTS shisha_production_work_order_id_fkey`,
+    `ALTER TABLE public.shisha_production_work DROP CONSTRAINT IF EXISTS shisha_production_work_order_item_id_fkey`,
+    `CREATE TABLE IF NOT EXISTS public.shisha_production_events (
+      id BIGSERIAL PRIMARY KEY,
+      work_id BIGINT NOT NULL,
+      event_type TEXT NOT NULL,
+      from_staff_id INTEGER,
+      to_staff_id INTEGER,
+      actor_id INTEGER,
+      from_status TEXT,
+      to_status TEXT,
+      quantity NUMERIC(12,2),
+      reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `ALTER TABLE public.shisha_production_events DROP CONSTRAINT IF EXISTS shisha_production_events_work_id_fkey`,
+    `CREATE TABLE IF NOT EXISTS public.shisha_production_pin_attempts (
+      staff_id INTEGER PRIMARY KEY,
+      failures INTEGER NOT NULL DEFAULT 0,
+      locked_until TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
     `CREATE TABLE IF NOT EXISTS public.shisha_void_requests (
       id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES public.shisha_orders(id) ON DELETE CASCADE,
       order_item_id INTEGER NOT NULL REFERENCES public.shisha_order_items(id) ON DELETE CASCADE,
@@ -110,6 +162,8 @@ export async function initShishaTables() {
     `CREATE INDEX IF NOT EXISTS shisha_orders_waiter_idx ON public.shisha_orders(shisha_waiter_id, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS shisha_orders_chef_idx ON public.shisha_orders(assigned_chef_id, order_status)`,
     `CREATE INDEX IF NOT EXISTS shisha_orders_created_idx ON public.shisha_orders(created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS shisha_production_work_staff_idx ON public.shisha_production_work(staff_id, claimed_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS shisha_production_work_order_idx ON public.shisha_production_work(order_id, status)`,
     `CREATE INDEX IF NOT EXISTS shisha_void_requests_status_idx ON public.shisha_void_requests(status, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS shisha_void_requests_order_idx ON public.shisha_void_requests(order_id, status)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS shisha_void_requests_pending_item_idx
@@ -145,6 +199,13 @@ function requireRoles(...roles) {
 function hashPin(pin) {
   const salt = randomBytes(16).toString('hex');
   return scrypt(String(pin), salt, 64).then(hash => ({ salt, hash: hash.toString('hex') }));
+}
+
+async function verifyPin(pin, salt, hash) {
+  const expected = Buffer.from(String(hash || ''), 'hex');
+  if (expected.length !== 64 || !salt) return false;
+  const actual = await scrypt(String(pin), salt, expected.length);
+  return actual.length === expected.length && timingSafeEqual(expected, actual);
 }
 
 function escapeHtml(value) {
@@ -227,17 +288,44 @@ async function recordHistory(client, order, nextStatus, action, actor, notes = n
   );
 }
 
+async function syncShishaProductionWork(queryable) {
+  await queryable.query(
+    `INSERT INTO public.shisha_production_work
+       (order_id, order_item_id, item_name, table_id, order_notes, unit_price,
+        order_created_at, quantity)
+     SELECT item.order_id, item.id, item.package_name, order_row.table_id,
+            order_row.notes, item.unit_price, order_row.created_at, item.quantity
+     FROM public.shisha_order_items item
+     JOIN public.shisha_orders order_row ON order_row.id=item.order_id
+     ON CONFLICT (order_item_id) DO UPDATE
+       SET table_id=COALESCE(public.shisha_production_work.table_id, EXCLUDED.table_id),
+           order_notes=COALESCE(public.shisha_production_work.order_notes, EXCLUDED.order_notes),
+           unit_price=COALESCE(public.shisha_production_work.unit_price, EXCLUDED.unit_price),
+           order_created_at=COALESCE(public.shisha_production_work.order_created_at, EXCLUDED.order_created_at)
+       WHERE public.shisha_production_work.unit_price IS NULL
+          OR public.shisha_production_work.order_created_at IS NULL`
+  );
+}
+
 async function loadOrder(id, client = pool) {
   const result = await client.query(
     `SELECT o.*, w.name AS waiter_name, c.name AS chef_name,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
-        'id', i.id, 'package_id', i.shisha_package_id, 'name', i.package_name,
+        'id', i.id, 'production_work_id', pw.id, 'package_id', i.shisha_package_id, 'name', i.package_name,
         'quantity', i.quantity, 'unit_price', i.unit_price, 'line_total', i.line_total,
+        'production_status', pw.status, 'production_staff_id', pw.staff_id,
+        'production_staff_name', pw.staff_name, 'claimed_at', pw.claimed_at,
+        'started_at', pw.started_at, 'completed_at', pw.completed_at,
+        'ready_at', pw.ready_at, 'notification_status', pw.notification_status,
+        'notified_at', pw.notified_at,
+        'completed_quantity', pw.completed_quantity,
         'approved_void_quantity', COALESCE((SELECT SUM(v.quantity) FROM public.shisha_void_requests v
           WHERE v.order_item_id=i.id AND v.status='APPROVED'),0),
         'pending_void_quantity', COALESCE((SELECT SUM(v.quantity) FROM public.shisha_void_requests v
           WHERE v.order_item_id=i.id AND v.status='PENDING'),0)
-      ) ORDER BY i.id) FROM public.shisha_order_items i WHERE i.order_id = o.id), '[]'::jsonb) AS items
+      ) ORDER BY i.id) FROM public.shisha_order_items i
+        LEFT JOIN public.shisha_production_work pw ON pw.order_item_id=i.id
+        WHERE i.order_id = o.id), '[]'::jsonb) AS items
      FROM public.shisha_orders o
      JOIN public.shisha_staff w ON w.id = o.shisha_waiter_id
      LEFT JOIN public.shisha_staff c ON c.id = o.assigned_chef_id
@@ -350,25 +438,7 @@ router.get('/staff', requireRoles('SHISHA_HOD'), async (req, res) => {
 });
 
 router.get('/staff/:id/pin', requireRoles('SHISHA_HOD'), async (req, res) => {
-  if (!isValidShishaPinEncryptionKey()) {
-    return fail(res, 503, 'PIN retrieval is not configured. Set SHISHA_PIN_ENCRYPTION_KEY on the backend.');
-  }
-  try {
-    const result = await pool.query(
-      `SELECT pin_encrypted FROM public.shisha_staff
-       WHERE id=$1 AND role <> 'SHISHA_HOD'`,
-      [req.params.id]
-    );
-    if (!result.rows[0]) return fail(res, 404, 'Waiter or mixer account not found.');
-    if (!result.rows[0].pin_encrypted) {
-      return fail(res, 409, 'This account has no retrievable PIN yet. Set a new PIN to enable retrieval.');
-    }
-    res.set('Cache-Control', 'no-store');
-    return res.json({ pin: decryptShishaPin(result.rows[0].pin_encrypted) });
-  } catch (error) {
-    console.error('Retrieve Shisha staff PIN error:', error.message);
-    return fail(res, 500, 'Could not retrieve the account PIN. Check the Shisha PIN encryption key.');
-  }
+  return fail(res, 410, 'PIN retrieval is disabled. Reset the account PIN instead.');
 });
 
 router.post('/staff', async (req, res) => {
@@ -454,11 +524,17 @@ router.patch('/staff/:id', requireRoles('SHISHA_HOD'), async (req, res) => {
 
 router.get('/orders', requireRoles(...SHISHA_ROLES), async (req, res) => {
   try {
+    await syncShishaProductionWork(pool);
     const conditions = [];
     const values = [];
     if (req.actor.role === 'SHISHA_WAITER') {
       values.push(req.actor.id);
       conditions.push(`o.shisha_waiter_id=$${values.length}`);
+    }
+    if (req.actor.role === 'SHISHA_CHEF') {
+      values.push(req.actor.id);
+      conditions.push(`o.assigned_chef_id=$${values.length}`);
+      conditions.push(`o.order_status IN ('PENDING', 'ASSIGNED', 'PREPARING')`);
     }
     if (req.query.status) {
       values.push(String(req.query.status).toUpperCase());
@@ -467,13 +543,21 @@ router.get('/orders', requireRoles(...SHISHA_ROLES), async (req, res) => {
     const result = await pool.query(
       `SELECT o.*, w.name AS waiter_name, c.name AS chef_name,
         COALESCE((SELECT jsonb_agg(jsonb_build_object(
-          'id', i.id, 'package_id', i.shisha_package_id, 'name', i.package_name,
+          'id', i.id, 'production_work_id', pw.id, 'package_id', i.shisha_package_id, 'name', i.package_name,
           'quantity', i.quantity, 'unit_price', i.unit_price, 'line_total', i.line_total,
+          'production_status', pw.status, 'production_staff_id', pw.staff_id,
+          'production_staff_name', pw.staff_name, 'claimed_at', pw.claimed_at,
+          'started_at', pw.started_at, 'completed_at', pw.completed_at,
+          'ready_at', pw.ready_at, 'notification_status', pw.notification_status,
+          'notified_at', pw.notified_at,
+          'completed_quantity', pw.completed_quantity,
           'approved_void_quantity', COALESCE((SELECT SUM(v.quantity) FROM public.shisha_void_requests v
             WHERE v.order_item_id=i.id AND v.status='APPROVED'),0),
           'pending_void_quantity', COALESCE((SELECT SUM(v.quantity) FROM public.shisha_void_requests v
             WHERE v.order_item_id=i.id AND v.status='PENDING'),0)
-        ) ORDER BY i.id) FROM public.shisha_order_items i WHERE i.order_id=o.id), '[]'::jsonb) AS items
+        ) ORDER BY i.id) FROM public.shisha_order_items i
+          LEFT JOIN public.shisha_production_work pw ON pw.order_item_id=i.id
+          WHERE i.order_id=o.id), '[]'::jsonb) AS items
        FROM public.shisha_orders o JOIN public.shisha_staff w ON w.id=o.shisha_waiter_id
        LEFT JOIN public.shisha_staff c ON c.id=o.assigned_chef_id
        WHERE COALESCE(o.day_cleared, false) = false
@@ -526,6 +610,7 @@ router.post('/orders', requireRoles('SHISHA_WAITER'), async (req, res) => {
         [order.id, item.product.id, item.product.name, item.quantity, item.product.price, item.lineTotal]
       );
     }
+    await syncShishaProductionWork(client);
     await recordHistory(client, order, 'PENDING', 'ORDER_CREATED', req.actor, order.notes);
     await client.query('COMMIT');
     void notificationService.sendToRoles(['SHISHA_HOD', 'SHISHA_CHEF'], {
@@ -548,18 +633,103 @@ router.post('/orders', requireRoles('SHISHA_WAITER'), async (req, res) => {
 
 router.post('/orders/:id/assign', requireRoles('SHISHA_HOD'), async (req, res) => {
   const chefId = Number(req.body.chef_id);
+  const reason = String(req.body.reason || '').trim();
+  if (!reason || reason.length > 500) return fail(res, 400, 'A reason of 1-500 characters is required.');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const chef = await client.query("SELECT id FROM public.shisha_staff WHERE id=$1 AND role='SHISHA_CHEF' AND is_active=true", [chefId]);
     const orderResult = await client.query('SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE', [req.params.id]);
     const order = orderResult.rows[0];
-    if (!chef.rows[0] || !order || !['PENDING', 'ASSIGNED'].includes(order.order_status)) {
+    const isInitialAssignment = Boolean(order && !order.assigned_chef_id);
+    if (!chef.rows[0] || !order
+      || (!isInitialAssignment && chefId === Number(order.assigned_chef_id))
+      || !['PENDING', 'ASSIGNED', 'PREPARING'].includes(order.order_status)) {
       await client.query('ROLLBACK');
-      return fail(res, 400, 'Choose an active Shisha mixer and an unassigned order.');
+      return fail(res, 400, 'Choose an active mixer for an unassigned or active Shisha order.');
     }
+    await syncShishaProductionWork(client);
+    if (isInitialAssignment) {
+      const availableWork = await client.query(
+        `SELECT id, staff_id, status FROM public.shisha_production_work
+         WHERE order_id=$1 AND status NOT IN ('Completed', 'Cancelled', 'Voided')
+         FOR UPDATE`,
+        [order.id]
+      );
+      if (!availableWork.rows.length) {
+        await client.query('ROLLBACK');
+        return fail(res, 409, 'This Shisha order has no active production items to assign.');
+      }
+      if (availableWork.rows.some(work => work.staff_id || work.status !== 'Unclaimed')) {
+        await client.query('ROLLBACK');
+        return fail(res, 409, 'This Shisha order already has production work assigned.');
+      }
+      await client.query(
+        `INSERT INTO public.shisha_production_events
+           (work_id, event_type, to_staff_id, actor_id, from_status, to_status)
+         SELECT id, 'ASSIGNED', $2, $3, status, 'Claimed'
+         FROM public.shisha_production_work
+         WHERE order_id=$1 AND status NOT IN ('Completed', 'Cancelled', 'Voided')`,
+        [order.id, chefId, req.actor.id]
+      );
+      await client.query(
+        `UPDATE public.shisha_production_work
+         SET staff_id=$2, staff_name=(SELECT name FROM public.shisha_staff WHERE id=$2),
+             status='Claimed', claimed_at=NOW(), updated_at=NOW()
+         WHERE order_id=$1 AND status NOT IN ('Completed', 'Cancelled', 'Voided')`,
+        [order.id, chefId]
+      );
+      await client.query(
+        `UPDATE public.shisha_orders
+         SET assigned_chef_id=$1, order_status='ASSIGNED', updated_at=NOW()
+         WHERE id=$2`,
+        [chefId, order.id]
+      );
+      await recordHistory(client, order, 'ASSIGNED', 'CHEF_ASSIGNED', req.actor, reason);
+      await client.query('COMMIT');
+      void notificationService.sendToUser(chefId, {
+        type: 'SHISHA_ORDER_ASSIGNED',
+        title: 'Shisha Order Assigned',
+        body: `Shisha order ${orderReference(order.id)} is assigned to you.`,
+        department: 'Shisha',
+        referenceId: order.id,
+        link: `/shisha?order=${order.id}`,
+      }, 'shisha').catch(notificationError => {
+        console.error('Shisha assignment notification failed:', notificationError.message);
+      });
+      return res.json({ ...(await loadOrder(order.id)), reference: orderReference(order.id) });
+    }
+    const claimedWork = await client.query(
+      `SELECT id FROM public.shisha_production_work
+       WHERE order_id=$1 AND staff_id=$2
+         AND status IN ('Preparing', 'Claimed')
+       LIMIT 1 FOR UPDATE`,
+      [order.id, order.assigned_chef_id]
+    );
+    if (!claimedWork.rows.length) {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'Shisha work must be claimed with the mixer PIN before it can be reassigned.');
+    }
+    await client.query(
+      `INSERT INTO public.shisha_production_events
+         (work_id, event_type, from_staff_id, to_staff_id, actor_id, from_status, to_status, reason)
+       SELECT id, 'REASSIGNED', staff_id, $2, $3, status, status, $4
+       FROM public.shisha_production_work
+       WHERE order_id=$1 AND staff_id IS DISTINCT FROM $2
+         AND status NOT IN ('Completed', 'Cancelled', 'Voided')`,
+      [order.id, chefId, req.actor.id, reason]
+    );
+    await client.query(
+      `UPDATE public.shisha_production_work
+       SET staff_id=$2, staff_name=(SELECT name FROM public.shisha_staff WHERE id=$2),
+           claimed_at=NOW(), started_at=CASE WHEN status='Preparing' THEN NOW() ELSE started_at END,
+           updated_at=NOW()
+       WHERE order_id=$1 AND staff_id IS DISTINCT FROM $2
+         AND status NOT IN ('Completed', 'Cancelled', 'Voided')`,
+      [order.id, chefId]
+    );
     await client.query('UPDATE public.shisha_orders SET assigned_chef_id=$1, updated_at=NOW() WHERE id=$2', [chefId, order.id]);
-    await recordHistory(client, order, 'ASSIGNED', 'CHEF_ASSIGNED', req.actor, `Assigned mixer ${chefId}`);
+    await recordHistory(client, order, order.order_status, 'CHEF_REASSIGNED', req.actor, reason);
     await client.query('COMMIT');
     void notificationService.sendToUser(chefId, {
       type: 'SHISHA_ORDER_ASSIGNED',
@@ -579,7 +749,315 @@ router.post('/orders/:id/assign', requireRoles('SHISHA_HOD'), async (req, res) =
   }
 });
 
+router.post('/production/work/:workId/claim', requireRoles('SHISHA_HOD'), async (req, res) => {
+  const workId = Number(req.params.workId);
+  const pin = String(req.body?.pin || '').trim();
+  if (!Number.isInteger(workId) || workId < 1 || !/^\d{4,8}$/.test(pin)) {
+    return fail(res, 400, 'Enter a valid 4-8 digit mixer PIN to claim this item.');
+  }
+
+  try {
+    const attempt = await pool.query(
+      'SELECT locked_until > NOW() AS locked FROM public.shisha_production_pin_attempts WHERE staff_id=$1',
+      [req.actor.id]
+    );
+    if (attempt.rows[0]?.locked) return fail(res, 429, 'Too many invalid PIN attempts. Try again later.');
+
+    const candidates = await pool.query(
+      `SELECT id, name, pin_salt, pin_hash FROM public.shisha_staff
+       WHERE role='SHISHA_CHEF' AND is_active=true`
+    );
+    const matches = [];
+    for (const person of candidates.rows) {
+      if (await verifyPin(pin, person.pin_salt, person.pin_hash)) matches.push(person);
+    }
+    if (matches.length !== 1) {
+      await pool.query(
+        `INSERT INTO public.shisha_production_pin_attempts (staff_id, failures, locked_until)
+         VALUES ($1, 1, NULL)
+         ON CONFLICT (staff_id) DO UPDATE
+         SET failures=CASE
+               WHEN public.shisha_production_pin_attempts.locked_until <= NOW() THEN 1
+               ELSE public.shisha_production_pin_attempts.failures + 1
+             END,
+             locked_until=CASE
+               WHEN public.shisha_production_pin_attempts.locked_until <= NOW() THEN NULL
+               WHEN public.shisha_production_pin_attempts.failures + 1 >= 10 THEN NOW() + INTERVAL '15 minutes'
+               ELSE public.shisha_production_pin_attempts.locked_until
+             END,
+             updated_at=NOW()`,
+        [req.actor.id]
+      );
+      return fail(res, 401, 'Invalid mixer PIN.');
+    }
+    await pool.query('DELETE FROM public.shisha_production_pin_attempts WHERE staff_id=$1', [req.actor.id]);
+
+    const claimant = matches[0];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locator = await client.query(
+        'SELECT order_id FROM public.shisha_production_work WHERE id=$1',
+        [workId]
+      );
+      if (!locator.rows[0]) {
+        await client.query('ROLLBACK');
+        return fail(res, 404, 'Shisha production item not found.');
+      }
+      await client.query('SELECT id FROM public.shisha_orders WHERE id=$1 FOR UPDATE', [locator.rows[0].order_id]);
+      const result = await client.query(
+        'SELECT * FROM public.shisha_production_work WHERE id=$1 FOR UPDATE',
+        [workId]
+      );
+      const work = result.rows[0];
+      if (!work || work.status !== 'Unclaimed' || work.staff_id) {
+        await client.query('ROLLBACK');
+        return fail(res, 409, 'This Shisha item has already been claimed.');
+      }
+      const claimed = await client.query(
+        `UPDATE public.shisha_production_work
+         SET staff_id=$1, staff_name=$2, status='Claimed', claimed_at=NOW(), updated_at=NOW()
+         WHERE id=$3 RETURNING *`,
+        [claimant.id, claimant.name, workId]
+      );
+      await client.query(
+        `INSERT INTO public.shisha_production_events
+           (work_id, event_type, to_staff_id, actor_id, from_status, to_status)
+         VALUES ($1, 'CLAIMED', $2, $3, 'Unclaimed', 'Claimed')`,
+        [workId, claimant.id, req.actor.id]
+      );
+      await client.query('COMMIT');
+      return res.json({ ...claimed.rows[0], claimant_id: claimant.id });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Claim Shisha production item error:', error.message);
+    return fail(res, 500, 'Could not claim the Shisha item.');
+  }
+});
+
+router.patch('/production/work/:workId/status', requireRoles('SHISHA_HOD'), async (req, res) => {
+  const workId = Number(req.params.workId);
+  const status = String(req.body?.status || '');
+  if (!Number.isInteger(workId) || workId < 1 || !['Preparing', 'Completed'].includes(status)) {
+    return fail(res, 400, 'A valid Shisha item and status are required.');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const locator = await client.query(
+      'SELECT order_id FROM public.shisha_production_work WHERE id=$1',
+      [workId]
+    );
+    if (!locator.rows[0]) {
+      await client.query('ROLLBACK');
+      return fail(res, 404, 'Shisha production item not found.');
+    }
+    const orderResult = await client.query(
+      'SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE',
+      [locator.rows[0].order_id]
+    );
+    const order = orderResult.rows[0];
+    const result = await client.query(
+      'SELECT * FROM public.shisha_production_work WHERE id=$1 FOR UPDATE',
+      [workId]
+    );
+    const work = result.rows[0];
+    if (!order || !work) {
+      await client.query('ROLLBACK');
+      return fail(res, 404, 'Shisha production item not found.');
+    }
+    if (['Cancelled', 'Voided'].includes(work.status)) {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'Cancelled or voided work cannot be prepared.');
+    }
+    if (work.status === 'Completed' && status === 'Completed') {
+      await client.query('COMMIT');
+      return res.json(work);
+    }
+    if ((status === 'Preparing' && work.status !== 'Claimed')
+        || (status === 'Completed' && work.status !== 'Preparing')) {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'Shisha items must be claimed, prepared, and completed in order.');
+    }
+
+    let completedQuantity = Number(work.completed_quantity || 0);
+    let nextStatus = status;
+    if (status === 'Completed') {
+      const voids = await client.query(
+        `SELECT COALESCE(SUM(quantity), 0) AS quantity
+         FROM public.shisha_void_requests
+         WHERE order_item_id=$1 AND status='APPROVED'`,
+        [work.order_item_id]
+      );
+      completedQuantity = Math.max(Number(work.quantity) - Number(voids.rows[0].quantity || 0), 0);
+      nextStatus = completedQuantity > 0 ? 'Completed' : 'Voided';
+    }
+    const updated = await client.query(
+      `UPDATE public.shisha_production_work
+       SET status=$1,
+           completed_quantity=$2,
+           started_at=CASE WHEN $3='Preparing' THEN COALESCE(started_at,NOW()) ELSE started_at END,
+           completed_at=CASE WHEN $3='Completed' THEN NOW() ELSE completed_at END,
+           ready_at=CASE WHEN $1='Completed' THEN COALESCE(ready_at,NOW()) ELSE ready_at END,
+           updated_at=NOW()
+       WHERE id=$4 RETURNING *`,
+      [nextStatus, completedQuantity, status, workId]
+    );
+    await client.query(
+      `INSERT INTO public.shisha_production_events
+         (work_id, event_type, actor_id, from_status, to_status, quantity)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [workId, status === 'Preparing' ? 'STARTED' : nextStatus === 'Voided' ? 'VOIDED' : 'COMPLETED',
+        req.actor.id, work.status, nextStatus, status === 'Completed' ? completedQuantity : null]
+    );
+
+    const remaining = await client.query(
+      `SELECT COUNT(*)::int AS count FROM public.shisha_production_work
+       WHERE order_id=$1 AND status NOT IN ('Completed','Cancelled','Voided')`,
+      [order.id]
+    );
+    const nextOrderStatus = Number(remaining.rows[0].count) === 0 ? 'READY' : 'PREPARING';
+    if (order.order_status !== nextOrderStatus) {
+      await recordHistory(
+        client,
+        order,
+        nextOrderStatus,
+        nextOrderStatus === 'READY' ? 'ORDER_READY' : 'PREPARATION_STARTED',
+        req.actor
+      );
+    }
+    await client.query('COMMIT');
+    return res.json({ ...updated.rows[0], order_status: nextOrderStatus });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Update Shisha production item error:', error.message);
+    return fail(res, 500, 'Could not update the Shisha item.');
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/production/work/:workId/notify', requireRoles('SHISHA_HOD'), async (req, res) => {
+  const workId = Number(req.params.workId);
+  if (!Number.isInteger(workId) || workId < 1) return fail(res, 400, 'A valid Shisha item is required.');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const locator = await client.query(
+      'SELECT order_id FROM public.shisha_production_work WHERE id=$1',
+      [workId]
+    );
+    if (!locator.rows[0]) {
+      await client.query('ROLLBACK');
+      return fail(res, 404, 'Shisha production item not found.');
+    }
+    const orderResult = await client.query(
+      'SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE',
+      [locator.rows[0].order_id]
+    );
+    const result = await client.query(
+      'SELECT * FROM public.shisha_production_work WHERE id=$1 FOR UPDATE',
+      [workId]
+    );
+    const order = orderResult.rows[0];
+    const work = result.rows[0];
+    if (!order || !work || work.status !== 'Completed' || !work.ready_at) {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'This Shisha item must be ready before notification.');
+    }
+    if (work.notified_at || work.notification_status === 'Sending') {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'The Shisha waiter has already been notified about this item.');
+    }
+    await client.query(
+      `UPDATE public.shisha_production_work SET notification_status='Sending', updated_at=NOW()
+       WHERE id=$1`,
+      [workId]
+    );
+    await client.query('COMMIT');
+
+    const notification = await notificationService.sendToUser(order.shisha_waiter_id, {
+      type: 'SHISHA_ITEM_READY',
+      title: 'Shisha item ready',
+      body: `${orderReference(order.id)} · Table ${order.table_id} · ${work.item_name} × ${work.quantity} is ready to serve.`,
+      department: 'Shisha',
+      referenceId: order.id,
+      referenceType: 'SHISHA_ORDER',
+      link: `/shisha?order=${order.id}`,
+    }, 'shisha');
+    if (notification.error) {
+      await pool.query(
+        `UPDATE public.shisha_production_work
+         SET notification_status='Failed', updated_at=NOW()
+         WHERE id=$1 AND notification_status='Sending'`,
+        [workId]
+      );
+      return fail(res, 503, 'The Shisha waiter notification could not be delivered. Please retry.');
+    }
+    const notified = await pool.query(
+      `UPDATE public.shisha_production_work
+       SET notification_status='Sent', notified_at=NOW(), updated_at=NOW()
+       WHERE id=$1 AND notification_status='Sending'
+       RETURNING id AS work_id, ready_at, notification_status, notified_at`,
+      [workId]
+    );
+    await pool.query(
+      `INSERT INTO public.shisha_production_events
+         (work_id, event_type, actor_id, from_status, to_status)
+       VALUES ($1, 'NOTIFIED', $2, 'Ready', 'Notified')`,
+      [workId, req.actor.id]
+    );
+    return res.json(notified.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Notify Shisha waiter error:', error.message);
+    return fail(res, 500, 'Could not notify the Shisha waiter.');
+  } finally {
+    client.release();
+  }
+});
+
 router.post('/orders/:id/prepare', requireRoles('SHISHA_CHEF'), async (req, res) => {
+  const pin = String(req.body.pin || '').trim();
+  if (!/^\d{4,8}$/.test(pin)) return fail(res, 400, 'Enter your 4-8 digit Shisha PIN to claim this work.');
+  const attempt = await pool.query(
+    'SELECT locked_until > NOW() AS locked FROM public.shisha_production_pin_attempts WHERE staff_id=$1',
+    [req.actor.id]
+  );
+  if (attempt.rows[0]?.locked) {
+    return fail(res, 429, 'Too many invalid PIN attempts. Try again later.');
+  }
+  const staffResult = await pool.query(
+    'SELECT pin_salt, pin_hash FROM public.shisha_staff WHERE id=$1 AND role=\'SHISHA_CHEF\' AND is_active=true',
+    [req.actor.id]
+  );
+  if (!staffResult.rows[0] || !(await verifyPin(pin, staffResult.rows[0].pin_salt, staffResult.rows[0].pin_hash))) {
+    await pool.query(
+      `INSERT INTO public.shisha_production_pin_attempts (staff_id, failures, locked_until)
+       VALUES ($1, 1, NULL)
+       ON CONFLICT (staff_id) DO UPDATE
+       SET failures=CASE
+             WHEN public.shisha_production_pin_attempts.locked_until <= NOW() THEN 1
+             ELSE public.shisha_production_pin_attempts.failures + 1
+           END,
+           locked_until=CASE
+             WHEN public.shisha_production_pin_attempts.locked_until <= NOW() THEN NULL
+             WHEN public.shisha_production_pin_attempts.failures + 1 >= 10 THEN NOW() + INTERVAL '15 minutes'
+             ELSE public.shisha_production_pin_attempts.locked_until
+           END,
+           updated_at=NOW()`,
+      [req.actor.id]
+    );
+    return fail(res, 401, 'Invalid Shisha PIN.');
+  }
+  await pool.query('DELETE FROM public.shisha_production_pin_attempts WHERE staff_id=$1', [req.actor.id]);
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -591,12 +1069,46 @@ router.post('/orders/:id/prepare', requireRoles('SHISHA_CHEF'), async (req, res)
       await client.query('ROLLBACK');
       return fail(res, 409, 'This order is not available for preparation.');
     }
+    await syncShishaProductionWork(client);
+    const workResult = await client.query(
+      `SELECT * FROM public.shisha_production_work WHERE order_id=$1 FOR UPDATE`,
+      [order.id]
+    );
+    if (!workResult.rows.length || workResult.rows.some(work => work.staff_id && work.staff_id !== req.actor.id)) {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'One or more Shisha items have already been claimed.');
+    }
+    await client.query(
+      `INSERT INTO public.shisha_production_events
+         (work_id, event_type, to_staff_id, actor_id, from_status, to_status)
+       SELECT id, 'CLAIMED', $2, $2, status, 'Preparing'
+       FROM public.shisha_production_work
+       WHERE order_id=$1 AND staff_id IS NULL`,
+      [order.id, req.actor.id]
+    );
+    await client.query(
+      `UPDATE public.shisha_production_work
+       SET staff_id=$2, staff_name=$3, status='Preparing',
+           claimed_at=COALESCE(claimed_at,NOW()), started_at=COALESCE(started_at,NOW()), updated_at=NOW()
+       WHERE order_id=$1 AND (staff_id IS NULL OR staff_id=$2)`,
+      [order.id, req.actor.id, req.actor.name]
+    );
     await client.query(
       'UPDATE public.shisha_orders SET assigned_chef_id=COALESCE(assigned_chef_id,$1), updated_at=NOW() WHERE id=$2',
       [req.actor.id, order.id]
     );
     await recordHistory(client, order, 'PREPARING', 'PREPARATION_STARTED', req.actor);
     await client.query('COMMIT');
+    void notificationService.sendToUser(order.shisha_waiter_id, {
+      type: 'SHISHA_PREPARATION_STARTED',
+      title: 'Shisha Preparation Started',
+      body: `${req.actor.name} started preparing Shisha order ${orderReference(order.id)}.`,
+      department: 'Shisha',
+      referenceId: order.id,
+      link: `/shisha?order=${order.id}`,
+    }, 'shisha').catch(notificationError => {
+      console.error('Shisha preparation-start notification failed:', notificationError.message);
+    });
     return res.json({ ...(await loadOrder(order.id)), reference: orderReference(order.id) });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -616,6 +1128,33 @@ router.post('/orders/:id/ready', requireRoles('SHISHA_CHEF'), async (req, res) =
     if (!order || order.assigned_chef_id !== req.actor.id || order.order_status !== 'PREPARING') {
       await client.query('ROLLBACK');
       return fail(res, 409, 'This order is not being prepared by you.');
+    }
+    await syncShishaProductionWork(client);
+    const completed = await client.query(
+      `UPDATE public.shisha_production_work work
+       SET completed_quantity=GREATEST(work.quantity - COALESCE((
+             SELECT SUM(void_request.quantity)
+             FROM public.shisha_void_requests void_request
+             WHERE void_request.order_item_id=work.order_item_id AND void_request.status='APPROVED'
+           ),0),0),
+           status=CASE WHEN GREATEST(work.quantity - COALESCE((
+             SELECT SUM(void_request.quantity)
+             FROM public.shisha_void_requests void_request
+             WHERE void_request.order_item_id=work.order_item_id AND void_request.status='APPROVED'
+           ),0),0)=0 THEN 'Voided' ELSE 'Completed' END,
+           completed_at=NOW(), updated_at=NOW()
+       WHERE work.order_id=$1 AND work.staff_id=$2
+       RETURNING id, status, completed_quantity`,
+      [order.id, req.actor.id]
+    );
+    for (const work of completed.rows) {
+      await client.query(
+        `INSERT INTO public.shisha_production_events
+           (work_id, event_type, actor_id, from_status, to_status, quantity)
+         VALUES ($1, $2, $3, 'Preparing', $4, $5)`,
+        [work.id, work.status === 'Voided' ? 'VOIDED' : 'COMPLETED',
+          req.actor.id, work.status, work.completed_quantity]
+      );
     }
     await recordHistory(client, order, 'READY', 'ORDER_READY', req.actor);
     await client.query('COMMIT');
@@ -785,6 +1324,34 @@ async function resolveVoidRequest(req, res, approve) {
          WHERE id=$4`,
         [nextTotal, nextOutstanding, paymentStatus, order.id]
       );
+      await syncShishaProductionWork(client);
+      const affectedWork = await client.query(
+        `UPDATE public.shisha_production_work work
+         SET completed_quantity=GREATEST(work.quantity - COALESCE((
+               SELECT SUM(void_request.quantity)
+               FROM public.shisha_void_requests void_request
+               WHERE void_request.order_item_id=work.order_item_id
+                 AND (void_request.id= $2 OR void_request.status='APPROVED')
+             ),0),0),
+             status=CASE WHEN GREATEST(work.quantity - COALESCE((
+               SELECT SUM(void_request.quantity)
+               FROM public.shisha_void_requests void_request
+               WHERE void_request.order_item_id=work.order_item_id
+                 AND (void_request.id= $2 OR void_request.status='APPROVED')
+             ),0),0)=0 THEN 'Voided' ELSE work.status END,
+             updated_at=NOW()
+         WHERE work.order_item_id=$1 AND work.status='Completed'
+         RETURNING id, completed_quantity, status`,
+        [voidRequest.order_item_id, voidRequest.id]
+      );
+      for (const work of affectedWork.rows) {
+        await client.query(
+          `INSERT INTO public.shisha_production_events
+             (work_id, event_type, actor_id, from_status, to_status, quantity, reason)
+           VALUES ($1, 'VOIDED_QUANTITY', $2, 'Completed', $3, $4, $5)`,
+          [work.id, req.actor.id, work.status, work.completed_quantity, voidRequest.reason]
+        );
+      }
     }
 
     const status = approve ? 'APPROVED' : 'REJECTED';
@@ -984,6 +1551,61 @@ router.get('/orders/:id/history', requireRoles(...SHISHA_ROLES), async (req, res
   } catch (error) {
     console.error('Shisha order history error:', error.message);
     return fail(res, 500, 'Could not load order history.');
+  }
+});
+
+router.get('/production/history', requireRoles('SHISHA_CHEF', 'SHISHA_HOD', ...SHISHA_REPORT_ROLES), async (req, res) => {
+  const from = String(req.query.from || '');
+  const to = String(req.query.to || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
+    return fail(res, 400, 'Provide valid from and to dates.');
+  }
+  const canViewTeam = req.actor.role === 'SHISHA_HOD' || SHISHA_REPORT_ROLES.includes(req.actor.role);
+  const requestedStaffId = Number(req.query.staff_id);
+  const staffId = !canViewTeam
+    ? req.actor.id
+    : Number.isInteger(requestedStaffId) && requestedStaffId > 0
+      ? requestedStaffId
+      : null;
+  try {
+    await syncShishaProductionWork(pool);
+    const result = await pool.query(
+      `SELECT work.id AS work_id, work.order_id, work.order_item_id, work.item_name,
+              work.quantity, work.completed_quantity, work.status, work.staff_id,
+              COALESCE(staff.name, work.staff_name) AS staff_name,
+              work.claimed_at, work.started_at, work.completed_at,
+             COALESCE(order_row.table_id, work.table_id) AS table_id,
+             COALESCE(order_row.notes, work.order_notes) AS notes,
+             COALESCE(item.unit_price, work.unit_price) AS unit_price,
+             COALESCE(order_row.created_at, work.order_created_at, work.created_at) AS order_created_at
+      FROM public.shisha_production_work work
+      LEFT JOIN public.shisha_order_items item ON item.id=work.order_item_id
+      LEFT JOIN public.shisha_orders order_row ON order_row.id=work.order_id
+       LEFT JOIN public.shisha_staff staff ON staff.id=work.staff_id
+       WHERE (work.claimed_at AT TIME ZONE 'Africa/Kampala') >= $1::date
+         AND (work.claimed_at AT TIME ZONE 'Africa/Kampala') < ($2::date + INTERVAL '1 day')
+         AND ($3::integer IS NULL OR work.staff_id=$3)
+       ORDER BY work.claimed_at DESC, work.order_id DESC`,
+      [from, to, staffId]
+    );
+    const records = result.rows;
+    return res.json({
+      staff_id: staffId,
+      records,
+      totals: {
+        items_claimed: records.length,
+        items_started: records.filter(item => item.started_at).length,
+        items_completed: records.filter(item => item.status === 'Completed' && Number(item.completed_quantity) > 0).length,
+        orders_handled: new Set(records.map(item => item.order_id)).size,
+        orders_completed: new Set(records.filter(item => item.status === 'Completed' && Number(item.completed_quantity) > 0).map(item => item.order_id)).size,
+        quantity_claimed: records.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+        quantity_completed: records.reduce((sum, item) =>
+          sum + (['Cancelled', 'Voided'].includes(item.status) ? 0 : Number(item.completed_quantity || 0)), 0),
+      },
+    });
+  } catch (error) {
+    console.error('Shisha production history error:', error.message);
+    return fail(res, 500, 'Could not load Shisha production history.');
   }
 });
 

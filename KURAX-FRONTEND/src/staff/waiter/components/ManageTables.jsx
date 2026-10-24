@@ -10,6 +10,8 @@ import {
   CheckCircle2, XCircle, Award, CircleDollarSign, Zap
 } from "lucide-react";
 import API_URL from "../../../config/api";
+import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
+import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -478,7 +480,7 @@ function CreditedItemsPanel({ creditedItems, theme }) {
 }
 
 // ─── RECENTLY PAID ITEMS PANEL (full amounts) ────────────────────────────────
-function RecentlyPaidItemsPanel({ orders, theme }) {
+function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
   const isDark = theme === "dark";
   const paidItems = useMemo(() => {
     const items = [];
@@ -487,7 +489,7 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
       if (typeof orderItems === 'string') {
         try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
       }
-      orderItems.forEach(item => {
+      orderItems.forEach((item, itemIndex) => {
         if (item._rowPaid === true || item.paid_at) {
           items.push({
             id: `${order.id}_${item.name}`,
@@ -496,10 +498,12 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
             name: item.name,
             quantity: item.quantity || 1,
             price: item.price || 0,
-            total: (item.price || 0) * (item.quantity || 1),
+            total: getOrderItemPayableAmount(item),
             payment_method: item.payment_method || "Cash",
             paid_at: item.paid_at || new Date().toISOString(),
             timestamp: order.timestamp || order.created_at,
+            order: { id: order.id, staff_id: order.staff_id, status: order.status },
+            orderItem: { ...item, _orderId: order.id, _orderItemIndex: item._orderItemIndex ?? itemIndex },
           });
         }
       });
@@ -554,6 +558,11 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
                   <p className="text-[7px] sm:text-[8px] text-zinc-500 mt-1">{dateStr}</p>
                 </div>
               </div>
+              <ComplimentaryItemControl
+                order={item.order}
+                item={item.orderItem}
+                onUpdated={onComplimentaryUpdated}
+              />
             </div>
           );
         })}
@@ -571,6 +580,7 @@ function OrderCard({
   onPayTable,
   onPayItem,
   onVoidItem,
+  onComplimentaryUpdated,
   onMarkTablePaid,
   tablePaymentPending,
   isPaying,
@@ -589,7 +599,8 @@ function OrderCard({
   };
 
   const payableItems = (order.items || []).filter(item =>
-    !item._rowPaid && item.status !== "VOIDED" && !item.voidProcessed && !item.paymentRequested && !item.creditRequested
+    !item._rowPaid && item.status !== "VOIDED" && !item.voidProcessed
+      && !item.paymentRequested && !item.creditRequested && getOrderItemPayableAmount(item) > 0
   );
 
   const allItemsVoided = order.items?.length > 0 &&
@@ -740,6 +751,10 @@ function OrderCard({
                       <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
                         ×{item.quantity || 1} · {fmtUGX(item.price || 0)}
                       </p>
+                      {item.production_status && <p className="mt-0.5 text-[7px] sm:text-[8px] font-bold uppercase tracking-wide text-zinc-500">
+                        {item.station || 'Kitchen'} · {item.production_status === 'Completed' ? 'Ready' : item.production_status}
+                        {item.production_staff_name ? ` · ${item.production_staff_name}` : ''}
+                      </p>}
                     </div>
                   </div>
                   <div className="flex gap-1 sm:gap-1.5 shrink-0">
@@ -779,6 +794,11 @@ function OrderCard({
                     )}
                   </div>
                 </div>
+                <ComplimentaryItemControl
+                  order={order}
+                  item={item}
+                  onUpdated={onComplimentaryUpdated}
+                />
               </div>
             );
           })}
@@ -1015,7 +1035,8 @@ export default function OrderHistory({ onAddItems }) {
         g.items.push({
           ...item,
           _orderId:         order.id,
-          _rowPaid:         rowPaid || item._rowPaid === true || Boolean(item.paid_at),
+          staff_id:         order.staff_id,
+          _rowPaid:         item._rowPaid === true || Boolean(item.paid_at) || (rowPaid && item.complimentary !== true),
           voidRequested:    item.voidRequested    || false,
           voidProcessed:    item.voidProcessed    || false,
           paymentRequested: item.paymentRequested ||
@@ -1033,7 +1054,7 @@ export default function OrderHistory({ onAddItems }) {
       g.items = g.items.map((item, idx) => ({ ...item, _itemIndex: idx }));
       g.total = g.items.reduce((sum, item) => {
         if (item.status !== "VOIDED" && !item.voidProcessed) {
-          return sum + (Number(item.price) * Number(item.quantity || 1));
+          return sum + getOrderItemPayableAmount(item);
         }
         return sum;
       }, 0);
@@ -1247,7 +1268,7 @@ export default function OrderHistory({ onAddItems }) {
   }, [enrichedGroups, voidedItemsList, creditsData, totalPaidItemsCount, orders]);
 
   return (
-    <div className={`min-h-full font-[Outfit] pb-20 sm:pb-28 ${theme === "dark" ? "bg-zinc-950 text-white" : "bg-zinc-50 text-zinc-900"}`}>
+    <div className={`manage-tables-page min-h-full font-[Outfit] pb-20 sm:pb-28 ${theme === "dark" ? "bg-zinc-950 text-white" : "bg-zinc-50 text-zinc-900"}`}>
       <div className={`sticky top-0 z-20 w-full border-b px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between
         ${theme === "dark" ? "bg-zinc-950/80 backdrop-blur-xl border-white/5" : "bg-white/80 backdrop-blur-xl border-black/5"}`}>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -1255,7 +1276,7 @@ export default function OrderHistory({ onAddItems }) {
             {currentStaffName[0]}
           </div>
           <div className="min-w-0">
-            <h1 className="text-[20px] sm:text-sm font-semibold text-yellow-900 uppercase tracking-tight truncate">{currentStaffName.split(" ")[0]}'s Tables</h1>
+            <h1 className="text-[20px] sm:text-base font-semibold text-yellow-900 uppercase tracking-tight truncate">{currentStaffName.split(" ")[0]}'s Tables</h1>
             <p className="text-[8px] sm:text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{today}</p>
           </div>
         </div>
@@ -1300,7 +1321,7 @@ export default function OrderHistory({ onAddItems }) {
         ) : activeTab === "Credits" ? (
           <CreditedItemsPanel creditedItems={creditsData} theme={theme} />
         ) : activeTab === "Paid" ? (
-          <RecentlyPaidItemsPanel orders={orders} theme={theme} />
+          <RecentlyPaidItemsPanel orders={orders} theme={theme} onComplimentaryUpdated={refreshData} />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
             {filteredOrders.map(order => (
@@ -1325,7 +1346,7 @@ export default function OrderHistory({ onAddItems }) {
                     type:     "item",
                     item,
                     tableName: ord?.tableName ?? order.tableName,
-                    total:    Number(item?.price || 0) * Number(item?.quantity || 1),
+                    total:    getOrderItemPayableAmount(item || {}),
                     orderId:  item?._orderId ?? null,
                     orderIds: item?._orderId ? [item._orderId] : [],
                   });
@@ -1340,10 +1361,10 @@ export default function OrderHistory({ onAddItems }) {
                   setIsPaying(true);
                   const payableItems = (o.items || []).filter(item =>
                     !item._rowPaid && !item.creditRequested && item.status !== "VOIDED" &&
-                    !item.voidProcessed && !item.paymentRequested
+                    !item.voidProcessed && !item.paymentRequested && getOrderItemPayableAmount(item) > 0
                   );
                   const payableTotal = payableItems.reduce((sum, item) =>
-                    sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
+                    sum + getOrderItemPayableAmount(item), 0);
                   setPayTarget({
                     type:         "table",
                     tableName:    o.tableName,
@@ -1354,6 +1375,7 @@ export default function OrderHistory({ onAddItems }) {
                   });
                 }}
                 onVoidItem={(item, ord) => setVoidTarget({ item, order: ord })}
+                onComplimentaryUpdated={refreshData}
               />
             ))}
             {filteredOrders.length === 0 && (

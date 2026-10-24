@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db.js';
 import nodemailer from 'nodemailer';
 import { createSessionToken } from '../middleware/sessionTokens.js';
+import { hashStaffPin, verifyStaffPin } from '../helpers/staffPin.js';
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ const transporter = nodemailer.createTransport({
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, email, role, pin, is_permitted, is_requesting, 
+      `SELECT id, name, email, role, is_permitted, is_requesting,
               monthly_income_target, daily_order_target 
        FROM staff 
        ORDER BY 
@@ -49,7 +50,7 @@ router.get('/', async (req, res) => {
 router.post('/activate', async (req, res) => {
   const { name, email, pin, role } = req.body;
 
-  if (!name || !email || !pin || !role) {
+  if (!name || !email || !pin || !role || !/^\d{4,8}$/.test(String(pin))) {
     return res.status(400).json({ error: "All fields are required." });
   }
 
@@ -60,12 +61,13 @@ router.post('/activate', async (req, res) => {
     }
 
     const defaultPermission = (role === 'WAITER' || role === 'DIRECTOR');
+    const { salt, hash } = await hashStaffPin(pin);
     
     const newStaff = await pool.query(
-      `INSERT INTO staff (name, email, pin, role, is_permitted, monthly_income_target, daily_order_target) 
-       VALUES ($1, $2, $3, $4, $5, 0, 0) 
+      `INSERT INTO staff (name, email, pin, pin_salt, pin_hash, role, is_permitted, monthly_income_target, daily_order_target)
+       VALUES ($1, $2, NULL, $3, $4, $5, $6, 0, 0)
        RETURNING id, name, email, role, is_permitted, monthly_income_target, daily_order_target`,
-      [name, email, pin, role, defaultPermission]
+      [name, email, salt, hash, role, defaultPermission]
     );
 
     res.status(201).json({ message: "✅ Account activated!", staff: newStaff.rows[0] });
@@ -100,7 +102,7 @@ router.post('/login', async (req, res) => {
     const normalizedEmail = String(email).trim().toLowerCase();
     const databaseResult = await pool.query('SELECT current_database() AS database_name');
     const userResult = await pool.query(
-      `SELECT id, email, name, role, pin, is_active, is_permitted,
+      `SELECT id, email, name, role, pin_salt, pin_hash, is_active, is_permitted,
               monthly_income_target, daily_order_target
        FROM public.staff
        WHERE lower(trim(email)) = $1`,
@@ -130,10 +132,7 @@ router.post('/login', async (req, res) => {
     if (foundUser.is_active === false) {
       return res.status(403).json({ error: "This staff account is inactive." });
     }
-    const inputPin = String(pin).trim();
-    const storedPin = String(foundUser.pin).trim();
-
-    if (inputPin === storedPin) {
+    if (await verifyStaffPin(String(pin).trim(), foundUser.pin_salt, foundUser.pin_hash)) {
       const user = {
           id: foundUser.id, 
           name: foundUser.name, 
@@ -420,17 +419,30 @@ router.patch('/update/:id', async (req, res) => {
   const { name, email, role, pin } = req.body;
 
   try {
-    const result = await pool.query(
-      `UPDATE staff 
-       SET name = COALESCE($1, name), 
-           email = COALESCE($2, email), 
-           role = COALESCE($3, role),
-           pin = COALESCE($4, pin),
-           updated_at = NOW()
-       WHERE id = $5 
-       RETURNING id, name, email, role, monthly_income_target, daily_order_target`,
-      [name, email, role, pin, id]
-    );
+    let result;
+    if (pin !== undefined && pin !== null && pin !== '') {
+      if (!/^\d{4,8}$/.test(String(pin))) {
+        return res.status(400).json({ error: 'PIN must be 4-8 digits.' });
+      }
+      const { salt, hash } = await hashStaffPin(pin);
+      result = await pool.query(
+        `UPDATE staff
+         SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role),
+             pin = NULL, pin_salt = $4, pin_hash = $5, updated_at = NOW()
+         WHERE id = $6
+         RETURNING id, name, email, role, monthly_income_target, daily_order_target`,
+        [name, email, role, salt, hash, id]
+      );
+    } else {
+      result = await pool.query(
+        `UPDATE staff
+         SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role),
+             updated_at = NOW()
+         WHERE id = $4
+         RETURNING id, name, email, role, monthly_income_target, daily_order_target`,
+        [name, email, role, id]
+      );
+    }
 
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "Staff member not found" });

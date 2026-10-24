@@ -2,7 +2,8 @@ import express from 'express';
 import pool from '../db.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import { summarizeDepartmentCredits } from '../helpers/departmentCreditSummary.js';
-import { syncConfirmedStationTickets } from '../helpers/stationOrderTickets.js';
+import { syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
+import { hashStaffPin } from '../helpers/staffPin.js';
 
 const router = express.Router();
 const MANAGEMENT_ROLES = ['DIRECTOR', 'MANAGER', 'ACCOUNTANT'];
@@ -44,14 +45,6 @@ router.use(authenticate);
 
 function departmentFor(value) {
   return DEPARTMENTS[String(value || '').toLowerCase()];
-}
-
-function itemBelongsToDepartment(item, departmentKey) {
-  const station = String(item.station || '').trim().toLowerCase();
-  if (departmentKey === 'kitchen') return !['bar', 'barman', 'barista', 'shisha'].includes(station);
-  if (departmentKey === 'bar') return station === 'barman' || station === 'bar';
-  if (departmentKey === 'barista') return station === 'barista';
-  return false;
 }
 
 async function inventoryReport(station, from, to) {
@@ -242,21 +235,6 @@ function departmentPaymentJoin(department) {
   ) paid ON true`;
 }
 
-function parseOrderItems(value) {
-  if (Array.isArray(value)) return value;
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch { return []; }
-  }
-  return [];
-}
-
-function itemTotal(item) {
-  return (Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1);
-}
-
 function approvedVoidExclusion(orderId) {
   return `NOT EXISTS (
     SELECT 1 FROM public.void_requests vr
@@ -318,7 +296,29 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
   }
 
   try {
-    await syncConfirmedStationTickets(pool, req.params.department);
+    await syncRoutableStationTickets(pool, req.params.department);
+    await pool.query(
+      `INSERT INTO public.restaurant_production_work
+         (station, order_id, ticket_id, item_index, item_name, item_notes,
+          table_name, order_created_at, quantity, status)
+       SELECT $1, ticket.order_id, ticket.id,
+              COALESCE(NULLIF(item.value->>'_orderItemIndex', '')::integer, item.ordinality - 1),
+              COALESCE(NULLIF(item.value->>'name', ''), 'Unnamed item'),
+              NULLIF(COALESCE(item.value->>'note', item.value->>'notes'), ''),
+              ticket.table_name, ticket.created_at,
+              GREATEST(COALESCE(NULLIF(item.value->>'quantity', '')::numeric, 1), 0.01),
+              CASE
+                WHEN LOWER(COALESCE(order_row.status, '')) IN ('cancelled', 'voided') THEN 'Cancelled'
+                WHEN item.value->>'voidProcessed' = 'true' OR UPPER(COALESCE(item.value->>'status', '')) = 'VOIDED' THEN 'Voided'
+                ELSE 'Unclaimed'
+              END
+       FROM public.${req.department.table} ticket
+       JOIN public.orders order_row ON order_row.id=ticket.order_id
+       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(ticket.items, '[]'::jsonb))
+         WITH ORDINALITY AS item(value, ordinality)
+       ON CONFLICT (station, ticket_id, item_index) DO NOTHING`,
+      [req.params.department]
+    );
     const result = await pool.query(
       `SELECT t.*,
               COALESCE(
@@ -335,7 +335,54 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
        ORDER BY t.created_at ASC`,
       [date]
     );
-    return res.json(result.rows);
+    if (!result.rows.length) return res.json([]);
+    const production = await pool.query(
+      `SELECT work.id AS work_id, work.ticket_id, work.item_index, work.item_name, work.status,
+              work.staff_id, COALESCE(staff.name, work.staff_name) AS staff_name,
+              work.claimed_at, work.started_at, work.completed_at, work.ready_at,
+              work.notification_status, work.notified_at
+       FROM public.restaurant_production_work work
+       LEFT JOIN public.staff staff ON staff.id=work.staff_id
+       WHERE work.station=$1 AND work.ticket_id=ANY($2::integer[])`,
+      [req.params.department, result.rows.map((ticket) => ticket.id)]
+    );
+    const workByTicket = new Map();
+    for (const work of production.rows) {
+      const items = workByTicket.get(work.ticket_id) || new Map();
+      items.set(Number(work.item_index), work);
+      workByTicket.set(work.ticket_id, items);
+    }
+    const tickets = result.rows.map((ticket) => {
+      const sourceItems = Array.isArray(ticket.items) ? ticket.items : [];
+      const ticketWork = workByTicket.get(ticket.id);
+      const workers = [...new Set(
+        [...(ticketWork?.values() || [])].map((work) => work.staff_name).filter(Boolean)
+      )].sort();
+      return {
+        ...ticket,
+        workers,
+        items: sourceItems.map((item, index) => {
+          const itemIndex = Number(item?._orderItemIndex ?? index);
+          const work = ticketWork?.get(itemIndex);
+          return {
+            ...item,
+            assignedTo: work?.staff_name || null,
+            assigned_to: work?.staff_name || null,
+            production_work_id: work?.work_id || null,
+            production_status: work?.status || 'Unclaimed',
+            production_staff_id: work?.staff_id || null,
+            production_staff_name: work?.staff_name || null,
+            production_claimed_at: work?.claimed_at || null,
+            production_started_at: work?.started_at || null,
+            production_completed_at: work?.completed_at || null,
+            production_ready_at: work?.ready_at || null,
+            production_notification_status: work?.notification_status || 'Pending',
+            production_notified_at: work?.notified_at || null,
+          };
+        }),
+      };
+    });
+    return res.json(tickets);
   } catch (error) {
     console.error('Department tickets error:', error.message);
     return fail(res, 500, 'Could not load department tickets and worker assignments.');
@@ -343,120 +390,11 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
 });
 
 router.get('/:department/assignment-queue', requireDepartmentHod, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, table_name, staff_name, items, status, created_at
-       FROM public.orders
-       WHERE status NOT IN ('Paid','Closed','Voided','Cancelled')
-         AND COALESCE(day_cleared, false) = false
-         AND COALESCE(shift_cleared, false) = false
-       ORDER BY created_at DESC
-       LIMIT 200`
-    );
-    const queue = result.rows.flatMap(order => {
-      const items = parseOrderItems(order.items);
-      const unassignedItems = items
-        .map((item, itemIndex) => ({ ...item, _orderItemIndex: itemIndex }))
-        .filter(item => itemBelongsToDepartment(item, req.params.department))
-        .filter(item => !item.assignedTo && !item.assigned_to && item.served !== true &&
-          item.status !== 'Paid' && item.status !== 'VOIDED' && !item.voidProcessed);
-      if (!unassignedItems.length) return [];
-      return [{ ...order, items: unassignedItems }];
-    });
-    return res.json(queue);
-  } catch (error) {
-    console.error('Department assignment queue error:', error.message);
-    return fail(res, 500, 'Could not load orders waiting for assignment.');
-  }
+  return fail(res, 410, 'Station tickets are routed automatically; workers claim individual items with their PIN.');
 });
 
 router.post('/:department/orders/:orderId/assign', requireDepartmentHod, async (req, res) => {
-  const staffId = Number(req.body.staff_id);
-  if (!Number.isInteger(staffId) || staffId <= 0) return fail(res, 400, 'Select an active department worker.');
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const assignee = staffId === req.actor.id && req.actor.role === req.department.hodRole
-      ? { id: req.actor.id, name: req.actor.name }
-      : (await client.query(
-        'SELECT id, name FROM public.staff WHERE id=$1 AND role=$2 AND is_active=true',
-        [staffId, req.department.staffRole]
-      )).rows[0];
-    if (!assignee) {
-      await client.query('ROLLBACK');
-      return fail(res, 400, 'That worker is not active in this department.');
-    }
-
-    const orderResult = await client.query(
-      `SELECT id, table_name, staff_name, staff_role, items, status
-       FROM public.orders
-       WHERE id=$1 AND status NOT IN ('Paid','Closed','Voided','Cancelled')
-         AND COALESCE(day_cleared, false)=false AND COALESCE(shift_cleared, false)=false
-       FOR UPDATE`,
-      [req.params.orderId]
-    );
-    const order = orderResult.rows[0];
-    if (!order) {
-      await client.query('ROLLBACK');
-      return fail(res, 404, 'Active order not found.');
-    }
-
-    const items = parseOrderItems(order.items);
-    const assignedAt = new Date().toISOString();
-    const assignedIndexes = [];
-    const updatedItems = items.map((item, index) => {
-      const available = itemBelongsToDepartment(item, req.params.department) &&
-        !item.assignedTo && !item.assigned_to && item.served !== true &&
-        item.status !== 'Paid' && item.status !== 'VOIDED' && !item.voidProcessed;
-      if (!available) return item;
-      assignedIndexes.push(index);
-      return { ...item, assignedTo: assignee.name, assignedAt, assignedByHod: req.actor.name };
-    });
-    if (!assignedIndexes.length) {
-      await client.query('ROLLBACK');
-      return fail(res, 409, 'This order has no unassigned items for this department.');
-    }
-
-    const ticketItems = updatedItems
-      .map((item, index) => ({ ...item, _orderItemIndex: index }))
-      .filter(item => itemBelongsToDepartment(item, req.params.department));
-    const total = ticketItems.reduce((sum, item) => sum + itemTotal(item), 0);
-    const ticketResult = await client.query(
-      `INSERT INTO public.${req.department.table}
-         (order_id, table_name, staff_name, staff_role, items, total, status, ticket_date)
-       VALUES ($1, $2, $3, $4, $5, $6, 'Pending', (NOW() AT TIME ZONE 'Africa/Kampala')::date)
-       ON CONFLICT (order_id) DO UPDATE SET
-         items=EXCLUDED.items, total=EXCLUDED.total, status='Pending', updated_at=NOW()
-       RETURNING *`,
-      [order.id, order.table_name, order.staff_name || 'Staff', order.staff_role || 'WAITER', JSON.stringify(ticketItems), total]
-    );
-    const ticket = ticketResult.rows[0];
-
-    for (const index of assignedIndexes) {
-      await client.query(
-        `INSERT INTO public.${req.department.assignments}
-           (order_id, ticket_id, item_name, assigned_to, assigned_by, assigned_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [order.id, ticket.id, updatedItems[index].name, assignee.name, req.actor.name, assignedAt]
-      );
-    }
-    await client.query(
-      'UPDATE public.orders SET items=$1, updated_at=NOW() WHERE id=$2',
-      [JSON.stringify(updatedItems), order.id]
-    );
-    const awaitingCashierPayment = assignedIndexes.some(
-      (index) => updatedItems[index].payment_confirmed !== true
-    );
-    await client.query('COMMIT');
-    return res.status(201).json({ ticket, assigned_to: assignee.name, awaiting_cashier_payment: awaitingCashierPayment });
-  } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
-    console.error('Department HOD assignment error:', error.message);
-    return fail(res, 500, 'Could not assign this order to a department worker.');
-  } finally {
-    client.release();
-  }
+  return fail(res, 410, 'Manual staff assignments are retired. Staff members claim station items with their PIN.');
 });
 
 router.get('/:department/workers', async (req, res) => {
@@ -485,11 +423,13 @@ router.post('/:department/staff', requireDepartmentDirector, async (req, res) =>
     return fail(res, 400, 'Name, valid email, and a 4-8 digit PIN are required.');
   }
   try {
+    const { salt, hash } = await hashStaffPin(pin);
     const result = await pool.query(
-      `INSERT INTO public.staff (name, email, pin, role, is_active, is_permitted, monthly_income_target, daily_order_target)
-       VALUES ($1, $2, $3, $4, true, false, 0, 0)
+      `INSERT INTO public.staff
+         (name, email, pin, pin_salt, pin_hash, role, is_active, is_permitted, monthly_income_target, daily_order_target)
+       VALUES ($1, $2, NULL, $3, $4, $5, true, false, 0, 0)
        RETURNING id, name, email, role, is_active, created_at`,
-      [name, email, pin, req.department.staffRole]
+      [name, email, salt, hash, req.department.staffRole]
     );
     return res.status(201).json({ staff: result.rows[0] });
   } catch (error) {
@@ -521,8 +461,12 @@ router.patch('/:department/staff/:id', requireDepartmentDirector, async (req, re
   if (Object.prototype.hasOwnProperty.call(body, 'pin') && String(body.pin || '').trim()) {
     const pin = String(body.pin).trim();
     if (!/^\d{4,8}$/.test(pin)) return fail(res, 400, 'PIN must contain 4-8 digits.');
-    values.push(pin);
-    updates.push(`pin=$${values.length}`);
+    const { salt, hash } = await hashStaffPin(pin);
+    values.push(salt);
+    updates.push(`pin_salt=$${values.length}`);
+    values.push(hash);
+    updates.push(`pin_hash=$${values.length}`);
+    updates.push('pin=NULL');
   }
   if (Object.prototype.hasOwnProperty.call(body, 'is_active')) {
     if (typeof body.is_active !== 'boolean') return fail(res, 400, 'Account status must be active or inactive.');

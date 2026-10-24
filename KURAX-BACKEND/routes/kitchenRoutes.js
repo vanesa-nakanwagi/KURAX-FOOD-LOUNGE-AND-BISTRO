@@ -12,8 +12,8 @@ import logActivity from '../utils/logsActivity.js';
 import notificationService from '../helpers/notificationService.js';
 import { resolveNotificationUser } from '../middleware/notificationAuth.js';
 import { refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
-import { getConfirmedStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
-import { syncConfirmedStationTickets } from '../helpers/stationOrderTickets.js';
+import { getRoutableStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
+import { syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
 
 const router = express.Router();
 
@@ -34,10 +34,10 @@ router.post('/tickets', async (req, res) => {
     const orderResult = await pool.query('SELECT items FROM public.orders WHERE id=$1', [order_id]);
     if (!orderResult.rows.length) return res.status(404).json({ error: 'Order not found.' });
     const orderItems = Array.isArray(orderResult.rows[0].items) ? orderResult.rows[0].items : [];
-    const stationItems = getConfirmedStationItems(orderItems, orderItems)
+    const stationItems = getRoutableStationItems(orderItems, orderItems)
       .filter(item => !['bar', 'barman', 'barista', 'shisha'].includes(String(item.station || '').toLowerCase()));
     if (!stationItems.length) {
-      return res.status(409).json({ error: 'Cashier confirmation is required before sending items to the kitchen.' });
+      return res.status(409).json({ error: 'This order has no items routed to the kitchen.' });
     }
     const ticketTotal = getStationItemsTotal(stationItems);
     const result = await pool.query(
@@ -114,7 +114,7 @@ router.get('/tickets/summary', async (req, res) => {
 router.get('/tickets', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
-    await syncConfirmedStationTickets(pool, 'kitchen');
+    await syncRoutableStationTickets(pool, 'kitchen');
     const result = req.query.active === 'true'
       ? await pool.query(
         `SELECT t.* FROM kitchen_tickets t
@@ -143,6 +143,14 @@ router.patch('/tickets/:id/status', async (req, res) => {
   const { status, chef_name } = req.body;
 
   try {
+    const actor = await resolveNotificationUser(req);
+    if (!actor) return res.status(401).json({ error: 'Staff sign-in is required.' });
+    if (!['KITCHEN_HOD', 'MANAGER', 'DIRECTOR'].includes(actor.role)) {
+      return res.status(403).json({ error: 'Claim this item with your PIN and update it in My Production.' });
+    }
+    if (!['Pending', 'Preparing', 'Ready', 'Served', 'Paid', 'Closed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid kitchen ticket status.' });
+    }
     const result = await pool.query(
       `UPDATE kitchen_tickets
        SET status = $1,
@@ -155,7 +163,6 @@ router.patch('/tickets/:id/status', async (req, res) => {
     if (!ticket) return res.status(404).json({ error: 'Kitchen ticket not found.' });
     await refreshPublicOrderPreparationStatus(ticket.order_id, pool);
 
-    const actor = status === 'Ready' ? await resolveNotificationUser(req) : null;
     if (status === 'Ready' && actor?.scope === 'restaurant' && ['CHEF', 'KITCHEN_HOD'].includes(actor.role)) {
       try {
         const orderResult = await pool.query('SELECT staff_id FROM public.orders WHERE id = $1', [ticket.order_id]);
@@ -192,39 +199,7 @@ router.patch('/tickets/:id/status', async (req, res) => {
 //     Logs which chef is handling specific items.
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/tickets/:id/assign-chef', async (req, res) => {
-  const { id } = req.params;
-  const { items, item_name, assigned_to, assigned_at, assigned_by } = req.body;
-
-  if (!items || !assigned_to || !item_name) {
-    return res.status(400).json({ error: 'items, item_name, and assigned_to are required' });
-  }
-
-  try {
-    const ticketResult = await pool.query(
-      `UPDATE kitchen_tickets SET items = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-      [JSON.stringify(items), id]
-    );
-    if (!ticketResult.rows.length) return res.status(404).json({ error: 'Ticket not found' });
-    const ticket = ticketResult.rows[0];
-
-    await pool.query(
-      `INSERT INTO chef_assignments (order_id, ticket_id, item_name, assigned_to, assigned_at, assigned_by)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [ticket.order_id, id, item_name, assigned_to, assigned_at || new Date().toISOString(), assigned_by || null]
-    );
-
-    await logActivity(pool, {
-      type: 'STAFF',
-      actor: assigned_to,
-      role: 'CHEF',
-      message: `Chef ${assigned_to} is now preparing: ${item_name} (${ticket.table_name})`,
-      meta: { table_name: ticket.table_name, item_name, chef: assigned_to },
-    });
-
-    res.json(ticket);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  res.status(410).json({ error: 'Manual assignments are retired. Claim the item using its station PIN.' });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,18 +214,34 @@ router.patch('/tickets/:id/assign-chef', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/chef-assignments', async (req, res) => {
   try {
+    const actor = await resolveNotificationUser(req);
+    if (!actor || actor.scope !== 'restaurant') {
+      return res.status(401).json({ error: 'Restaurant staff sign-in is required.' });
+    }
+    if (!['MANAGER', 'SUPERVISOR', 'DIRECTOR', 'ACCOUNTANT', 'KITCHEN_HOD'].includes(actor.role)) {
+      return res.status(403).json({ error: 'You are not authorized to view kitchen production ownership.' });
+    }
     const result = await pool.query(`
-      SELECT
-        ca.id,
-        ca.order_id,
-        ca.item_name,
-        ca.assigned_to,
-        ca.assigned_by,
-        ca.assigned_at,
-        COALESCE(kt.table_name, 'Unknown') AS table_name
-      FROM chef_assignments ca
-      LEFT JOIN kitchen_tickets kt ON ca.ticket_id = kt.id
-      ORDER BY ca.assigned_at DESC
+      SELECT assignment.id, assignment.order_id, assignment.item_name,
+             assignment.assigned_to, assignment.assigned_by, assignment.assigned_at,
+             COALESCE(ticket.table_name, 'Unknown') AS table_name
+      FROM public.chef_assignments assignment
+      LEFT JOIN public.kitchen_tickets ticket ON assignment.ticket_id = ticket.id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.restaurant_production_work work
+        WHERE work.station='kitchen' AND work.order_id=assignment.order_id
+          AND LOWER(work.item_name)=LOWER(assignment.item_name)
+      )
+      UNION ALL
+      SELECT work.id, work.order_id, work.item_name,
+             COALESCE(staff.name, work.staff_name) AS assigned_to,
+             'PIN claim' AS assigned_by, work.claimed_at AS assigned_at,
+             COALESCE(ticket.table_name, work.table_name, 'Unknown') AS table_name
+      FROM public.restaurant_production_work work
+      LEFT JOIN public.staff staff ON staff.id=work.staff_id
+      LEFT JOIN public.kitchen_tickets ticket ON ticket.id=work.ticket_id
+      WHERE work.station='kitchen' AND work.staff_id IS NOT NULL
+      ORDER BY assigned_at DESC
     `);
     res.json(result.rows);
   } catch (err) {

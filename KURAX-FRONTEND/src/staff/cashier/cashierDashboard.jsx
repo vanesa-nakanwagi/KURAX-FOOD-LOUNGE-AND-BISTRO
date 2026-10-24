@@ -15,8 +15,10 @@ import PettyCashPanel from "./PettyCashPanel";
 import DeliveryModal from "./DeliveryModal";
 import DeliveriesPanel from "./DeliveriesPanel";
 import CreditLedgerPanel from "./CreditLedgerPanel";
+import CashierTablesPanel from "./CashierTablesPanel";
 import { useData } from "../../customer/components/context/DataContext";
 import { cashierAuthHeaders } from "./cashierApi";
+import { getOrderItemPayableAmount } from "../../utils/orderItemAmounts";
 
 // ─── HELPERS (unchanged) ─────────────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -744,6 +746,8 @@ export default function CashierDashboard() {
             </div>
           )}
 
+          {activeSection === "TABLES" && <CashierTablesPanel />}
+
           {activeSection === "CREDITS" && (
             <div className="space-y-6 animate-in fade-in duration-500">
               <div>
@@ -931,7 +935,12 @@ export default function CashierDashboard() {
                   <p className="mb-1 text-[9px] font-black uppercase tracking-widest text-zinc-500">Items / combos</p>
                   {processingOrder.order_items.map((item, index) => (
                     <p key={`${item.id}-${index}`} className="text-xs text-zinc-800">
-                      {item.name} × {item.quantity} · {formatFullAmount(item.price * item.quantity)}
+                      {item.name} × {item.quantity} · {formatFullAmount(getOrderItemPayableAmount(item))}
+                      {item.complimentary === true && (
+                        <span className="ml-2 text-[10px] font-bold text-amber-700">
+                          Complimentary · waived {formatFullAmount(item.complimentaryWaivedAmount)}
+                        </span>
+                      )}
                     </p>
                   ))}
                 </div>

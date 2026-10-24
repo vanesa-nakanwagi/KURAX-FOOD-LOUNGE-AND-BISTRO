@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import pool from '../db.js';
 import { toSearchPattern } from './pagination.js';
+import { getOrderItemPayableAmount } from './complimentaryItems.js';
 
 export const DEFAULT_ACCOUNTS = [
   { code: '1001', name: 'Counter Cash', category: 'Asset', account_type: 'Cash', normal_balance: 'Debit', description: 'Cash on hand' },
@@ -70,7 +71,7 @@ export function buildSalesRevenueBreakdown(items = [], amount) {
       ? station
       : 'other';
     const accountCode = resolveRevenueAccountCode(department);
-    const itemAmount = (safeMoney(item.price || item.unit_price)) * (safeMoney(item.quantity) || 1);
+    const itemAmount = getOrderItemPayableAmount(item);
     if (itemAmount > 0) totals.set(accountCode, (totals.get(accountCode) || 0) + itemAmount);
   }
 

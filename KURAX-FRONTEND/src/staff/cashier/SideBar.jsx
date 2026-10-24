@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, Bike, RotateCcw, LogOut, X, Wallet, BookOpen, Menu
+  LayoutDashboard, Bike, RotateCcw, LogOut, X, Wallet, BookOpen, Menu, Table2
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
@@ -12,6 +12,7 @@ import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
 const MENU_ITEMS = [
   { id: "PENDING",     label: "My Collection",  icon: LayoutDashboard },
   { id: "CLOSED",      label: "Order Status",   icon: RotateCcw },
+  { id: "TABLES",      label: "View Tables",    icon: Table2 },
   { id: "CREDITS",     label: "Credit Ledger",  icon: BookOpen },
   { id: "PETTY CASH",  label: "Log Petty Cash", icon: Wallet },
   { id: "DELIVERIES",  label: "Riders",         icon: Bike },

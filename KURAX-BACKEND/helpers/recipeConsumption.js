@@ -1,39 +1,20 @@
 import pool from '../db.js';
 import { createJournalEntry } from './accounting.js';
+import {
+  convertInventoryQuantity,
+  inventoryUnitConversionFactor,
+  normalizeInventoryUnit,
+} from './inventoryUnits.js';
 
-const UNIT_FACTORS = {
-  kg: 1000, kgs: 1000, kilogram: 1000, kilograms: 1000,
-  g: 1, gram: 1, grams: 1,
-  litre: 1000, liter: 1000, litres: 1000, liters: 1000, l: 1000,
-  ml: 1, millilitre: 1, milliliter: 1, millilitres: 1, milliliters: 1,
-  piece: 1, pieces: 1, slice: 1, slices: 1,
-  packet: 1, packets: 1, box: 1, boxes: 1, bottle: 1, bottles: 1,
-};
+const normalizeUnit = normalizeInventoryUnit;
 
-function normalizeUnit(unit = '') {
-  const value = String(unit || '').trim().toLowerCase();
-  const aliases = { kgs: 'kg', kilograms: 'kg', kilogram: 'kg', grams: 'g', gram: 'g', litres: 'litre', liters: 'litre', l: 'litre', millilitres: 'ml', milliliters: 'ml', millilitre: 'ml', milliliter: 'ml', pieces: 'piece', slices: 'slice', packets: 'packet', boxes: 'box', bottles: 'bottle' };
-  return aliases[value] || value;
-}
-
-function unitFamily(unit) {
-  const normalized = normalizeUnit(unit);
-  if (normalized === 'kg' || normalized === 'g') return 'mass';
-  if (normalized === 'litre' || normalized === 'ml') return 'volume';
-  return normalized;
-}
-
-export function convertRecipeQuantity(quantity, fromUnit, toUnit) {
-  const from = normalizeUnit(fromUnit);
-  const to = normalizeUnit(toUnit);
-  if (!Object.hasOwn(UNIT_FACTORS, from) || !Object.hasOwn(UNIT_FACTORS, to) || unitFamily(from) !== unitFamily(to)) {
-    throw new Error(`Incompatible recipe and inventory units: ${fromUnit} to ${toUnit}`);
-  }
-  return Number(quantity) * UNIT_FACTORS[from] / UNIT_FACTORS[to];
+export function convertRecipeQuantity(quantity, fromUnit, toUnit, item = {}) {
+  return convertInventoryQuantity(quantity, fromUnit, toUnit, item);
 }
 
 export function isSoldOrderItem(item = {}) {
   if (item.voidProcessed === true || String(item.status || '').toUpperCase() === 'VOIDED') return false;
+  if (item.complimentary === true) return item.served === true;
   if (item._approvedCreditSale === true) return true;
   const isCredit = item.creditRequested === true || String(item.payment_method || '').toUpperCase().includes('CREDIT');
   return item._rowPaid === true && !isCredit;
@@ -84,7 +65,8 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
     const ingredientResult = await client.query(
       `SELECT ri.id AS recipe_ingredient_id, ri.ingredient_item_id, ri.ingredient_name,
               ri.quantity AS recipe_quantity, ri.unit AS recipe_unit,
-              ii.item_name, ii.unit AS stock_unit, ii.current_quantity, ii.unit_cost
+              ii.item_name, ii.unit AS stock_unit, ii.purchase_unit,
+              ii.purchase_conversion_factor, ii.current_quantity, ii.unit_cost
        FROM public.recipe_ingredients ri
        LEFT JOIN public.inventory_items ii ON ii.id = ri.ingredient_item_id
        WHERE ri.recipe_id = $1 ORDER BY ri.id`,
@@ -98,7 +80,7 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
     let invalidUnit = null;
     for (const ingredient of ingredientResult.rows) {
       const stockResult = await client.query(
-        `SELECT id, item_name, unit, current_quantity, unit_cost
+        `SELECT id, item_name, unit, purchase_unit, purchase_conversion_factor, current_quantity, unit_cost
          FROM public.inventory_items WHERE id = $1 AND is_active = true FOR UPDATE`,
         [ingredient.ingredient_item_id]
       );
@@ -108,9 +90,23 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
         break;
       }
       try {
-        const required = convertRecipeQuantity(Number(ingredient.recipe_quantity), ingredient.recipe_unit, stock.unit) * itemQuantity;
+        const conversionFactor = inventoryUnitConversionFactor(ingredient.recipe_unit, stock.unit, stock);
+        const quantityResult = await client.query(
+          `SELECT ROUND($1::numeric * $2::numeric * $3::numeric, 3)::numeric(12,3)::text AS quantity`,
+          [ingredient.recipe_quantity, conversionFactor, itemQuantity]
+        );
+        const required = quantityResult.rows[0].quantity;
+        if (Number(required) <= 0) {
+          throw new Error('Recipe quantity is below the supported stock precision.');
+        }
         const existingPlan = planned.find((entry) => entry.stock.id === stock.id);
-        if (existingPlan) existingPlan.quantity += required;
+        if (existingPlan) {
+          const total = await client.query(
+            `SELECT ROUND($1::numeric + $2::numeric, 3)::numeric(12,3)::text AS quantity`,
+            [existingPlan.quantity, required]
+          );
+          existingPlan.quantity = total.rows[0].quantity;
+        }
         else planned.push({ stock, quantity: required, ingredients: [ingredient] });
         if (existingPlan) existingPlan.ingredients.push(ingredient);
       } catch (error) {
@@ -137,9 +133,13 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
     const recorded = [];
     let needsCostReview = false;
     for (const entry of planned) {
-      const unitCost = Number(entry.stock.unit_cost || 0);
-      const lineCost = unitCost > 0 ? entry.quantity * unitCost : 0;
-      needsCostReview ||= unitCost <= 0;
+      const unitCost = String(entry.stock.unit_cost || 0);
+      const costResult = await client.query(
+        `SELECT ROUND($1::numeric * $2::numeric, 2)::numeric(12,2)::text AS cost`,
+        [entry.quantity, unitCost]
+      );
+      const lineCost = Number(unitCost) > 0 ? costResult.rows[0].cost : '0';
+      needsCostReview ||= Number(unitCost) <= 0;
       await client.query(
         `UPDATE public.inventory_items
          SET current_quantity = current_quantity - $1,

@@ -29,17 +29,17 @@ function parseItems(items) {
   return [];
 }
 
-export function getConfirmedItemsForStation(items, stationKey) {
+export function getRoutableItemsForStation(items, stationKey) {
   const station = STATIONS[stationKey];
   if (!station) throw new Error(`Unknown station: ${stationKey}`);
 
   return parseItems(items)
     .map((item, index) => ({ ...item, _orderItemIndex: index }))
-    .filter((item) => item.payment_confirmed === true)
+    .filter((item) => item.payment_confirmed === true || item.station_routing_requested === true)
     .filter((item) => station.matches(String(item.station || (stationKey === 'kitchen' ? 'kitchen' : '')).trim().toLowerCase()));
 }
 
-export async function syncConfirmedStationTickets(queryable, stationKey) {
+export async function syncRoutableStationTickets(queryable, stationKey) {
   const station = STATIONS[stationKey];
   if (!station) throw new Error(`Unknown station: ${stationKey}`);
 
@@ -63,7 +63,13 @@ export async function syncConfirmedStationTickets(queryable, stationKey) {
      WHERE LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided', 'closed', 'served')
        AND COALESCE(o.day_cleared, false) = false
        AND COALESCE(o.shift_cleared, false) = false
-       AND expanded.item->'payment_confirmed' = 'true'::jsonb
+       AND (
+         expanded.item->'payment_confirmed' = 'true'::jsonb
+         OR (
+           o.public_order_ref IS NULL
+           AND expanded.item->'station_routing_requested' = 'true'::jsonb
+         )
+       )
        AND ${station.sqlMatch}
      GROUP BY o.id, o.table_name, o.staff_name, o.staff_role
      ON CONFLICT (order_id) DO UPDATE SET

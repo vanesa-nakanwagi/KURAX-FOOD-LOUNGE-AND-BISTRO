@@ -845,6 +845,12 @@ export async function ensureDatabaseSchema() {
     ALTER COLUMN website_published SET NOT NULL`);
 
   await pool.query(`ALTER TABLE public.purchase_receipts ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE public.inventory_items
+    ADD COLUMN IF NOT EXISTS purchase_unit TEXT,
+    ADD COLUMN IF NOT EXISTS purchase_conversion_factor NUMERIC(12,6) NOT NULL DEFAULT 1`);
+  await pool.query(`ALTER TABLE public.purchase_receipt_items
+    ADD COLUMN IF NOT EXISTS normalized_stock_quantity NUMERIC(12,3),
+    ADD COLUMN IF NOT EXISTS conversion_factor NUMERIC(12,6)`);
 
   const indexStatements = [
     'CREATE INDEX IF NOT EXISTS idx_inventory_consumptions_recipe_business_date ON public.inventory_consumptions (recipe_id, business_date);',

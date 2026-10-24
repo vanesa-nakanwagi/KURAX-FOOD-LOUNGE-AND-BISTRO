@@ -17,3 +17,9 @@ test('only paid or approved-credit non-voided items are consumable', () => {
   assert.equal(isSoldOrderItem({ _rowPaid: true, status: 'VOIDED' }), false);
   assert.equal(isSoldOrderItem({ _rowPaid: false, payment_method: 'Cash' }), false);
 });
+
+test('served complimentary items consume recipes, while unserved or voided items do not', () => {
+  assert.equal(isSoldOrderItem({ complimentary: true, served: true }), true);
+  assert.equal(isSoldOrderItem({ complimentary: true, served: false }), false);
+  assert.equal(isSoldOrderItem({ complimentary: true, served: true, status: 'VOIDED' }), false);
+});

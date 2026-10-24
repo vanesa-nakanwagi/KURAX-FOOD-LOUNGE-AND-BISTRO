@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoutConfirmDialog from './components/LogoutConfirmDialog';
-import { ArrowRight, Boxes, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Wine } from 'lucide-react';
+import { ArrowRight, BellRing, Boxes, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Wine } from 'lucide-react';
+import ProductionPanel from './components/ProductionPanel';
 import API_URL from '../config/api';
 import { downloadReportPdf } from './reportExport';
 import DepartmentInventory from './DepartmentInventory';
 
 const DEPARTMENTS = {
-  kitchen: { label: 'Kitchen', title: 'Kitchen station', role: 'KITCHEN_HOD', station: 'kitchen', workerRole: 'CHEF', icon: ChefHat },
-  bar: { label: 'Bar', title: 'Bar station', role: 'BAR_HOD', station: 'barman', workerRole: 'BARMAN', icon: Wine },
-  barista: { label: 'Barista', title: 'Barista station', role: 'BARISTA_HOD', station: 'barista', workerRole: 'BARISTA', icon: Coffee },
+  kitchen: { label: 'Kitchen', title: 'Kitchen station', role: 'KITCHEN_HOD', station: 'kitchen', productionStation: 'kitchen', workerRole: 'CHEF', icon: ChefHat },
+  bar: { label: 'Bar', title: 'Bar station', role: 'BAR_HOD', station: 'barman', productionStation: 'bar', workerRole: 'BARMAN', icon: Wine },
+  barista: { label: 'Barista', title: 'Barista station', role: 'BARISTA_HOD', station: 'barista', productionStation: 'barista', workerRole: 'BARISTA', icon: Coffee },
 };
 const PRESETS = ['Today', 'Yesterday', 'This Week', 'This Month', 'Select Month', 'Custom'];
 
@@ -48,7 +49,7 @@ function isCompletedTicket(ticket) {
 }
 
 function isAssignedItem(item) {
-  return Boolean(item?.assignedTo || item?.assigned_to);
+  return Boolean(item?.production_staff_name || item?.assignedTo || item?.assigned_to);
 }
 
 function readSession() {
@@ -82,6 +83,10 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [claimingWorkId, setClaimingWorkId] = useState(null);
+  const [claimPin, setClaimPin] = useState('');
+  const [claimingBusy, setClaimingBusy] = useState(false);
+  const [showStationQueue, setShowStationQueue] = useState(false);
 
   useEffect(() => {
     if (initialRange?.start && initialRange?.end) {
@@ -132,6 +137,56 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     setPreset(nextPreset);
     if (nextPreset === 'Select Month') setRange(datesForMonth(reportMonth));
     else if (nextPreset !== 'Custom') setRange(datesFor(nextPreset));
+  }
+
+  async function claimProductionItem(event, workId) {
+    event.preventDefault();
+    if (!config || claimingBusy || !/^\d{4,8}$/.test(claimPin)) return;
+    setClaimingBusy(true);
+    setError('');
+    try {
+      const station = departmentKey === 'bar' ? 'bar' : departmentKey;
+      await request(`/api/production/work/${workId}/claim`, session.token, {
+        method: 'POST',
+        body: { pin: claimPin, station },
+      });
+      setClaimingWorkId(null);
+      setClaimPin('');
+      setRefreshCounter(value => value + 1);
+    } catch (claimError) {
+      setError(claimError.message);
+    } finally {
+      setClaimingBusy(false);
+    }
+  }
+
+  async function notifyProductionSender(workId, currentStatus) {
+    if (!session?.token || claimingBusy) return;
+    setClaimingBusy(true);
+    setError('');
+    try {
+      let status = String(currentStatus || '').toLowerCase();
+      if (status === 'claimed') {
+        await request(`/api/production/work/${workId}/status`, session.token, {
+          method: 'PATCH',
+          body: { status: 'Preparing' },
+        });
+        status = 'preparing';
+      }
+      if (status === 'preparing') {
+        await request(`/api/production/work/${workId}/status`, session.token, {
+          method: 'PATCH',
+          body: { status: 'Completed' },
+        });
+      }
+      await request(`/api/production/work/${workId}/notify`, session.token, { method: 'POST' });
+      setRefreshCounter(value => value + 1);
+    } catch (notifyError) {
+      setError(notifyError.message);
+      setRefreshCounter(value => value + 1);
+    } finally {
+      setClaimingBusy(false);
+    }
   }
 
   function downloadDepartmentReport() {
@@ -285,7 +340,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     ? tickets.filter(isCompletedTicket)
     : activeTickets;
   const tabs = isManagement ? [['reports', 'Department reports', CircleDollarSign]] : [
-    ['orders', 'Orders', ClipboardList], ['inventory', 'Inventory', Boxes], ['reports', 'Reports', CircleDollarSign],
+    ['orders', 'My Production', ClipboardList], ['inventory', 'Inventory', Boxes], ['reports', 'Reports', CircleDollarSign],
   ];
 
   return (
@@ -295,6 +350,13 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutDialog(false)}
       />
+      {showStationQueue && config && (
+        <ProductionPanel
+          station={config.productionStation}
+          user={session}
+          onClose={() => setShowStationQueue(false)}
+        />
+      )}
       {!isManagement ? (
         <header className="border-b border-zinc-200 bg-white">
           <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-4 md:px-8">
@@ -319,19 +381,95 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         {isManagement && reportLoading && <p role="status" className="mb-4 text-sm font-semibold text-zinc-600">Loading department report…</p>}
 
         {tab === 'orders' && !isManagement && <section>
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">Incoming and active orders</h2><p className="text-sm text-zinc-500">Station orders appear automatically and update every 12 seconds.</p></div><div className="flex gap-2"><button onClick={() => setTicketView('active')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'active' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Active</button><button onClick={() => setTicketView('completed')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'completed' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Completed</button><button onClick={() => navigate(`/${config.station}`)} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950 hover:bg-amber-300">Manage station <ArrowRight size={16} /></button></div></div>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">My Production</h2><p className="text-sm text-zinc-500">Claim unassigned items with a staff PIN and follow production progress. Updates automatically.</p></div><div className="flex gap-2"><button onClick={() => setTicketView('active')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'active' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Active</button><button onClick={() => setTicketView('completed')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'completed' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Completed</button><button onClick={() => setShowStationQueue(true)} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950 hover:bg-amber-300">Open station <ArrowRight size={16} /></button></div></div>
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">{[
             ['Open', activeTickets.length], ['Pending', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'pending').length], ['Preparing', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'preparing').length], ['Completed today', tickets.filter(isCompletedTicket).length],
           ].map(([label, value]) => <div key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-2 text-2xl font-black">{value}</p></div>)}</div>
-          <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-zinc-50 text-xs uppercase tracking-wider text-zinc-500"><tr><th className="p-3">Order</th><th className="p-3">Table</th><th className="p-3">Waiter</th><th className="p-3">Items / assignee</th><th className="p-3">Worked by</th><th className="p-3">Status</th><th className="p-3">Total</th></tr></thead><tbody>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {visibleTickets.map(ticket => {
               const workers = Array.isArray(ticket.workers) && ticket.workers.length
                 ? ticket.workers
                 : [...new Set((ticket.items || []).map(item => item.assignedTo || item.assigned_to).filter(Boolean))];
-              return <tr key={ticket.id} className="border-t border-zinc-100 align-top"><td className="p-3 font-bold">#{ticket.order_id}</td><td className="p-3">{ticket.table_name || 'Walk-in'}</td><td className="p-3">{ticket.staff_name || 'Staff'}</td><td className="p-3">{(ticket.items || []).map((item, index) => <div key={`${item.name}-${index}`}>{item.quantity || 1} × {item.name}{isAssignedItem(item) ? <span className="text-zinc-500"> · {item.assignedTo || item.assigned_to}</span> : null}</div>)}</td><td className="p-3">{workers.length ? workers.join(', ') : <span className="text-zinc-400">No assignment recorded</span>}</td><td className="p-3"><span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-900">{ticket.status}</span></td><td className="p-3 font-bold">{money(ticket.total)}</td></tr>;
+              return (
+                <article key={ticket.id} className="flex min-h-[360px] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+                  <header className="shrink-0 border-b border-zinc-100 bg-zinc-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-amber-800">Order #{ticket.order_id} · Table {ticket.table_name || 'Walk-in'}</p>
+                        <p className="mt-1 text-xl font-black">{money(ticket.total)}</p>
+                      </div>
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-900">{ticket.status}</span>
+                    </div>
+                    <p className="mt-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500">{ticket.staff_role || 'Waiter'} · {ticket.staff_name || 'Staff'}</p>
+                  </header>
+                  <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                    {(ticket.items || []).map((item, index) => {
+                      const senderNotified = Boolean(item.production_notified_at)
+                        || String(item.production_notification_status || '').toLowerCase() === 'sent';
+                      const notificationSending = String(item.production_notification_status || '').toLowerCase() === 'sending';
+                      const canNotify = ['claimed', 'preparing', 'completed'].includes(String(item.production_status || '').toLowerCase());
+                      return (
+                        <div key={`${item.name}-${index}`} className="border-b border-zinc-100 pb-3 last:border-0 last:pb-0">
+                        {String(item.production_status || '').toLowerCase() === 'unclaimed' && item.production_work_id ? (
+                          <button type="button" onClick={() => {
+                            setClaimingWorkId(current => current === item.production_work_id ? null : item.production_work_id);
+                            setClaimPin('');
+                            setError('');
+                          }} className="cursor-pointer rounded px-1 text-left font-black text-zinc-900 underline decoration-dotted underline-offset-2 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600">
+                            {item.quantity || 1} × {item.name}
+                          </button>
+                        ) : (
+                          <span className="font-black text-zinc-900">{item.quantity || 1} × {item.name}</span>
+                        )}
+                        <span className="mt-1 block text-[10px] font-bold uppercase text-zinc-500">
+                          {item.production_status === 'Completed' ? 'Ready' : item.production_status || 'Unclaimed'}
+                          {' · '}{isAssignedItem(item) ? item.production_staff_name || item.assignedTo || item.assigned_to : 'Unclaimed'}
+                        </span>
+                        {item.note && <small className="mt-1 block rounded bg-amber-50 p-2 text-zinc-600">{item.note}</small>}
+                        {item.production_work_id && (
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            {canNotify && !senderNotified && (
+                              <button type="button" disabled={claimingBusy || notificationSending}
+                                onClick={() => notifyProductionSender(item.production_work_id, item.production_status)}
+                                className="inline-flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
+                                <BellRing size={13} />{notificationSending ? 'Sending…' : 'Notify waiter'}
+                              </button>
+                            )}
+                            {senderNotified && <span className="text-xs font-semibold text-emerald-700">Sent to {ticket.staff_name || 'original sender'} to serve</span>}
+                          </div>
+                        )}
+                        {claimingWorkId === item.production_work_id && (
+                          <form onSubmit={event => claimProductionItem(event, item.production_work_id)}
+                            className="mt-2 flex flex-wrap items-center gap-2">
+                            <input aria-label={`Staff PIN to claim ${item.name}`} type="password" inputMode="numeric"
+                              autoComplete="one-time-code" pattern="[0-9]{4,8}" minLength={4} maxLength={8}
+                              required autoFocus value={claimPin} onChange={event => setClaimPin(event.target.value)}
+                              placeholder="Enter staff PIN" disabled={claimingBusy}
+                              className="w-36 rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs tracking-widest disabled:opacity-50" />
+                            <button type="submit" disabled={claimingBusy}
+                              className="rounded-md bg-zinc-900 px-2.5 py-1.5 text-xs font-bold text-white disabled:opacity-50">
+                              {claimingBusy ? 'Checking…' : 'Confirm'}
+                            </button>
+                            <button type="button" disabled={claimingBusy} onClick={() => {
+                              setClaimingWorkId(null);
+                              setClaimPin('');
+                            }} className="rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-bold disabled:opacity-50">
+                              Cancel
+                            </button>
+                          </form>
+                        )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <footer className="shrink-0 border-t border-zinc-100 bg-zinc-50 px-4 py-3 text-[10px] font-semibold text-zinc-500">
+                    {workers.length ? `Worked by ${workers.join(', ')}` : 'No staff have claimed work'}
+                  </footer>
+                </article>
+              );
             })}
-            {!visibleTickets.length && <tr><td colSpan="6" className="p-8 text-center text-zinc-400">No {ticketView} department orders today.</td></tr>}
-          </tbody></table></div>
+            {!visibleTickets.length && <p className="col-span-full rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">No {ticketView} department orders today.</p>}
+          </div>
         </section>}
 
   {tab === 'inventory' && !isManagement && <DepartmentInventory department={departmentKey} embedded />}

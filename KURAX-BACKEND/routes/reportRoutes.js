@@ -82,6 +82,7 @@ async function getSalesRows(startDate, endDate, category, menuName, search) {
            SUM(COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)) AS quantity_sold,
            SUM(
              COALESCE(
+               NULLIF(item->>'payableAmount', '')::numeric,
                NULLIF(item->>'line_total', '')::numeric,
                NULLIF(item->>'lineTotal', '')::numeric,
                (
@@ -91,17 +92,24 @@ async function getSalesRows(startDate, endDate, category, menuName, search) {
              )
            ) AS net_sales,
            SUM(
-             COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
-             * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+             COALESCE(
+               NULLIF(item->>'originalLineAmount', '')::numeric,
+               COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+                 * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+             )
            ) AS gross_sales,
            SUM(
              GREATEST(
                0,
                (
-                 COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
-                 * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+                 COALESCE(
+                   NULLIF(item->>'originalLineAmount', '')::numeric,
+                   COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
+                     * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+                 )
                )
                - COALESCE(
+                   NULLIF(item->>'payableAmount', '')::numeric,
                    NULLIF(item->>'line_total', '')::numeric,
                    NULLIF(item->>'lineTotal', '')::numeric,
                    (
@@ -224,6 +232,154 @@ function mergeMenuRows(salesRows, cogsRows) {
 }
 
 router.use(authenticateReportUser);
+
+router.get('/complimentary-items', async (req, res) => {
+  const startDate = normalizeString(req.query.startDate);
+  const endDate = normalizeString(req.query.endDate);
+  const validDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(new Date(`${value}T00:00:00.000Z`).getTime())
+    && new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
+  if (!validDate(startDate) || !validDate(endDate) || startDate > endDate) {
+    return res.status(400).json({ error: 'Provide valid startDate and endDate values in YYYY-MM-DD format.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `WITH complimentary_lines AS (
+         SELECT o.id AS order_id,
+                o.table_name,
+                COALESCE(item->>'name', item->>'menu_name', 'Unknown item') AS item_name,
+                COALESCE(NULLIF(item->>'quantity', '')::numeric, 1) AS quantity,
+                COALESCE(item->>'station', item->>'department', item->>'category', 'Other') AS department,
+                COALESCE(
+                  NULLIF(item->>'originalLineAmount', '')::numeric,
+                  COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric, 0)
+                    * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+                ) AS original_amount,
+                COALESCE(NULLIF(item->>'complimentaryWaivedAmount', '')::numeric, 0) AS waived_amount,
+                COALESCE(NULLIF(item->>'payableAmount', '')::numeric,
+                  GREATEST(0,
+                    COALESCE(
+                      NULLIF(item->>'originalLineAmount', '')::numeric,
+                      COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric, 0)
+                        * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+                    ) - COALESCE(NULLIF(item->>'complimentaryWaivedAmount', '')::numeric, 0)
+                  )
+                ) AS payable_amount,
+                COALESCE(NULLIF(item->>'paidAmount', '')::numeric,
+                  CASE WHEN COALESCE(item->>'_rowPaid', 'false') = 'true'
+                    THEN COALESCE(NULLIF(item->>'payableAmount', '')::numeric,
+                      GREATEST(0,
+                        COALESCE(
+                          NULLIF(item->>'originalLineAmount', '')::numeric,
+                          COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric, 0)
+                            * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+                        ) - COALESCE(NULLIF(item->>'complimentaryWaivedAmount', '')::numeric, 0)
+                      ))
+                    ELSE 0
+                  END
+                ) AS paid_amount,
+                COALESCE(NULLIF(item->>'complimentaryAt', '')::timestamptz, o.created_at) AS complimentary_at,
+                COALESCE(NULLIF(item->>'complimentaryByName', ''), marker.name, 'Unknown staff') AS marked_by,
+                COALESCE(NULLIF(item->>'complimentaryApprovedByName', ''), approver.name) AS approved_by,
+                COALESCE(item->>'complimentaryReason', '') AS reason,
+                o.created_at,
+                o.public_order_ref,
+                item->>'_rowPaid' AS row_paid,
+                item->>'complimentaryBy' AS marked_by_id,
+                (order_item.item_ordinal - 1)::integer AS item_index,
+                o.id::text || ':' || (order_item.item_ordinal - 1)::text AS consumption_item_key
+         FROM public.orders o
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb))
+           WITH ORDINALITY AS order_item(item, item_ordinal)
+         LEFT JOIN public.staff marker ON marker.id = NULLIF(item->>'complimentaryBy', '')::integer
+         LEFT JOIN public.staff approver ON approver.id = NULLIF(item->>'complimentaryApprovedBy', '')::integer
+         WHERE COALESCE(item->>'voidProcessed', 'false') <> 'true'
+           AND UPPER(COALESCE(item->>'status', '')) <> 'VOIDED'
+       )
+       SELECT line.order_id,
+              COALESCE(line.public_order_ref, 'Order #' || line.order_id::text) AS order_reference,
+              COALESCE(line.table_name, 'WALK-IN') AS table_name,
+              line.item_name,
+              line.quantity,
+              line.department,
+              line.original_amount,
+              line.waived_amount,
+              line.payable_amount,
+              line.paid_amount,
+              GREATEST(0, line.payable_amount - line.paid_amount) AS outstanding_receivable,
+              GREATEST(0, line.paid_amount - line.payable_amount) AS credit_balance,
+              line.marked_by,
+              line.marked_by_id,
+              line.approved_by,
+              line.reason,
+              line.complimentary_at,
+              ROUND(
+                COALESCE(consumption.total_cost, 0)
+                * CASE WHEN line.original_amount > 0 THEN line.waived_amount / line.original_amount ELSE 0 END,
+                2
+              ) AS complimentary_cost
+       FROM complimentary_lines line
+       LEFT JOIN LATERAL (
+         SELECT SUM(COALESCE(transaction.total_value, consumption.quantity * inventory.unit_cost, 0)) AS total_cost
+         FROM public.inventory_consumptions consumption
+         LEFT JOIN public.inventory_transactions transaction
+           ON transaction.reference_number = consumption.reference_number
+          AND transaction.transaction_type = 'CONSUMPTION'
+         LEFT JOIN public.inventory_items inventory ON inventory.id = consumption.item_id
+         WHERE consumption.order_id = line.order_id
+           AND consumption.order_item_id = line.consumption_item_key
+           AND NOT EXISTS (
+             SELECT 1 FROM public.inventory_transactions reversal
+             WHERE reversal.reference_number = 'REV-' || consumption.reference_number
+               AND reversal.transaction_type = 'REVERSAL'
+           )
+       ) consumption ON true
+       WHERE line.waived_amount > 0
+         AND (line.complimentary_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date
+       ORDER BY line.complimentary_at DESC, line.order_id DESC, line.item_index ASC`,
+      [startDate, endDate]
+    );
+    const rows = result.rows.map((row) => ({
+      ...row,
+      quantity: Number(row.quantity || 0),
+      original_amount: normalizeMoney(row.original_amount),
+      waived_amount: normalizeMoney(row.waived_amount),
+      payable_amount: normalizeMoney(row.payable_amount),
+      paid_amount: normalizeMoney(row.paid_amount),
+      outstanding_receivable: normalizeMoney(row.outstanding_receivable),
+      credit_balance: normalizeMoney(row.credit_balance),
+      complimentary_cost: normalizeMoney(row.complimentary_cost),
+    }));
+    const totals = rows.reduce((summary, row) => {
+      summary.items += 1;
+      summary.quantity += row.quantity;
+      summary.original_amount += row.original_amount;
+      summary.waived_amount += row.waived_amount;
+      summary.paid_amount += row.paid_amount;
+      summary.outstanding_receivable += row.outstanding_receivable;
+      summary.credit_balance += row.credit_balance;
+      summary.complimentary_cost += row.complimentary_cost;
+      return summary;
+    }, {
+      items: 0,
+      quantity: 0,
+      original_amount: 0,
+      waived_amount: 0,
+      paid_amount: 0,
+      outstanding_receivable: 0,
+      credit_balance: 0,
+      complimentary_cost: 0,
+    });
+    for (const key of ['original_amount', 'waived_amount', 'paid_amount', 'outstanding_receivable', 'credit_balance', 'complimentary_cost']) {
+      totals[key] = normalizeMoney(totals[key]);
+    }
+    return res.json({ startDate, endDate, totals, rows });
+  } catch (error) {
+    console.error('Complimentary items report error:', error);
+    return res.status(500).json({ error: 'Unable to generate the complimentary items report.' });
+  }
+});
 
 router.get('/menu-profitability', async (req, res) => {
   try {

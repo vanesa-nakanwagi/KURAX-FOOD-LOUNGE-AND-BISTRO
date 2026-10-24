@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
+import { compatibleRecipeUnits, convertInventoryQuantity, defaultPurchaseConversionFactor, normalizeInventoryUnit, purchaseUnitsForStation, STATION_UNITS } from './inventoryUnits';
 
-const UNITS = ['kg', 'g', 'litre', 'ml', 'piece', 'packet', 'box', 'bottle', 'slice'];
 const STATIONS = ['KITCHEN', 'BAR', 'BARISTA'];
 
 function today() {
@@ -126,9 +126,33 @@ function History({ title, columns, rows, empty }) {
 }
 
 function PurchaseWorkflow({ items, locations, records, onAction }) {
-  const [form, setForm] = useState({ item_name: '', quantity: '', unit: 'kg', unit_cost: '', supplier_name: '', location_id: '', station: 'KITCHEN', category: 'General', minimum_stock_level: '0', payment_method: 'Cash', receipt_number: '', notes: '' });
+  const [form, setForm] = useState({ item_id: '', item_name: '', quantity: '', stock_unit: 'kg', purchase_unit: 'kg', purchase_conversion_factor: '1', unit_cost: '', supplier_name: '', location_id: '', station: 'KITCHEN', category: 'General', minimum_stock_level: '0', payment_method: 'Cash', receipt_number: '', notes: '' });
   const [saving, setSaving] = useState(false);
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const selectedItem = items.find((item) => String(item.id) === form.item_id);
+  const unitOptions = STATION_UNITS[form.station] || [];
+  const purchaseUnitOptions = purchaseUnitsForStation(form.station, form.stock_unit);
+
+  const selectItem = (itemId) => {
+    const item = items.find((row) => String(row.id) === itemId);
+    if (!item) {
+      setForm((current) => ({ ...current, item_id: '', item_name: '' }));
+      return;
+    }
+    const itemStation = String(item.station || 'KITCHEN').toUpperCase() === 'BARMAN' ? 'BAR' : String(item.station || 'KITCHEN').toUpperCase();
+    const stockUnit = normalizeInventoryUnit(item.unit);
+    setForm((current) => ({
+      ...current,
+      item_id: itemId,
+      item_name: '',
+      station: itemStation,
+      stock_unit: stockUnit,
+      purchase_unit: normalizeInventoryUnit(item.purchase_unit || item.unit),
+      purchase_conversion_factor: String(item.purchase_conversion_factor || defaultPurchaseConversionFactor(stockUnit, item.purchase_unit || item.unit)),
+      category: item.category || current.category,
+      location_id: String(item.location_id || current.location_id),
+    }));
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -140,17 +164,20 @@ function PurchaseWorkflow({ items, locations, records, onAction }) {
       receipt_number: form.receipt_number || undefined,
       notes: form.notes,
       items: [{
-        item_name: form.item_name,
-        quantity: Number(form.quantity),
-        unit: form.unit,
-        unit_cost: Number(form.unit_cost),
+        ...(form.item_id ? { item_id: Number(form.item_id) } : { item_name: form.item_name }),
+        quantity: form.quantity,
+        unit: form.stock_unit,
+        stock_unit: form.stock_unit,
+        purchase_unit: form.purchase_unit,
+        purchase_conversion_factor: form.purchase_conversion_factor,
+        unit_cost: form.unit_cost,
         category: form.category,
         minimum_stock_level: Number(form.minimum_stock_level || 0),
         location_id: Number(form.location_id),
         station: form.station,
       }],
     }, 'POST', 'Purchase recorded and inventory updated.');
-    if (result) setForm((current) => ({ ...current, item_name: '', quantity: '', unit_cost: '', receipt_number: '', notes: '' }));
+    if (result) setForm((current) => ({ ...current, item_id: '', item_name: '', quantity: '', unit_cost: '', receipt_number: '', notes: '' }));
     setSaving(false);
   };
 
@@ -159,13 +186,38 @@ function PurchaseWorkflow({ items, locations, records, onAction }) {
     <div className="space-y-6">
       <Panel title="Receive Purchase" description="Recording a purchase updates stock and posts the inventory journal entry.">
         <form onSubmit={submit} className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <Input label="Item name" value={form.item_name} onChange={(value) => set('item_name', value)} required />
-          <Input label="Quantity" type="number" min="0.001" value={form.quantity} onChange={(value) => set('quantity', value)} required />
-          <Select label="Unit" value={form.unit} onChange={(value) => set('unit', value)} options={UNITS.map((value) => ({ value, label: value }))} />
-          <Input label="Unit cost (UGX)" type="number" min="0" value={form.unit_cost} onChange={(value) => set('unit_cost', value)} required />
+          <Select label="Existing stock item (optional)" value={form.item_id} onChange={selectItem} options={items.map((item) => ({ value: String(item.id), label: quantityLabel(item) }))} />
+          <Input label="New item name" value={form.item_name} onChange={(value) => setForm((current) => ({ ...current, item_id: '', item_name: value }))} required={!form.item_id} />
+          <Input label={`Purchase quantity (${form.purchase_unit})`} type="number" min="0.001" value={form.quantity} onChange={(value) => set('quantity', value)} required />
+          <Select label="Stock unit" value={form.stock_unit} onChange={(value) => setForm((current) => {
+            const purchaseOptions = purchaseUnitsForStation(current.station, value);
+            const purchaseUnit = purchaseOptions.includes(current.purchase_unit) ? current.purchase_unit : value;
+            return {
+              ...current,
+              stock_unit: value,
+              purchase_unit: purchaseUnit,
+              purchase_conversion_factor: defaultPurchaseConversionFactor(value, purchaseUnit),
+            };
+          })} options={(selectedItem ? [form.stock_unit] : unitOptions).map((value) => ({ value, label: value }))} required />
+          <Select label="Purchase unit" value={form.purchase_unit} onChange={(value) => setForm((current) => ({ ...current, purchase_unit: value, purchase_conversion_factor: defaultPurchaseConversionFactor(current.stock_unit, value) }))} options={purchaseUnitOptions.map((value) => ({ value, label: value }))} required />
+          <Input label={`Stock units per ${form.purchase_unit}`} type="number" min="0.000001" value={form.purchase_conversion_factor} onChange={(value) => set('purchase_conversion_factor', value)} required />
+          <Input label={`Unit cost (UGX per ${form.purchase_unit})`} type="number" min="0" value={form.unit_cost} onChange={(value) => set('unit_cost', value)} required />
           <Input label="Supplier" value={form.supplier_name} onChange={(value) => set('supplier_name', value)} required />
           <Select label="Location" value={form.location_id} onChange={(value) => set('location_id', value)} options={locations.map((location) => ({ value: String(location.id), label: location.name }))} required />
-          <Select label="Station" value={form.station} onChange={(value) => set('station', value)} options={STATIONS.map((value) => ({ value, label: value }))} />
+          <Select label="Station" value={form.station} onChange={(value) => setForm((current) => {
+            const units = STATION_UNITS[value] || [];
+            const stockUnit = units.includes(current.stock_unit) ? current.stock_unit : units[0];
+            const purchaseOptions = purchaseUnitsForStation(value, stockUnit);
+            const purchaseUnit = purchaseOptions.includes(current.purchase_unit) ? current.purchase_unit : stockUnit;
+            return {
+              ...current,
+              item_id: '',
+              station: value,
+              stock_unit: stockUnit,
+              purchase_unit: purchaseUnit,
+              purchase_conversion_factor: defaultPurchaseConversionFactor(stockUnit, purchaseUnit),
+            };
+          })} options={STATIONS.map((value) => ({ value, label: value }))} />
           <Select label="Payment method" value={form.payment_method} onChange={(value) => set('payment_method', value)} options={['Cash', 'Bank', 'Mobile Money', 'Supplier Credit'].map((value) => ({ value, label: value }))} />
           <Input label="Minimum stock" type="number" min="0" value={form.minimum_stock_level} onChange={(value) => set('minimum_stock_level', value)} />
           <Input label="Receipt number" value={form.receipt_number} onChange={(value) => set('receipt_number', value)} />
@@ -180,7 +232,7 @@ function PurchaseWorkflow({ items, locations, records, onAction }) {
         { label: 'Supplier', key: 'supplier_name' },
         { label: 'Payment', key: 'payment_method' },
         { label: 'Amount', render: (row) => `UGX ${Number(row.total_amount || 0).toLocaleString()}` },
-        { label: 'Items', render: (row) => (row.items || []).map((item) => `${item.item_name} (${item.quantity} ${item.unit})`).join(', ') || '—' },
+        { label: 'Items', render: (row) => (row.items || []).map((item) => `${item.item_name} (${item.quantity} ${item.unit} purchased; ${item.normalized_stock_quantity === null ? 'historical stock quantity unavailable' : `${item.normalized_stock_quantity} ${item.stock_unit || item.unit} stock`})`).join(', ') || '—' },
       ]} />
     </div>
   );
@@ -265,17 +317,20 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
       ? existing.ingredients.map((ingredient) => ({
         ingredient_item_id: String(ingredient.ingredient_item_id || ''),
         quantity: String(ingredient.quantity || ''),
-        unit: ingredient.unit || 'g',
+        unit: normalizeInventoryUnit(ingredient.unit || 'g'),
       }))
       : [{ ingredient_item_id: '', quantity: '', unit: 'g' }]);
   };
 
-  const unitFactor = (unit) => ({ kg: 1000, kgs: 1000, g: 1, gram: 1, grams: 1, litre: 1000, liter: 1000, litres: 1000, liters: 1000, l: 1000, ml: 1, millilitre: 1, milliliter: 1 })[String(unit || '').toLowerCase()] || 1;
   const costLines = ingredients.map((ingredient) => {
     const stockItem = recipeInventoryItems.find((item) => String(item.id) === ingredient.ingredient_item_id);
     const quantity = Number(ingredient.quantity);
     if (!stockItem || !Number.isFinite(quantity) || quantity <= 0 || Number(stockItem.unit_cost || 0) <= 0) return null;
-    return (quantity * unitFactor(ingredient.unit) / unitFactor(stockItem.unit)) * Number(stockItem.unit_cost);
+    try {
+      return convertInventoryQuantity(quantity, ingredient.unit, stockItem.unit, stockItem) * Number(stockItem.unit_cost);
+    } catch {
+      return null;
+    }
   });
   const estimatedCost = costLines.every((cost) => cost !== null) ? costLines.reduce((sum, cost) => sum + cost, 0) : null;
 
@@ -283,7 +338,7 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
     event.preventDefault();
     if (!selectedMenu || !menuStation || ingredients.some((ingredient) => !recipeInventoryItems.some((item) => String(item.id) === ingredient.ingredient_item_id))) return;
     setSaving(true);
-    const payloadIngredients = ingredients.map((row) => ({ ingredient_item_id: Number(row.ingredient_item_id), quantity: Number(row.quantity), unit: row.unit }));
+    const payloadIngredients = ingredients.map((row) => ({ ingredient_item_id: Number(row.ingredient_item_id), quantity: row.quantity, unit: row.unit }));
     const path = editableDraft ? `recipes/${editableDraft.id}` : 'recipes';
     const method = editableDraft ? 'PUT' : 'POST';
     await onAction(path, { menu_item_id: Number(selectedMenu.id), ingredients: payloadIngredients }, method, 'Recipe version saved as a draft.');
@@ -319,8 +374,8 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
                 const chosen = recipeInventoryItems.find((item) => String(item.id) === value);
                 setIngredients((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ingredient_item_id: value, unit: chosen?.unit || row.unit } : row));
               }} options={recipeInventoryItems.map((item) => ({ value: String(item.id), label: `${item.item_name} · ${Number(item.current_quantity || 0)} ${item.unit} · UGX ${Number(item.unit_cost || 0).toLocaleString()}` }))} required />
-              <Input label="Quantity per serving" type="number" min="0.001" value={ingredient.quantity} onChange={(value) => changeIngredient(index, 'quantity', value)} required />
-              <Select label="Unit" value={ingredient.unit} onChange={(value) => changeIngredient(index, 'unit', value)} options={UNITS.map((value) => ({ value, label: value }))} />
+                <Input label="Quantity per serving" type="number" min="0.001" value={ingredient.quantity} onChange={(value) => changeIngredient(index, 'quantity', value)} required />
+                <Select label="Unit" value={ingredient.unit} onChange={(value) => changeIngredient(index, 'unit', value)} options={compatibleRecipeUnits(menuStation, stockItem).map((value) => ({ value, label: value }))} />
               <button type="button" title="Remove ingredient" onClick={() => setIngredients((current) => current.filter((_, rowIndex) => rowIndex !== index))} disabled={ingredients.length === 1} className="h-10 rounded-lg border border-zinc-300 px-3 text-sm font-bold text-zinc-600 disabled:opacity-40">Remove</button>
               <p className="text-xs text-zinc-500 md:col-span-4">Available: {stockItem ? `${Number(stockItem.current_quantity || 0)} ${stockItem.unit} · UGX ${Number(stockItem.unit_cost || 0).toLocaleString()} per ${stockItem.unit}` : 'Select an inventory item'}</p>
             </div>;

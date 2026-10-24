@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS staff (
   role                  TEXT        NOT NULL DEFAULT 'WAITER',
   -- roles: WAITER, SUPERVISOR, MANAGER, DIRECTOR, ACCOUNTANT, CASHIER, CHEF, BARISTA, BARMAN
   password_hash         TEXT,
+  pin                   TEXT, -- legacy compatibility only; application stores this as NULL after migration
+  pin_salt              TEXT,
+  pin_hash              TEXT,
   is_active             BOOLEAN     DEFAULT true,
   is_permitted          BOOLEAN     DEFAULT false,   -- supervisor permission flag
   daily_order_target    INTEGER     DEFAULT 0,
@@ -25,6 +28,10 @@ CREATE TABLE IF NOT EXISTS staff (
   created_at            TIMESTAMPTZ DEFAULT NOW(),
   updated_at            TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS pin TEXT;
+ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS pin_salt TEXT;
+ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS pin_hash TEXT;
 
 CREATE TABLE IF NOT EXISTS public.notification_devices (
   id SERIAL PRIMARY KEY,
@@ -134,7 +141,8 @@ CREATE TABLE IF NOT EXISTS orders (
   items           JSONB       DEFAULT '[]',
   -- each item: { name, price, quantity, station, category, note,
   --              voidProcessed, voidRejected, voidRequested, voidReason, status,
-  --              assignedTo, assignedAt }
+  --              assignedTo, assignedAt, complimentary, originalLineAmount,
+  --              complimentaryWaivedAmount, payableAmount, paidAmount }
   total           NUMERIC     DEFAULT 0,
   status          TEXT        DEFAULT 'Pending',
   -- statuses: Pending, Preparing, Ready, Delayed, Served, Paid, Mixed, Credit, Voided
@@ -157,6 +165,30 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS public.complimentary_correction_requests (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  order_item_index INTEGER NOT NULL CHECK (order_item_index >= 0),
+  requested_complimentary BOOLEAN NOT NULL,
+  requested_waived_amount NUMERIC(12,2) NOT NULL CHECK (requested_waived_amount >= 0),
+  reason TEXT,
+  previous_item JSONB NOT NULL,
+  requested_by INTEGER NOT NULL REFERENCES public.staff(id),
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected')),
+  reviewed_by INTEGER REFERENCES public.staff(id),
+  reviewed_at TIMESTAMPTZ,
+  review_note TEXT,
+  applied_at TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS complimentary_correction_one_pending_idx
+  ON public.complimentary_correction_requests (order_id, order_item_index)
+  WHERE status = 'Pending';
+
+CREATE INDEX IF NOT EXISTS complimentary_correction_status_date_idx
+  ON public.complimentary_correction_requests (status, requested_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_orders_day_cleared  ON orders (day_cleared);
 CREATE INDEX IF NOT EXISTS idx_orders_timestamp     ON orders (timestamp DESC);
@@ -692,6 +724,64 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 
 CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_type       ON activity_logs (type);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 30. RESTAURANT STAFF PRODUCTION CLAIMS
+-- ═══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS restaurant_production_work (
+  id BIGSERIAL PRIMARY KEY,
+  station TEXT NOT NULL CHECK (station IN ('kitchen', 'bar', 'barista')),
+  order_id INTEGER NOT NULL,
+  ticket_id INTEGER NOT NULL,
+  item_index INTEGER NOT NULL,
+  item_name TEXT NOT NULL,
+  item_notes TEXT,
+  table_name TEXT,
+  order_created_at TIMESTAMPTZ,
+  quantity NUMERIC(12,2) NOT NULL CHECK (quantity > 0),
+  completed_quantity NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (completed_quantity >= 0),
+  staff_id INTEGER,
+  staff_name TEXT,
+  status TEXT NOT NULL DEFAULT 'Unclaimed',
+  claimed_at TIMESTAMPTZ,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (station, ticket_id, item_index)
+);
+
+CREATE INDEX IF NOT EXISTS restaurant_production_work_staff_date_idx
+  ON restaurant_production_work (staff_id, claimed_at DESC);
+CREATE INDEX IF NOT EXISTS restaurant_production_work_station_status_idx
+  ON restaurant_production_work (station, status);
+
+CREATE TABLE IF NOT EXISTS restaurant_production_events (
+  id BIGSERIAL PRIMARY KEY,
+  work_id BIGINT NOT NULL,
+  event_type TEXT NOT NULL,
+  from_staff_id INTEGER,
+  to_staff_id INTEGER,
+  actor_id INTEGER,
+  from_status TEXT,
+  to_status TEXT,
+  quantity NUMERIC(12,2),
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS restaurant_production_events_work_idx
+  ON restaurant_production_events (work_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS restaurant_production_terminal_event_idx
+  ON restaurant_production_events (work_id)
+  WHERE event_type IN ('VOIDED', 'CANCELLED');
+
+CREATE TABLE IF NOT EXISTS restaurant_production_pin_attempts (
+  identifier_hash TEXT PRIMARY KEY,
+  failures INTEGER NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- DONE

@@ -23,23 +23,23 @@ function itemKey(item) {
   ].map((value) => String(value).trim().toLowerCase()).join('|');
 }
 
-export function getConfirmedStationItems(ticketItems, orderItems) {
+export function getRoutableStationItems(ticketItems, orderItems) {
   const sourceItems = parseItems(orderItems);
-  const confirmedItems = sourceItems
+  const routableItems = sourceItems
     .map((item, index) => ({ item, index, used: false }))
-    .filter(({ item }) => item.payment_confirmed === true);
+    .filter(({ item }) => item.payment_confirmed === true || item.station_routing_requested === true);
 
   return parseItems(ticketItems).filter((ticketItem) => {
     const sourceIndex = ticketItem._orderItemIndex;
     if (Number.isInteger(sourceIndex) && sourceIndex >= 0 && sourceItems[sourceIndex]) {
-      const match = confirmedItems.find(({ index, used }) => index === sourceIndex && !used);
+      const match = routableItems.find(({ index, used }) => index === sourceIndex && !used);
       if (!match) return false;
       match.used = true;
       return true;
     }
 
     const key = itemKey(ticketItem);
-    const match = confirmedItems.find(({ item, used }) => !used && itemKey(item) === key);
+    const match = routableItems.find(({ item, used }) => !used && itemKey(item) === key);
     if (!match) return false;
     match.used = true;
     return true;

@@ -129,6 +129,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
       items:     cart,
       total:     cartTotal,
       status:    "Pending",
+      sendToStations: true,
     };
 
     try {

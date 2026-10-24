@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAssignedStationItems, getConfirmedStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
+import { getAssignedStationItems, getRoutableStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
 
-test('station queue exposes only items confirmed by the cashier', () => {
+test('station queue exposes items sent by staff or confirmed by the cashier', () => {
   const ticketItems = [
     { name: 'Tea', station: 'Barista', quantity: 1, price: 5000 },
     { name: 'Coffee', station: 'Barista', quantity: 1, price: 7000 },
@@ -12,7 +12,7 @@ test('station queue exposes only items confirmed by the cashier', () => {
     { ...ticketItems[1], payment_confirmed: false },
   ];
 
-  const visibleItems = getConfirmedStationItems(ticketItems, orderItems);
+  const visibleItems = getRoutableStationItems(ticketItems, orderItems);
   assert.deepEqual(visibleItems.map(({ name }) => name), ['Tea']);
   assert.equal(getStationItemsTotal(visibleItems), 5000);
 });
@@ -28,7 +28,7 @@ test('ticket order indexes identify duplicate lines without leaking unpaid quant
   ];
 
   assert.deepEqual(
-    getConfirmedStationItems(ticketItems, orderItems).map(({ _orderItemIndex }) => _orderItemIndex),
+    getRoutableStationItems(ticketItems, orderItems).map(({ _orderItemIndex }) => _orderItemIndex),
     [0]
   );
 });
@@ -42,8 +42,20 @@ test('legacy tickets match confirmed items once and malformed source data fails 
     { name: 'Coffee', station: 'Barista', quantity: 1, payment_confirmed: true },
   ]);
 
-  assert.equal(getConfirmedStationItems(ticketItems, orderItems).length, 1);
-  assert.deepEqual(getConfirmedStationItems(ticketItems, '{bad json'), []);
+  assert.equal(getRoutableStationItems(ticketItems, orderItems).length, 1);
+  assert.deepEqual(getRoutableStationItems(ticketItems, '{bad json'), []);
+});
+
+test('staff-routed items reach stations before cashier confirmation', () => {
+  const ticketItems = [
+    { name: 'Burger', station: 'Kitchen', price: 12000, station_routing_requested: true },
+    { name: 'Tea', station: 'Barista', price: 4000, payment_confirmed: false },
+  ];
+
+  assert.deepEqual(
+    getRoutableStationItems(ticketItems, ticketItems).map(({ name }) => name),
+    ['Burger']
+  );
 });
 
 test('active station tickets expose HOD-assigned items before cashier confirmation', () => {

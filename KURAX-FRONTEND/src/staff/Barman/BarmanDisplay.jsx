@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { useNavigate } from "react-router-dom";
 import { useData } from "../../customer/components/context/DataContext";
 import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
+import ProductionPanel from "../components/ProductionPanel";
+import useClaimedProduction from "../components/useClaimedProduction";
 import {
   Clock, CheckCircle, Play, AlertCircle,
   Search, RotateCcw, Trophy,
@@ -76,7 +78,7 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 }
 
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
-function OrderCard({ order, onUpdateStatus }) {
+function OrderCard({ order, onUpdateStatus, isProductionWorker, onProductionStatus, updatingWorkId }) {
   const minutesAgo  = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
   const orderTotal = (order.items || []).reduce((total, item) => total + Number(item.price || item.unit_price || 0) * Number(item.quantity || 1), 0);
   const isCompleted = ["Served","Paid","Closed","Credit","Mixed"].includes(order.status);
@@ -146,29 +148,29 @@ function OrderCard({ order, onUpdateStatus }) {
       </div>
 
       {/* Footer actions */}
-      <div className="p-4 bg-zinc-50 border-t border-zinc-100 shrink-0">
+      {!isProductionWorker && <div className="p-4 bg-zinc-50 border-t border-zinc-100 shrink-0">
         {isCompleted ? (
           <div className="py-3 flex items-center justify-center gap-2">
             <CheckCircle size={13} className="text-emerald-500"/>
             <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Served &amp; Collected</p>
           </div>
-        ) : order.status === "Pending" ? (
+        ) : !isProductionWorker && order.status === "Pending" ? (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
             className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
             <Wine size={16}/> Start Mixing
           </button>
-        ) : isPreparing ? (
+        ) : !isProductionWorker && isPreparing ? (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Ready")}
             className="w-full py-3 bg-emerald-600 text-white font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
             <CheckCircle size={16}/> Order Ready — Notify Waiter
           </button>
-        ) : isReady ? (
+        ) : !isProductionWorker && isReady ? (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
             className="w-full py-3 bg-white text-zinc-600 border border-zinc-200 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all">
             <RotateCcw size={14}/> Recall Order
           </button>
         ) : null}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -183,6 +185,22 @@ export default function BarmanDisplay() {
     catch { return {}; }
   }, []);
   const barmanName     = savedUser.name || "Head Barman";
+  const isProductionWorker = String(savedUser.role || '').toUpperCase() === 'BARMAN';
+  const {
+    items: claimedWork,
+    error: claimedWorkError,
+    message: claimedWorkMessage,
+  } = useClaimedProduction('bar', savedUser, false);
+  const claimedWorkByOrder = useMemo(() => {
+    const workByOrder = new Map();
+    claimedWork.forEach(item => {
+      if (item.status === 'Completed') return;
+      const work = workByOrder.get(Number(item.order_id)) || new Map();
+      work.set(Number(item.item_index), item);
+      workByOrder.set(Number(item.order_id), work);
+    });
+    return workByOrder;
+  }, [claimedWork]);
   const barmanInitials = barmanName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const handleLogout   = () => setShowLogoutDialog(true);
@@ -193,6 +211,7 @@ export default function BarmanDisplay() {
   };
 
   const [audioEnabled,  setAudioEnabled]  = useState(false);
+  const [showProduction, setShowProduction] = useState(false);
   const [searchQuery,   setSearchQuery]   = useState("");
   const [showSummary,   setShowSummary]   = useState(false);
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalDrinks: 0, barmen: [] });
@@ -201,6 +220,7 @@ export default function BarmanDisplay() {
   const [seenOrderIds, setSeenOrderIds] = useState([]);
 
   useEffect(() => {
+    if (isProductionWorker) return undefined;
     let mounted = true;
     const loadTickets = async () => {
       try {
@@ -216,7 +236,7 @@ export default function BarmanDisplay() {
     loadTickets();
     const timer = setInterval(loadTickets, 10000);
     return () => { mounted = false; clearInterval(timer); };
-  }, []);
+  }, [isProductionWorker]);
 
   // ✅ FIXED: only barman station, no category fallbacks
   const isBarmanItem = (item) =>
@@ -230,9 +250,12 @@ export default function BarmanDisplay() {
 
     return (orders || [])
       .filter(order => {
+        if (isProductionWorker) return false;
         if (order.clearedByBarman) return false;
         if (!seenSet.has(Number(order.id))) return false;
-        if (!(order.items || []).some(isVisibleBarmanItem)) return false;
+        if (isProductionWorker && !claimedWorkByOrder.has(Number(order.id))) return false;
+        if (!(order.items || []).some((item, index) => isVisibleBarmanItem(item)
+          && (!isProductionWorker || claimedWorkByOrder.get(Number(order.id))?.has(Number(item?._orderItemIndex ?? index))))) return false;
         const barmanStatus = order.barman_ticket_status || "Pending";
 
         if (active.includes(barmanStatus)) return true;
@@ -245,12 +268,24 @@ export default function BarmanDisplay() {
         return (order.table_name || order.tableName || "").toLowerCase().includes(q) ||
                String(order.id).includes(q);
       })
-      .map(order => ({
-        ...order,
-        status: order.barman_ticket_status || "Pending",
-        _ticketId: ticketMapRef.current[order.id] || null,
-        items: (order.items || []).filter(isVisibleBarmanItem),
-      }))
+      .map(order => {
+        const claimedItems = claimedWorkByOrder.get(Number(order.id)) || new Map();
+        return {
+          ...order,
+          status: order.barman_ticket_status || "Pending",
+          _ticketId: ticketMapRef.current[order.id] || null,
+          items: (order.items || [])
+            .map((item, index) => ({ ...item, _productionItemIndex: Number(item?._orderItemIndex ?? index) }))
+            .filter((item, index) => isVisibleBarmanItem(item)
+              && (!isProductionWorker || claimedItems.has(item._productionItemIndex)))
+            .map(item => ({
+              ...item,
+              productionWork: isProductionWorker
+                ? claimedItems.get(item._productionItemIndex)
+                : null,
+            })),
+        };
+      })
       .sort((a, b) => {
         const p  = { Pending: 0, Preparing: 1, Ready: 2 };
         const aP = p[a.status] ?? 10;
@@ -258,7 +293,7 @@ export default function BarmanDisplay() {
         if (aP !== bP) return aP - bP;
         return new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at);
       });
-  }, [orders, searchQuery, seenOrderIds, isVisibleBarmanItem]);
+  }, [orders, searchQuery, seenOrderIds, isVisibleBarmanItem, isProductionWorker, claimedWorkByOrder]);
 
   const prevLen = useRef(orders.length);
   const playChime = () => {
@@ -332,8 +367,11 @@ export default function BarmanDisplay() {
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutDialog(false)}
       />
+      {showProduction && <ProductionPanel station="bar" user={savedUser} onClose={() => setShowProduction(false)} />}
+      {claimedWorkError && isProductionWorker && <p role="alert" className="fixed left-4 top-4 z-40 rounded-lg bg-rose-100 px-4 py-2 text-xs font-bold text-rose-800">{claimedWorkError}</p>}
+      {claimedWorkMessage && isProductionWorker && <p role="status" className="fixed left-4 top-14 z-40 rounded-lg bg-emerald-100 px-4 py-2 text-xs font-bold text-emerald-900">{claimedWorkMessage}</p>}
 
-      {!audioEnabled && (
+      {!audioEnabled && !isProductionWorker && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center">
           <div className="space-y-6">
             <div className="w-24 h-24 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto">
@@ -354,6 +392,9 @@ export default function BarmanDisplay() {
       {showSummary && (
         <ShiftSummaryModal stats={shiftStats} onConfirm={confirmEndShift} onClose={() => setShowSummary(false)}/>
       )}
+      <button onClick={() => setShowProduction(true)} className="fixed bottom-5 right-5 z-30 rounded-full bg-zinc-900 px-5 py-3 text-xs font-black uppercase tracking-wide text-white shadow-xl hover:bg-zinc-700">
+        My Production
+      </button>
 
       <header className="flex flex-col lg:flex-row justify-between items-center mb-4 bg-white p-4 lg:px-6 rounded-xl border border-zinc-200 shadow-sm gap-3 shrink-0">
         <div className="flex items-center gap-4 w-full lg:w-auto">
@@ -403,7 +444,8 @@ export default function BarmanDisplay() {
         {filteredOrders.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center py-32 opacity-20">
             <Wine size={60} className="mb-4"/>
-            <p className="text-sm font-black uppercase tracking-[0.3em]">Bar is Clear</p>
+            <p className="text-sm font-black uppercase tracking-[0.3em]">{isProductionWorker ? "Station tickets are managed by the Bar HOD" : "Bar is Clear"}</p>
+            {isProductionWorker && <button type="button" onClick={() => setShowProduction(true)} className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-bold text-white">View my production history</button>}
           </div>
         ) : (
           filteredOrders.map(order => (
@@ -411,6 +453,7 @@ export default function BarmanDisplay() {
               key={order.id}
               order={order}
               onUpdateStatus={updateStatus}
+              isProductionWorker={savedUser.role === 'BARMAN'}
             />
           ))
         )}

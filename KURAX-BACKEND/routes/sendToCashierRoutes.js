@@ -3,6 +3,7 @@ import pool from "../db.js";
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
 import { createSalesJournalEntry, resolveRevenueAccountCode } from '../helpers/accounting.js';
+import { getOrderItemPayableAmount } from '../helpers/complimentaryItems.js';
 import logActivity from '../utils/logsActivity.js';
 import requireCashier from '../middleware/cashierAuth.js';
 
@@ -92,8 +93,7 @@ async function getSaleRevenueBreakdown(orderIds, { item, isItem, amount }) {
       ? station
       : 'other';
     const accountCode = resolveRevenueAccountCode(department);
-    const itemAmount = (Number(orderItem.price || orderItem.unit_price) || 0)
-      * (Number(orderItem.quantity) || 1);
+    const itemAmount = getOrderItemPayableAmount(orderItem);
     if (itemAmount > 0) itemTotals.set(accountCode, (itemTotals.get(accountCode) || 0) + itemAmount);
   };
 
@@ -206,7 +206,10 @@ router.post("/send-to-cashier", async (req, res) => {
           const orderItems = Array.isArray(source.rows[0].items) ? source.rows[0].items : JSON.parse(source.rows[0].items || '[]');
           const paidItems = orderItems.map((item) => {
             const isCredit = item.creditRequested === true || String(item.payment_method || '').toUpperCase().includes('CREDIT');
-            return !isCredit && item.status !== 'VOIDED' && item.voidProcessed !== true ? { ...item, _rowPaid: true } : item;
+            const payableAmount = getOrderItemPayableAmount(item);
+            return !isCredit && payableAmount > 0 && item._rowPaid !== true && item.status !== 'VOIDED' && item.voidProcessed !== true
+              ? { ...item, _rowPaid: true, paidAmount: payableAmount }
+              : item;
           });
           try {
             await consumeSoldOrderItems({ orderId, items: paidItems, createdBy: requested_by || 'Cashier' });
@@ -244,6 +247,53 @@ router.post("/send-to-cashier", async (req, res) => {
   if (!table_name) table_name = "WALK-IN";
 
   try {
+    if (formattedOrderIds.length) {
+      const sourceResult = await pool.query(
+        'SELECT id, items FROM public.orders WHERE id = ANY($1::int[])',
+        [formattedOrderIds]
+      );
+      const sourceOrders = sourceResult.rows.map((row) => ({
+        ...row,
+        items: Array.isArray(row.items) ? row.items : JSON.parse(row.items || '[]'),
+      }));
+      const selectedItems = sourceOrders.flatMap((order) => order.items.map((orderItem, index) => ({
+        orderId: order.id,
+        index,
+        item: orderItem,
+      })));
+      const containsComplimentary = selectedItems.some(({ item: orderItem }) =>
+        orderItem.complimentary === true || Number(orderItem.complimentaryWaivedAmount || 0) > 0
+      );
+
+      if (containsComplimentary) {
+        let chargeableItems = selectedItems.filter(({ item: orderItem }) =>
+          orderItem.status !== 'VOIDED'
+          && orderItem.voidProcessed !== true
+          && orderItem._rowPaid !== true
+          && orderItem.paymentRequested !== true
+          && orderItem.creditRequested !== true
+          && !String(orderItem.payment_method || '').toUpperCase().includes('CREDIT')
+        );
+        if (is_item) {
+          chargeableItems = chargeableItems.filter(({ orderId, index, item: orderItem }) =>
+            item?._orderItemIndex !== undefined
+              ? index === Number(item._orderItemIndex) && (item?._orderId === undefined || orderId === Number(item._orderId))
+              : orderItem.name === item?.name
+          );
+          if (chargeableItems.length !== 1) {
+            return res.status(409).json({ error: 'The selected item is no longer payable or could not be identified uniquely.' });
+          }
+        }
+        amount = chargeableItems.reduce(
+          (total, entry) => total + getOrderItemPayableAmount(entry.item),
+          0
+        );
+        if (Number(amount) <= 0) {
+          return res.status(409).json({ error: 'No unpaid, non-complimentary balance is available to send to the cashier.' });
+        }
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO cashier_queue
          (order_ids, table_name, label, method, amount, is_item, item,
@@ -404,14 +454,16 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
         if (!Array.isArray(items)) continue;
 
         let updated = false;
-        const updatedItems = items.map(item => {
+        const updatedItems = items.map((item, itemIndex) => {
           let newItem = { ...item };
 
-          if (q.is_item && q.item?.name && item.name === q.item.name) {
+          if (q.is_item && q.item?.name && item.name === q.item.name
+            && (q.item._orderItemIndex === undefined || q.item._orderItemIndex === itemIndex)) {
             // Single-item payment: only stamp the matching item
-            if (item._rowPaid !== true) {
+            if (item._rowPaid !== true && getOrderItemPayableAmount(item) > 0) {
               updated = true;
               newItem._rowPaid          = true;
+              newItem.paidAmount        = getOrderItemPayableAmount(item);
               newItem.paid_at           = new Date().toISOString();
               newItem.payment_confirmed = true;
               newItem.payment_method    = paymentMethod;
@@ -425,12 +477,14 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
             // Whole-order payment: stamp every non-credit, non-voided, unpaid item
             if (
               item._rowPaid !== true &&
+              getOrderItemPayableAmount(item) > 0 &&
               !item.creditRequested &&
               item.status !== 'VOIDED' &&
               !(item.payment_method || '').toUpperCase().includes('CREDIT')
             ) {
               updated = true;
               newItem._rowPaid          = true;
+              newItem.paidAmount        = getOrderItemPayableAmount(item);
               newItem.paid_at           = new Date().toISOString();
               newItem.payment_confirmed = true;
               newItem.payment_method    = paymentMethod;
@@ -558,6 +612,74 @@ router.get("/cashier-queue", requireCashier, async (req, res) => {
   } catch (err) {
     console.error("cashier-queue fetch failed:", err);
     res.status(500).json({ error: "Failed to fetch queue" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/cashier-ops/tables - Read-only table and payment history for cashiers
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/tables", requireCashier, async (req, res) => {
+  try {
+    const eligibleStaff = `(
+      LOWER(REPLACE(COALESCE(o.staff_role, ''), ' ', '')) IN ('waiter', 'manager', 'supervisor')
+      OR LOWER(REPLACE(COALESCE(s.role, ''), ' ', '')) IN ('waiter', 'manager', 'supervisor')
+    )`;
+    const [ordersResult, tablesResult, creditsResult] = await Promise.all([
+      pool.query(
+        `SELECT o.id, o.table_name, o.staff_id,
+                COALESCE(NULLIF(o.staff_name, ''), s.name) AS staff_name,
+                COALESCE(NULLIF(o.staff_role, ''), s.role) AS staff_role,
+                o.items, o.total, o.status, o.payment_method, o.is_paid,
+                o.created_at, o.timestamp, o.is_archived, o.shift_cleared, o.day_cleared
+         FROM public.orders o
+         LEFT JOIN public.staff s ON s.id = o.staff_id
+         WHERE o.table_name IS NOT NULL
+           AND UPPER(TRIM(o.table_name)) <> 'WALK-IN'
+           AND ${eligibleStaff}
+         ORDER BY COALESCE(o.created_at, o.timestamp) DESC, o.id DESC`
+      ),
+      pool.query(
+        `SELECT id, name, status, last_order_id
+         FROM public.tables
+         ORDER BY name ASC`
+      ),
+      pool.query(
+        `SELECT DISTINCT c.*
+         FROM public.credits c
+         JOIN public.orders o
+           ON (c.order_id = o.id OR (
+             c.order_id IS NULL
+             AND UPPER(TRIM(c.table_name)) = UPPER(TRIM(o.table_name))
+           ))
+         LEFT JOIN public.staff s ON s.id = o.staff_id
+         WHERE c.table_name IS NOT NULL
+           AND UPPER(TRIM(c.table_name)) <> 'WALK-IN'
+           AND ${eligibleStaff}
+         ORDER BY c.created_at DESC`
+      ),
+    ]);
+
+    const orders = ordersResult.rows.map(order => {
+      let items = order.items;
+      if (typeof items === "string") {
+        try {
+          items = JSON.parse(items);
+        } catch (error) {
+          console.error(`Failed to parse table history items for order ${order.id}:`, error);
+          items = [];
+        }
+      }
+      return { ...order, items: Array.isArray(items) ? items : [] };
+    });
+
+    res.json({
+      tables: tablesResult.rows,
+      orders,
+      credits: creditsResult.rows,
+    });
+  } catch (err) {
+    console.error("Cashier table history fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch table history" });
   }
 });
 

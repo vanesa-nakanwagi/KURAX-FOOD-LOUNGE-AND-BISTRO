@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import API_URL from "../../../config/api";
 import { isItemFullyPaid } from "../../../utils/paymentStatus";
+import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
+import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -41,7 +43,7 @@ function getCreditStatusDisplay(credit) {
 }
 
 // ─── SUPERVISOR ORDER CARD (read‑only) ─────────────────────────────────────
-function SupervisorOrderCard({ order, theme, onServeItem, onAddItems }) {
+function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplimentaryUpdated }) {
   const [expanded, setExpanded] = useState(false);
   const isDark = theme === "dark";
 
@@ -157,6 +159,10 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems }) {
                       <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
                         ×{item.quantity || 1} · {fmtUGX(item.price || 0)}
                       </p>
+                      {item.production_status && <p className="mt-0.5 text-[7px] sm:text-[8px] font-bold uppercase tracking-wide text-zinc-500">
+                        {item.station || 'Kitchen'} · {item.production_status === 'Completed' ? 'Ready' : item.production_status}
+                        {item.production_staff_name ? ` · ${item.production_staff_name}` : ''}
+                      </p>}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -169,6 +175,11 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems }) {
                     )}
                   </div>
                 </div>
+                <ComplimentaryItemControl
+                  order={order}
+                  item={item}
+                  onUpdated={onComplimentaryUpdated}
+                />
               </div>
             );
           })}
@@ -304,7 +315,7 @@ function PendingCreditsPanel({ pendingCredits, onApprove, onReject, theme }) {
 }
 
 // ─── RECENTLY PAID ITEMS PANEL (unchanged) ─────────────────────────────────
-function RecentlyPaidItemsPanel({ orders, theme }) {
+function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
   const isDark = theme === "dark";
   const paidItems = useMemo(() => {
     const items = [];
@@ -313,7 +324,7 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
       if (typeof orderItems === 'string') {
         try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
       }
-      orderItems.forEach(item => {
+      orderItems.forEach((item, itemIndex) => {
         if (isItemFullyPaid(item)) {
           items.push({
             id: `${order.id}_${item.name}`,
@@ -322,10 +333,12 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
             name: item.name,
             quantity: item.quantity || 1,
             price: item.price || 0,
-            total: (item.price || 0) * (item.quantity || 1),
+            total: getOrderItemPayableAmount(item),
             payment_method: item.payment_method || "Cash",
             paid_at: item.paid_at || new Date().toISOString(),
             timestamp: order.timestamp || order.created_at,
+            order: { id: order.id, staff_id: order.staff_id, status: order.status },
+            orderItem: { ...item, _orderId: order.id, _orderItemIndex: item._orderItemIndex ?? itemIndex },
           });
         }
       });
@@ -380,6 +393,11 @@ function RecentlyPaidItemsPanel({ orders, theme }) {
                   <p className="text-[7px] sm:text-[8px] text-zinc-500 mt-1">{dateStr}</p>
                 </div>
               </div>
+              <ComplimentaryItemControl
+                order={item.order}
+                item={item.orderItem}
+                onUpdated={onComplimentaryUpdated}
+              />
             </div>
           );
         })}
@@ -695,7 +713,7 @@ export default function SupervisorDashboard({ onAddItems }) {
               />
             )}
             {activeTab === "Paid" && (
-              <RecentlyPaidItemsPanel orders={staffOrders} theme={theme} />
+              <RecentlyPaidItemsPanel orders={staffOrders} theme={theme} onComplimentaryUpdated={refreshData} />
             )}
             {(activeTab === "Live" || activeTab === "Served") && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
@@ -706,6 +724,7 @@ export default function SupervisorDashboard({ onAddItems }) {
                     theme={theme}
                     onServeItem={handleServeItem}
                     onAddItems={onAddItems}
+                    onComplimentaryUpdated={refreshData}
                   />
                 ))}
                 {filteredOrders.length === 0 && (

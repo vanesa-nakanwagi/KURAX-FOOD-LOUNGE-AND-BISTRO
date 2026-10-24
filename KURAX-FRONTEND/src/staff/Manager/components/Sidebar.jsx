@@ -15,6 +15,7 @@ import {
   WalletCards,
   CircleDollarSign,
   Flame,
+  Gift,
 } from "lucide-react";
 import logo from "../../../customer/assets/images/logo.jpeg";
 import { useData } from "../../../customer/components/context/DataContext";
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { id: "reconciliation", label: "Payment Reconciliation", short: "Reconcile", icon: WalletCards },
   { id: "reports", label: "Staff Performance", short: "Reports", icon: BarChart3 },
   { id: "department-reports", label: "Department Reports", short: "Dept. Sales", icon: CircleDollarSign },
+  { id: "complimentary", label: "Complimentary Items", short: "Complimentary", icon: Gift },
   { id: "shisha-sales", label: "Shisha Sales", short: "Shisha", icon: Flame },
   { id: "audit-trail", label: "Audit Trail", short: "Audit", icon: ClipboardList },
 ];

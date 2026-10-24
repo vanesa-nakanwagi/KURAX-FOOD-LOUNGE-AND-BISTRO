@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { useNavigate } from "react-router-dom";
 import { useData } from "../../customer/components/context/DataContext";
 import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
+import ProductionPanel from "../components/ProductionPanel";
+import useClaimedProduction from "../components/useClaimedProduction";
 import {
   Clock, CheckCircle, Play, Flame,
   Search, RotateCcw, Trophy, AlertCircle,
@@ -81,7 +83,7 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 }
 
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
-function OrderCard({ order, onUpdateStatus }) {
+function OrderCard({ order, onUpdateStatus, isProductionWorker, onProductionStatus, updatingWorkId }) {
   const minutesAgo = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
   const orderTotal = (order.items || []).reduce((total, item) => total + Number(item.price || item.unit_price || 0) * Number(item.quantity || 1), 0);
   const isDelayed   = minutesAgo >= 15 && order.status !== "Ready";
@@ -144,26 +146,26 @@ function OrderCard({ order, onUpdateStatus }) {
         ))}
       </div>
 
-      <div className="p-4 bg-zinc-50 border-t border-zinc-100 shrink-0">
-        {order.status === "Pending" && (
+      {!isProductionWorker && <div className="p-4 bg-zinc-50 border-t border-zinc-100 shrink-0">
+        {!isProductionWorker && order.status === "Pending" && (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
             className="w-full py-3 bg-amber-400 text-zinc-950 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
             <Flame size={16}/> Start Fire
           </button>
         )}
-        {isPreparing && (
+        {!isProductionWorker && isPreparing && (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Ready")}
             className="w-full py-3 bg-emerald-600 text-white font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all shadow-sm">
             <CheckCircle size={16}/> Dish Ready — Notify Waiter
           </button>
         )}
-        {isReady && (
+        {!isProductionWorker && isReady && (
           <button onClick={() => onUpdateStatus(order.id, order._ticketId, "Preparing")}
             className="w-full py-3 bg-white text-zinc-600 border border-zinc-200 font-black rounded-lg flex items-center justify-center gap-2 text-[11px] uppercase active:scale-95 transition-all">
             <RotateCcw size={14}/> Return to Preparing
           </button>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -178,6 +180,22 @@ export default function KitchenDisplay() {
     catch { return {}; }
   }, []);
   const chefName     = savedUser.name || "Head Chef";
+  const isProductionWorker = String(savedUser.role || '').toUpperCase() === 'CHEF';
+  const {
+    items: claimedWork,
+    error: claimedWorkError,
+    message: claimedWorkMessage,
+  } = useClaimedProduction('kitchen', savedUser, false);
+  const claimedWorkByOrder = useMemo(() => {
+    const workByOrder = new Map();
+    claimedWork.forEach(item => {
+      if (item.status === 'Completed') return;
+      const work = workByOrder.get(Number(item.order_id)) || new Map();
+      work.set(Number(item.item_index), item);
+      workByOrder.set(Number(item.order_id), work);
+    });
+    return workByOrder;
+  }, [claimedWork]);
   const chefInitials = chefName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const handleLogout = () => setShowLogoutDialog(true);
@@ -188,6 +206,7 @@ export default function KitchenDisplay() {
   };
 
   const [audioEnabled,  setAudioEnabled]  = useState(false);
+  const [showProduction, setShowProduction] = useState(false);
   const [searchQuery,   setSearchQuery]   = useState("");
   const [showSummary,   setShowSummary]   = useState(false);
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalItems: 0, chefs: [] });
@@ -197,6 +216,7 @@ export default function KitchenDisplay() {
 
   // ── Load today's tickets on mount ─────────────────────────────────────────
   useEffect(() => {
+    if (isProductionWorker) return undefined;
     let mounted = true;
     const loadTickets = async () => {
       try {
@@ -211,7 +231,7 @@ export default function KitchenDisplay() {
     loadTickets();
     const timer = setInterval(loadTickets, 10000);
     return () => { mounted = false; clearInterval(timer); };
-  }, []);
+  }, [isProductionWorker]);
 
   const isVisibleKitchenItem = item => isKitchenItem(item);
 
@@ -221,10 +241,12 @@ export default function KitchenDisplay() {
   const filteredOrders = useMemo(() =>
     (orders || [])
       .filter(order => {
+        if (isProductionWorker) return false;
         // ── Status gate: only active kitchen statuses ──────────────────────
         const kitchenStatus = order.kitchen_ticket_status || "Pending";
         if (!["Pending", "Preparing"].includes(kitchenStatus)) return false;
         if (!ticketOrderIds.includes(Number(order.id))) return false;
+        if (isProductionWorker && !claimedWorkByOrder.has(Number(order.id))) return false;
 
         // ── FIX 1: hide orders cleared by accountant end-of-day ───────────
         const dayCleared =
@@ -240,7 +262,8 @@ export default function KitchenDisplay() {
         if (dayCleared || shiftCleared || kitchenCleared) return false;
 
         // ── Kitchen-only items (no barman / barista items = skip) ──────────
-        if (!(order.items || []).some(isVisibleKitchenItem)) return false;
+        if (!(order.items || []).some((item, index) => isVisibleKitchenItem(item)
+          && (!isProductionWorker || claimedWorkByOrder.get(Number(order.id))?.has(Number(item?._orderItemIndex ?? index))))) return false;
 
         // ── Search filter ──────────────────────────────────────────────────
         if (searchQuery.trim()) {
@@ -251,17 +274,29 @@ export default function KitchenDisplay() {
 
         return true;
       })
-      .map(order => ({
-        ...order,
-        status: order.kitchen_ticket_status || "Pending",
-        _ticketId: ticketMapRef.current[order.id] || null,
-        items: (order.items || []).filter(isVisibleKitchenItem),
-      }))
+      .map(order => {
+        const claimedItems = claimedWorkByOrder.get(Number(order.id)) || new Map();
+        return {
+          ...order,
+          status: order.kitchen_ticket_status || "Pending",
+          _ticketId: ticketMapRef.current[order.id] || null,
+          items: (order.items || [])
+            .map((item, index) => ({ ...item, _productionItemIndex: Number(item?._orderItemIndex ?? index) }))
+            .filter((item, index) => isVisibleKitchenItem(item)
+              && (!isProductionWorker || claimedItems.has(item._productionItemIndex)))
+            .map(item => ({
+              ...item,
+              productionWork: isProductionWorker
+                ? claimedItems.get(item._productionItemIndex)
+                : null,
+            })),
+        };
+      })
       .sort((a, b) => {
         const p = { Pending: 0, Preparing: 1, Ready: 2 };
         return (p[a.status] ?? 3) - (p[b.status] ?? 3);
       }),
-  [orders, searchQuery, ticketOrderIds, isVisibleKitchenItem]);
+  [orders, searchQuery, ticketOrderIds, isVisibleKitchenItem, isProductionWorker, claimedWorkByOrder]);
 
   // ── Audio: ding on new kitchen order ─────────────────────────────────────
   const prevLen = useRef(orders.length);
@@ -340,9 +375,12 @@ export default function KitchenDisplay() {
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutDialog(false)}
       />
+      {showProduction && <ProductionPanel station="kitchen" user={savedUser} onClose={() => setShowProduction(false)} />}
+      {claimedWorkError && isProductionWorker && <p role="alert" className="fixed left-4 top-4 z-40 rounded-lg bg-rose-100 px-4 py-2 text-xs font-bold text-rose-800">{claimedWorkError}</p>}
+      {claimedWorkMessage && isProductionWorker && <p role="status" className="fixed left-4 top-14 z-40 rounded-lg bg-emerald-100 px-4 py-2 text-xs font-bold text-emerald-900">{claimedWorkMessage}</p>}
 
       {/* ── AUDIO GATE ── */}
-      {!audioEnabled && (
+      {!audioEnabled && !isProductionWorker && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center">
           <div className="space-y-6">
             <div className="w-24 h-24 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto">
@@ -363,6 +401,9 @@ export default function KitchenDisplay() {
       {showSummary && (
         <ShiftSummaryModal stats={shiftStats} onConfirm={confirmEndShift} onClose={() => setShowSummary(false)}/>
       )}
+      <button onClick={() => setShowProduction(true)} className="fixed bottom-5 right-5 z-30 rounded-full bg-zinc-900 px-5 py-3 text-xs font-black uppercase tracking-wide text-white shadow-xl hover:bg-zinc-700">
+        My Production
+      </button>
 
       {/* ── HEADER ── */}
       <header className="flex flex-col lg:flex-row justify-between items-center mb-4 bg-white p-4 lg:px-6 rounded-xl border border-zinc-200 shadow-sm gap-3 shrink-0">
@@ -414,7 +455,8 @@ export default function KitchenDisplay() {
         {filteredOrders.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center py-32 opacity-20">
             <ChefHat size={60} className="mb-4"/>
-            <p className="text-sm font-black uppercase tracking-[0.3em]">Kitchen is Clear</p>
+            <p className="text-sm font-black uppercase tracking-[0.3em]">{isProductionWorker ? "Station tickets are managed by the Kitchen HOD" : "Kitchen is Clear"}</p>
+            {isProductionWorker && <button type="button" onClick={() => setShowProduction(true)} className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-bold text-white">View my production history</button>}
           </div>
         ) : (
           filteredOrders.map(order => (
@@ -422,6 +464,7 @@ export default function KitchenDisplay() {
               key={order.id}
               order={order}
               onUpdateStatus={updateStatus}
+              isProductionWorker={savedUser.role === 'CHEF'}
             />
           ))
         )}

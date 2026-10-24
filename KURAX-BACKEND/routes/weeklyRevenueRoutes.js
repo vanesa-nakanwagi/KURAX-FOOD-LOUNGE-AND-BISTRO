@@ -2,6 +2,7 @@
 import express from "express";
 import pool from "../db.js";
 import { calculateMonthlyFinancials } from "../helpers/monthlyFinancials.js";
+import { orderItemGrossAmountSql } from "../helpers/orderItemSalesAmounts.js";
 
 const router = express.Router();
 // GET /api/overview/monthly-revenue
@@ -17,26 +18,36 @@ router.get("/monthly-revenue", async (req, res) => {
     // 1. New sales (cash + card + mobile money) from orders
     const salesResult = await pool.query(`
       SELECT 
-        EXTRACT(DAY FROM (COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi')) AS day,
-        COALESCE(SUM(total), 0) AS gross_sales,
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) = 'cash' THEN total ELSE 0 END), 0) AS cash,
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) = 'card' THEN total ELSE 0 END), 0) AS card,
-        COALESCE(SUM(CASE WHEN LOWER(payment_method) IN ('mtn','momo-mtn','airtel','momo-airtel') THEN total ELSE 0 END), 0) AS momo
-      FROM orders
-      WHERE TO_CHAR(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+        EXTRACT(DAY FROM (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')) AS day,
+        COALESCE(SUM(main_items.gross_total), 0) AS gross_sales,
+        COALESCE(SUM(o.total), 0) AS collected_sales,
+        COALESCE(SUM(CASE WHEN LOWER(o.payment_method) = 'cash' THEN o.total ELSE 0 END), 0) AS cash,
+        COALESCE(SUM(CASE WHEN LOWER(o.payment_method) = 'card' THEN o.total ELSE 0 END), 0) AS card,
+        COALESCE(SUM(CASE WHEN LOWER(o.payment_method) IN ('mtn','momo-mtn','airtel','momo-airtel') THEN o.total ELSE 0 END), 0) AS momo
+      FROM orders o
+      CROSS JOIN LATERAL (
+        SELECT CASE WHEN jsonb_array_length(COALESCE(o.items, '[]'::jsonb)) = 0 THEN COALESCE(o.total, 0)
+          ELSE CASE WHEN BOOL_OR(COALESCE(item->>'complimentary', 'false') = 'true')
+            THEN COALESCE(SUM(${orderItemGrossAmountSql('item')}), 0)
+            ELSE COALESCE(o.total, 0)
+          END
+        END AS gross_total
+        FROM jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
+      ) main_items
+      WHERE TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
         AND (
-          public_order_ref IS NOT NULL
-          OR is_archived = true
-          OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'served')
+          o.public_order_ref IS NOT NULL
+          OR o.is_archived = true
+          OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'served')
         )
-        AND payment_confirmed = true
-        AND UPPER(COALESCE(payment_method, '')) NOT LIKE '%CREDIT%'
+        AND o.payment_confirmed = true
+        AND UPPER(COALESCE(o.payment_method, '')) NOT LIKE '%CREDIT%'
         AND NOT EXISTS (
           SELECT 1 FROM orders o2
           WHERE o2.original_order_ids IS NOT NULL
-            AND o2.original_order_ids::text LIKE '%' || orders.id::text || '%'
+            AND o2.original_order_ids::text LIKE '%' || o.id::text || '%'
         )
-      GROUP BY EXTRACT(DAY FROM (COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi'))
+      GROUP BY EXTRACT(DAY FROM (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'))
     `, [month]);
 
     // 2. Credit settlements for the month
@@ -65,6 +76,7 @@ router.get("/monthly-revenue", async (req, res) => {
     salesResult.rows.forEach(row => {
       salesMap.set(parseInt(row.day), {
         grossSales: Number(row.gross_sales),
+        collectedSales: Number(row.collected_sales),
         cash: Number(row.cash),
         card: Number(row.card),
         momo: Number(row.momo)
@@ -89,11 +101,12 @@ router.get("/monthly-revenue", async (req, res) => {
     // Build response for all days in the month
     const response = [];
     for (let day = 1; day <= lastDay; day++) {
-      const sales = salesMap.get(day) || { cash: 0, card: 0, momo: 0 };
+      const sales = salesMap.get(day) || { grossSales: 0, collectedSales: 0, cash: 0, card: 0, momo: 0 };
       const credit = creditMap.get(day) || 0;
       const expenses = pettyMap.get(day) || 0;
       const dailyCash = calculateMonthlyFinancials({
         grossSales: sales.grossSales,
+        collectedSales: sales.collectedSales,
         creditSettlements: credit,
         expenses,
       });

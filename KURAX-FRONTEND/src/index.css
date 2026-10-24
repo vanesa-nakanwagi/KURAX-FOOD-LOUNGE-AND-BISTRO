@@ -38,6 +38,16 @@ body {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 10px rgba(0, 0, 0, 0.4);
 }
 
+/* Keep small Manage Tables labels readable across every tab and modal. */
+.manage-tables-page [class*="text-[6px]"],
+.manage-tables-page [class*="text-[7px]"],
+.manage-tables-page [class*="text-[8px]"],
+.manage-tables-page [class*="text-[9px]"],
+.manage-tables-page [class*="text-[10px]"],
+.manage-tables-page [class*="text-[11px]"] {
+  font-size: 0.75rem;
+}
+
 /* Custom Scrollbar for Items List */
 .custom-scrollbar::-webkit-scrollbar {
   width: 5px;

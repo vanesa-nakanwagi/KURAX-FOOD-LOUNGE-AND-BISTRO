@@ -3,6 +3,7 @@ import { FileText, FileSpreadsheet, PlusCircle, Package, Calendar, Loader2, Tren
 import * as XLSX from "xlsx";
 import API_URL from "../../config/api";
 import { downloadReportPdf } from "../reportExport";
+import ComplimentaryItemsReport from "./ComplimentaryItemsReport";
 
 function buildReportSections(reportType, data) {
   if (reportType === "income") {
@@ -461,6 +462,15 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
           >
             <Package size={12} className="inline mr-1" /> Inventory Data Entry
           </button>
+          <button
+            onClick={() => setActiveTab("complimentary")}
+            className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all
+              ${activeTab === "complimentary"
+                ? "text-yellow-600 border-b-2 border-yellow-500"
+                : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"}`}
+          >
+            Complimentary Items
+          </button>
         </div>
       ) : (
         <div className="flex gap-2 border-b border-gray-200 dark:border-white/10">
@@ -470,8 +480,19 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
           >
             <TrendingUp size={12} className="inline mr-1" /> Menu Profitability
           </button>
+          <button
+            onClick={() => setActiveTab("complimentary")}
+            className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all
+              ${activeTab === "complimentary"
+                ? "text-yellow-600 border-b-2 border-yellow-500"
+                : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"}`}
+          >
+            Complimentary Items
+          </button>
         </div>
       )}
+
+      {activeTab === "complimentary" && <ComplimentaryItemsReport />}
 
       {/* ========== TAB 1: REPORTS ========== */}
       {!hideFinancialTabs && activeTab === "reports" && (

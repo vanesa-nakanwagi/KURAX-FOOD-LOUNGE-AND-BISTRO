@@ -4,11 +4,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import API_URL from '../../config/api';
 import InventoryWorkflows from './InventoryWorkflows';
 import Pagination from '../components/Pagination';
+import { defaultPurchaseConversionFactor, purchaseUnitsForStation, STATION_UNITS } from './inventoryUnits';
 
 const defaultForm = {
   item_name: '',
   quantity: '0',
-  unit: 'kg',
+  stock_unit: 'kg',
+  purchase_unit: 'kg',
+  purchase_conversion_factor: '1',
   unit_cost: '0',
   supplier_name: 'KURAX PRIMARY SUPPLIER',
   location_name: 'MAIN STORE',
@@ -193,9 +196,12 @@ export default function InventoryManagement() {
         payment_method: 'Cash',
         items: [{
           item_name: form.item_name,
-          quantity: Number(form.quantity || 0),
-          unit: form.unit,
-          unit_cost: Number(form.unit_cost || 0),
+          quantity: form.quantity,
+          unit: form.stock_unit,
+          stock_unit: form.stock_unit,
+          purchase_unit: form.purchase_unit,
+          purchase_conversion_factor: form.purchase_conversion_factor,
+          unit_cost: form.unit_cost,
           category: form.category,
           minimum_stock_level: Number(form.minimum_stock_level || 0),
           location_name: form.location_name,
@@ -354,17 +360,43 @@ export default function InventoryManagement() {
             <form onSubmit={handleSubmit} className="space-y-3">
               <Input label="Item name" value={form.item_name} onChange={(value) => setForm((current) => ({ ...current, item_name: value }))} />
               <div className="grid grid-cols-2 gap-3">
-                <Input label="Quantity" type="number" value={form.quantity} onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} />
-                <Select label="Unit" value={form.unit} onChange={(value) => setForm((current) => ({ ...current, unit: value }))} options={['kg', 'g', 'litre', 'ml', 'piece', 'packet', 'box', 'bottle', 'slice']} />
+                <Input label="Purchase quantity" type="number" min="0.001" value={form.quantity} onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} />
+                <Select label="Stock unit" value={form.stock_unit} onChange={(value) => setForm((current) => ({
+                  ...current,
+                  stock_unit: value,
+                  purchase_unit: purchaseUnitsForStation(current.station, value).includes(current.purchase_unit) ? current.purchase_unit : value,
+                  purchase_conversion_factor: defaultPurchaseConversionFactor(
+                    value,
+                    purchaseUnitsForStation(current.station, value).includes(current.purchase_unit) ? current.purchase_unit : value
+                  ),
+                }))} options={STATION_UNITS[form.station] || []} />
+                <Select label="Purchase unit" value={form.purchase_unit} onChange={(value) => setForm((current) => ({
+                  ...current,
+                  purchase_unit: value,
+                  purchase_conversion_factor: defaultPurchaseConversionFactor(current.stock_unit, value),
+                }))} options={purchaseUnitsForStation(form.station, form.stock_unit)} />
+                <Input label={`Stock units per ${form.purchase_unit || 'purchase unit'}`} type="number" min="0.000001" value={form.purchase_conversion_factor} onChange={(value) => setForm((current) => ({ ...current, purchase_conversion_factor: value }))} required />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Input label="Unit cost" type="number" value={form.unit_cost} onChange={(value) => setForm((current) => ({ ...current, unit_cost: value }))} />
+                <Input label={`Cost per ${form.purchase_unit}`} type="number" min="0" value={form.unit_cost} onChange={(value) => setForm((current) => ({ ...current, unit_cost: value }))} />
                 <Input label="Min stock" type="number" value={form.minimum_stock_level} onChange={(value) => setForm((current) => ({ ...current, minimum_stock_level: value }))} />
               </div>
               <Input label="Supplier" value={form.supplier_name} onChange={(value) => setForm((current) => ({ ...current, supplier_name: value }))} />
               <div className="grid grid-cols-2 gap-3">
                 <Select label="Location" value={form.location_name} onChange={(value) => setForm((current) => ({ ...current, location_name: value }))} options={['MAIN STORE', 'KITCHEN', 'BAR', 'BARISTA']} />
-                <Select label="Station" value={form.station} onChange={(value) => setForm((current) => ({ ...current, station: value }))} options={['KITCHEN', 'BAR', 'BARISTA']} />
+                <Select label="Station" value={form.station} onChange={(value) => setForm((current) => {
+                  const units = STATION_UNITS[value] || [];
+                  const stockUnit = units.includes(current.stock_unit) ? current.stock_unit : units[0];
+                  const purchaseOptions = purchaseUnitsForStation(value, stockUnit);
+                  const purchaseUnit = purchaseOptions.includes(current.purchase_unit) ? current.purchase_unit : stockUnit;
+                  return {
+                    ...current,
+                    station: value,
+                    stock_unit: stockUnit,
+                    purchase_unit: purchaseUnit,
+                    purchase_conversion_factor: defaultPurchaseConversionFactor(stockUnit, purchaseUnit),
+                  };
+                })} options={['KITCHEN', 'BAR', 'BARISTA']} />
               </div>
               <button
                 type="submit"

@@ -7,7 +7,7 @@ import { isValidShishaPinEncryptionKey } from './helpers/shishaPinEncryption.js'
 // ROUTE IMPORTS
 import menuRoutes from './routes/menuRoutes.js';
 import staffRoutes from './routes/staffRoutes.js';
-import orderRoutes from './routes/orderRoutes.js';
+import orderRoutes, { initComplimentaryTables } from './routes/orderRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
 import siteVisits from './routes/siteVisits.js';
 import managerRoutes from './routes/managerRoutes.js';
@@ -33,6 +33,7 @@ import inventoryRoutes from './routes/inventoryRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import comboRoutes from './routes/comboRoutes.js';
 import publicOrderRoutes from './routes/publicOrderRoutes.js';
+import productionRoutes, { initProductionTables } from './routes/productionRoutes.js';
 
 if (!isValidShishaPinEncryptionKey()) {
   console.warn('Shisha PIN encryption is disabled: configure SHISHA_PIN_ENCRYPTION_KEY as 64 hexadecimal characters.');
@@ -125,36 +126,12 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/combos', comboRoutes);
 app.use('/api/public-orders', publicOrderRoutes);
+app.use('/api/production', productionRoutes);
 
 // 6. HEALTH CHECK
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Backend working' });
 });
-
-// 7. DATABASE VERIFICATION
-const verifyDB = async () => {
-  try {
-    await pool.query('SELECT NOW()');
-    console.log(
-      process.env.DATABASE_URL?.includes('localhost')
-        ? 'Database connected to local Postgres'
-        : 'Database connected to Neon'
-    );
-    await ensureDatabaseSchema();
-    console.log('Database schema verified/bootstrapped');
-    await initCreditTables();
-    console.log('Credit tables verified/initialized');
-    await initShishaTables();
-    console.log(' Shisha department tables verified/initialized');
-    await ensureAccountingDataModel();
-    console.log(' Accounting schema verified/initialized');
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.warn(' Shisha PIN email is disabled: configure EMAIL_USER and EMAIL_PASS in the backend environment.');
-    }
-  } catch (err) {
-    console.error(' DB/Init Error:', err.message);
-  }
-};
 
 const PORT = Number(process.env.PORT || 5010);
 
@@ -166,7 +143,37 @@ process.on('uncaughtException', (err) => {
   console.error(' Uncaught Exception:', err);
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(` Server running on port ${PORT} on 0.0.0.0`);
-  verifyDB();
+async function startServer() {
+  await pool.query('SELECT NOW()');
+  console.log(
+    process.env.DATABASE_URL?.includes('localhost')
+      ? 'Database connected to local Postgres'
+      : 'Database connected to Neon'
+  );
+  await ensureDatabaseSchema();
+  console.log('Database schema verified/bootstrapped');
+  await initProductionTables();
+  console.log('Staff PIN and production tracking schema verified/initialized');
+  await initCreditTables();
+  console.log('Credit tables verified/initialized');
+  await initShishaTables();
+  console.log('Shisha department tables verified/initialized');
+  await ensureAccountingDataModel();
+  console.log('Accounting schema verified/initialized');
+  await initComplimentaryTables();
+  console.log('Complimentary item correction schema verified/initialized');
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn('Shisha PIN email is disabled: configure EMAIL_USER and EMAIL_PASS in the backend environment.');
+  }
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT} on 0.0.0.0`);
+  });
+}
+
+startServer().catch(async (error) => {
+  console.error('Database or schema initialization failed:', error.message);
+  await pool.end().catch((closeError) => {
+    console.error('Database pool shutdown failed:', closeError.message);
+  });
+  process.exitCode = 1;
 });

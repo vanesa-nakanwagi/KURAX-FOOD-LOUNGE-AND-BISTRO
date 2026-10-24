@@ -67,7 +67,10 @@ export default function LiveOrderStatus() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/kitchen/chef-assignments`);
+        const session = JSON.parse(localStorage.getItem('kurax_user') || 'null');
+        const res = await fetch(`${API_URL}/api/kitchen/chef-assignments`, {
+          headers: session?.token ? { Authorization: `Bearer ${session.token}` } : {},
+        });
         if (!res.ok) return;
         const rows = await res.json();
         const map = {};

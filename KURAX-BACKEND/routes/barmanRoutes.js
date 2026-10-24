@@ -20,8 +20,8 @@ import pool    from '../db.js';
 import notificationService from '../helpers/notificationService.js';
 import { resolveNotificationUser } from '../middleware/notificationAuth.js';
 import { refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
-import { getConfirmedStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
-import { syncConfirmedStationTickets } from '../helpers/stationOrderTickets.js';
+import { getRoutableStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
+import { syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
 
 const router = express.Router();
 
@@ -44,10 +44,10 @@ router.post('/tickets', async (req, res) => {
     const orderResult = await pool.query('SELECT items FROM public.orders WHERE id=$1', [order_id]);
     if (!orderResult.rows.length) return res.status(404).json({ error: 'Order not found.' });
     const orderItems = Array.isArray(orderResult.rows[0].items) ? orderResult.rows[0].items : [];
-    const stationItems = getConfirmedStationItems(orderItems, orderItems)
+    const stationItems = getRoutableStationItems(orderItems, orderItems)
       .filter(item => ['barman', 'bar'].includes(String(item.station || '').trim().toLowerCase()));
     if (!stationItems.length) {
-      return res.status(409).json({ error: 'Cashier confirmation is required before sending items to the bar station.' });
+      return res.status(409).json({ error: 'This order has no items routed to the bar station.' });
     }
     const ticketTotal = getStationItemsTotal(stationItems);
     const result = await pool.query(
@@ -135,7 +135,7 @@ router.get('/tickets/summary', async (req, res) => {
 router.get('/tickets', async (req, res) => {
   const date = req.query.date || kampalaDate();
   try {
-    await syncConfirmedStationTickets(pool, 'bar');
+    await syncRoutableStationTickets(pool, 'bar');
     const result = req.query.active === 'true'
       ? await pool.query(
         `SELECT t.* FROM barman_tickets t
@@ -168,6 +168,11 @@ router.patch('/tickets/:id/status', async (req, res) => {
   if (!allowed.includes(status)) return res.status(400).json({ error: `Invalid status: ${status}` });
 
   try {
+    const actor = await resolveNotificationUser(req);
+    if (!actor) return res.status(401).json({ error: 'Staff sign-in is required.' });
+    if (!['BAR_HOD', 'MANAGER', 'DIRECTOR'].includes(actor.role)) {
+      return res.status(403).json({ error: 'Claim this item with your PIN and update it in My Production.' });
+    }
     const result = await pool.query(
       `UPDATE barman_tickets
        SET status     = $1,
@@ -179,7 +184,6 @@ router.patch('/tickets/:id/status', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Ticket not found' });
     await refreshPublicOrderPreparationStatus(result.rows[0].order_id, pool);
-    const actor = status === 'Ready' ? await resolveNotificationUser(req) : null;
     if (status === 'Ready' && actor?.scope === 'restaurant' && ['BARMAN', 'BAR_HOD'].includes(actor.role)) {
       try {
         const orderResult = await pool.query('SELECT staff_id FROM public.orders WHERE id = $1', [result.rows[0].order_id]);
@@ -208,33 +212,7 @@ router.patch('/tickets/:id/status', async (req, res) => {
 // 4.  PATCH /api/barman/tickets/:id/assign-barman
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/tickets/:id/assign-barman', async (req, res) => {
-  const { id } = req.params;
-  const { items, item_name, assigned_to, assigned_at, assigned_by } = req.body;
-
-  if (!items || !assigned_to || !item_name) {
-    return res.status(400).json({ error: 'items, item_name, and assigned_to are required' });
-  }
-
-  try {
-    const ticketResult = await pool.query(
-      `UPDATE barman_tickets SET items = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-      [JSON.stringify(items), id]
-    );
-    if (!ticketResult.rows.length) return res.status(404).json({ error: 'Ticket not found' });
-
-    const ticket = ticketResult.rows[0];
-
-    await pool.query(
-      `INSERT INTO barman_assignments (order_id, ticket_id, item_name, assigned_to, assigned_at, assigned_by)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [ticket.order_id, id, item_name, assigned_to, assigned_at || new Date().toISOString(), assigned_by || null]
-    );
-
-    res.json(ticket);
-  } catch (err) {
-    console.error('Assign barman error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
+  res.status(410).json({ error: 'Manual assignments are retired. Claim the item using its station PIN.' });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

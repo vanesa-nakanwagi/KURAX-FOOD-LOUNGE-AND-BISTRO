@@ -1,13 +1,17 @@
-export function calculateMonthlyFinancials({ grossSales = 0, creditSettlements = 0, expenses = 0 } = {}) {
+import { orderItemGrossAmountSql, orderItemPayableAmountSql } from './orderItemSalesAmounts.js';
+
+export function calculateMonthlyFinancials({ grossSales = 0, collectedSales = grossSales, creditSettlements = 0, expenses = 0 } = {}) {
   const gross = Number(grossSales) || 0;
+  const collected = Number(collectedSales) || 0;
   const settlements = Number(creditSettlements) || 0;
   const totalExpenses = Number(expenses) || 0;
 
   return {
     grossSales: gross,
+    collectedSales: collected,
     creditSettlements: settlements,
     expenses: totalExpenses,
-    currentCash: gross + settlements - totalExpenses,
+    currentCash: collected + settlements - totalExpenses,
   };
 }
 
@@ -15,7 +19,8 @@ export async function getMonthlyFinancials(pool, month) {
   const [salesResult, settlementsResult, pettyResult, expensesResult, cashierExpensesResult] = await Promise.all([
     pool.query(`
       SELECT
-        COALESCE(SUM(main_items.total), 0) AS gross_sales,
+        COALESCE(SUM(main_items.gross_total), 0) AS gross_sales,
+        COALESCE(SUM(main_items.total), 0) AS collected_sales,
         COALESCE(SUM(CASE WHEN LOWER(o.payment_method) = 'cash' THEN main_items.total ELSE 0 END), 0) AS cash,
         COALESCE(SUM(CASE WHEN LOWER(o.payment_method) IN ('card', 'visa', 'pos') THEN main_items.total ELSE 0 END), 0) AS card,
         COALESCE(SUM(CASE WHEN LOWER(o.payment_method) IN ('mtn', 'momo-mtn') THEN main_items.total ELSE 0 END), 0) AS mtn,
@@ -23,14 +28,16 @@ export async function getMonthlyFinancials(pool, month) {
         COUNT(*) AS order_count
       FROM orders o
       CROSS JOIN LATERAL (
-        SELECT CASE WHEN jsonb_array_length(COALESCE(o.items, '[]'::jsonb)) = 0 THEN COALESCE(o.total, 0)
-          ELSE COALESCE(SUM(COALESCE(
-            NULLIF(item->>'line_total','')::numeric,
-            NULLIF(item->>'lineTotal','')::numeric,
-            COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
-              * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
-          )),0)
-        END AS total
+        SELECT
+          CASE WHEN jsonb_array_length(COALESCE(o.items, '[]'::jsonb)) = 0 THEN COALESCE(o.total, 0)
+            ELSE COALESCE(SUM(${orderItemPayableAmountSql('item')}), 0)
+          END AS total,
+          CASE WHEN jsonb_array_length(COALESCE(o.items, '[]'::jsonb)) = 0 THEN COALESCE(o.total, 0)
+            ELSE CASE WHEN BOOL_OR(COALESCE(item->>'complimentary', 'false') = 'true')
+              THEN COALESCE(SUM(${orderItemGrossAmountSql('item')}), 0)
+              ELSE COALESCE(SUM(${orderItemPayableAmountSql('item')}), 0)
+            END
+          END AS gross_total
         FROM jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
         WHERE LOWER(COALESCE(item->>'station','')) <> 'shisha'
       ) main_items
@@ -41,7 +48,7 @@ export async function getMonthlyFinancials(pool, month) {
           OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'served')
         )
         AND o.payment_confirmed = true
-        AND main_items.total > 0
+        AND main_items.gross_total > 0
         AND UPPER(COALESCE(o.payment_method, '')) NOT LIKE '%CREDIT%'
         AND NOT EXISTS (
           SELECT 1 FROM orders o2
@@ -91,13 +98,14 @@ export async function getMonthlyFinancials(pool, month) {
   const cashierExpenseTotal = Number(cashierExpensesResult.rows[0].total) || 0;
   const financials = calculateMonthlyFinancials({
     grossSales: sales.gross_sales,
+    collectedSales: sales.collected_sales ?? sales.gross_sales,
     creditSettlements: settlementBreakdown.credit_settlements,
     expenses: pettyOut + fixedTotal + cashierExpenseTotal,
   });
 
   return {
     ...financials,
-    totalCollected: financials.grossSales + financials.creditSettlements,
+    totalCollected: financials.collectedSales + financials.creditSettlements,
     orderCount: Number(sales.order_count),
     settlementCount: Number(settlementBreakdown.settlement_count),
     salesBreakdown: {

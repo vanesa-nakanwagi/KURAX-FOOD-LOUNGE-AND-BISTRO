@@ -132,7 +132,8 @@ export default function NewOrder() {
     tableName: tableName.trim().toUpperCase(),
     items: cart,
     total: cartTotal,
-    paymentMethod: "Cash"
+    paymentMethod: "Cash",
+    sendToStations: true,
   };
 
   try {

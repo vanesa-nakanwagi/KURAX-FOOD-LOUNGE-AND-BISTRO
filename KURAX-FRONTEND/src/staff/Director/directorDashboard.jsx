@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, BarChart3, CreditCard,
   History, Target, Bell, Menu, X, LogOut, Bike,
-  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet, CircleDollarSign, ClipboardList, Flame
+  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet, CircleDollarSign, ClipboardList, Flame, Gift
 } from "lucide-react";
 
 // ── Local components ──────────────────────────────────────────────────────────
@@ -28,6 +28,7 @@ import AccountingAuditTrail from "../components/AccountingAuditTrail";
 import ReportsPanel from "../Accountant/ReportsPanel";
 import ShishaSalesReports from "../Shisha/ShishaSalesReports";
 import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
+import ComplimentaryItemsReport from "../Accountant/ComplimentaryItemsReport";
 
 // ── CREDIT STATUS BADGE COMPONENT ────────────────────────────────────────────
 function CreditStatusBadge({ status }) {
@@ -55,6 +56,7 @@ function CreditStatusBadge({ status }) {
 const NAV = [
   { icon: <LayoutDashboard size={18} />, label: "Dashboard",  tab: "TARGETS"  },
   { icon: <BarChart3 size={18} />, label: "Menu Profitability", tab: "MENU_PROFITABILITY" },
+  { icon: <Gift size={18} />, label: "Complimentary Items", tab: "COMPLIMENTARY_ITEMS" },
   { icon: <Wallet size={18} />,       label: "Reconciliation", tab: "RECONCILIATION" },
   { icon: <CreditCard size={18} />,      label: "Finance & Credits",  tab: "FINANCES"  },
   { icon: <BarChart3 size={18} />,       label: "Staff Performance",   tab: "PERFORMANCE" },
@@ -441,6 +443,7 @@ export default function DirectorDashboard() {
             {activeTab === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded />}
             {activeTab === "SHISHA_SALES" && <ShishaSalesReports />}
             {activeTab === "MENU_PROFITABILITY" && <ReportsPanel hideFinancialTabs />}
+            {activeTab === "COMPLIMENTARY_ITEMS" && <ComplimentaryItemsReport />}
             {activeTab === "AUDIT_TRAIL" && <AccountingAuditTrail />}
           </div>
         </main>
