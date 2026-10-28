@@ -15,6 +15,43 @@ function kampalaDate() {
   ).toISOString().split('T')[0];
 }
 
+async function getCreditItemTarget(queryable, credit) {
+  if (!credit.cashier_queue_id) return null;
+  const result = await queryable.query(
+    'SELECT is_item, item FROM cashier_queue WHERE id = $1',
+    [credit.cashier_queue_id]
+  );
+  const queueItem = result.rows[0];
+  if (!queueItem?.is_item || !queueItem.item) return null;
+
+  let item = queueItem.item;
+  if (typeof item === 'string') {
+    try {
+      item = JSON.parse(item);
+    } catch (error) {
+      console.error(`Could not parse item for credit #${credit.id}:`, error.message);
+      return null;
+    }
+  }
+  return item && typeof item === 'object' ? item : null;
+}
+
+function matchesCreditItem(item, index, target) {
+  if (!target) return true;
+  if (target._orderItemIndex !== undefined && Number(target._orderItemIndex) !== index) {
+    return false;
+  }
+  return Boolean(target.name) && item.name === target.name;
+}
+
+function isEligibleCreditItem(item) {
+  return item._rowPaid !== true &&
+    !item.paid_at &&
+    item.status !== 'VOIDED' &&
+    item.voidProcessed !== true &&
+    item.creditRequested !== true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  DATABASE SETUP  (run once to create tables if they don't exist)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -237,6 +274,8 @@ router.post('/', async (req, res) => {
   const {
     order_id,
     cashier_queue_id,
+    item: requestedItem,
+    is_item: isItemCredit = false,
     table_name,
     label,
     amount,
@@ -274,8 +313,10 @@ router.post('/', async (req, res) => {
         `UPDATE orders SET status='Credit', payment_method='Credit' WHERE id=$1`,
         [order_id]
       ).catch(() => {});
-      
-      // Mark items in the order as credit requested
+
+      const credit = result.rows[0];
+      const creditItemTarget = await getCreditItemTarget(pool, credit) ||
+        (isItemCredit && requestedItem ? requestedItem : null);
       const orderRes = await pool.query(
         `SELECT items FROM orders WHERE id = $1`,
         [order_id]
@@ -288,11 +329,11 @@ router.post('/', async (req, res) => {
         }
         
         if (Array.isArray(items)) {
-          const updatedItems = items.map(item => ({
-            ...item,
-            creditRequested: true,
-            payment_method: 'Credit'
-          }));
+          const updatedItems = items.map((item, index) =>
+            isEligibleCreditItem(item) && matchesCreditItem(item, index, creditItemTarget)
+              ? { ...item, creditRequested: true, payment_method: 'Credit' }
+              : item
+          );
           
           await pool.query(
             `UPDATE orders SET items = $1 WHERE id = $2`,
@@ -453,6 +494,7 @@ router.patch('/:id/approve', async (req, res) => {
     });
     // Mark items in the order as credit requested
     if (credit.order_id) {
+      const creditItemTarget = await getCreditItemTarget(pool, credit);
       const orderRes = await pool.query(
         `SELECT items FROM orders WHERE id = $1`,
         [credit.order_id]
@@ -465,11 +507,11 @@ router.patch('/:id/approve', async (req, res) => {
         }
         
         if (Array.isArray(items)) {
-          const updatedItems = items.map(item => ({
-            ...item,
-            creditRequested: true,
-            payment_method: 'Credit'
-          }));
+          const updatedItems = items.map((item, index) =>
+            isEligibleCreditItem(item) && matchesCreditItem(item, index, creditItemTarget)
+              ? { ...item, creditRequested: true, payment_method: 'Credit' }
+              : item
+          );
           
           await pool.query(
             `UPDATE orders SET items = $1 WHERE id = $2`,
@@ -617,6 +659,7 @@ router.patch('/:id/settle', async (req, res) => {
       await updateDailySummary({ amount: payment, method, orderCount: 0 });
       
       // Update individual items - ONLY mark credit-requested items as paid
+      const creditItemTarget = await getCreditItemTarget(client, credit);
       const orderRes = await client.query(
         `SELECT items FROM orders WHERE id = $1`,
         [credit.order_id]
@@ -629,9 +672,9 @@ router.patch('/:id/settle', async (req, res) => {
         }
         
         if (Array.isArray(items)) {
-          const updatedItems = items.map(item => {
+          const updatedItems = items.map((item, index) => {
             // Only update items that were requested as credit
-            if (item.creditRequested === true) {
+            if (item.creditRequested === true && matchesCreditItem(item, index, creditItemTarget)) {
               if (newStatus === 'FullySettled') {
                 // Full settlement - mark as fully paid
                 return {

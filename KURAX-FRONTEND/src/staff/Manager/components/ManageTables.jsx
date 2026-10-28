@@ -10,7 +10,7 @@ import {
   CheckCircle2, XCircle, Award, CircleDollarSign, Zap
 } from "lucide-react";
 import API_URL from "../../../config/api";
-import { isItemFullyPaid } from "../../../utils/paymentStatus";
+import { hasOutstandingCreditItems, isItemFullyPaid } from "../../../utils/paymentStatus";
 import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
 import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
 
@@ -1018,7 +1018,8 @@ export default function OrderHistory({ onAddItems }) {
 
   const dailyStaffOrders = useMemo(() => managerOrders.filter(order => {
     const timestamp = order.timestamp || order.created_at;
-    return timestamp && toLocalDateStr(new Date(timestamp)) === today;
+    return !order.sent_to_cashier || hasOutstandingCreditItems(order) ||
+      (timestamp && toLocalDateStr(new Date(timestamp)) === today);
   }), [managerOrders, today]);
 
   const managerCredits = useMemo(() => creditsData.filter(credit => {

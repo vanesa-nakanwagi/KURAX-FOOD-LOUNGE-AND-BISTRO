@@ -41,10 +41,10 @@ function formatMoney(amount) {
   return `UGX ${Number(amount || 0).toLocaleString()}`;
 }
 
-function PaymentInstructionsModal({ paymentRequest, customer, items, status, statusError, onClose }) {
+function PaymentInstructionsModal({ paymentRequest, customer, items, status, statusError, onClose, onDone }) {
   const provider = paymentRequest.paymentProvider;
   const ussdCode = provider === "MTN" ? "*165*3#" : "*185*9#";
-  const contactKurax = () => {
+  const sendOrderToKurax = () => {
     const itemLines = items.map(item => `${item.name} × ${item.quantity}`).join("\n");
     const message = encodeURIComponent(
       `*Kurax Website Order Request*\n\n` +
@@ -58,12 +58,13 @@ function PaymentInstructionsModal({ paymentRequest, customer, items, status, sta
       `*Amount:* ${formatMoney(paymentRequest.amount)}`
     );
     window.open(`https://wa.me/256709913676?text=${message}`, "_blank", "noopener,noreferrer");
+    onDone();
   };
   const stateContent = {
     Pending: {
       icon: <Clock3 className="h-6 w-6 text-amber-600" />,
-      title: "Order received",
-      detail: "Your order will be brought to you soon.",
+      title: "Payment pending",
+      detail: "After paying, click Done to open WhatsApp with your order details. Tap Send to deliver them to Kurax.",
       color: "border-amber-200 bg-amber-50 text-amber-900",
     },
     Confirmed: {
@@ -91,7 +92,7 @@ function PaymentInstructionsModal({ paymentRequest, customer, items, status, sta
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-yellow-600">Mobile Money</p>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Order received</h3>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Payment instructions</h3>
           </div>
           <button onClick={onClose} aria-label="Close payment instructions" className="rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800">×</button>
         </div>
@@ -113,7 +114,7 @@ function PaymentInstructionsModal({ paymentRequest, customer, items, status, sta
           </div>
           {status === "Pending" && (
             <p className="mt-3 border-t pt-3 text-sm text-amber-800">
-              Your order is received and awaiting payment confirmation.
+              Complete your payment, then click Done to send your order details to Kurax on WhatsApp.
             </p>
           )}
         </div>
@@ -155,11 +156,8 @@ function PaymentInstructionsModal({ paymentRequest, customer, items, status, sta
           </div>
         </div>
 
-        <button onClick={onClose} className="w-full rounded-lg bg-yellow-500 py-3 font-semibold text-black transition hover:bg-yellow-400">
+        <button onClick={sendOrderToKurax} className="w-full rounded-lg bg-yellow-500 py-3 font-semibold text-black transition hover:bg-yellow-400">
           Done
-        </button>
-        <button onClick={contactKurax} className="mt-3 w-full rounded-lg bg-green-600 py-3 font-semibold text-white transition hover:bg-green-500">
-          Contact Kurax on WhatsApp
         </button>
       </div>
     </div>
@@ -172,6 +170,7 @@ export default function CheckoutForm({
   totalAmount,
   cartItems = [],
   onBack,
+  onDone,
 }) {
   const cartKey = getCartKey(cartItems);
   const [localDetails, setLocalDetails] = useState(externalDetails || {});
@@ -397,7 +396,7 @@ export default function CheckoutForm({
           <p className="font-bold">
             {paymentStatus === "Confirmed" ? "Payment confirmed"
               : paymentStatus === "Rejected" ? "Payment request rejected"
-                : "Order received"}
+                : "Payment pending"}
           </p>
           <p>Order reference: {paymentRequest.orderReference}</p>
           <button type="button" onClick={() => setShowInstructions(true)} className="mt-2 font-semibold underline">
@@ -432,6 +431,7 @@ export default function CheckoutForm({
           status={paymentStatus}
           statusError={statusError}
           onClose={() => setShowInstructions(false)}
+          onDone={onDone}
         />
       )}
     </div>

@@ -6,7 +6,9 @@ import {
   normalizeInventoryUnit,
 } from './inventoryUnits.js';
 
-const normalizeUnit = normalizeInventoryUnit;
+function normalizeUnit(unit = '') {
+  return normalizeInventoryUnit(unit);
+}
 
 export function convertRecipeQuantity(quantity, fromUnit, toUnit, item = {}) {
   return convertInventoryQuantity(quantity, fromUnit, toUnit, item);
@@ -90,15 +92,13 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
         break;
       }
       try {
-        const conversionFactor = inventoryUnitConversionFactor(ingredient.recipe_unit, stock.unit, stock);
-        const quantityResult = await client.query(
+        const factor = inventoryUnitConversionFactor(ingredient.recipe_unit, stock.unit, stock);
+        const convertedResult = await client.query(
           `SELECT ROUND($1::numeric * $2::numeric * $3::numeric, 3)::numeric(12,3)::text AS quantity`,
-          [ingredient.recipe_quantity, conversionFactor, itemQuantity]
+          [String(ingredient.recipe_quantity), String(factor), String(itemQuantity)]
         );
-        const required = quantityResult.rows[0].quantity;
-        if (Number(required) <= 0) {
-          throw new Error('Recipe quantity is below the supported stock precision.');
-        }
+        const required = convertedResult.rows[0].quantity;
+        if (Number(required) <= 0) throw new Error('Recipe quantity is below the supported stock precision.');
         const existingPlan = planned.find((entry) => entry.stock.id === stock.id);
         if (existingPlan) {
           const total = await client.query(
@@ -119,14 +119,23 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
       return { order_item: menuName, ...invalidUnit };
     }
 
-    const shortage = planned.find((entry) => Number(entry.stock.current_quantity || 0) < entry.quantity);
+    const shortageChecks = await Promise.all(planned.map(async (entry) => {
+      const result = await client.query(
+        `SELECT current_quantity < $1::numeric AS is_short,
+                GREATEST($1::numeric - current_quantity, 0)::numeric(12,3)::text AS shortage
+         FROM public.inventory_items WHERE id = $2`,
+        [entry.quantity, entry.stock.id]
+      );
+      return { ...entry, isShort: result.rows[0]?.is_short, shortage: result.rows[0]?.shortage };
+    }));
+    const shortage = shortageChecks.find((entry) => entry.isShort);
     if (shortage) {
       return {
         order_item: menuName,
         status: 'INSUFFICIENT_STOCK',
         ingredient: shortage.stock.item_name,
-        shortage: shortage.quantity - Number(shortage.stock.current_quantity || 0),
-        available: Number(shortage.stock.current_quantity || 0),
+        shortage: shortage.shortage,
+        available: String(shortage.stock.current_quantity || 0),
       };
     }
 
@@ -135,10 +144,12 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
     for (const entry of planned) {
       const unitCost = String(entry.stock.unit_cost || 0);
       const costResult = await client.query(
-        `SELECT ROUND($1::numeric * $2::numeric, 2)::numeric(12,2)::text AS cost`,
+        `SELECT CASE WHEN $2::numeric > 0
+          THEN ROUND($1::numeric * $2::numeric, 2)::numeric(12,2)::text
+          ELSE '0' END AS cost`,
         [entry.quantity, unitCost]
       );
-      const lineCost = Number(unitCost) > 0 ? costResult.rows[0].cost : '0';
+      const lineCost = costResult.rows[0].cost;
       needsCostReview ||= Number(unitCost) <= 0;
       await client.query(
         `UPDATE public.inventory_items

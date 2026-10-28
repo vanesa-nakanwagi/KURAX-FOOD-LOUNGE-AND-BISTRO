@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, CircleDollarSign
 } from "lucide-react";
 import API_URL from "../../../config/api";
-import { isItemFullyPaid } from "../../../utils/paymentStatus";
+import { hasOutstandingCreditItems, isItemFullyPaid } from "../../../utils/paymentStatus";
 import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
 import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
 
@@ -516,12 +516,13 @@ export default function SupervisorDashboard({ onAddItems }) {
 
   const staffOrders = useMemo(() => (orders || []).filter(order => {
     const timestamp = order.timestamp || order.created_at;
-    if (!timestamp || toLocalDateStr(new Date(timestamp)) !== today) return false;
     const orderStaffId = order.staff_id ?? order.staffId;
     const idMatch = currentStaffId != null && orderStaffId != null && String(orderStaffId) === String(currentStaffId);
     const nameMatch = currentStaffId == null && currentStaffName !== "Supervisor" &&
       String(order.staff_name || order.waiterName || order.staffName || "").trim().toLowerCase() === currentStaffName.trim().toLowerCase();
-    return currentStaffId != null ? idMatch : nameMatch;
+    const isToday = timestamp && toLocalDateStr(new Date(timestamp)) === today;
+    return (currentStaffId != null ? idMatch : nameMatch) &&
+      (!order.sent_to_cashier || hasOutstandingCreditItems(order) || isToday);
   }), [orders, currentStaffId, currentStaffName, today]);
 
   // ── Group this supervisor's orders by table ──

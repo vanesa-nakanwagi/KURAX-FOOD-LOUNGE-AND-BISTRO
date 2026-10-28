@@ -12,6 +12,7 @@ import {
 import API_URL from "../../../config/api";
 import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
 import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
+import { hasOutstandingCreditItems } from "../../../utils/paymentStatus";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -999,14 +1000,16 @@ export default function OrderHistory({ onAddItems }) {
     if (!currentStaffId && !currentStaffName) return [];
     return (orders || []).filter(o => {
       const ts = o.timestamp || o.created_at;
-      if (!ts) return false;
       const idMatch   = currentStaffId
         ? String(o.staff_id ?? o.staffId ?? "") === String(currentStaffId)
         : false;
       const nameMatch = currentStaffName && currentStaffName !== "Staff Member"
         ? (o.staff_name ?? o.waiterName ?? o.staffName ?? "").toLowerCase() === currentStaffName.toLowerCase()
         : false;
-      return (idMatch || nameMatch) && toLocalDateStr(new Date(ts)) === today;
+      return (idMatch || nameMatch) &&
+        (!o.sent_to_cashier ||
+          hasOutstandingCreditItems(o) ||
+          (ts && toLocalDateStr(new Date(ts)) === today));
     });
   }, [orders, currentStaffId, currentStaffName, today]);
 

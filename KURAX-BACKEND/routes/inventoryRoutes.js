@@ -7,10 +7,10 @@ import { readSessionToken } from '../middleware/sessionTokens.js';
 import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
 import {
   configuredPurchaseConversionFactor,
-  convertInventoryQuantity,
   inventoryUnitConversionFactor,
   isInventoryPurchaseUnitForStock,
   isInventoryUnitForStation,
+  normalizeInventoryStation,
   normalizeInventoryUnit,
   UnitConversionError,
 } from '../helpers/inventoryUnits.js';
@@ -100,7 +100,9 @@ function requestedRecipeStation(req, value, res) {
 
 router.use(['/recipes', '/consumption', '/waste', '/reports'], authenticateRecipeUser);
 
-const normalizeUnit = normalizeInventoryUnit;
+function normalizeUnit(unit) {
+  return normalizeInventoryUnit(unit) || 'kg';
+}
 
 function isValidDecimal(value, allowZero = false, maxScale = 3) {
   const text = String(value ?? '').trim();
@@ -166,11 +168,15 @@ async function resolveSupplierId(supplierId, supplierName) {
   return created.rows[0]?.id ?? (await pool.query(`SELECT id FROM public.suppliers WHERE LOWER(name) = LOWER($1) LIMIT 1`, [value])).rows[0]?.id ?? null;
 }
 
-async function resolveItemIdByName(name) {
+async function resolveItemIdByName(name, station = null) {
   if (!name) return null;
   const result = await pool.query(
-    `SELECT id FROM public.inventory_items WHERE LOWER(item_name) = LOWER($1) LIMIT 1`,
-    [String(name).trim()]
+    `SELECT id FROM public.inventory_items
+     WHERE LOWER(item_name) = LOWER($1)
+       AND ($2::text IS NULL OR UPPER(COALESCE(station, 'KITCHEN')) IN ($2, CASE WHEN $2 = 'BAR' THEN 'BARMAN' ELSE $2 END))
+     ORDER BY id
+     LIMIT 1`,
+    [String(name).trim(), station ? normalizeInventoryStation(station) : null]
   );
   return result.rows[0]?.id ?? null;
 }
@@ -180,6 +186,7 @@ async function buildItemSummary(item) {
     ...item,
     unit: normalizeUnit(item.unit || 'kg'),
     purchase_unit: normalizeUnit(item.purchase_unit || item.unit || 'kg'),
+    purchase_conversion_factor: String(item.purchase_conversion_factor || '1'),
     stock_status: stockStatus(item),
     current_quantity: Number(item.current_quantity || 0),
     minimum_stock_level: Number(item.minimum_stock_level || 0),
@@ -303,22 +310,22 @@ router.post('/items', async (req, res) => {
   if (!item_name) return res.status(400).json({ error: 'Item name is required.' });
 
   try {
+    const finalStation = normalizeInventoryStation(station || 'KITCHEN');
     const finalUnit = normalizeUnit(unit || 'kg');
-    const finalBaseUnit = normalizeUnit(base_unit || finalUnit);
-    const finalStation = normalizeStation(station || 'KITCHEN');
-    if (!finalStation) return res.status(400).json({ error: 'Select a valid inventory station.' });
     const finalPurchaseUnit = normalizeUnit(purchase_unit || finalUnit);
-    if (!isInventoryUnitForStation(finalUnit, finalStation) || !isInventoryPurchaseUnitForStock(finalUnit, finalPurchaseUnit, finalStation)) {
+    if (!finalStation) return res.status(400).json({ error: 'Select a valid inventory station.' });
+    if (!isInventoryPurchaseUnitForStock(finalUnit, finalPurchaseUnit, finalStation)) {
       return res.status(400).json({ error: 'Select stock and purchase units supported by the selected station.' });
     }
-    let conversionFactor;
-    try {
-      conversionFactor = configuredPurchaseConversionFactor(finalUnit, finalPurchaseUnit, purchase_conversion_factor);
-    } catch (error) {
-      return res.status(400).json({ error: error.message });
-    }
+    const conversionFactor = configuredPurchaseConversionFactor(
+      finalUnit,
+      finalPurchaseUnit,
+      purchase_conversion_factor,
+      { unit: finalUnit, purchase_unit: finalPurchaseUnit }
+    );
     const resolvedSupplierId = await resolveSupplierId(supplier_id || null, supplier_name || null);
     const resolvedLocationId = await resolveLocationId(location_id || null, location_name || 'MAIN STORE');
+    const finalBaseUnit = normalizeUnit(base_unit || finalUnit);
     const quantity = Number(current_quantity || 0);
     const unitPrice = Number(unit_cost || 0);
     const inventoryValue = quantity * unitPrice;
@@ -364,7 +371,7 @@ router.post('/purchases', async (req, res) => {
   const businessDate = payload.business_date || currentBusinessDate();
   const actor = req.user?.name || payload.posted_by || 'Accountant';
 
-  if (!items.length) {
+  if (!items.length || items.some((item) => !item || typeof item !== 'object')) {
     return res.status(400).json({ error: 'At least one item is required.' });
   }
 
@@ -385,7 +392,7 @@ router.post('/purchases', async (req, res) => {
 
     for (const row of items) {
       const itemName = row.item_name || row.name || row.itemId;
-      const itemIdNumber = row.item_id || (itemName ? await resolveItemIdByName(itemName) : null);
+      const itemIdNumber = row.item_id || (itemName ? await resolveItemIdByName(itemName, row.station || 'KITCHEN') : null);
       let item = null;
 
       if (itemIdNumber) {
@@ -394,17 +401,17 @@ router.post('/purchases', async (req, res) => {
       }
 
       if (!item && itemName) {
-        const station = normalizeStation(row.station || 'KITCHEN');
-        if (!station) throw new UnitConversionError('Select a valid inventory station.');
+        const station = normalizeInventoryStation(row.station || 'KITCHEN');
         const stockUnit = normalizeUnit(row.stock_unit || row.unit || 'kg');
         const purchaseUnit = normalizeUnit(row.purchase_unit || row.unit || stockUnit);
-        if (!isInventoryUnitForStation(stockUnit, station) || !isInventoryPurchaseUnitForStock(stockUnit, purchaseUnit, station)) {
+        if (!station || !isInventoryPurchaseUnitForStock(stockUnit, purchaseUnit, station)) {
           throw new UnitConversionError('Select stock and purchase units supported by the selected station.');
         }
         const conversionFactor = configuredPurchaseConversionFactor(
           stockUnit,
           purchaseUnit,
-          row.purchase_conversion_factor ?? row.conversion_factor
+          row.purchase_conversion_factor ?? row.conversion_factor,
+          { unit: stockUnit, purchase_unit: purchaseUnit }
         );
         const createdItem = await client.query(
           `INSERT INTO public.inventory_items (item_name, category, unit, base_unit, purchase_unit, purchase_conversion_factor, minimum_stock_level, current_quantity, unit_cost, inventory_value, supplier_id, location_id, station, is_active, created_by, updated_by)
@@ -431,22 +438,20 @@ router.post('/purchases', async (req, res) => {
       }
 
       const quantity = String(row.quantity ?? '');
-      const unitCost = row.unit_cost === undefined || row.unit_cost === null || String(row.unit_cost).trim() === ''
+      const providedUnitCost = row.unit_cost === undefined || row.unit_cost === null || String(row.unit_cost).trim() === ''
         ? null
         : String(row.unit_cost);
-      if (!isValidDecimal(quantity) || (unitCost !== null && !isValidDecimal(unitCost, true, 2))) {
+      if (!isValidDecimal(quantity) || (providedUnitCost !== null && !isValidDecimal(providedUnitCost, true, 2))) {
         throw new UnitConversionError('Purchase quantity must be positive and unit cost cannot be negative.');
       }
 
-      const station = normalizeStation(item.station || row.station || 'KITCHEN');
+      const station = normalizeInventoryStation(item.station || row.station || 'KITCHEN');
       const stockUnit = normalizeUnit(item.unit || row.stock_unit || row.unit || 'kg');
       if (row.stock_unit && normalizeUnit(row.stock_unit) !== stockUnit) {
         throw new UnitConversionError(`The stock unit for ${item.item_name} cannot be changed by recording a purchase.`);
       }
       const requestedUnit = row.purchase_unit || (
-        row.unit && normalizeUnit(row.unit) !== stockUnit
-          ? row.unit
-          : null
+        row.unit && normalizeUnit(row.unit) !== stockUnit ? row.unit : null
       );
       const purchaseUnit = normalizeUnit(requestedUnit || item.purchase_unit || row.unit || stockUnit);
       if (!station || !isInventoryUnitForStation(stockUnit, station) || !isInventoryPurchaseUnitForStock(stockUnit, purchaseUnit, station)) {
@@ -459,41 +464,43 @@ router.post('/purchases', async (req, res) => {
         requestedFactor ?? (purchaseUnit === normalizeUnit(item.purchase_unit) ? item.purchase_conversion_factor : undefined),
         item
       );
-      const amounts = await client.query(
+      const amountResult = await client.query(
         `SELECT
            ROUND($1::numeric * $2::numeric, 3)::numeric(12,3)::text AS normalized_quantity,
            ROUND($1::numeric * COALESCE($3::numeric, $4::numeric * $2::numeric), 2)::numeric(12,2)::text AS line_total,
-           ROUND(COALESCE($3::numeric, $4::numeric * $2::numeric) / $2::numeric, 2)::numeric(12,2)::text AS normalized_unit_cost,
-           ROUND(COALESCE($3::numeric, $4::numeric * $2::numeric), 2)::numeric(12,2)::text AS purchase_unit_cost`,
-        [quantity, conversionFactor, unitCost, String(item.unit_cost || 0)]
+           ROUND(COALESCE($3::numeric, $4::numeric * $2::numeric), 2)::numeric(12,2)::text AS purchase_unit_cost,
+           CASE WHEN $2::numeric > 0
+             THEN ROUND(COALESCE($3::numeric, $4::numeric * $2::numeric) / $2::numeric, 2)::numeric(12,2)::text
+             ELSE '0' END AS normalized_unit_cost`,
+        [quantity, String(conversionFactor), providedUnitCost, String(item.unit_cost || 0)]
       );
-      const normalizedQuantity = amounts.rows[0].normalized_quantity;
-      const lineTotal = amounts.rows[0].line_total;
-      const normalizedUnitCost = amounts.rows[0].normalized_unit_cost;
-      const purchaseUnitCost = amounts.rows[0].purchase_unit_cost;
+      const normalizedQuantity = amountResult.rows[0].normalized_quantity;
+      const lineTotal = amountResult.rows[0].line_total;
+      const unitCostInput = amountResult.rows[0].purchase_unit_cost;
+      const normalizedUnitCost = amountResult.rows[0].normalized_unit_cost;
       if (Number(normalizedQuantity) <= 0) {
-        throw new UnitConversionError('The converted purchase quantity is below the supported stock precision.');
+        throw new UnitConversionError('The converted stock quantity is below the supported precision.');
       }
-      const stockUnitCost = Number(normalizedUnitCost) > 0 ? normalizedUnitCost : String(item.unit_cost || 0);
-      const totalResult = await client.query(
-        `SELECT ($1::numeric + $2::numeric)::numeric(12,2)::text AS total_amount`,
+      const nextTotal = await client.query(
+        `SELECT ROUND($1::numeric + $2::numeric, 2)::numeric(12,2)::text AS amount`,
         [totalAmount, lineTotal]
       );
-      totalAmount = totalResult.rows[0].total_amount;
+      totalAmount = nextTotal.rows[0].amount;
+      const locationId = await resolveLocationId(row.location_id || item.location_id || null, row.location_name || 'MAIN STORE');
 
       await client.query(
         `UPDATE public.inventory_items
-         SET current_quantity = current_quantity + $1,
-             unit_cost = CASE WHEN $2::numeric > 0 THEN $2 ELSE unit_cost END,
-             inventory_value = (current_quantity + $1) * CASE WHEN $2::numeric > 0 THEN $2 ELSE unit_cost END,
+         SET current_quantity = current_quantity + $1::numeric,
+             unit_cost = CASE WHEN $2::numeric > 0 THEN $2::numeric ELSE unit_cost END,
+             inventory_value = (current_quantity + $1::numeric) * CASE WHEN $2::numeric > 0 THEN $2::numeric ELSE unit_cost END,
+             purchase_unit = $3,
+             purchase_conversion_factor = $4,
              updated_at = NOW(),
-             supplier_id = COALESCE(supplier_id, $3),
-             location_id = COALESCE(location_id, $4),
-             updated_by = $5,
-             purchase_unit = $7,
-             purchase_conversion_factor = $8
-         WHERE id = $6`,
-        [normalizedQuantity, stockUnitCost, supplierId, await resolveLocationId(row.location_id || item.location_id || null, row.location_name || 'MAIN STORE'), actor, item.id, purchaseUnit, conversionFactor]
+             supplier_id = COALESCE(supplier_id, $5),
+             location_id = COALESCE(location_id, $6),
+             updated_by = $7
+         WHERE id = $8`,
+        [normalizedQuantity, normalizedUnitCost, purchaseUnit, conversionFactor, supplierId, locationId, actor, item.id]
       );
 
       const transactionResult = await client.query(
@@ -507,36 +514,37 @@ router.post('/purchases', async (req, res) => {
           `PUR-${purchase.rows[0].id}-${item.id}-${Date.now()}`,
           normalizedQuantity,
           stockUnit,
-          stockUnitCost,
+          normalizedUnitCost,
           lineTotal,
           null,
-          await resolveLocationId(row.location_id || item.location_id || null, row.location_name || 'MAIN STORE'),
+          locationId,
           station,
           supplierId,
           businessDate,
           actor,
-          `Purchase receipt for ${item.item_name}: ${quantity} ${purchaseUnit} × ${conversionFactor} ${stockUnit}/${purchaseUnit}`,
+          `Purchase receipt ${quantity} ${purchaseUnit}; conversion ${conversionFactor} ${stockUnit} per ${purchaseUnit}`,
         ]
       );
 
       purchaseLines.push({
         ...transactionResult.rows[0],
         item_name: item.item_name,
-        purchase_quantity: quantity,
-        purchase_unit: purchaseUnit,
-        conversion_factor: conversionFactor,
-        normalized_stock_quantity: normalizedQuantity,
-        quantity: normalizedQuantity,
-        unit: stockUnit,
-        line_total: lineTotal,
+        quantity: Number(quantity),
+        unit: purchaseUnit,
+        unit_cost: Number(unitCostInput),
+        stock_unit_cost: Number(normalizedUnitCost),
+        conversion_factor: String(conversionFactor),
+        normalized_stock_quantity: Number(normalizedQuantity),
+        normalized_stock_unit: stockUnit,
+        lineTotal: Number(lineTotal),
+        total_cost: Number(lineTotal),
       });
 
       await client.query(
-        `INSERT INTO public.purchase_receipt_items (
-           purchase_id, item_id, quantity, unit, unit_cost, total_cost, location_id,
-           normalized_stock_quantity, conversion_factor
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [purchase.rows[0].id, item.id, quantity, purchaseUnit, purchaseUnitCost, lineTotal, await resolveLocationId(row.location_id || item.location_id || null, row.location_name || 'MAIN STORE'), normalizedQuantity, conversionFactor]
+        `INSERT INTO public.purchase_receipt_items
+           (purchase_id, item_id, quantity, unit, unit_cost, total_cost, location_id, normalized_stock_quantity, conversion_factor, transaction_reference)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [purchase.rows[0].id, item.id, quantity, purchaseUnit, unitCostInput, lineTotal, locationId, normalizedQuantity, conversionFactor, transactionResult.rows[0].reference_number]
       );
     }
 
@@ -558,7 +566,7 @@ router.post('/purchases', async (req, res) => {
     });
 
     await client.query('COMMIT');
-    res.status(201).json({ purchase: purchase.rows[0], items: purchaseLines, total_amount: totalAmount });
+    res.status(201).json({ purchase: purchase.rows[0], items: purchaseLines, total_amount: Number(totalAmount) });
   } catch (error) {
     await client.query('ROLLBACK');
     res.status(error instanceof UnitConversionError ? 400 : 500).json({ error: error.message });
@@ -572,7 +580,7 @@ router.get('/purchases', async (req, res) => {
     const result = await pool.query(
       `SELECT pr.*, s.name AS supplier_name,
               COALESCE((SELECT json_agg(row_to_json(pi)) FROM (
-                SELECT pri.*, ii.item_name, ii.unit AS stock_unit FROM public.purchase_receipt_items pri
+                SELECT pri.*, ii.item_name, ii.unit AS normalized_stock_unit FROM public.purchase_receipt_items pri
                 JOIN public.inventory_items ii ON ii.id = pri.item_id
                 WHERE pri.purchase_id = pr.id
               ) pi), '[]'::json) AS items
@@ -614,61 +622,73 @@ router.post('/transfers', async (req, res) => {
 
     for (const row of items) {
       const itemId = Number(row.item_id);
-      const quantity = Number(row.quantity || 0);
-      const unit = normalizeUnit(row.unit || 'kg');
-      if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('Transfer quantity must be greater than zero.');
+      const quantity = String(row.quantity ?? '');
+      if (!isValidDecimal(quantity)) throw new UnitConversionError('Transfer quantity must be greater than zero.');
       const item = (await client.query(
         `SELECT * FROM public.inventory_items WHERE id = $1 AND location_id = $2 FOR UPDATE`,
         [itemId, Number(payload.source_location_id)]
       )).rows[0];
 
       if (!item) throw new Error(`Item not found for transfer: ${itemId}`);
-      if (Number(item.current_quantity || 0) < quantity) {
-        throw new Error(`Insufficient stock for ${item.item_name}: has ${item.current_quantity}, needs ${quantity}.`);
+      const unit = normalizeUnit(item.unit || 'kg');
+      const conversionFactor = inventoryUnitConversionFactor(row.unit || item.unit || 'kg', item.unit || 'kg', item);
+      const converted = await client.query(
+        `SELECT ROUND($1::numeric * $2::numeric, 3)::numeric(12,3)::text AS quantity,
+                current_quantity < ROUND($1::numeric * $2::numeric, 3) AS insufficient
+         FROM public.inventory_items WHERE id = $3`,
+        [quantity, String(conversionFactor), item.id]
+      );
+      const stockQuantity = converted.rows[0].quantity;
+      if (Number(stockQuantity) <= 0) throw new UnitConversionError('The converted transfer quantity is below the supported stock precision.');
+      if (converted.rows[0].insufficient) {
+        throw new Error(`Insufficient stock for ${item.item_name}: has ${item.current_quantity}, needs ${stockQuantity} ${unit}.`);
       }
+      const transferValue = await client.query(
+        `SELECT ROUND($1::numeric * $2::numeric, 2)::numeric(12,2)::text AS value`,
+        [stockQuantity, String(item.unit_cost || 0)]
+      );
 
       await client.query(
         `UPDATE public.inventory_items
-         SET current_quantity = current_quantity - $1,
-             inventory_value = (current_quantity - $1) * unit_cost,
+         SET current_quantity = current_quantity - $1::numeric,
+             inventory_value = (current_quantity - $1::numeric) * unit_cost,
              updated_at = NOW()
          WHERE id = $2 AND location_id = $3`,
-        [quantity, itemId, Number(payload.source_location_id)]
+        [stockQuantity, itemId, Number(payload.source_location_id)]
       );
 
       const destinationResult = await client.query(
         `SELECT * FROM public.inventory_items
          WHERE LOWER(item_name) = LOWER($1)
-           AND LOWER(COALESCE(unit, 'kg')) = LOWER($2)
-           AND UPPER(COALESCE(station, 'KITCHEN')) = UPPER($3)
-           AND location_id = $4
+           AND UPPER(COALESCE(station, 'KITCHEN')) = UPPER($2)
+           AND location_id = $3
          ORDER BY id
-         LIMIT 1
          FOR UPDATE`,
-        [item.item_name, unit, item.station || 'KITCHEN', Number(payload.destination_location_id)]
+        [item.item_name, item.station || 'KITCHEN', Number(payload.destination_location_id)]
       );
-      let destinationItem = destinationResult.rows[0];
+      let destinationItem = destinationResult.rows.find((candidate) => normalizeUnit(candidate.unit || 'kg') === unit);
 
       if (destinationItem) {
         const updatedDestination = await client.query(
           `UPDATE public.inventory_items
-           SET current_quantity = current_quantity + $1,
-               inventory_value = (current_quantity + $1) * unit_cost,
+           SET current_quantity = current_quantity + $1::numeric,
+               inventory_value = (current_quantity + $1::numeric) * unit_cost,
                updated_at = NOW()
            WHERE id = $2
            RETURNING *`,
-          [quantity, destinationItem.id]
+          [stockQuantity, destinationItem.id]
         );
         destinationItem = updatedDestination.rows[0];
       } else {
         const createdDestination = await client.query(
           `INSERT INTO public.inventory_items (
-             item_name, sku, category, unit, base_unit, minimum_stock_level, current_quantity,
+             item_name, sku, category, unit, base_unit, purchase_unit, purchase_conversion_factor, minimum_stock_level, current_quantity,
              unit_cost, inventory_value, supplier_id, location_id, station, is_active, created_by, updated_by
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
            RETURNING *`,
-          [item.item_name, item.sku, item.category, item.unit, item.base_unit, item.minimum_stock_level,
-            quantity, item.unit_cost, quantity * Number(item.unit_cost || 0), item.supplier_id,
+          [item.item_name, item.sku, item.category, unit, item.base_unit, item.purchase_unit || item.unit,
+            item.purchase_conversion_factor || 1, item.minimum_stock_level, stockQuantity, item.unit_cost,
+            transferValue.rows[0].value, item.supplier_id,
             Number(payload.destination_location_id), item.station, item.is_active, req.user?.name || 'Accountant']
         );
         destinationItem = createdDestination.rows[0];
@@ -677,29 +697,29 @@ router.post('/transfers', async (req, res) => {
       await client.query(
         `INSERT INTO public.inventory_transfer_items (transfer_id, item_id, quantity, unit)
          VALUES ($1, $2, $3, $4)`,
-        [transferId, itemId, quantity, unit]
+        [transferId, itemId, stockQuantity, unit]
       );
 
       await client.query(
         `INSERT INTO public.inventory_transactions (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value, source_location_id, destination_location_id, station, business_date, created_by, notes)
          VALUES ($1, $2, 'TRANSFER_OUT', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [item.id, `${referenceNumber}-OUT-${item.id}`, quantity, unit, item.unit_cost || 0, quantity * Number(item.unit_cost || 0), Number(payload.source_location_id), Number(payload.destination_location_id), item.station || 'KITCHEN', payload.business_date || currentBusinessDate(), req.user?.name || 'Accountant', `Transfer out: ${item.item_name}`]
+        [item.id, `${referenceNumber}-OUT-${item.id}`, stockQuantity, unit, item.unit_cost || 0, transferValue.rows[0].value, Number(payload.source_location_id), Number(payload.destination_location_id), item.station || 'KITCHEN', payload.business_date || currentBusinessDate(), req.user?.name || 'Accountant', `Transfer out: ${item.item_name}`]
       );
 
       await client.query(
         `INSERT INTO public.inventory_transactions (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value, source_location_id, destination_location_id, station, business_date, created_by, notes)
          VALUES ($1, $2, 'TRANSFER_IN', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [destinationItem.id, `${referenceNumber}-IN-${item.id}`, quantity, unit, item.unit_cost || 0, quantity * Number(item.unit_cost || 0), Number(payload.source_location_id), Number(payload.destination_location_id), item.station || 'KITCHEN', payload.business_date || currentBusinessDate(), req.user?.name || 'Accountant', `Transfer in: ${item.item_name}`]
+        [destinationItem.id, `${referenceNumber}-IN-${item.id}`, stockQuantity, unit, item.unit_cost || 0, transferValue.rows[0].value, Number(payload.source_location_id), Number(payload.destination_location_id), item.station || 'KITCHEN', payload.business_date || currentBusinessDate(), req.user?.name || 'Accountant', `Transfer in: ${item.item_name}`]
       );
 
-      transferItems.push({ item_name: item.item_name, quantity, unit });
+      transferItems.push({ item_name: item.item_name, quantity: stockQuantity, unit });
     }
 
     await client.query('COMMIT');
     res.status(201).json({ transfer: transfer.rows[0], items: transferItems });
   } catch (error) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: error.message });
+    res.status(error instanceof UnitConversionError ? 400 : 500).json({ error: error.message });
   } finally {
     client.release();
   }
@@ -818,8 +838,9 @@ router.post('/recipes', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'You can only configure recipes for your assigned department.' });
     }
-    if (ingredients.some((ingredient) => !isValidDecimal(ingredient.quantity) ||
-      !Number.isInteger(Number(ingredient.ingredient_item_id)) || Number(ingredient.ingredient_item_id) <= 0)) {
+    if (ingredients.some((ingredient) => {
+      return !isValidDecimal(ingredient.quantity) || !Number.isInteger(Number(ingredient.ingredient_item_id));
+    })) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Each ingredient needs an existing inventory item and a quantity greater than zero.' });
     }
@@ -840,8 +861,8 @@ router.post('/recipes', async (req, res) => {
         return res.status(400).json({ error: `Ingredient ${stockItem?.item_name || ingredient.ingredient_item_id} is not available to ${station}.` });
       }
       try {
-        convertInventoryQuantity(1, ingredient.unit || stockItem.unit, stockItem.unit, stockItem);
-      } catch {
+        inventoryUnitConversionFactor(ingredient.unit || stockItem.unit, stockItem.unit, stockItem);
+      } catch (error) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: `Ingredient unit ${ingredient.unit} is incompatible with ${stockItem.unit} stock for ${stockItem.item_name}.` });
       }
@@ -900,7 +921,7 @@ router.put('/recipes/:id', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Submitted or active recipes are immutable. Save a new version instead.' });
     }
-    if (!ingredients.length || ingredients.some((ingredient) => !Number.isInteger(Number(ingredient.ingredient_item_id)) || Number(ingredient.ingredient_item_id) <= 0 || !isValidDecimal(ingredient.quantity))) {
+    if (!ingredients.length || ingredients.some((ingredient) => !Number.isInteger(Number(ingredient.ingredient_item_id)) || !isValidDecimal(ingredient.quantity))) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Each draft recipe needs inventory ingredients with quantities greater than zero.' });
     }
@@ -920,8 +941,8 @@ router.put('/recipes/:id', async (req, res) => {
         return res.status(400).json({ error: `Ingredient ${stockItem?.item_name || ingredient.ingredient_item_id} is not available to this department.` });
       }
       try {
-        convertInventoryQuantity(1, ingredient.unit || stockItem.unit, stockItem.unit, stockItem);
-      } catch {
+        inventoryUnitConversionFactor(ingredient.unit || stockItem.unit, stockItem.unit, stockItem);
+      } catch (error) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: `Ingredient unit ${ingredient.unit} is incompatible with ${stockItem.unit} stock for ${stockItem.item_name}.` });
       }
@@ -1054,30 +1075,31 @@ router.get('/recipes/:id/costing', async (req, res) => {
         missingCostItems += 1;
         continue;
       }
+      let cost;
       try {
-        const conversionFactor = inventoryUnitConversionFactor(ingredient.unit || item.unit, item.unit || 'kg', item);
+        const factor = inventoryUnitConversionFactor(ingredient.unit || item.unit, item.unit || 'kg', item);
         const costResult = await pool.query(
           `SELECT ROUND($1::numeric * $2::numeric * $3::numeric, 2)::numeric(12,2)::text AS cost`,
-          [ingredient.quantity || 0, conversionFactor, item.unit_cost || 0]
+          [String(ingredient.quantity || 0), String(factor), String(item.unit_cost || 0)]
         );
-        const totalResult = await pool.query(
-          `SELECT ($1::numeric + $2::numeric)::numeric(12,2)::text AS total_cost`,
-          [totalCost, costResult.rows[0].cost]
-        );
-        totalCost = totalResult.rows[0].total_cost;
+        cost = costResult.rows[0].cost;
       } catch {
         missingCostItems += 1;
         continue;
       }
       if (Number(item.unit_cost || 0) <= 0) missingCostItems += 1;
+      const runningTotal = await pool.query(
+        `SELECT ROUND($1::numeric + $2::numeric, 2)::numeric(12,2)::text AS total`,
+        [totalCost, cost]
+      );
+      totalCost = runningTotal.rows[0].total;
     }
 
     const sellingPrice = Number(recipe.rows[0].selling_price || 0);
-    const totalCostNumber = Number(totalCost);
-    const grossProfit = sellingPrice - totalCostNumber;
-    const foodCostPercentage = sellingPrice > 0 ? ((totalCostNumber / sellingPrice) * 100) : 0;
+    const grossProfit = sellingPrice - Number(totalCost);
+    const foodCostPercentage = sellingPrice > 0 ? ((Number(totalCost) / sellingPrice) * 100) : 0;
 
-    res.json({ recipe: recipe.rows[0], total_cost: totalCostNumber, selling_price: sellingPrice, gross_profit: grossProfit, food_cost_percentage: foodCostPercentage, cost_status: missingCostItems ? 'REVIEW_REQUIRED' : 'ESTIMATED', missing_cost_items: missingCostItems });
+    res.json({ recipe: recipe.rows[0], total_cost: Number(totalCost), selling_price: sellingPrice, gross_profit: grossProfit, food_cost_percentage: foodCostPercentage, cost_status: missingCostItems ? 'REVIEW_REQUIRED' : 'ESTIMATED', missing_cost_items: missingCostItems });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1154,7 +1176,7 @@ router.post('/waste', async (req, res) => {
   const quantity = String(payload.quantity ?? '');
   const actor = req.inventoryActor.name;
 
-  if (!itemId || !isValidDecimal(quantity)) {
+  if (!Number.isInteger(itemId) || itemId <= 0 || !isValidDecimal(quantity)) {
     return res.status(400).json({ error: 'Item and quantity are required.' });
   }
 
@@ -1184,30 +1206,26 @@ router.post('/waste', async (req, res) => {
       }
     }
     let recordedQuantity;
+    let newCurrent;
     try {
-      const conversionFactor = inventoryUnitConversionFactor(payload.unit || item.unit || 'kg', item.unit || 'kg', item);
+      const factor = inventoryUnitConversionFactor(payload.unit || item.unit || 'kg', item.unit || 'kg', item);
       const converted = await client.query(
-        `SELECT ROUND($1::numeric * $2::numeric, 3)::numeric(12,3)::text AS quantity`,
-        [quantity, conversionFactor]
+        `SELECT ROUND($1::numeric * $2::numeric, 3)::numeric(12,3)::text AS quantity,
+                (current_quantity - ROUND($1::numeric * $2::numeric, 3)) < 0 AS insufficient,
+                GREATEST(current_quantity - ROUND($1::numeric * $2::numeric, 3), 0)::numeric(12,3)::text AS remaining
+         FROM public.inventory_items WHERE id = $3`,
+        [quantity, String(factor), item.id]
       );
       recordedQuantity = converted.rows[0].quantity;
-      if (Number(recordedQuantity) <= 0) {
-        throw new UnitConversionError('The converted waste quantity is below the supported stock precision.');
+      newCurrent = converted.rows[0].remaining;
+      if (Number(recordedQuantity) <= 0) throw new UnitConversionError('The converted waste quantity is below the supported stock precision.');
+      if (converted.rows[0].insufficient) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `Insufficient stock for ${item.item_name}. Available: ${item.current_quantity}.` });
       }
     } catch (error) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: error.message });
-    }
-
-    const remaining = await client.query(
-      `SELECT (current_quantity - $1::numeric)::numeric(12,3)::text AS quantity
-       FROM public.inventory_items WHERE id = $2`,
-      [recordedQuantity, item.id]
-    );
-    const newCurrent = remaining.rows[0].quantity;
-    if (Number(newCurrent) < 0) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: `Insufficient stock for ${item.item_name}. Available: ${item.current_quantity}.` });
     }
 
     wasteEntry = await client.query(
@@ -1230,7 +1248,7 @@ router.post('/waste', async (req, res) => {
     await client.query(
       `INSERT INTO public.inventory_transactions (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value, source_location_id, destination_location_id, station, business_date, created_by, notes)
        VALUES ($1, $2, 'WASTE', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [item.id, `WASTE-${wasteEntry.rows[0].id}`, recordedQuantity, normalizeUnit(item.unit || 'kg'), item.unit_cost || 0, wasteCost, item.location_id || null, null, station, businessDate, actor, Number(item.unit_cost || 0) > 0 ? (payload.notes || 'Waste entry') : `COST_REVIEW: missing unit cost for ${item.item_name}; ${payload.notes || 'Waste entry'}`]
+      [item.id, `WASTE-${wasteEntry.rows[0].id}`, recordedQuantity, normalizeUnit(item.unit || 'kg'), String(item.unit_cost || 0), wasteCost, item.location_id || null, null, station, businessDate, actor, Number(item.unit_cost || 0) > 0 ? (payload.notes || 'Waste entry') : `COST_REVIEW: missing unit cost for ${item.item_name}; ${payload.notes || 'Waste entry'}`]
     );
 
     if (Number(wasteCost) > 0) {
@@ -1242,8 +1260,8 @@ router.post('/waste', async (req, res) => {
         postedBy: actor,
         reference: `WASTE-${wasteEntry.rows[0].id}`,
         lines: [
-          { accountCode: '5009', accountName: 'Waste / Inventory Loss', debit: wasteCost },
-          { accountCode: '1201', accountName: 'Inventory', credit: wasteCost },
+          { accountCode: '5009', accountName: 'Waste / Inventory Loss', debit: Number(wasteCost) },
+          { accountCode: '1201', accountName: 'Inventory', credit: Number(wasteCost) },
         ],
       });
     }

@@ -124,8 +124,27 @@ router.get('/', async (req, res) => {
       values.push(orderDate);
       filters.push(`DATE(COALESCE(o.created_at, o.timestamp) AT TIME ZONE 'Africa/Kampala') = $${values.length}::date`);
     }
+    const includeUnsentOrders = staffId === undefined && orderDate === undefined;
+    if (includeUnsentOrders) {
+      filters.push(`(
+        COALESCE(o.sent_to_cashier, false) = false
+        OR EXISTS (
+          SELECT 1
+          FROM public.credits c
+          WHERE c.order_id = o.id
+            AND c.status <> 'FullySettled'
+        )
+        OR o.id IN (
+          SELECT id
+          FROM public.orders
+          WHERE COALESCE(sent_to_cashier, false) = true
+          ORDER BY id DESC
+          LIMIT 200
+        )
+      )`);
+    }
     const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-    const limitClause = staffId !== undefined && orderDate !== undefined ? '' : 'LIMIT 200';
+    const limitClause = !includeUnsentOrders && (staffId === undefined || orderDate === undefined) ? 'LIMIT 200' : '';
     const result = await pool.query(
             `SELECT o.*, s.name as staff_name, s.role as staff_role_name,
               (SELECT status FROM kitchen_tickets WHERE order_id = o.id ORDER BY id DESC LIMIT 1) AS kitchen_ticket_status,

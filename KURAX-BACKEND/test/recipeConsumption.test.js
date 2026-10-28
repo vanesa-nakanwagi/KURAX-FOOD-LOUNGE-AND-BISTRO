@@ -10,6 +10,13 @@ test('recipe quantities convert within compatible mass and volume units', () => 
   assert.throws(() => convertRecipeQuantity(1, 'kg', 'ml'), /Incompatible recipe and inventory units/);
 });
 
+test('recipes can use item-configured packaging units without cross-dimension conversions', () => {
+  const coffee = { unit: 'kg', purchase_unit: 'bag', purchase_conversion_factor: '25' };
+  assert.equal(convertRecipeQuantity(18, 'g', 'kg', coffee), 0.018);
+  assert.equal(convertRecipeQuantity(1, 'bag', 'kg', coffee), 25);
+  assert.throws(() => convertRecipeQuantity(1, 'L', 'kg', coffee), /Incompatible recipe and inventory units/);
+});
+
 test('only paid or approved-credit non-voided items are consumable', () => {
   assert.equal(isSoldOrderItem({ _rowPaid: true, payment_method: 'Cash' }), true);
   assert.equal(isSoldOrderItem({ creditRequested: true, payment_method: 'Credit' }), false);

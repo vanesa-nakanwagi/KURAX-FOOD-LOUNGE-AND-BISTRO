@@ -4,12 +4,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import API_URL from '../../config/api';
 import InventoryWorkflows from './InventoryWorkflows';
 import Pagination from '../components/Pagination';
-import { defaultPurchaseConversionFactor, purchaseUnitsForStation, STATION_UNITS } from './inventoryUnits';
+import { defaultPurchaseConversionFactor, inventoryUnitsForStation } from './inventoryUnits';
 
 const defaultForm = {
   item_name: '',
   quantity: '0',
-  stock_unit: 'kg',
+  unit: 'kg',
   purchase_unit: 'kg',
   purchase_conversion_factor: '1',
   unit_cost: '0',
@@ -196,16 +196,16 @@ export default function InventoryManagement() {
         payment_method: 'Cash',
         items: [{
           item_name: form.item_name,
-          quantity: form.quantity,
-          unit: form.stock_unit,
-          stock_unit: form.stock_unit,
-          purchase_unit: form.purchase_unit,
-          purchase_conversion_factor: form.purchase_conversion_factor,
-          unit_cost: form.unit_cost,
+          quantity: Number(form.quantity || 0),
+          unit: form.unit,
+          unit_cost: Number(form.unit_cost || 0),
           category: form.category,
           minimum_stock_level: Number(form.minimum_stock_level || 0),
           location_name: form.location_name,
           station: form.station,
+          stock_unit: form.unit,
+          purchase_unit: form.purchase_unit,
+          purchase_conversion_factor: form.purchase_conversion_factor,
         }],
       };
       const response = await fetch(`${API_URL}/api/inventory/purchases`, {
@@ -322,7 +322,10 @@ export default function InventoryManagement() {
                           <div className="text-[10px] text-zinc-500">{item.location_name || 'Main Store'} · {item.station || 'KITCHEN'}</div>
                         </td>
                         <td className="px-3 py-3 font-semibold text-zinc-700">{Number(item.current_quantity || 0)} {item.unit || 'kg'}</td>
-                        <td className="px-3 py-3 text-zinc-600">{item.unit || 'kg'}</td>
+                        <td className="px-3 py-3 text-zinc-600">
+                          <div>{item.unit || 'kg'}</div>
+                          <div className="text-[10px] text-zinc-400">Purchase: {item.purchase_unit || item.unit || 'kg'} × {item.purchase_conversion_factor || 1}</div>
+                        </td>
                         <td className="px-3 py-3 font-bold text-zinc-800">{currency(item.inventory_value || 0)}</td>
                         <td className="px-3 py-3">
                           <span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-widest ${
@@ -360,43 +363,34 @@ export default function InventoryManagement() {
             <form onSubmit={handleSubmit} className="space-y-3">
               <Input label="Item name" value={form.item_name} onChange={(value) => setForm((current) => ({ ...current, item_name: value }))} />
               <div className="grid grid-cols-2 gap-3">
-                <Input label="Purchase quantity" type="number" min="0.001" value={form.quantity} onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} />
-                <Select label="Stock unit" value={form.stock_unit} onChange={(value) => setForm((current) => ({
-                  ...current,
-                  stock_unit: value,
-                  purchase_unit: purchaseUnitsForStation(current.station, value).includes(current.purchase_unit) ? current.purchase_unit : value,
-                  purchase_conversion_factor: defaultPurchaseConversionFactor(
-                    value,
-                    purchaseUnitsForStation(current.station, value).includes(current.purchase_unit) ? current.purchase_unit : value
-                  ),
-                }))} options={STATION_UNITS[form.station] || []} />
-                <Select label="Purchase unit" value={form.purchase_unit} onChange={(value) => setForm((current) => ({
-                  ...current,
-                  purchase_unit: value,
-                  purchase_conversion_factor: defaultPurchaseConversionFactor(current.stock_unit, value),
-                }))} options={purchaseUnitsForStation(form.station, form.stock_unit)} />
-                <Input label={`Stock units per ${form.purchase_unit || 'purchase unit'}`} type="number" min="0.000001" value={form.purchase_conversion_factor} onChange={(value) => setForm((current) => ({ ...current, purchase_conversion_factor: value }))} required />
+                <Input label="Quantity" type="number" value={form.quantity} onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} />
+                <Select label="Stock unit" value={form.unit} onChange={(value) => setForm((current) => {
+                  const factor = defaultPurchaseConversionFactor(value, current.purchase_unit);
+                  return { ...current, unit: value, purchase_unit: factor === '' ? value : current.purchase_unit, purchase_conversion_factor: factor === '' ? '1' : String(factor) };
+                })} options={inventoryUnitsForStation(form.station)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Input label={`Cost per ${form.purchase_unit}`} type="number" min="0" value={form.unit_cost} onChange={(value) => setForm((current) => ({ ...current, unit_cost: value }))} />
+                <Input label="Unit cost" type="number" value={form.unit_cost} onChange={(value) => setForm((current) => ({ ...current, unit_cost: value }))} />
                 <Input label="Min stock" type="number" value={form.minimum_stock_level} onChange={(value) => setForm((current) => ({ ...current, minimum_stock_level: value }))} />
               </div>
               <Input label="Supplier" value={form.supplier_name} onChange={(value) => setForm((current) => ({ ...current, supplier_name: value }))} />
               <div className="grid grid-cols-2 gap-3">
                 <Select label="Location" value={form.location_name} onChange={(value) => setForm((current) => ({ ...current, location_name: value }))} options={['MAIN STORE', 'KITCHEN', 'BAR', 'BARISTA']} />
                 <Select label="Station" value={form.station} onChange={(value) => setForm((current) => {
-                  const units = STATION_UNITS[value] || [];
-                  const stockUnit = units.includes(current.stock_unit) ? current.stock_unit : units[0];
-                  const purchaseOptions = purchaseUnitsForStation(value, stockUnit);
-                  const purchaseUnit = purchaseOptions.includes(current.purchase_unit) ? current.purchase_unit : stockUnit;
-                  return {
-                    ...current,
-                    station: value,
-                    stock_unit: stockUnit,
-                    purchase_unit: purchaseUnit,
-                    purchase_conversion_factor: defaultPurchaseConversionFactor(stockUnit, purchaseUnit),
-                  };
+                  const allowed = inventoryUnitsForStation(value);
+                  const unit = allowed.includes(current.unit) ? current.unit : allowed[0];
+                  const purchaseUnit = allowed.includes(current.purchase_unit) ? current.purchase_unit : unit;
+                  const factor = defaultPurchaseConversionFactor(unit, purchaseUnit);
+                  return { ...current, station: value, unit, purchase_unit: purchaseUnit, purchase_conversion_factor: factor === '' ? '1' : String(factor) };
                 })} options={['KITCHEN', 'BAR', 'BARISTA']} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Select label="Purchase unit" value={form.purchase_unit} onChange={(value) => setForm((current) => ({
+                  ...current,
+                  purchase_unit: value,
+                  purchase_conversion_factor: String(defaultPurchaseConversionFactor(current.unit, value)),
+                }))} options={inventoryUnitsForStation(form.station)} />
+                <Input label={`Stock units per ${form.purchase_unit}`} type="number" value={form.purchase_conversion_factor} onChange={(value) => setForm((current) => ({ ...current, purchase_conversion_factor: value }))} />
               </div>
               <button
                 type="submit"

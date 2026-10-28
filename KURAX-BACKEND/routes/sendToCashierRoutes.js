@@ -330,13 +330,19 @@ router.post("/send-to-cashier", async (req, res) => {
     // When method is Credit, create a row in credits table
     if (method === 'Credit' && credit_info?.name) {
       try {
+        const selectedOrderId = is_item && item?._orderId !== undefined
+          ? Number(item._orderId)
+          : null;
+        const creditOrderId = selectedOrderId && formattedOrderIds.includes(selectedOrderId)
+          ? selectedOrderId
+          : formattedOrderIds?.[0] || null;
         await pool.query(
           `INSERT INTO credits
              (order_id, table_name, label, amount, amount_paid, balance,
               client_name, client_phone, pay_by, waiter_name, status, cashier_queue_id, created_at)
            VALUES ($1, $2, $3, $4, 0, $4, $5, $6, $7, $8, 'PendingCashier', $9, NOW())`,
           [
-            formattedOrderIds?.[0] || null,
+            creditOrderId,
             table_name,
             label || `Credit – ${table_name}`,
             Number(amount),

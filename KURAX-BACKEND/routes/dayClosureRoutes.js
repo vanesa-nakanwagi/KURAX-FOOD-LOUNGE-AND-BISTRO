@@ -25,6 +25,72 @@ router.post('/close-day', async (req, res) => {
   
   try {
     await client.query('BEGIN');
+    await client.query('LOCK TABLE public.orders, public.tables IN SHARE ROW EXCLUSIVE MODE');
+
+    const openWorkResult = await client.query(`
+      SELECT
+        (
+          SELECT COUNT(*)
+          FROM public.tables t
+          WHERE LOWER(COALESCE(t.status, '')) = 'occupied'
+            AND (
+              NOT EXISTS (
+                SELECT 1
+                FROM public.orders o
+                WHERE UPPER(o.table_name) = UPPER(t.name)
+                  AND COALESCE(o.day_cleared, false) = false
+                  AND COALESCE(o.is_archived, false) = false
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM public.orders o
+                WHERE UPPER(o.table_name) = UPPER(t.name)
+                  AND COALESCE(o.day_cleared, false) = false
+                  AND COALESCE(o.is_archived, false) = false
+                  AND (
+                    LOWER(COALESCE(o.status, '')) NOT IN ('paid', 'closed', 'voided', 'cancelled')
+                    OR (
+                      LOWER(COALESCE(o.status, '')) <> 'closed'
+                      AND EXISTS (
+                        SELECT 1
+                        FROM public.credits c
+                        WHERE c.order_id = o.id
+                          AND c.status <> 'FullySettled'
+                      )
+                    )
+                  )
+              )
+            )
+        ) AS open_table_count,
+        (
+          SELECT COUNT(*)
+          FROM public.orders o
+          WHERE COALESCE(o.day_cleared, false) = false
+            AND COALESCE(o.is_archived, false) = false
+            AND (
+              LOWER(COALESCE(o.status, '')) NOT IN ('paid', 'closed', 'voided', 'cancelled')
+              OR (
+                LOWER(COALESCE(o.status, '')) <> 'closed'
+                AND EXISTS (
+                SELECT 1
+                FROM public.credits c
+                WHERE c.order_id = o.id
+                  AND c.status <> 'FullySettled'
+                )
+              )
+            )
+        ) AS open_order_count
+    `);
+    const openTableCount = Number(openWorkResult.rows[0].open_table_count) || 0;
+    const openOrderCount = Number(openWorkResult.rows[0].open_order_count) || 0;
+    if (openTableCount > 0 || openOrderCount > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `Day cannot be closed while there are ${openTableCount} open table(s) and ${openOrderCount} open order(s). Close all open orders first; unsettled credited orders may remain only when marked Closed.`,
+        open_tables: openTableCount,
+        open_orders: openOrderCount,
+      });
+    }
 
     // Archive daily summary into day_closings
     const archiveResult = await client.query(`
@@ -84,6 +150,13 @@ router.post('/close-day', async (req, res) => {
           is_archived = true,
           updated_at = NOW()
       WHERE day_cleared = false
+        AND COALESCE(sent_to_cashier, false) = true
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.credits c
+          WHERE c.order_id = orders.id
+            AND c.status <> 'FullySettled'
+        )
         AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') <= $1
       RETURNING id
     `, [closingDate]);

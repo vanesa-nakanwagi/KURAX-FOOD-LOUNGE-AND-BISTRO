@@ -20,6 +20,11 @@ export default function CartModal({
 
   // Helper variable for clarity: true if the user is in the "Add/Customize Dish" view
   const isAddingDish = checkoutStep === 1 && activeDish; 
+  const finishOrder = () => {
+    cart.forEach(item => handleRemoveFromCart(item.id));
+    setCheckoutStep(1);
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 flex justify-center items-start pt-12 z-50 overflow-y-auto">
@@ -211,6 +216,7 @@ export default function CartModal({
             totalAmount={totalAmount}
             cartItems={cart}
             onBack={() => setCheckoutStep(1)}
+            onDone={finishOrder}
           />
         )}
       </div>

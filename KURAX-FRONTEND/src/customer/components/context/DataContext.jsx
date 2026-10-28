@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef, useMemo } from 'react';
 import API_URL from "../../../config/api";
+import { hasOutstandingCreditItems } from "../../../utils/paymentStatus";
 
 const DataContext = createContext();
 
@@ -91,7 +92,9 @@ export const DataProvider = ({ children }) => {
     const role = currentUser?.role?.toUpperCase();
     const canSeeArchived = role === 'ACCOUNTANT';
     if (canSeeArchived) return allOrders;
-    return allOrders.filter(order => !order.is_archived);
+    return allOrders.filter(order =>
+      !order.is_archived || !order.sent_to_cashier || hasOutstandingCreditItems(order)
+    );
   }, [allOrders, dayClosed, currentUser]);
 
   // ─── DATA FETCHERS ────────────────────────────────────────────────────────

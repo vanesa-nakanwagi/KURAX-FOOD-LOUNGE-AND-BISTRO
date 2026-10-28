@@ -848,9 +848,55 @@ export async function ensureDatabaseSchema() {
   await pool.query(`ALTER TABLE public.inventory_items
     ADD COLUMN IF NOT EXISTS purchase_unit TEXT,
     ADD COLUMN IF NOT EXISTS purchase_conversion_factor NUMERIC(12,6) NOT NULL DEFAULT 1`);
+  await pool.query(`UPDATE public.inventory_items
+    SET purchase_unit = unit
+    WHERE purchase_unit IS NULL OR BTRIM(purchase_unit) = ''`);
   await pool.query(`ALTER TABLE public.purchase_receipt_items
     ADD COLUMN IF NOT EXISTS normalized_stock_quantity NUMERIC(12,3),
-    ADD COLUMN IF NOT EXISTS conversion_factor NUMERIC(12,6)`);
+    ADD COLUMN IF NOT EXISTS conversion_factor NUMERIC(12,6),
+    ADD COLUMN IF NOT EXISTS transaction_reference TEXT`);
+  await pool.query(`UPDATE public.purchase_receipt_items pri
+    SET normalized_stock_quantity = COALESCE(pri.normalized_stock_quantity, pri.quantity),
+        conversion_factor = COALESCE(pri.conversion_factor, 1)
+    WHERE normalized_stock_quantity IS NULL OR conversion_factor IS NULL`);
+  const canonicalInventoryUnits = {
+    kg: 'kg', kilogram: 'kg', kilograms: 'kg', kgs: 'kg',
+    g: 'g', gram: 'g', grams: 'g',
+    l: 'L', litre: 'L', liter: 'L', litres: 'L', liters: 'L',
+    ml: 'ml', millilitre: 'ml', milliliter: 'ml', millilitres: 'ml', milliliters: 'ml',
+    pc: 'pc', piece: 'pc', pieces: 'pc', pcs: 'pc',
+    pack: 'pack', packet: 'pack', packets: 'pack', packs: 'pack',
+    btl: 'btl', bottle: 'btl', bottles: 'btl',
+    can: 'can', cans: 'can', tin: 'tin', tins: 'tin',
+    bag: 'bag', bags: 'bag', sachet: 'sachet', sachets: 'sachet',
+    bunch: 'bunch', bunches: 'bunch', doz: 'doz', dozen: 'doz', dozens: 'doz',
+    portion: 'portion', portions: 'portion', slice: 'slice', slices: 'slice',
+    shot: 'shot', shots: 'shot', glass: 'glass', glasses: 'glass',
+    pour: 'pour', pours: 'pour', crate: 'crate', crates: 'crate',
+    carton: 'carton', cartons: 'carton', cup: 'cup', cups: 'cup',
+    box: 'box', boxes: 'box', tab: 'tab', tablet: 'tab', tablets: 'tab', tabs: 'tab',
+  };
+  const unitColumns = [
+    ['inventory_items', 'unit'],
+    ['inventory_items', 'base_unit'],
+    ['inventory_items', 'purchase_unit'],
+    ['inventory_transactions', 'unit'],
+    ['inventory_transfer_items', 'unit'],
+    ['purchase_receipt_items', 'unit'],
+    ['recipe_ingredients', 'unit'],
+    ['inventory_consumptions', 'unit'],
+    ['inventory_waste', 'unit'],
+  ];
+  const canonicalUnitCase = (column) => `CASE LOWER(BTRIM(${column}))
+    ${Object.entries(canonicalInventoryUnits).map(([alias, canonical]) => `WHEN '${alias}' THEN '${canonical}'`).join('\n    ')}
+    ELSE ${column} END`;
+  for (const [table, column] of unitColumns) {
+    const canonical = canonicalUnitCase(column);
+    await pool.query(
+      `UPDATE public.${table} SET ${column} = ${canonical}
+       WHERE ${column} IS NOT NULL AND ${column} IS DISTINCT FROM ${canonical}`
+    );
+  }
 
   const indexStatements = [
     'CREATE INDEX IF NOT EXISTS idx_inventory_consumptions_recipe_business_date ON public.inventory_consumptions (recipe_id, business_date);',
