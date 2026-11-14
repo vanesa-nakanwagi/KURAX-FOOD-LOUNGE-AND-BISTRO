@@ -4,6 +4,7 @@ import { readSessionToken } from '../middleware/sessionTokens.js';
 import { summarizeDepartmentCredits } from '../helpers/departmentCreditSummary.js';
 import { syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
 import { hashStaffPin } from '../helpers/staffPin.js';
+import { ensureTicketWork } from './productionRoutes.js';
 
 const router = express.Router();
 const MANAGEMENT_ROLES = ['DIRECTOR', 'MANAGER', 'ACCOUNTANT'];
@@ -183,6 +184,53 @@ async function departmentVoidedTotals(department, from, to) {
   };
 }
 
+async function productionStaffReport(department, from, to) {
+  const station = {
+    kitchen_tickets: 'kitchen',
+    barman_tickets: 'bar',
+    barista_tickets: 'barista',
+  }[department.table];
+  await ensureTicketWork(pool, station);
+  const result = await pool.query(
+    `SELECT COALESCE(staff.name, work.staff_name, 'Unclaimed') AS claimed_by,
+            COUNT(*) FILTER (WHERE work.staff_id IS NOT NULL)::int AS items_claimed,
+            COUNT(*) FILTER (WHERE work.status='Completed')::int AS completed_items,
+            COUNT(*) FILTER (WHERE work.status='Voided')::int AS voided_items,
+            COALESCE(SUM(work.quantity) FILTER (WHERE work.status='Voided'),0) AS voided_quantity,
+            COALESCE(SUM(item.unit_price * work.quantity) FILTER (WHERE work.status='Voided'),0) AS voided_total,
+            COALESCE(SUM(item.unit_price * work.quantity) FILTER (WHERE work.staff_id IS NOT NULL),0) AS production_value
+     FROM public.restaurant_production_work work
+     JOIN public.${department.table} ticket ON ticket.id=work.ticket_id
+     LEFT JOIN public.staff staff ON staff.id=work.staff_id
+     LEFT JOIN LATERAL (
+       SELECT CASE
+                WHEN COALESCE(source_item.value->>'price', source_item.value->>'unit_price') ~ '^[0-9]+(\\.[0-9]+)?$'
+                  THEN COALESCE(source_item.value->>'price', source_item.value->>'unit_price')::numeric
+                ELSE NULL
+              END AS unit_price
+       FROM jsonb_array_elements(COALESCE(ticket.items,'[]'::jsonb))
+         WITH ORDINALITY AS source_item(value, ordinality)
+       WHERE COALESCE(NULLIF(source_item.value->>'_orderItemIndex','')::integer, source_item.ordinality - 1) = work.item_index
+       LIMIT 1
+     ) item ON true
+     WHERE work.station=$3
+       AND ticket.ticket_date BETWEEN $1::date AND $2::date
+       AND (work.staff_id IS NOT NULL OR work.status='Voided')
+     GROUP BY COALESCE(staff.name, work.staff_name, 'Unclaimed')
+     ORDER BY items_claimed DESC, claimed_by`,
+    [from, to, station]
+  );
+  return result.rows.map((row) => ({
+    ...row,
+    items_claimed: Number(row.items_claimed || 0),
+    completed_items: Number(row.completed_items || 0),
+    voided_items: Number(row.voided_items || 0),
+    voided_quantity: Number(row.voided_quantity || 0),
+    voided_total: Number(row.voided_total || 0),
+    production_value: Number(row.production_value || 0),
+  }));
+}
+
 async function departmentCreditReport(department, from, to) {
   const itemFilter = department.paidItemFilter.replaceAll('item->>', 'credit_items.item->>');
   const result = await pool.query(
@@ -208,6 +256,21 @@ function departmentPaymentJoin(department) {
     COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
       * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
   )`;
+  const payableItemAmount = `CASE
+    WHEN COALESCE(item->>'complimentary','false') = 'true' THEN COALESCE(
+      NULLIF(item->>'payableAmount','')::numeric,
+      GREATEST(
+        0,
+        COALESCE(
+          NULLIF(item->>'originalLineAmount','')::numeric,
+          COALESCE(NULLIF(item->>'originalUnitPrice','')::numeric,
+            NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric, 0)
+            * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
+        ) - COALESCE(NULLIF(item->>'complimentaryWaivedAmount','')::numeric,0)
+      )
+    )
+    ELSE ${itemAmount}
+  END`;
   const hasCredit = `EXISTS (
     SELECT 1 FROM public.credits credit
     WHERE credit.order_id = o.id
@@ -221,9 +284,13 @@ function departmentPaymentJoin(department) {
 
   return `LEFT JOIN LATERAL (
     SELECT COALESCE(SUM(CASE
-      WHEN ${hasCredit} THEN LEAST(${itemAmount}, ${creditPaid})
-      WHEN item->>'_rowPaid'='true' THEN ${itemAmount}
-      ELSE LEAST(${itemAmount}, COALESCE(NULLIF(item->>'partial_amount_paid','')::numeric,0))
+      WHEN ${hasCredit} THEN LEAST(${payableItemAmount}, ${creditPaid})
+      WHEN item->>'_rowPaid'='true' THEN ${payableItemAmount}
+      ELSE LEAST(${payableItemAmount}, COALESCE(
+        NULLIF(item->>'paidAmount','')::numeric,
+        NULLIF(item->>'partial_amount_paid','')::numeric,
+        0
+      ))
     END),0) AS collected_amount
     FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb)) AS source_items(item)
     WHERE (item->>'_rowPaid'='true' OR item->>'is_partially_paid'='true'
@@ -235,15 +302,50 @@ function departmentPaymentJoin(department) {
   ) paid ON true`;
 }
 
-function approvedVoidExclusion(orderId) {
+function departmentSalesJoin(department) {
+  const ticketItem = 'ticket_items.item';
+  const ticketAmount = `COALESCE(
+    NULLIF(${ticketItem}->>'line_total','')::numeric,
+    NULLIF(${ticketItem}->>'lineTotal','')::numeric,
+    COALESCE(NULLIF(${ticketItem}->>'price','')::numeric, NULLIF(${ticketItem}->>'unit_price','')::numeric)
+      * COALESCE(NULLIF(${ticketItem}->>'quantity','')::numeric,1)
+  )`;
+  const itemFilter = department.paidItemFilter.replaceAll('item->>', `${ticketItem}->>`);
+  return `LEFT JOIN LATERAL (
+    SELECT COALESCE(SUM(${ticketAmount}),0) AS sales_amount,
+      COALESCE(SUM(CASE
+        WHEN COALESCE(source_item.item->>'complimentary','false') = 'true'
+        THEN COALESCE(NULLIF(source_item.item->>'complimentaryWaivedAmount','')::numeric,0)
+        ELSE 0
+      END),0) AS waived_amount
+    FROM jsonb_array_elements(COALESCE(t.items,'[]'::jsonb))
+      WITH ORDINALITY AS ticket_items(item, ordinality)
+    LEFT JOIN LATERAL (
+      SELECT order_items.item
+      FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb))
+        WITH ORDINALITY AS order_items(item, ordinality)
+      WHERE order_items.ordinality - 1 = COALESCE(
+        NULLIF(ticket_items.item->>'_orderItemIndex','')::int,
+        ticket_items.ordinality - 1
+      )
+      LIMIT 1
+    ) source_item ON true
+    WHERE COALESCE(${ticketItem}->>'voidProcessed','false') <> 'true'
+      AND UPPER(COALESCE(${ticketItem}->>'status','')) <> 'VOIDED'
+      AND ${approvedVoidExclusion('t.order_id', ticketItem)}
+      AND ${itemFilter}
+  ) sales ON true`;
+}
+
+function approvedVoidExclusion(orderId, item = 'item') {
   return `NOT EXISTS (
     SELECT 1 FROM public.void_requests vr
     WHERE vr.order_id = ${orderId}
       AND UPPER(COALESCE(vr.status,'')) = 'APPROVED'
-      AND LOWER(BTRIM(COALESCE(vr.item_name,''))) = LOWER(BTRIM(COALESCE(item->>'name','')))
-      AND COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric,0)
+      AND LOWER(BTRIM(COALESCE(vr.item_name,''))) = LOWER(BTRIM(COALESCE(${item}->>'name','')))
+      AND COALESCE(NULLIF(${item}->>'price','')::numeric, NULLIF(${item}->>'unit_price','')::numeric,0)
         = COALESCE(vr.original_price,0)
-      AND COALESCE(NULLIF(item->>'quantity','')::numeric,1) = COALESCE(vr.original_quantity,1)
+      AND COALESCE(NULLIF(${item}->>'quantity','')::numeric,1) = COALESCE(vr.original_quantity,1)
   )`;
 }
 
@@ -297,28 +399,7 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
 
   try {
     await syncRoutableStationTickets(pool, req.params.department);
-    await pool.query(
-      `INSERT INTO public.restaurant_production_work
-         (station, order_id, ticket_id, item_index, item_name, item_notes,
-          table_name, order_created_at, quantity, status)
-       SELECT $1, ticket.order_id, ticket.id,
-              COALESCE(NULLIF(item.value->>'_orderItemIndex', '')::integer, item.ordinality - 1),
-              COALESCE(NULLIF(item.value->>'name', ''), 'Unnamed item'),
-              NULLIF(COALESCE(item.value->>'note', item.value->>'notes'), ''),
-              ticket.table_name, ticket.created_at,
-              GREATEST(COALESCE(NULLIF(item.value->>'quantity', '')::numeric, 1), 0.01),
-              CASE
-                WHEN LOWER(COALESCE(order_row.status, '')) IN ('cancelled', 'voided') THEN 'Cancelled'
-                WHEN item.value->>'voidProcessed' = 'true' OR UPPER(COALESCE(item.value->>'status', '')) = 'VOIDED' THEN 'Voided'
-                ELSE 'Unclaimed'
-              END
-       FROM public.${req.department.table} ticket
-       JOIN public.orders order_row ON order_row.id=ticket.order_id
-       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(ticket.items, '[]'::jsonb))
-         WITH ORDINALITY AS item(value, ordinality)
-       ON CONFLICT (station, ticket_id, item_index) DO NOTHING`,
-      [req.params.department]
-    );
+    await ensureTicketWork(pool, req.params.department);
     const result = await pool.query(
       `SELECT t.*,
               COALESCE(
@@ -328,7 +409,14 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
               ) AS workers
        FROM public.${req.department.table} t
        LEFT JOIN public.${req.department.assignments} a ON a.ticket_id = t.id
-       WHERE t.ticket_date = $1::date
+       WHERE (
+           t.ticket_date = $1::date
+           OR (
+             t.status IN ('Pending', 'Preparing', 'Ready')
+             AND COALESCE(t.cleared_by_kitchen, false) = false
+             AND t.cleared_at IS NULL
+           )
+         )
          AND COALESCE(t.cleared_by_kitchen, false) = false
          AND t.cleared_at IS NULL
        GROUP BY t.id
@@ -368,6 +456,7 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
             ...item,
             assignedTo: work?.staff_name || null,
             assigned_to: work?.staff_name || null,
+            claimed_by: work?.staff_name || null,
             production_work_id: work?.work_id || null,
             production_status: work?.status || 'Unclaimed',
             production_staff_id: work?.staff_id || null,
@@ -498,24 +587,14 @@ router.get('/reports/consolidated', async (req, res) => {
   const summaryOnly = req.query.summary_only === 'true';
   try {
     const reports = await Promise.all(Object.entries(DEPARTMENTS).map(async ([key, department]) => {
-      const [result, performance, menuItems, inventory, creditSummary, voidedTotals] = await Promise.all([
+      const [result, performance, menuItems, inventory, creditSummary, voidedTotals, productionPerformance] = await Promise.all([
         pool.query(
         `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(sales.sales_amount),0) AS total_sales,
-          COALESCE(SUM(LEAST(sales.sales_amount, paid.collected_amount)),0) AS amount_collected,
-          COALESCE(SUM(GREATEST(sales.sales_amount - LEAST(sales.sales_amount, paid.collected_amount),0)),0) AS outstanding_balance
+          COALESCE(SUM(LEAST(GREATEST(sales.sales_amount - sales.waived_amount,0), paid.collected_amount)),0) AS amount_collected,
+          COALESCE(SUM(GREATEST(sales.sales_amount - sales.waived_amount
+            - LEAST(GREATEST(sales.sales_amount - sales.waived_amount,0), paid.collected_amount),0)),0) AS outstanding_balance
          FROM public.${department.table} t LEFT JOIN public.orders o ON o.id=t.order_id
-         LEFT JOIN LATERAL (
-           SELECT COALESCE(SUM(COALESCE(
-             NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
-             COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
-               * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
-           )),0) AS sales_amount
-           FROM jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
-           WHERE COALESCE(item->>'voidProcessed','false') <> 'true'
-             AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
-             AND ${approvedVoidExclusion('t.order_id')}
-             AND ${department.paidItemFilter}
-         ) sales ON true
+         ${departmentSalesJoin(department)}
          ${departmentPaymentJoin(department)}
          WHERE t.ticket_date BETWEEN $1::date AND $2::date`,
         [range.from, range.to]
@@ -547,9 +626,13 @@ router.get('/reports/consolidated', async (req, res) => {
           : inventoryReport(department.station, range.from, range.to),
         departmentCreditReport(department, range.from, range.to),
         departmentVoidedTotals(department, range.from, range.to),
+        productionStaffReport(department, range.from, range.to),
       ]);
       const summary = result.rows[0];
       const inventoryData = inventory;
+      const productionVoidedItems = productionPerformance.reduce((total, person) => total + person.voided_items, 0);
+      const productionVoidedQuantity = productionPerformance.reduce((total, person) => total + person.voided_quantity, 0);
+      const productionVoidedTotal = productionPerformance.reduce((total, person) => total + person.voided_total, 0);
       return {
         department: key,
         label: department.label,
@@ -558,9 +641,13 @@ router.get('/reports/consolidated', async (req, res) => {
         ...inventoryData,
         ...creditSummary,
         ...voidedTotals,
+        production_voided_items: productionVoidedItems,
+        production_voided_quantity: productionVoidedQuantity,
+        production_voided_total: productionVoidedTotal,
         gross_profit: summaryOnly ? null : Number(summary.total_sales || 0) - inventoryData.cogs,
         menu_items: menuItems,
         staff_performance: performance.rows.map(person => ({ ...person, worker_role: department.staffRole })),
+        production_performance: productionPerformance.map(person => ({ ...person, worker_role: department.staffRole })),
       };
     }));
     const [shisha, shishaPerformance] = summaryOnly
@@ -599,6 +686,9 @@ router.get('/reports/consolidated', async (req, res) => {
       total_sales: total.total_sales + Number(row.total_sales || 0),
       voided_total: total.voided_total + Number(row.voided_total || 0),
       voided_quantity: total.voided_quantity + Number(row.voided_quantity || 0),
+      production_voided_items: total.production_voided_items + Number(row.production_voided_items || 0),
+      production_voided_quantity: total.production_voided_quantity + Number(row.production_voided_quantity || 0),
+      production_voided_total: total.production_voided_total + Number(row.production_voided_total || 0),
       cogs: total.cogs + Number(row.cogs || 0),
       gross_profit: total.gross_profit + Number(row.gross_profit || 0),
       consumption_value: total.consumption_value + Number(row.consumption_value || 0),
@@ -612,7 +702,7 @@ router.get('/reports/consolidated', async (req, res) => {
       settled_credit_amount: total.settled_credit_amount + Number(row.settled_credit_amount || 0),
       outstanding_credit_count: total.outstanding_credit_count + Number(row.outstanding_credit_count || 0),
       outstanding_credit_balance: total.outstanding_credit_balance + Number(row.outstanding_credit_balance || 0),
-    }), { total_orders: 0, total_sales: 0, voided_total: 0, voided_quantity: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, partially_paid_credit_balance: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
+    }), { total_orders: 0, total_sales: 0, voided_total: 0, voided_quantity: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, partially_paid_credit_balance: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
     const response = {
       ...range,
       departments: reports,
@@ -640,29 +730,19 @@ router.get('/:department/reports', async (req, res) => {
   if (!range) return undefined;
 
   try {
-    const [summary, performance, menuItems, inventory, creditSummary, voidedTotals] = await Promise.all([
+    const [summary, performance, menuItems, inventory, creditSummary, voidedTotals, productionPerformance] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS total_orders,
           COALESCE(SUM(sales.sales_amount),0) AS total_sales,
-          COALESCE(SUM(LEAST(sales.sales_amount, paid.collected_amount)),0) AS amount_collected,
-          COALESCE(SUM(GREATEST(sales.sales_amount - LEAST(sales.sales_amount, paid.collected_amount),0)),0) AS outstanding_balance,
+          COALESCE(SUM(LEAST(GREATEST(sales.sales_amount - sales.waived_amount,0), paid.collected_amount)),0) AS amount_collected,
+          COALESCE(SUM(GREATEST(sales.sales_amount - sales.waived_amount
+            - LEAST(GREATEST(sales.sales_amount - sales.waived_amount,0), paid.collected_amount),0)),0) AS outstanding_balance,
           COUNT(*) FILTER (WHERE t.status='Pending')::int AS pending_orders,
           COUNT(*) FILTER (WHERE t.status='Preparing')::int AS preparing_orders,
           COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(t.status,''))) IN ('ready','served','paid','closed'))::int AS completed_orders
          FROM public.${department.table} t
          LEFT JOIN public.orders o ON o.id=t.order_id
-         LEFT JOIN LATERAL (
-           SELECT COALESCE(SUM(COALESCE(
-             NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
-             COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
-               * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
-           )),0) AS sales_amount
-           FROM jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
-           WHERE COALESCE(item->>'voidProcessed','false') <> 'true'
-             AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
-             AND ${approvedVoidExclusion('t.order_id')}
-             AND ${department.paidItemFilter}
-         ) sales ON true
+         ${departmentSalesJoin(department)}
          ${departmentPaymentJoin(department)}
          WHERE t.ticket_date BETWEEN $1::date AND $2::date`,
         [range.from, range.to]
@@ -692,9 +772,13 @@ router.get('/:department/reports', async (req, res) => {
       inventoryReport(department.station, range.from, range.to),
       departmentCreditReport(department, range.from, range.to),
       departmentVoidedTotals(department, range.from, range.to),
+      productionStaffReport(department, range.from, range.to),
     ]);
     const departmentSummary = summary.rows[0];
     const inventoryData = inventory;
+    const productionVoidedItems = productionPerformance.reduce((total, person) => total + person.voided_items, 0);
+    const productionVoidedQuantity = productionPerformance.reduce((total, person) => total + person.voided_quantity, 0);
+    const productionVoidedTotal = productionPerformance.reduce((total, person) => total + person.voided_total, 0);
     return res.json({
       department: req.params.department,
       ...range,
@@ -704,11 +788,15 @@ router.get('/:department/reports', async (req, res) => {
         ...inventoryData,
         ...creditSummary,
         ...voidedTotals,
+        production_voided_items: productionVoidedItems,
+        production_voided_quantity: productionVoidedQuantity,
+        production_voided_total: productionVoidedTotal,
         gross_profit: Number(departmentSummary.total_sales || 0) - inventoryData.cogs,
       },
       menu_items: menuItems,
       inventory_usage: inventoryData.inventory_usage,
       staff_performance: performance.rows,
+      production_performance: productionPerformance,
     });
   } catch (error) {
     console.error('Department report error:', error.message);

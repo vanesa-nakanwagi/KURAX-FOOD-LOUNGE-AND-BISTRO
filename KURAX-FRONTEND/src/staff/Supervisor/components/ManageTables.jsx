@@ -179,6 +179,7 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
                   order={order}
                   item={item}
                   onUpdated={onComplimentaryUpdated}
+                  presentation="modal"
                 />
               </div>
             );
@@ -397,6 +398,7 @@ function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
                 order={item.order}
                 item={item.orderItem}
                 onUpdated={onComplimentaryUpdated}
+                presentation="modal"
               />
             </div>
           );

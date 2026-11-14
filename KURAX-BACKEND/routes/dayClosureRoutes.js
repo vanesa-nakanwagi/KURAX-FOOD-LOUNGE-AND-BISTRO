@@ -25,7 +25,9 @@ router.post('/close-day', async (req, res) => {
   
   try {
     await client.query('BEGIN');
-    await client.query('LOCK TABLE public.orders, public.tables IN SHARE ROW EXCLUSIVE MODE');
+    await client.query(
+      'LOCK TABLE public.orders, public.tables, public.kitchen_tickets, public.barman_tickets, public.barista_tickets IN SHARE ROW EXCLUSIVE MODE'
+    );
 
     const openWorkResult = await client.query(`
       SELECT
@@ -79,16 +81,35 @@ router.post('/close-day', async (req, res) => {
                 )
               )
             )
-        ) AS open_order_count
+        ) AS open_order_count,
+        (
+          SELECT COUNT(*)
+          FROM (
+            SELECT id FROM public.kitchen_tickets
+            WHERE status IN ('Pending', 'Preparing', 'Ready')
+              AND COALESCE(cleared_by_kitchen, false) = false
+              AND cleared_at IS NULL
+            UNION ALL
+            SELECT id FROM public.barman_tickets
+            WHERE status IN ('Pending', 'Preparing', 'Ready')
+              AND cleared_at IS NULL
+            UNION ALL
+            SELECT id FROM public.barista_tickets
+            WHERE status IN ('Pending', 'Preparing', 'Ready')
+              AND cleared_at IS NULL
+          ) AS station_tickets
+        ) AS open_station_ticket_count
     `);
     const openTableCount = Number(openWorkResult.rows[0].open_table_count) || 0;
     const openOrderCount = Number(openWorkResult.rows[0].open_order_count) || 0;
-    if (openTableCount > 0 || openOrderCount > 0) {
+    const openStationTicketCount = Number(openWorkResult.rows[0].open_station_ticket_count) || 0;
+    if (openTableCount > 0 || openOrderCount > 0 || openStationTicketCount > 0) {
       await client.query('ROLLBACK');
       return res.status(409).json({
-        error: `Day cannot be closed while there are ${openTableCount} open table(s) and ${openOrderCount} open order(s). Close all open orders first; unsettled credited orders may remain only when marked Closed.`,
+        error: `Day cannot be closed while there are ${openTableCount} open table(s), ${openOrderCount} open order(s), and ${openStationTicketCount} active kitchen/bar/barista ticket(s). Finish or clear all station tickets and close all open orders first; unsettled credited orders may remain only when marked Closed.`,
         open_tables: openTableCount,
         open_orders: openOrderCount,
+        open_station_tickets: openStationTicketCount,
       });
     }
 

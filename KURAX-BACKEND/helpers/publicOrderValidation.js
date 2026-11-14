@@ -1,3 +1,5 @@
+import { getEffectiveMenuPrice, snapshotMenuPromotion } from './menuPromotions.js';
+
 const MAX_ITEM_QUANTITY = 50;
 
 export function normalizePublicCustomer(customer = {}) {
@@ -51,6 +53,7 @@ export async function buildPublicOrderItems(items, findCatalogItem) {
   }
 
   const pricedItems = [];
+  const pricingAt = new Date();
   for (const item of items) {
     const type = item?.type === 'combo' || item?.combo_id ? 'combo' : 'menu';
     const rawId = type === 'combo' ? item?.combo_id ?? item?.id : item?.id;
@@ -70,12 +73,19 @@ export async function buildPublicOrderItems(items, findCatalogItem) {
       throw Object.assign(new Error('An item in your order is no longer available.'), { statusCode: 400 });
     }
 
-    const price = Number(catalogItem.price);
-    if (!Number.isFinite(price) || price <= 0) {
+    const listPrice = Number(catalogItem.price);
+    if (!Number.isFinite(listPrice) || listPrice < 0) {
       throw Object.assign(new Error(`The price for ${catalogItem.name} is invalid.`), { statusCode: 400 });
     }
+    const pricing = isCombo
+      ? null
+      : getEffectiveMenuPrice(catalogItem, { at: pricingAt, basePrice: listPrice });
+    if (!isCombo && !pricing) {
+      throw Object.assign(new Error(`The promotional price for ${catalogItem.name} is invalid.`), { statusCode: 400 });
+    }
+    const price = pricing?.effectivePrice ?? listPrice;
 
-    pricedItems.push({
+    const pricedItem = {
       id: Number(catalogItem.id),
       ...(isCombo ? { combo_id: Number(catalogItem.id), type: 'combo' } : { type: 'menu' }),
       name: catalogItem.name,
@@ -85,7 +95,10 @@ export async function buildPublicOrderItems(items, findCatalogItem) {
       category: catalogItem.category || '',
       instructions: String(item?.instructions || '').trim().slice(0, 500),
       status: 'Pending',
-    });
+    };
+    pricedItems.push(isCombo
+      ? pricedItem
+      : snapshotMenuPromotion(pricedItem, catalogItem, pricingAt, listPrice));
   }
 
   return pricedItems;

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../customer/components/context/DataContext';
 import kuraxLogo from '../customer/assets/images/logo.jpeg';
+import { CASHIER_SESSION_KEY } from './cashier/cashierApi';
 
 import carouselImg1 from '../customer/assets/images/kurax8.jpg';
 import carouselImg2 from '../customer/assets/images/kurax3.jpeg';
@@ -254,10 +255,13 @@ const StaffLogin = () => {
       });
       const data = await response.json();
       if (response.ok) {
-        localStorage.removeItem('kurax_shisha_session');
-        localStorage.setItem('kurax_user', JSON.stringify(data.user));
-        setCurrentUser(data.user);
         const role = data.user.role.toUpperCase().trim();
+        if (role === 'CASHIER') {
+          localStorage.setItem(CASHIER_SESSION_KEY, JSON.stringify(data.user));
+        }
+        localStorage.setItem('kurax_user', JSON.stringify(data.user));
+        window.dispatchEvent(new Event('kurax:staff-session-changed'));
+        setCurrentUser(data.user);
         const roleRoutes = {
           DIRECTOR: '/director/dashboard',
           WAITER: '/staff/waiter',

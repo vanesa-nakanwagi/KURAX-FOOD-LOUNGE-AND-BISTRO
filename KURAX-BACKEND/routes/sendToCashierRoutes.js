@@ -3,7 +3,12 @@ import pool from "../db.js";
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
 import { createSalesJournalEntry, resolveRevenueAccountCode } from '../helpers/accounting.js';
-import { getOrderItemPayableAmount } from '../helpers/complimentaryItems.js';
+import {
+  getOrderItemOriginalAmount,
+  getOrderItemPaidAmount,
+  getOrderItemPayableAmount,
+} from '../helpers/complimentaryItems.js';
+import notificationService from '../helpers/notificationService.js';
 import logActivity from '../utils/logsActivity.js';
 import requireCashier from '../middleware/cashierAuth.js';
 
@@ -82,6 +87,34 @@ function parseOrderIds(order_ids) {
   return order_ids.map(id => parseInt(id));
 }
 
+async function findPendingComplimentaryRequest(orderIds, { isItem = false, item } = {}) {
+  const ids = [...new Set(orderIds.filter((id) => Number.isInteger(id) && id > 0))];
+  const itemOrderId = Number(item?._orderId);
+  const itemIndex = Number(item?._orderItemIndex);
+  if (isItem && Number.isInteger(itemOrderId) && itemOrderId > 0
+    && Number.isInteger(itemIndex) && itemIndex >= 0) {
+    const result = await pool.query(
+      'SELECT id, items FROM public.orders WHERE id = $1',
+      [itemOrderId]
+    );
+    const row = result.rows[0];
+    if (!row) return false;
+    const items = Array.isArray(row.items) ? row.items : JSON.parse(row.items || '[]');
+    if (!Array.isArray(items)) throw new Error(`Order #${itemOrderId} has invalid item data.`);
+    return items[itemIndex]?.complimentaryRequestPending === true;
+  }
+  if (!ids.length) return false;
+  const result = await pool.query(
+    'SELECT items FROM public.orders WHERE id = ANY($1::int[])',
+    [ids]
+  );
+  return result.rows.some((row) => {
+    const items = Array.isArray(row.items) ? row.items : JSON.parse(row.items || '[]');
+    if (!Array.isArray(items)) throw new Error('An order has invalid item data.');
+    return items.some((orderItem) => orderItem.complimentaryRequestPending === true);
+  });
+}
+
 async function getSaleRevenueBreakdown(orderIds, { item, isItem, amount }) {
   const itemTotals = new Map();
   const addItem = (orderItem) => {
@@ -140,6 +173,19 @@ router.post("/send-to-cashier", async (req, res) => {
   } = req.body;
 
   console.log("🔵 SEND-TO-CASHIER Request:", { method, amount, is_item, order_ids, table_name, requested_by });
+
+  const sourceOrderIds = parseOrderIds(order_ids);
+  if (is_item && item?._orderId) sourceOrderIds.push(Number(item._orderId));
+  try {
+    if (await findPendingComplimentaryRequest(sourceOrderIds, { isItem: is_item, item })) {
+      return res.status(409).json({
+        error: 'A complimentary request for this order is awaiting cashier review. Resolve it before requesting payment.',
+      });
+    }
+  } catch (error) {
+    console.error('Could not verify pending complimentary requests before payment:', error);
+    return res.status(500).json({ error: 'Could not verify complimentary request status. Please retry.' });
+  }
 
   // ── Handle split payments ─────────────────────────────────────────────────
   if (split_payments && Array.isArray(split_payments) && split_payments.length > 0) {
@@ -359,6 +405,20 @@ router.post("/send-to-cashier", async (req, res) => {
       }
     }
 
+    const cashierNotification = await notificationService.sendToRoles(['CASHIER'], {
+      type: 'CASHIER_PAYMENT_REQUEST',
+      title: 'New payment request',
+      body: `${requested_by || 'A waiter'} sent ${table_name} a ${method} request for UGX ${Number(amount).toLocaleString()}.`,
+      referenceId: newQueueId,
+      referenceType: 'cashier_queue',
+      link: '/cashier',
+    });
+    console.log(
+      `[CASHIER PAYMENT REQUEST] Queue ID: ${newQueueId}; ` +
+      `notifications sent: ${cashierNotification.sent || 0}, failed: ${cashierNotification.failed || 0}` +
+      `${cashierNotification.noRecipients ? ', no registered Cashier devices' : ''}`
+    );
+
     res.json({ success: true, queue_id: newQueueId });
   } catch (err) {
     console.error("send-to-cashier failed:", err);
@@ -383,6 +443,12 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
     const q = qRes.rows[0];
 
     console.log(`📋 Queue item: method=${q.method}, amount=${q.amount}, is_item=${q.is_item}, requested_by=${q.requested_by}`);
+
+    if (q.public_order_ref) {
+      return res.status(409).json({
+        error: "Website orders must be confirmed through the public-order payment flow before they can be sent to stations."
+      });
+    }
 
     if (q.method === "Credit") {
       return res.status(400).json({
@@ -447,6 +513,7 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
 
     // ── 2. Stamp _rowPaid on confirmed items in original orders ─────────────
     // MUST happen before the archive check so the check sees up-to-date items.
+    const confirmedItems = [];
     if (q.order_ids && q.order_ids.length) {
       for (const orderId of q.order_ids) {
         const orderRes = await pool.query(
@@ -505,6 +572,18 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
             newItem.paymentRequested = false;
           }
 
+          if (updated && newItem._rowPaid === true && item._rowPaid !== true) {
+            const itemPaymentAmount = Math.max(
+              0,
+              getOrderItemPayableAmount(item) - getOrderItemPaidAmount(item)
+            );
+            confirmedItems.push({
+              ...newItem,
+              line_total: itemPaymentAmount,
+              payableAmount: itemPaymentAmount,
+              paidAmount: itemPaymentAmount,
+            });
+          }
           return newItem;
         });
 
@@ -524,6 +603,26 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
           console.error(`Recipe consumption failed for confirmed order #${orderId}:`, error.message);
         }
       }
+    }
+    if (confirmedItems.length === 0 && q.is_item && q.item && !q.order_ids?.length) {
+      confirmedItems.push({
+        ...q.item,
+        _rowPaid: true,
+        paidAmount: Number(q.amount),
+        line_total: Number(q.amount),
+        payableAmount: Number(q.amount),
+        paid_at: new Date().toISOString(),
+        payment_confirmed: true,
+        payment_method: paymentMethod,
+        transaction_id: transactionId || null,
+        paymentRequested: false,
+      });
+    }
+    if (confirmedItems.length > 0) {
+      await pool.query(
+        `UPDATE public.orders SET items = $1::jsonb WHERE id = $2`,
+        [JSON.stringify(confirmedItems), newOrderId]
+      );
     }
 
     // ── 3. Archive original orders where all non-credit items are now paid ───
@@ -572,7 +671,17 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
       }
     }
 
-    await updateDailySummary({ amount: q.amount, method: paymentMethod, orderCount: 0 });
+    const grossAmount = confirmedItems.length > 0
+      ? confirmedItems.reduce((total, item) => total + getOrderItemOriginalAmount(item), 0)
+      : q.is_item && q.item
+        ? getOrderItemOriginalAmount(q.item)
+        : Number(q.amount);
+    await updateDailySummary({
+      amount: q.amount,
+      grossAmount,
+      method: paymentMethod,
+      orderCount: 0,
+    });
 
     await logActivity(pool, 'SALE',
       `${q.table_name || 'Table'} — UGX ${Number(q.amount).toLocaleString()} ${q.method} confirmed by ${confirmed_by || 'Cashier'}`,
@@ -739,6 +848,21 @@ router.patch("/cashier-queue/:id/request-approval", requireCashier, async (req, 
       `UPDATE credits SET status = 'PendingManagerApproval'
        WHERE UPPER(table_name) = UPPER($1) AND status = 'PendingCashier'`,
       [tableName]
+    );
+
+    const managerNotification = await notificationService.sendToRoles(['MANAGER'], {
+      type: 'CREDIT_MANAGER_APPROVAL_REQUEST',
+      title: 'Credit request needs approval',
+      body: `${q.credit_name} has a credit request for ${tableName} (UGX ${Number(q.amount).toLocaleString()}).`,
+      referenceId: q.id,
+      referenceType: 'cashier_queue',
+      link: '/staff/manager',
+    });
+    console.log(
+      `[CREDIT MANAGER APPROVAL] Queue ID: ${q.id}; ` +
+      `manager notifications sent: ${managerNotification.sent || 0}, ` +
+      `failed: ${managerNotification.failed || 0}` +
+      `${managerNotification.noRecipients ? ', no registered Manager devices' : ''}`
     );
 
     res.json({ success: true });
@@ -1095,6 +1219,19 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
     await logActivity(pool, 'CREDIT_APPROVED',
       `Credit approved — ${tableName} · ${q.credit_name || 'Client'} · UGX ${Number(q.amount).toLocaleString()} by ${approved_by || 'Manager'}`,
       { queue_id: id, amount: q.amount, client: q.credit_name }
+    );
+
+    const cashierNotification = await notificationService.sendToRoles(['CASHIER'], {
+      type: 'CREDIT_APPROVED',
+      title: 'Credit request approved',
+      body: `${q.credit_name || 'Client'}'s credit for ${tableName} (UGX ${Number(q.amount).toLocaleString()}) was approved by ${approved_by || 'Manager'}.`,
+      referenceId: q.id,
+      referenceType: 'cashier_queue',
+      link: '/cashier',
+    });
+    console.log(
+      `[CREDIT APPROVED NOTIFICATION] Queue ID: ${q.id}; cashier notifications sent: ` +
+      `${cashierNotification.sent || 0}, failed: ${cashierNotification.failed || 0}`
     );
 
     res.json({ success: true });

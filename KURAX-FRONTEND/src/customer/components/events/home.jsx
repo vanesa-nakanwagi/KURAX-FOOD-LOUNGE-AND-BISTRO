@@ -9,6 +9,7 @@ import {
 
 // Existing Utils & Components
 import { getImageSrc } from "../../../utils/imageHelper.js";
+import { formatMenuName } from "../../../utils/menuName.js";
 import Navbar from "./Navbar.jsx";
 import API_URL from "../../../config/api";
 import { useCart } from "../context/CartContext.jsx";
@@ -335,8 +336,8 @@ function HomeMenuCard({ item, onOrder }) {
 
       <div className="p-8 text-left">
         <div className="flex justify-between items-start gap-4 mb-3">
-          <h4 className="text-xl font-medium uppercase tracking-tight leading-tight group-hover:text-yellow-500 transition-colors">
-            {item.name}
+          <h4 className="text-xl font-semibold tracking-tight leading-tight text-yellow-700 transition-colors group-hover:text-yellow-700">
+            {formatMenuName(item.name)}
           </h4>
           <div className="text-right">
             <span className="text-yellow-500 font-bold text-lg">{Number(item.price).toLocaleString()}</span>

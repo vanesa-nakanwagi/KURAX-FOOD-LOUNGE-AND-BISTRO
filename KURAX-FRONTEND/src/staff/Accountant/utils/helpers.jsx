@@ -35,8 +35,10 @@ export const forceHardRefresh = () => {
   console.log("Performing hard refresh to clear all totals...");
   
   const userData = localStorage.getItem("kurax_user");
+  const cashierSession = localStorage.getItem("kurax_cashier_session");
   localStorage.clear();
   if (userData) localStorage.setItem("kurax_user", userData);
+  if (cashierSession) localStorage.setItem("kurax_cashier_session", cashierSession);
   
   sessionStorage.clear();
   

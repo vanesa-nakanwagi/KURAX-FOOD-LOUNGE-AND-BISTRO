@@ -23,10 +23,11 @@ function itemKey(item) {
   ].map((value) => String(value).trim().toLowerCase()).join('|');
 }
 
-export function getRoutableStationItems(ticketItems, orderItems) {
+export function getRoutableStationItems(ticketItems, orderItems, { publicOrder = false } = {}) {
   const sourceItems = parseItems(orderItems);
   const routableItems = sourceItems
     .map((item, index) => ({ item, index, used: false }))
+    .filter(({ item }) => !publicOrder || item.payment_confirmed === true)
     .filter(({ item }) => item.payment_confirmed === true || item.station_routing_requested === true);
 
   return parseItems(ticketItems).filter((ticketItem) => {

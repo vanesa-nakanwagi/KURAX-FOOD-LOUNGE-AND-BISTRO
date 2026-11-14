@@ -151,6 +151,8 @@ export default function TargetSettings() {
   const [targetProgress, setTargetProgress] = useState({
     target: 7000000,
     grossSales: 0,
+    complimentaryPaid: 0,
+    complimentaryWaived: 0,
     creditSettlements: 0,
     expenses: 0,
     currentCash: 0,
@@ -200,6 +202,8 @@ export default function TargetSettings() {
         setTargetProgress({
           target: Number(data.target) || 7000000,
           grossSales: Number(data.grossSales) || 0,
+          complimentaryPaid: Number(data.complimentaryPaid) || 0,
+          complimentaryWaived: Number(data.complimentaryWaived) || 0,
           creditSettlements: Number(data.creditSettlements) || 0,
           expenses: Number(data.expenses) || 0,
           currentCash: Number(data.currentCash) || 0,
@@ -641,6 +645,8 @@ export default function TargetSettings() {
               </div>
               <div className="flex-1 flex flex-col gap-2">
                 <div className="p-3 rounded-xl border-l-2 border-emerald-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Gross Sales</p><p className="text-sm font-black italic text-emerald-500">{fmtUGX(targetProgress.grossSales)}</p></div>
+                <div className="p-3 rounded-xl border-l-2 border-cyan-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Complimentary Paid</p><p className="text-sm font-black italic text-cyan-500">{fmtUGX(targetProgress.complimentaryPaid)}</p></div>
+                <div className="p-3 rounded-xl border-l-2 border-orange-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Complimentary Waived</p><p className="text-sm font-black italic text-orange-500">{fmtUGX(targetProgress.complimentaryWaived)}</p></div>
                 <div className="p-3 rounded-xl border-l-2 border-purple-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Credit Settlements</p><p className="text-sm font-black italic text-purple-500">{fmtUGX(targetProgress.creditSettlements)}</p></div>
                 <div className="p-3 rounded-xl border-l-2 border-rose-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Expenses</p><p className="text-sm font-black italic text-rose-500">{fmtUGX(targetProgress.expenses)}</p></div>
                 <div className="p-3 rounded-xl border-l-2 border-yellow-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Current Cash</p><p className="text-sm font-black italic text-yellow-500">{fmtUGX(targetProgress.currentCash)}</p></div>
@@ -656,6 +662,8 @@ export default function TargetSettings() {
             month={targetMonth}
             target={targetProgress.target}
             grossSales={targetProgress.grossSales}
+            complimentaryPaid={targetProgress.complimentaryPaid}
+            complimentaryWaived={targetProgress.complimentaryWaived}
             creditSettlements={targetProgress.creditSettlements}
             expenses={targetProgress.expenses}
             currentCash={targetProgress.currentCash}

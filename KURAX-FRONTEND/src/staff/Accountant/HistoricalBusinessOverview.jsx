@@ -56,6 +56,7 @@ export default function HistoricalBusinessOverview({ API_URL, dateRange, timeRan
     ...(data?.credit_settlements || []).map((row) => ({ key: `settlement-${row.id}`, type: "Credit settlement", at: row.created_at, reference: row.client_name || `Credit #${row.credit_id}`, actor: row.method, status: "Settled", amount: row.amount_paid })),
     ...(data?.station_tickets || []).map((row) => ({ key: `ticket-${row.station}-${row.id}`, type: `${row.station} ticket`, at: row.created_at, reference: `Ticket #${row.id} · ${row.table_name || "Table not set"}`, actor: row.staff_name, status: row.status, amount: row.total })),
     ...(data?.shisha_orders || []).map((row) => ({ key: `shisha-${row.id}`, type: "Shisha order", at: row.created_at, reference: `Shisha #${row.id}`, actor: `Waiter ${row.shisha_waiter_id || "-"}`, status: row.order_status, amount: row.total_amount })),
+    ...(data?.shisha_payments || []).map((row) => ({ key: `shisha-payment-${row.id}`, type: "Shisha payment", at: row.confirmed_at, reference: `Shisha #${row.order_id}${row.client_name ? ` · ${row.client_name}` : ""}`, actor: row.waiter_name || row.payment_method, status: row.payment_method, amount: row.amount })),
   ].sort((left, right) => new Date(right.at || 0) - new Date(left.at || 0));
 
   return (

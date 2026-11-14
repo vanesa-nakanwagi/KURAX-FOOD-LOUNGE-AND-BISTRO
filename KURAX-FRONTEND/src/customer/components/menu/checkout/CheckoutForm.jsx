@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { AlertCircle, CheckCircle, Clock3, Smartphone, XCircle } from "lucide-react";
 import API_URL from "../../../../config/api";
+import { formatMenuName } from "../../../../utils/menuName.js";
 
 const MERCHANT_CODES = {
   MTN: "678851",
@@ -141,7 +142,7 @@ function PaymentInstructionsModal({ paymentRequest, customer, items, status, sta
           <p className="mb-2 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">Order</p>
           {items.map((item, index) => (
             <p key={`${item.id}-${index}`} className="flex justify-between gap-3 py-0.5 text-sm text-gray-800 dark:text-gray-200">
-              <span>{item.name} × {item.quantity}</span>
+              <span className="text-yellow-600 dark:text-yellow-300">{formatMenuName(item.name)} × {item.quantity}</span>
               <span className="shrink-0">{formatMoney(item.price * item.quantity)}</span>
             </p>
           ))}

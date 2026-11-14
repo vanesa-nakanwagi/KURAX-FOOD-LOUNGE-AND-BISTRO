@@ -6,6 +6,7 @@ import TopSection from "../common/topSection.jsx";
 import { useCart } from "../context/CartContext.jsx";
 import axios from "axios";
 import { getImageSrc } from "../../../utils/imageHelper.js";
+import { formatMenuName } from "../../../utils/menuName.js";
 import API_URL from "../../../config/api";
 import MenuImageViewer from "./MenuImageViewer.jsx";
 
@@ -15,14 +16,24 @@ import MenuImageViewer from "./MenuImageViewer.jsx";
 export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW" }) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const imageUrl = getImageSrc(item.image_url);
+  const originalPrice = Number(item.website_list_price ?? item.list_price ?? item.price);
+  const currentPrice = Number(item.price);
+  const promotionActive = item.promotion_active === true || item.promotion_active === 'true';
+  const hasPromotion = promotionActive && originalPrice > currentPrice;
+  const savingsPercent = hasPromotion ? Math.round((originalPrice - currentPrice) / originalPrice * 100) : 0;
 
   return (
-    <div className="group relative font-outfit flex flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
+    <div className="group relative font-outfit flex h-full flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
       {isNew && (
         <div className="absolute top-4 left-4 z-30">
           <div className="bg-yellow-500 text-black text-[8px]  px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
             <Sparkles size={8} /> {badgeLabel}
           </div>
+        </div>
+      )}
+      {hasPromotion && (
+        <div className="absolute right-4 top-4 z-30 rounded-full border border-white/80 bg-red-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg">
+          {savingsPercent > 0 ? `Save ${savingsPercent}%` : "Special price"}
         </div>
       )}
 
@@ -46,17 +57,17 @@ export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW"
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
       </div>
 
-      <div className="p-6 flex-1 flex flex-col justify-between">
-        <div className="space-y-2 text-left">
-          <h4 className="text-lg font-[Outfit] text-yellow-700 dark:text-white tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1">
-            {item.name}
+      <div className="flex flex-1 flex-col p-4">
+        <div className="text-left">
+          <h4 className="h-10 overflow-hidden line-clamp-2 text-lg font-semibold leading-5 tracking-normal text-yellow-700 transition-colors group-hover:text-yellow-700 dark:text-yellow-300 dark:group-hover:text-yellow-200">
+            {formatMenuName(item.name)}
           </h4>
           <p className="h-12 text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed line-clamp-2">
             {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
           </p>
         </div>
 
-        <div className="flex items-center justify-between pt-5 mt-4 border-t border-zinc-200 dark:border-zinc-800/50">
+        <div className="mt-auto flex items-center justify-between border-t border-zinc-200 pt-3 dark:border-zinc-800/50">
           <button
             onClick={() => onOrder(item)}
             className="group/btn flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
@@ -66,12 +77,19 @@ export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW"
           </button>
 
           <div className="text-right">
-            <span className="block text-xl text-zinc-900 dark:text-white tracking-tighter leading-none">
-              {Number(item.price).toLocaleString()}
+            {hasPromotion && (
+              <span className="mb-1 block text-sm font-semibold text-zinc-700 dark:text-zinc-300 line-through decoration-red-600 decoration-2">
+                UGX {originalPrice.toLocaleString()}
+              </span>
+            )}
+            <span className={`block text-xl tracking-tighter leading-none ${hasPromotion ? "text-red-600 dark:text-red-400" : "text-zinc-900 dark:text-white"}`}>
+              UGX {currentPrice.toLocaleString()}
             </span>
-            <span className="text-[9px] text-yellow-600 font-bold uppercase tracking-widest leading-none">
-              UGX
-            </span>
+            {hasPromotion && (
+              <span className="text-[9px] font-bold uppercase tracking-widest leading-none text-red-600 dark:text-red-400">
+                Limited-time offer
+              </span>
+            )}
           </div>
         </div>
       </div>

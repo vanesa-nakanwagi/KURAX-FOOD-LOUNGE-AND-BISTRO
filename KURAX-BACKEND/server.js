@@ -8,6 +8,7 @@ import { isValidShishaPinEncryptionKey } from './helpers/shishaPinEncryption.js'
 import menuRoutes from './routes/menuRoutes.js';
 import staffRoutes from './routes/staffRoutes.js';
 import orderRoutes, { initComplimentaryTables } from './routes/orderRoutes.js';
+import discountRoutes from './routes/discountRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
 import siteVisits from './routes/siteVisits.js';
 import managerRoutes from './routes/managerRoutes.js';
@@ -103,6 +104,7 @@ app.use('/api/visits', siteVisits);
 app.use('/api/menus', menuRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/discounts', discountRoutes);
 app.use('/api/cashier-ops', sendToCashierRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/manager', managerRoutes);
@@ -145,11 +147,7 @@ process.on('uncaughtException', (err) => {
 
 async function startServer() {
   await pool.query('SELECT NOW()');
-  console.log(
-    process.env.DATABASE_URL?.includes('localhost')
-      ? 'Database connected to local Postgres'
-      : 'Database connected to Neon'
-  );
+  console.log('Database connected');
   await ensureDatabaseSchema();
   console.log('Database schema verified/bootstrapped');
   await initProductionTables();

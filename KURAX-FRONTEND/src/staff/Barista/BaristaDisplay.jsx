@@ -211,7 +211,7 @@ export default function BaristaDisplay() {
   };
 
   const [audioEnabled,  setAudioEnabled]  = useState(false);
-  const [showProduction, setShowProduction] = useState(false);
+  const [showProduction, setShowProduction] = useState(isProductionWorker);
   const [searchQuery,   setSearchQuery]   = useState("");
   const [showSummary,   setShowSummary]   = useState(false);
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalBrewed: 0, baristas: [] });
@@ -249,7 +249,7 @@ export default function BaristaDisplay() {
 
   const filteredOrders = useMemo(() => {
     const active    = ["Pending", "Preparing"];
-    const completed = ["Served", "Paid", "Closed", "Credit", "Mixed"];
+    const completed = ["Ready", "Served", "Paid", "Closed", "Credit", "Mixed"];
     const seenSet   = new Set(seenOrderIds); // convert array → Set inside memo for O(1) lookup
 
     return (orders || [])
@@ -378,7 +378,7 @@ export default function BaristaDisplay() {
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutDialog(false)}
       />
-      {showProduction && <ProductionPanel station="barista" user={savedUser} onClose={() => setShowProduction(false)} />}
+      {showProduction && <ProductionPanel station="barista" user={savedUser} onClose={isProductionWorker ? confirmLogout : () => setShowProduction(false)} />}
       {claimedWorkError && isProductionWorker && <p role="alert" className="fixed left-4 top-4 z-40 rounded-lg bg-rose-100 px-4 py-2 text-xs font-bold text-rose-800">{claimedWorkError}</p>}
       {claimedWorkMessage && isProductionWorker && <p role="status" className="fixed left-4 top-14 z-40 rounded-lg bg-emerald-100 px-4 py-2 text-xs font-bold text-emerald-900">{claimedWorkMessage}</p>}
 

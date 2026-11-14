@@ -123,6 +123,14 @@ export default function DirectorTargetView() {
               <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Credit Settlements</p>
               <p className="text-sm font-black italic text-purple-500 break-words">{formatFullAmount(creditSettlements)}</p>
             </div>
+            <div className={`p-3 rounded-xl border-l-2 border-cyan-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
+              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Complimentary Paid</p>
+              <p className="text-sm font-black italic text-cyan-500 break-words">{formatFullAmount(targetSummary.complimentaryPaid)}</p>
+            </div>
+            <div className={`p-3 rounded-xl border-l-2 border-orange-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
+              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Complimentary Waived</p>
+              <p className="text-sm font-black italic text-orange-500 break-words">{formatFullAmount(targetSummary.complimentaryWaived)}</p>
+            </div>
             <div className={`p-3 rounded-xl border-l-2 border-rose-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
               <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Expenses</p>
               <p className="text-sm font-black italic text-rose-500 break-words">{formatFullAmount(expenses)}</p>
@@ -142,6 +150,8 @@ export default function DirectorTargetView() {
         month={monthKey}
         target={monthlyTarget}
         grossSales={grossSales}
+        complimentaryPaid={targetSummary.complimentaryPaid}
+        complimentaryWaived={targetSummary.complimentaryWaived}
         creditSettlements={creditSettlements}
         expenses={expenses}
         currentCash={currentCash}

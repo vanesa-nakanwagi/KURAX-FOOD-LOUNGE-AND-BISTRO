@@ -9,6 +9,28 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
 
+function dateTimeLocalValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function dateTimeRequestValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+}
+
+function menuAuthHeaders() {
+  try {
+    const user = JSON.parse(localStorage.getItem('kurax_user') || localStorage.getItem('user') || 'null');
+    return user?.token ? { Authorization: `Bearer ${user.token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 const CATEGORIES = ["Starters", "Local Foods", "Drinks & Cocktails"];
 
 // Station routing options
@@ -35,6 +57,11 @@ export default function Menus() {
     name: '',
     description: '',
     price: '',
+    promotion_enabled: false,
+    promotion_discount_type: 'percentage',
+    promotion_discount_value: '',
+    promotion_starts_at: '',
+    promotion_ends_at: '',
     website_extra_fee: '0',
     category: 'Starters',
     station: 'Kitchen',
@@ -76,6 +103,11 @@ export default function Menus() {
       name: '',
       description: '',
       price: '',
+      promotion_enabled: false,
+      promotion_discount_type: 'percentage',
+      promotion_discount_value: '',
+      promotion_starts_at: '',
+      promotion_ends_at: '',
       website_extra_fee: '0',
       category: 'Starters',
       station: 'Kitchen',
@@ -100,6 +132,11 @@ export default function Menus() {
     data.append('name', formData.name);
     data.append('description', formData.description);
     data.append('price', Number(formData.price));
+    data.append('promotion_enabled', formData.promotion_enabled);
+    data.append('promotion_discount_type', formData.promotion_discount_type);
+    data.append('promotion_discount_value', Number(formData.promotion_discount_value || 0));
+    data.append('promotion_starts_at', dateTimeRequestValue(formData.promotion_starts_at));
+    data.append('promotion_ends_at', dateTimeRequestValue(formData.promotion_ends_at));
     data.append('website_extra_fee', Number(formData.website_extra_fee || 0));
     data.append('category', formData.category);
     data.append('station', formData.station);
@@ -118,6 +155,7 @@ export default function Menus() {
 
       const response = await fetch(url, {
         method: editingMenu ? 'PUT' : 'POST',
+        headers: menuAuthHeaders(),
         body: data
       });
 
@@ -149,7 +187,14 @@ export default function Menus() {
     setFormData({
       name: menu.name,
       description: menu.description,
-      price: menu.price,
+      price: menu.list_price ?? menu.price,
+      promotion_enabled: menu.promotion_enabled === true,
+      promotion_discount_type: menu.promotion_discount_type || 'percentage',
+      promotion_discount_value: String(
+        menu.promotion_discount_value ?? menu.promotion_discount_percent ?? ''
+      ),
+      promotion_starts_at: dateTimeLocalValue(menu.promotion_starts_at),
+      promotion_ends_at: dateTimeLocalValue(menu.promotion_ends_at),
       website_extra_fee: String(menu.website_extra_fee || 0),
       category: menu.category,
       station: menu.station,
@@ -177,6 +222,22 @@ export default function Menus() {
       clearStatusMessage()
     }
   };
+
+  const promotionValue = Number(formData.promotion_discount_value || 0);
+  const basePrice = Number(formData.price || 0);
+  const promotionDiscountAmount = formData.promotion_discount_type === 'fixed'
+    ? promotionValue
+    : basePrice * promotionValue / 100;
+  const promotionPrice = Math.max(0, basePrice - promotionDiscountAmount);
+  const promotionStatus = !formData.promotion_enabled
+    ? 'Disabled'
+    : !formData.promotion_starts_at || !formData.promotion_ends_at
+      ? 'Add both dates to schedule'
+      : Date.now() < new Date(formData.promotion_starts_at).getTime()
+        ? 'Scheduled'
+        : Date.now() > new Date(formData.promotion_ends_at).getTime()
+          ? 'Expired'
+          : 'Active now';
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-gray-50 font-[Outfit] text-gray-900">
@@ -283,6 +344,80 @@ export default function Menus() {
                     />
                   </div>
                 </div>
+
+                <section className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      name="promotion_enabled"
+                      checked={formData.promotion_enabled}
+                      onChange={handleChange}
+                      className="mt-0.5 h-4 w-4 accent-amber-500"
+                    />
+                    <span>
+                      <span className="block text-xs font-black uppercase tracking-widest text-amber-900">Enable promotional discount</span>
+                      <span className="mt-1 block text-[11px] text-amber-800">New orders use the promotional price only during its scheduled dates. Existing orders keep their saved prices.</span>
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-600">
+                      Discount type
+                      <select
+                        name="promotion_discount_type"
+                        value={formData.promotion_discount_type}
+                        onChange={handleChange}
+                        disabled={!formData.promotion_enabled}
+                        className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 disabled:bg-gray-100"
+                      >
+                        <option value="percentage">Percentage (%)</option>
+                        <option value="fixed">Fixed amount (UGX)</option>
+                      </select>
+                    </label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-600">
+                      Discount value
+                      <input
+                        type="number"
+                        name="promotion_discount_value"
+                        min="0"
+                        max={formData.promotion_discount_type === 'percentage' ? '100' : undefined}
+                        step="0.01"
+                        value={formData.promotion_discount_value}
+                        onChange={handleChange}
+                        disabled={!formData.promotion_enabled}
+                        className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 disabled:bg-gray-100"
+                      />
+                    </label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-600">
+                      Starts
+                      <input
+                        type="datetime-local"
+                        name="promotion_starts_at"
+                        value={formData.promotion_starts_at}
+                        onChange={handleChange}
+                        disabled={!formData.promotion_enabled}
+                        className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 disabled:bg-gray-100"
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-600">
+                      Ends
+                      <input
+                        type="datetime-local"
+                        name="promotion_ends_at"
+                        value={formData.promotion_ends_at}
+                        onChange={handleChange}
+                        disabled={!formData.promotion_enabled}
+                        className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 disabled:bg-gray-100"
+                      />
+                    </label>
+                    <div className="sm:col-span-2 self-end rounded-xl bg-white px-3 py-3 text-xs text-gray-700">
+                      Original: <s>{formatUGX(basePrice)}</s> · Discount: {formatUGX(formData.promotion_enabled ? promotionDiscountAmount : 0)} ·
+                      <strong className="ml-1 text-amber-800">Promotional price: {formatUGX(formData.promotion_enabled ? promotionPrice : basePrice)}</strong>
+                      <span className="ml-2 text-[10px] text-gray-500">{promotionStatus}</span>
+                    </div>
+                  </div>
+                </section>
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Description</label>
@@ -437,10 +572,22 @@ export default function Menus() {
                         {item.name}
                       </h4>
                       <div className="shrink-0 text-right">
+                        {item.promotion_active && (
+                          <span className="block whitespace-nowrap text-[10px] font-bold text-gray-400 line-through">
+                            {formatUGX(item.list_price ?? item.price)}
+                          </span>
+                        )}
                         <span className="whitespace-nowrap text-sm font-black tracking-tight text-yellow-700 md:text-base">
                           {Number(item.price).toLocaleString()}
                         </span>
                         <div className="text-[7px] font-bold text-gray-500 uppercase -mt-1">UGX</div>
+                        {item.promotion_active && (
+                          <span className="mt-1 block text-[8px] font-black uppercase text-emerald-700">
+                            Promo {item.promotion_discount_type === 'fixed'
+                              ? `${formatUGX(item.promotion_discount_value)} off`
+                              : `${item.promotion_discount_value}% off`}
+                          </span>
+                        )}
                       </div>
                     </div>
 

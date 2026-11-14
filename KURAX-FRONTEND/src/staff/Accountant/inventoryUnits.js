@@ -1,5 +1,5 @@
 export const STATION_UNITS = Object.freeze({
-  KITCHEN: Object.freeze(['kg', 'g', 'L', 'ml', 'pc', 'pack', 'btl', 'can', 'tin', 'bag', 'sachet', 'bunch', 'doz', 'portion', 'slice']),
+  KITCHEN: Object.freeze(['kg', 'g', 'L', 'ml', 'pc', 'pack', 'btl', 'can', 'tin', 'bag', 'sack', 'sachet', 'bunch', 'doz', 'portion', 'slice']),
   BAR: Object.freeze(['pc', 'btl', 'can', 'L', 'ml', 'kg', 'g', 'shot', 'glass', 'pour', 'pack', 'crate', 'carton']),
   BARISTA: Object.freeze(['kg', 'g', 'L', 'ml', 'pc', 'sachet', 'shot', 'cup', 'portion', 'btl', 'pack', 'box', 'tab']),
 });
@@ -10,7 +10,7 @@ const ALIASES = Object.freeze({
   millilitre: 'ml', milliliter: 'ml', millilitres: 'ml', milliliters: 'ml',
   piece: 'pc', pieces: 'pc', pcs: 'pc', packet: 'pack', packets: 'pack', packs: 'pack',
   bottle: 'btl', bottles: 'btl', cans: 'can', tins: 'tin', bags: 'bag', sachets: 'sachet',
-  bunches: 'bunch', dozen: 'doz', dozens: 'doz', portions: 'portion', slices: 'slice',
+  bunches: 'bunch', sacks: 'sack', dozen: 'doz', dozens: 'doz', portions: 'portion', slices: 'slice',
   shots: 'shot', glasses: 'glass', pours: 'pour', crates: 'crate', cartons: 'carton',
   cups: 'cup', box: 'box', boxes: 'box', tablet: 'tab', tablets: 'tab', tabs: 'tab',
 });

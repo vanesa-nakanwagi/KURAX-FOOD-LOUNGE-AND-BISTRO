@@ -9,6 +9,8 @@ export default function MonthlyFinancialBreakdown({
   month,
   target,
   grossSales,
+  complimentaryPaid = 0,
+  complimentaryWaived = 0,
   creditSettlements,
   expenses,
   currentCash,
@@ -35,6 +37,7 @@ export default function MonthlyFinancialBreakdown({
     { title: "Target", items: [["Target", target, "#eab308"]] },
     { title: "Target Progress", items: [["Gross Sales", grossSales, "#eab308"], ["Remaining", remaining, isDark ? "#52525b" : "#a1a1aa"]] },
     { title: "Collections", items: [["Gross Sales", grossSales, "#10b981"], ["Credit Settlements", creditSettlements, "#8b5cf6"]] },
+    { title: "Complimentary Items", items: [["Complimentary Paid", complimentaryPaid, "#06b6d4"], ["Complimentary Waived", complimentaryWaived, "#f97316"]] },
     { title: "After Expenses", items: [["Expenses", expenses, "#f43f5e"], ["Current Cash", currentCash, "#f97316"]] },
   ];
 

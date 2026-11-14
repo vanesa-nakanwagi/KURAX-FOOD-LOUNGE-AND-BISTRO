@@ -64,7 +64,7 @@ function itemPaymentLabel(item, order) {
 
 function creditBalance(credit) {
   const status = String(credit.status || "").toLowerCase();
-  if (["fullysettled", "rejected"].includes(status) || credit.paid === true) return 0;
+  if (status === "fullysettled" || credit.paid === true) return 0;
   const recordedBalance = Number(credit.balance || 0);
   return Math.max(0, recordedBalance || Number(credit.amount || 0) - Number(credit.amount_paid || 0));
 }

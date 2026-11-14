@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { FileText, FileSpreadsheet, PlusCircle, Package, Calendar, Loader2, TrendingUp } from "lucide-react";
+import { FileText, FileSpreadsheet, PlusCircle, Package, Calendar, Loader2, TrendingUp, Percent } from "lucide-react";
 import * as XLSX from "xlsx";
 import API_URL from "../../config/api";
 import { downloadReportPdf } from "../reportExport";
 import ComplimentaryItemsReport from "./ComplimentaryItemsReport";
+import DiscountAuditReport from "./DiscountAuditReport";
 
 function buildReportSections(reportType, data) {
   if (reportType === "income") {
@@ -21,15 +22,17 @@ function buildReportSections(reportType, data) {
         columns: ["Metric", "Amount (UGX)"],
         rows: [
           ["Gross Sales", Number(data.grossSales || 0)],
+          ["Menu promotional discounts", Number(data.menuDiscounts || 0)],
+          ["Special bill discounts", Number(data.specialBillDiscounts || 0)],
           ["Discounts", Number(data.totalDiscounts || 0)],
-          ["Approved voids / refunds", Number(data.totalRefunds || 0)],
+          ["Approved voids", Number(data.voidedSales ?? data.totalRefunds ?? 0)],
           ["Net Sales", Number(data.netSales ?? data.totalRevenue ?? 0)],
         ],
       },
       {
         title: "Cost of Goods Sold",
         columns: ["Account", "Amount (UGX)"],
-        rows: [["Ingredient costs", Number(data.costOfGoodsSold || 0)]],
+        rows: [["Cost of goods sold", Number(data.costOfGoodsSold || 0)]],
       },
       {
         title: "Gross Profit",
@@ -107,11 +110,21 @@ function buildMenuProfitabilitySections(report) {
     row.category || '',
     Number(row.quantity_sold || 0),
     Number(row.selling_price || 0),
+    row.is_recipe_based
+      ? '—'
+      : row.unit_purchase_cost !== null && row.unit_purchase_cost !== undefined
+        ? Number(row.unit_purchase_cost)
+        : 'COST MISSING',
+    Number(row.gross_sales || 0),
+    Number(row.menu_discounts || 0),
+    Number(row.special_discounts || 0),
     Number(row.net_sales || 0),
-    Number(row.cogs || 0),
-    Number(row.gross_profit || 0),
-    Number(row.gross_profit_margin || 0),
-    Number(row.contribution || 0),
+    row.has_cost_data
+      ? Number(row.total_cogs ?? (Number(row.cogs || 0) + Number(row.direct_purchase_cost || 0)))
+      : 'COST REVIEW',
+    row.has_cost_data ? Number(row.gross_profit || 0) : 'COST REVIEW',
+    row.has_cost_data ? Number(row.gross_profit_margin || 0) : 'COST REVIEW',
+    row.has_cost_data ? Number(row.contribution || 0) : 'COST REVIEW',
     row.profitability_status || 'Profitable',
   ]);
 
@@ -120,15 +133,22 @@ function buildMenuProfitabilitySections(report) {
       title: 'Summary',
       columns: ['Metric', 'Value'],
       rows: [
+        ['Gross sales (UGX)', Number(summary.totalGrossSales || 0)],
+        ['Menu promotional discounts (UGX)', Number(summary.totalMenuDiscounts || 0)],
+        ['Special bill discounts (UGX)', Number(summary.totalSpecialDiscounts || 0)],
+        ['Total discounts (UGX)', Number(summary.totalDiscounts || 0)],
         ['Total net sales (UGX)', Number(summary.totalNetSales || 0)],
-        ['Ingredient COGS (UGX)', Number(summary.totalCogs || 0)],
-        ['Gross profit (UGX)', Number(summary.grossProfit || 0)],
-        ['Gross margin (%)', Number(summary.grossProfitMargin || 0)],
+        ['Recipe COGS (UGX)', Number(summary.totalCogs || 0)],
+        ['Direct purchase costs (UGX)', Number(summary.totalDirectPurchaseCosts || 0)],
+        ['Total cost (UGX)', summary.totalCost === null ? 'COST REVIEW' : Number(summary.totalCost || 0)],
+        ['Gross profit (UGX)', summary.grossProfit === null ? 'COST REVIEW' : Number(summary.grossProfit || 0)],
+        ['Gross margin (%)', summary.grossProfitMargin === null ? 'COST REVIEW' : Number(summary.grossProfitMargin || 0)],
+        ['Items requiring cost review', Number(summary.costReviewCount || 0)],
       ],
     },
     {
       title: 'Menu Item Profitability',
-      columns: ['Menu item', 'Category', 'Qty sold', 'Selling price (UGX)', 'Net sales (UGX)', 'Ingredient cost (UGX)', 'Gross profit (UGX)', 'Margin (%)', 'Contribution (UGX)', 'Status'],
+      columns: ['Menu item', 'Category', 'Qty sold', 'Selling price (UGX)', 'Unit Purchase Cost (UGX)', 'Gross sales (UGX)', 'Menu discount (UGX)', 'Special bill discount (UGX)', 'Net sales (UGX)', 'Total cost of goods sold (UGX)', 'Gross profit (UGX)', 'Margin (%)', 'Contribution (UGX)', 'Status'],
       rows,
     },
   ];
@@ -471,12 +491,24 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
           >
             Complimentary Items
           </button>
+          <button
+            onClick={() => setActiveTab("discount-audit")}
+            className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all
+              ${activeTab === "discount-audit"
+                ? "text-yellow-600 border-b-2 border-yellow-500"
+                : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"}`}
+          >
+            <Percent size={12} className="inline mr-1" /> Discount Audit
+          </button>
         </div>
       ) : (
         <div className="flex gap-2 border-b border-gray-200 dark:border-white/10">
           <button
             onClick={() => setActiveTab("menu-profitability")}
-            className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all text-yellow-600 border-b-2 border-yellow-500`}
+            className={`px-5 py-2 text-[10px] font-black uppercase tracking-wider transition-all
+              ${activeTab === "menu-profitability"
+                ? "text-yellow-600 border-b-2 border-yellow-500"
+                : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"}`}
           >
             <TrendingUp size={12} className="inline mr-1" /> Menu Profitability
           </button>
@@ -493,6 +525,7 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
       )}
 
       {activeTab === "complimentary" && <ComplimentaryItemsReport />}
+      {!hideFinancialTabs && activeTab === "discount-audit" && <DiscountAuditReport />}
 
       {/* ========== TAB 1: REPORTS ========== */}
       {!hideFinancialTabs && activeTab === "reports" && (
@@ -606,7 +639,7 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
         </div>
       )}
 
-      {(activeTab === "menu-profitability" || hideFinancialTabs) && (
+      {activeTab === "menu-profitability" && (
         <div className={`rounded-2xl p-6 space-y-5 ${containerClass}`}>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
@@ -635,7 +668,7 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
               <select value={menuFilters.sortBy} onChange={(e) => setMenuFilters((current) => ({ ...current, sortBy: e.target.value }))} className={inputClass + " w-40"}>
                 <option value="gross_profit">Gross profit</option>
                 <option value="net_sales">Net sales</option>
-                <option value="cogs">Ingredient cost</option>
+                <option value="cogs">Cost of goods sold</option>
                 <option value="gross_profit_margin">Margin</option>
                 <option value="menu_name">Menu item</option>
               </select>
@@ -656,24 +689,42 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
           {menuProfitability && (
             <>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {[['Total net sales', menuProfitability.summary.totalNetSales], ['Ingredient COGS', menuProfitability.summary.totalCogs], ['Gross profit', menuProfitability.summary.grossProfit], ['Gross margin', `${Number(menuProfitability.summary.grossProfitMargin || 0).toFixed(1)}%`]].map(([label, value]) => (
+                {[
+                  ['Gross sales', menuProfitability.summary.totalGrossSales],
+                  ['Menu promotions', menuProfitability.summary.totalMenuDiscounts],
+                  ['Special bill discounts', menuProfitability.summary.totalSpecialDiscounts],
+                  ['Net sales', menuProfitability.summary.totalNetSales],
+                  ['Recipe COGS', menuProfitability.summary.totalCogs],
+                  ['Direct purchase costs', menuProfitability.summary.totalDirectPurchaseCosts],
+                  ['Total cost', menuProfitability.summary.totalCost],
+                  ['Gross profit', menuProfitability.summary.grossProfit],
+                  ['Gross margin', menuProfitability.summary.grossProfitMargin === null
+                    ? 'COST REVIEW'
+                    : `${Number(menuProfitability.summary.grossProfitMargin || 0).toFixed(1)}%`],
+                ].map(([label, value]) => (
                   <div key={label} className="border-l-2 border-amber-500 bg-zinc-50 px-4 py-3">
                     <p className="text-[10px] font-black uppercase text-zinc-500">{label}</p>
-                    <p className="mt-1 text-lg font-black">{label.includes('margin') ? value : formatUGX(value)}</p>
+                    <p className="mt-1 text-lg font-black">
+                      {label.includes('margin') || value === null ? (value === null ? 'COST REVIEW' : value) : formatUGX(value)}
+                    </p>
                   </div>
                 ))}
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1000px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
                       <th className="px-2 py-2">Menu item</th>
                       <th className="px-2 py-2">Category</th>
                       <th className="px-2 py-2">Qty sold</th>
                       <th className="px-2 py-2">Selling price</th>
+                      <th className="px-2 py-2">Unit Purchase Cost</th>
+                      <th className="px-2 py-2">Gross sales</th>
+                      <th className="px-2 py-2">Menu discount</th>
+                      <th className="px-2 py-2">Special discount</th>
                       <th className="px-2 py-2">Net sales</th>
-                      <th className="px-2 py-2">Ingredient cost</th>
+                      <th className="px-2 py-2">Total cost of goods sold</th>
                       <th className="px-2 py-2">Gross profit</th>
                       <th className="px-2 py-2">Margin</th>
                       <th className="px-2 py-2">Contribution</th>
@@ -687,12 +738,22 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
                         <td className="px-2 py-2">{row.category}</td>
                         <td className="px-2 py-2">{Number(row.quantity_sold || 0)}</td>
                         <td className="px-2 py-2">{formatUGX(row.selling_price || 0)}</td>
+                        <td className="px-2 py-2">{row.is_recipe_based
+                          ? '—'
+                          : row.unit_purchase_cost !== null && row.unit_purchase_cost !== undefined
+                            ? formatUGX(row.unit_purchase_cost)
+                            : <span className="font-bold text-amber-700">COST MISSING</span>}</td>
+                        <td className="px-2 py-2">{formatUGX(row.gross_sales || 0)}</td>
+                        <td className="px-2 py-2">{formatUGX(row.menu_discounts || 0)}</td>
+                        <td className="px-2 py-2">{formatUGX(row.special_discounts || 0)}</td>
                         <td className="px-2 py-2">{formatUGX(row.net_sales || 0)}</td>
-                        <td className="px-2 py-2">{formatUGX(row.cogs || 0)}</td>
-                        <td className="px-2 py-2 font-bold text-emerald-700">{formatUGX(row.gross_profit || 0)}</td>
-                        <td className="px-2 py-2">{Number(row.gross_profit_margin || 0).toFixed(1)}%</td>
-                        <td className="px-2 py-2">{formatUGX(row.contribution || 0)}</td>
-                        <td className="px-2 py-2"><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${Number(row.gross_profit || 0) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{row.profitability_status || 'Profitable'}</span></td>
+                        <td className="px-2 py-2">{row.has_cost_data
+                          ? formatUGX(row.total_cogs ?? (Number(row.cogs || 0) + Number(row.direct_purchase_cost || 0)))
+                          : 'COST REVIEW'}</td>
+                        <td className="px-2 py-2 font-bold text-emerald-700">{row.has_cost_data ? formatUGX(row.gross_profit) : 'COST REVIEW'}</td>
+                        <td className="px-2 py-2">{row.has_cost_data ? `${Number(row.gross_profit_margin || 0).toFixed(1)}%` : 'COST REVIEW'}</td>
+                        <td className="px-2 py-2">{row.has_cost_data ? formatUGX(row.contribution) : 'COST REVIEW'}</td>
+                        <td className="px-2 py-2"><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${!row.has_cost_data || Number(row.gross_profit || 0) < 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{row.profitability_status || 'Profitable'}</span></td>
                       </tr>
                     ))}
                   </tbody>

@@ -5,6 +5,8 @@ import pool    from '../db.js';
 import logActivity from '../utils/logsActivity.js';
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { buildSalesRevenueBreakdown, createReceivableSettlementJournalEntry, createSalesJournalEntry } from '../helpers/accounting.js';
+import notificationService from '../helpers/notificationService.js';
+import { getOrderItemPayableAmount } from '../helpers/complimentaryItems.js';
 
 const router = express.Router();
 
@@ -414,32 +416,71 @@ router.patch('/forward-by-table', async (req, res) => {
 router.patch('/:id/forward', async (req, res) => {
   const { id } = req.params;
   const { forwarded_by } = req.body;
-
+  const forwardedBy = forwarded_by || 'Cashier';
+  const client = await pool.connect();
   try {
-    const result = await pool.query(`
+    await client.query('BEGIN');
+    const result = await client.query(`
       UPDATE credits
-        SET status       = 'PendingManagerApproval',
+      SET status       = 'PendingManagerApproval',
           forwarded_by = $1,
           forwarded_at = NOW()
       WHERE id = $2 AND status = 'PendingCashier'
       RETURNING *
-    `, [forwarded_by || 'Cashier', id]);
+    `, [forwardedBy, id]);
 
-    if (!result.rows.length)
+    if (!result.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Credit not found or already forwarded' });
+    }
+    const credit = result.rows[0];
 
+    if (credit.cashier_queue_id) {
+      const queueResult = await client.query(`
+        UPDATE cashier_queue
+        SET status = 'PendingManagerApproval', confirmed_by = $1
+        WHERE id = $2 AND method = 'Credit' AND status = 'Pending'
+        RETURNING id
+      `, [forwardedBy, credit.cashier_queue_id]);
+      if (!queueResult.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: 'The linked cashier request is no longer pending manager approval.'
+        });
+      }
+    }
+
+    await client.query('COMMIT');
     await logActivity(pool, {
       type:    'CREDIT_FORWARDED',
-      actor:   forwarded_by || 'Cashier',
+      actor:   forwardedBy,
       role:    'CASHIER',
       message: `Forwarded credit #${id} to manager for approval`,
-      meta:    { credit_id: id },
+      meta:    { credit_id: id, cashier_queue_id: credit.cashier_queue_id },
     });
 
-    res.json(result.rows[0]);
+    const managerNotification = await notificationService.sendToRoles(['MANAGER'], {
+      type: 'CREDIT_MANAGER_APPROVAL_REQUEST',
+      title: 'Credit request needs approval',
+      body: `${credit.client_name || 'Client'} has a credit request for ${credit.table_name || 'a table'} (UGX ${Number(credit.amount).toLocaleString()}).`,
+      referenceId: credit.cashier_queue_id || credit.id,
+      referenceType: credit.cashier_queue_id ? 'cashier_queue' : 'credit',
+      link: '/staff/manager',
+    });
+    console.log(
+      `[CREDIT MANAGER APPROVAL] Credit ID: ${credit.id}; ` +
+      `manager notifications sent: ${managerNotification.sent || 0}, ` +
+      `failed: ${managerNotification.failed || 0}` +
+      `${managerNotification.noRecipients ? ', no registered Manager devices' : ''}`
+    );
+
+    res.json(credit);
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Forward credit error:', err.message);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -528,6 +569,20 @@ router.patch('/:id/approve', async (req, res) => {
       message: `Approved credit #${id} for ${credit.client_name}`,
       meta:    { credit_id: id, amount: credit.amount },
     });
+    if (result.rows.length) {
+      const cashierNotification = await notificationService.sendToRoles(['CASHIER'], {
+        type: 'CREDIT_APPROVED',
+        title: 'Credit request approved',
+        body: `${credit.client_name || 'Client'}'s credit for ${credit.table_name || 'the table'} (UGX ${Number(credit.amount).toLocaleString()}) was approved by ${approved_by || 'Manager'}.`,
+        referenceId: credit.cashier_queue_id || credit.id,
+        referenceType: credit.cashier_queue_id ? 'cashier_queue' : 'credit',
+        link: '/cashier',
+      });
+      console.log(
+        `[CREDIT APPROVED NOTIFICATION] Credit ID: ${id}; cashier notifications sent: ` +
+        `${cashierNotification.sent || 0}, failed: ${cashierNotification.failed || 0}`
+      );
+    }
 
     res.json(credit);
   } catch (err) {
@@ -564,8 +619,21 @@ router.patch('/:id/reject', async (req, res) => {
       message: `Rejected credit #${id}: ${reason}`,
       meta:    { credit_id: id, reason },
     });
+    const credit = result.rows[0];
+    const cashierNotification = await notificationService.sendToRoles(['CASHIER'], {
+      type: 'CREDIT_REJECTED',
+      title: 'Credit request rejected',
+      body: `${credit.client_name || 'Client'}'s credit for ${credit.table_name || 'the table'} (UGX ${Number(credit.amount).toLocaleString()}) was rejected by ${rejected_by || 'Manager'}${reason ? `: ${reason}` : '.'}`,
+      referenceId: credit.cashier_queue_id || credit.id,
+      referenceType: credit.cashier_queue_id ? 'cashier_queue' : 'credit',
+      link: '/cashier',
+    });
+    console.log(
+      `[CREDIT REJECTED NOTIFICATION] Credit ID: ${id}; cashier notifications sent: ` +
+      `${cashierNotification.sent || 0}, failed: ${cashierNotification.failed || 0}`
+    );
 
-    res.json(result.rows[0]);
+    res.json(credit);
   } catch (err) {
     console.error('Reject credit error:', err.message);
     res.status(500).json({ error: err.message });
@@ -601,7 +669,7 @@ router.patch('/:id/settle', async (req, res) => {
     }
     const credit = creditRes.rows[0];
 
-    if (!['Approved', 'PartiallySettled'].includes(credit.status)) {
+    if (!['Approved', 'PartiallySettled', 'Rejected'].includes(credit.status)) {
       await client.query('ROLLBACK');
       return res.status(400).json({
         error: `Cannot settle a credit with status: ${credit.status}`
@@ -646,22 +714,13 @@ router.patch('/:id/settle', async (req, res) => {
 
     // 3. Update orders status and individual items
     if (credit.order_id) {
-      // Update order status
-      await client.query(`
-        UPDATE orders
-        SET status = $1,
-            payment_method = $2,
-            paid_at = NOW()
-        WHERE id = $3
-      `, [newStatus === 'FullySettled' ? 'Paid' : 'Credit', method || "Cash", credit.order_id]);
-
       // Record credit settlement in the authoritative daily_summary table.
       await updateDailySummary({ amount: payment, method, orderCount: 0 });
       
       // Update individual items - ONLY mark credit-requested items as paid
       const creditItemTarget = await getCreditItemTarget(client, credit);
       const orderRes = await client.query(
-        `SELECT items FROM orders WHERE id = $1`,
+        `SELECT items FROM orders WHERE id = $1 FOR UPDATE`,
         [credit.order_id]
       );
       
@@ -672,9 +731,11 @@ router.patch('/:id/settle', async (req, res) => {
         }
         
         if (Array.isArray(items)) {
+          let updatedCreditItemCount = 0;
           const updatedItems = items.map((item, index) => {
             // Only update items that were requested as credit
             if (item.creditRequested === true && matchesCreditItem(item, index, creditItemTarget)) {
+              updatedCreditItemCount += 1;
               if (newStatus === 'FullySettled') {
                 // Full settlement - mark as fully paid
                 return {
@@ -682,7 +743,9 @@ router.patch('/:id/settle', async (req, res) => {
                   _rowPaid: true,
                   payment_method: method || "Cash",
                   paid_at: new Date().toISOString(),
-                  is_partially_paid: false
+                  is_partially_paid: false,
+                  creditRequested: false,
+                  creditRejected: false,
                 };
               } else {
                 // Partial settlement - mark as partially paid
@@ -693,17 +756,35 @@ router.patch('/:id/settle', async (req, res) => {
                   partial_payment_method: method || "Cash",
                   partial_paid_at: new Date().toISOString(),
                   partial_amount_paid: newPaid,
-                  remaining_balance: Math.max((Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1) - newPaid, 0)
+                  remaining_balance: Math.max(getOrderItemPayableAmount(item) - newPaid, 0)
                 };
               }
             }
             // Leave non-credit items as they are
             return item;
           });
-          
+
+          if (creditItemTarget && updatedCreditItemCount === 0) {
+            throw new Error(`Credit item for credit #${credit.id} was not found on order #${credit.order_id}.`);
+          }
+          const payableItems = updatedItems.filter(item =>
+            item.status !== 'VOIDED' &&
+            item.voidProcessed !== true &&
+            getOrderItemPayableAmount(item) > 0
+          );
+          const allItemsSettled = payableItems.length > 0 && payableItems.every(item =>
+            item._rowPaid === true ||
+            Boolean(item.paid_at) ||
+            item.status === 'Paid'
+          );
           await client.query(
-            `UPDATE orders SET items = $1 WHERE id = $2`,
-            [JSON.stringify(updatedItems), credit.order_id]
+            `UPDATE orders
+             SET items = $1,
+                 status = CASE WHEN $2 THEN 'Paid' ELSE status END,
+                 payment_method = CASE WHEN $2 THEN $3 ELSE payment_method END,
+                 paid_at = CASE WHEN $2 THEN COALESCE(paid_at, NOW()) ELSE paid_at END
+             WHERE id = $4`,
+            [JSON.stringify(updatedItems), allItemsSettled, method || "Cash", credit.order_id]
           );
         }
       }

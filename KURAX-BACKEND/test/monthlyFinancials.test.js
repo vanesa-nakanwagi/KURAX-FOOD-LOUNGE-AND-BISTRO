@@ -16,9 +16,14 @@ test('monthly sales include paid public website orders even while fulfillment is
             card: '0',
             mtn: '24000',
             airtel: '0',
+            complimentary_paid: '0',
+            complimentary_waived: '0',
             order_count: '1',
           }],
         };
+      }
+      if (sql.includes('AS complimentary_paid')) {
+        return { rows: [{ complimentary_paid: '0', complimentary_waived: '0' }] };
       }
       if (sql.includes('AS credit_settlements')) {
         return { rows: [{ credit_settlements: '0', cash: '0', card: '0', mtn: '0', airtel: '0', settlement_count: '0' }] };
@@ -38,7 +43,7 @@ test('monthly sales include paid public website orders even while fulfillment is
   assert.equal(financials.orderCount, 1);
 });
 
-test('complimentary items remain in gross sales but are excluded from collected sales', async () => {
+test('a UGX 150000 item with a UGX 50000 waiver reports gross sales of UGX 150000 and collections of UGX 100000', async () => {
   const queries = [];
   const fakePool = {
     async query(sql) {
@@ -46,15 +51,20 @@ test('complimentary items remain in gross sales but are excluded from collected 
       if (sql.includes('AS gross_sales')) {
         return {
           rows: [{
-            gross_sales: '49000',
-            collected_sales: '24000',
+            gross_sales: '150000',
+            collected_sales: '100000',
             cash: '0',
             card: '0',
-            mtn: '24000',
+            mtn: '100000',
             airtel: '0',
+            complimentary_paid: '100000',
+            complimentary_waived: '50000',
             order_count: '1',
           }],
         };
+      }
+      if (sql.includes('AS complimentary_paid')) {
+        return { rows: [{ complimentary_paid: '100000', complimentary_waived: '50000' }] };
       }
       if (sql.includes('AS credit_settlements')) {
         return { rows: [{ credit_settlements: '0', cash: '0', card: '0', mtn: '0', airtel: '0', settlement_count: '0' }] };
@@ -70,11 +80,17 @@ test('complimentary items remain in gross sales but are excluded from collected 
 
   assert.match(queries[0], /originalLineAmount/);
   assert.match(queries[0], /payableAmount/);
-  assert.match(queries[0], /complimentaryWaivedAmount/);
-  assert.equal(financials.grossSales, 49000);
-  assert.equal(financials.collectedSales, 24000);
-  assert.equal(financials.totalCollected, 24000);
-  assert.equal(financials.currentCash, 19000);
+  assert.doesNotMatch(queries[0], /BOOL_OR\(COALESCE\(item->>'complimentary'/);
+  assert.equal(financials.grossSales, 150000);
+  assert.equal(financials.collectedSales, 100000);
+  assert.equal(financials.totalCollected, 100000);
+  assert.equal(financials.complimentaryPaid, 100000);
+  assert.equal(financials.complimentaryWaived, 50000);
+  assert.equal(financials.currentCash, 95000);
+  assert.match(queries[1], /AS complimentary_paid/);
+  assert.match(queries[1], /AS complimentary_waived/);
+  assert.match(queries[1], /o\.original_order_ids/);
+  assert.match(queries[1], /complimentaryWaivedAmount/);
 });
 
 test('monthly financial totals use collected sales for cash, not gross sales', () => {

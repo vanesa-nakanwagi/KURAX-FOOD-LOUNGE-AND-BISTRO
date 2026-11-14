@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import {
-  Plus, Search, Settings, Trash2, Mail,
+  Plus, Search, Settings, Trash2, Mail, Bell,
   Flame, EyeOff, Crown, Zap
 } from "lucide-react";
 
@@ -35,6 +35,11 @@ function StaffRow({ staff, onTogglePermission, onDelete, onEdit }) {
             <p className="text-sm font-bold leading-tight text-gray-900">
               {staff.name}
             </p>
+            {isMgmt && staff.is_requesting && (
+              <p className="mt-1 flex items-center gap-1 text-[9px] font-black uppercase tracking-wide text-amber-700">
+                <Bell size={10} /> Order access requested
+              </p>
+            )}
             {/* Email shown under name on mobile */}
             <p className="text-[10px] font-medium leading-none mt-0.5 sm:hidden text-gray-400 truncate max-w-[140px]">
               {staff.email}
@@ -77,7 +82,7 @@ function StaffRow({ staff, onTogglePermission, onDelete, onEdit }) {
                 : "bg-gray-100 border-gray-200 text-gray-500 hover:border-gray-300"}`}
           >
             {staff.is_permitted ? <Flame size={9} /> : <EyeOff size={9} />}
-            {staff.is_permitted ? "Active" : "Standard"}
+            {staff.is_permitted ? "Permitted" : staff.is_requesting ? "Grant access" : "Not permitted"}
           </button>
         ) : (
           /* All other staff — Live badge */
@@ -139,6 +144,9 @@ export default function StaffSection({
     const rank = r => r === "DIRECTOR" ? 0 : ["MANAGER","SUPERVISOR"].includes(r) ? 1 : 2;
     return rank(a.role?.toUpperCase()) - rank(b.role?.toUpperCase());
   });
+  const pendingRequests = filtered.filter((person) =>
+    ["MANAGER", "SUPERVISOR"].includes(person.role?.toUpperCase()) && person.is_requesting
+  );
 
   const HEADERS = ["Name", "Role", "Email", "Permission", "Actions"];
 
@@ -150,6 +158,12 @@ export default function StaffSection({
           <div><p className="text-xs font-black uppercase tracking-[0.18em] text-amber-700">Director control</p><h2 className="text-lg font-black text-zinc-900">Staff team</h2></div>
         </div>
         <p className="mt-4 text-sm text-zinc-500">Manage staff accounts, roles and access.</p>
+        <div className={`mt-4 flex items-center gap-2 rounded-lg border p-3 text-sm font-bold ${pendingRequests.length ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-zinc-200 bg-zinc-50 text-zinc-500'}`}>
+          <Bell size={15} />
+          {pendingRequests.length
+            ? `${pendingRequests.length} manager/supervisor order permission request${pendingRequests.length === 1 ? '' : 's'}`
+            : 'No pending order permission requests'}
+        </div>
         <div className="my-5 grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Accounts</p><p className="mt-1 text-xl font-black">{filtered.length}</p></div>
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Management</p><p className="mt-1 text-xl font-black">{filtered.filter(person => ["MANAGER", "SUPERVISOR"].includes(person.role?.toUpperCase())).length}</p></div>

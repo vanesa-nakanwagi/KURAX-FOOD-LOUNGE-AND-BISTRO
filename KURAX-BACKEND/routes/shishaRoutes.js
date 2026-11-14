@@ -149,9 +149,13 @@ export async function initShishaTables() {
       id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES public.shisha_orders(id) ON DELETE CASCADE,
       requested_by INTEGER NOT NULL REFERENCES public.shisha_staff(id), payment_method TEXT NOT NULL,
       amount NUMERIC(12,2) NOT NULL CHECK (amount > 0), status TEXT NOT NULL DEFAULT 'PENDING',
-      transaction_id TEXT, notes TEXT, confirmed_by INTEGER, confirmed_by_name TEXT, confirmed_by_role TEXT,
+      transaction_id TEXT, notes TEXT, client_name TEXT, client_phone TEXT, expected_payment_date DATE,
+      confirmed_by INTEGER, confirmed_by_name TEXT, confirmed_by_role TEXT,
       confirmed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    'ALTER TABLE public.shisha_payment_requests ADD COLUMN IF NOT EXISTS client_name TEXT',
+    'ALTER TABLE public.shisha_payment_requests ADD COLUMN IF NOT EXISTS client_phone TEXT',
+    'ALTER TABLE public.shisha_payment_requests ADD COLUMN IF NOT EXISTS expected_payment_date DATE',
     `CREATE TABLE IF NOT EXISTS public.shisha_payments (
       id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES public.shisha_orders(id) ON DELETE CASCADE,
       payment_request_id INTEGER REFERENCES public.shisha_payment_requests(id), payment_method TEXT NOT NULL,
@@ -275,6 +279,12 @@ function normalizeMethod(method) {
   return aliases[normalized] || normalized;
 }
 
+function isValidDateOnly(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 async function recordHistory(client, order, nextStatus, action, actor, notes = null) {
   await client.query(
     `INSERT INTO public.shisha_order_status_history
@@ -310,6 +320,10 @@ async function syncShishaProductionWork(queryable) {
 async function loadOrder(id, client = pool) {
   const result = await client.query(
     `SELECT o.*, w.name AS waiter_name, c.name AS chef_name,
+      EXISTS (
+        SELECT 1 FROM public.shisha_payment_requests r
+        WHERE r.order_id=o.id AND r.payment_method='CREDIT' AND r.status='OUTSTANDING'
+      ) AS has_credit_request,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id', i.id, 'production_work_id', pw.id, 'package_id', i.shisha_package_id, 'name', i.package_name,
         'quantity', i.quantity, 'unit_price', i.unit_price, 'line_total', i.line_total,
@@ -464,18 +478,18 @@ router.post('/staff', async (req, res) => {
       [name, email, role, salt, hash, encryptedPin]
     );
 
-    const emailConfigured = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
     const staff = result.rows[0];
+    let emailSent = false;
 
-    if (emailConfigured) {
-      void emailShishaPin({ name, email, role, pin }).catch((emailError) => {
-        console.error('Shisha PIN email failed:', emailError.message);
-      });
+    try {
+      emailSent = await emailShishaPin({ name, email, role, pin });
+    } catch (emailError) {
+      console.error('Shisha PIN email failed:', emailError.message);
     }
 
     return res.status(201).json({
       staff,
-      emailSent: emailConfigured,
+      emailSent,
     });
   } catch (error) {
     if (error.code === '23505') return fail(res, 409, 'That email already has a Shisha account.');
@@ -533,7 +547,7 @@ router.get('/orders', requireRoles(...SHISHA_ROLES), async (req, res) => {
     }
     if (req.actor.role === 'SHISHA_CHEF') {
       values.push(req.actor.id);
-      conditions.push(`o.assigned_chef_id=$${values.length}`);
+      conditions.push(`(o.assigned_chef_id=$${values.length} OR (o.assigned_chef_id IS NULL AND o.order_status='PENDING'))`);
       conditions.push(`o.order_status IN ('PENDING', 'ASSIGNED', 'PREPARING')`);
     }
     if (req.query.status) {
@@ -542,6 +556,10 @@ router.get('/orders', requireRoles(...SHISHA_ROLES), async (req, res) => {
     }
     const result = await pool.query(
       `SELECT o.*, w.name AS waiter_name, c.name AS chef_name,
+        EXISTS (
+          SELECT 1 FROM public.shisha_payment_requests r
+          WHERE r.order_id=o.id AND r.payment_method='CREDIT' AND r.status='OUTSTANDING'
+        ) AS has_credit_request,
         COALESCE((SELECT jsonb_agg(jsonb_build_object(
           'id', i.id, 'production_work_id', pw.id, 'package_id', i.shisha_package_id, 'name', i.package_name,
           'quantity', i.quantity, 'unit_price', i.unit_price, 'line_total', i.line_total,
@@ -619,7 +637,8 @@ router.post('/orders', requireRoles('SHISHA_WAITER'), async (req, res) => {
       body: `Shisha order ${orderReference(order.id)} requires attention.`,
       department: 'Shisha',
       referenceId: order.id,
-      link: `/shisha?order=${order.id}`,
+      referenceType: 'SHISHA_ORDER',
+      link: `/shisha/mixer?order=${order.id}`,
     }, 'shisha');
     return res.status(201).json({ ...(await loadOrder(order.id)), reference: orderReference(order.id) });
   } catch (error) {
@@ -991,14 +1010,17 @@ router.post('/production/work/:workId/notify', requireRoles('SHISHA_HOD'), async
       referenceType: 'SHISHA_ORDER',
       link: `/shisha?order=${order.id}`,
     }, 'shisha');
-    if (notification.error) {
+    if (notification.error || !notification.sent) {
       await pool.query(
         `UPDATE public.shisha_production_work
          SET notification_status='Failed', updated_at=NOW()
          WHERE id=$1 AND notification_status='Sending'`,
         [workId]
       );
-      return fail(res, 503, 'The Shisha waiter notification could not be delivered. Please retry.');
+      const message = notification.noRecipients
+        ? 'No Shisha waiter device is registered with notifications enabled. Ask the waiter to enable push notifications, then retry.'
+        : 'The Shisha waiter notification could not be delivered. Please retry.';
+      return fail(res, 503, message);
     }
     const notified = await pool.query(
       `UPDATE public.shisha_production_work
@@ -1023,16 +1045,14 @@ router.post('/production/work/:workId/notify', requireRoles('SHISHA_HOD'), async
   }
 });
 
-router.post('/orders/:id/prepare', requireRoles('SHISHA_CHEF'), async (req, res) => {
-  const pin = String(req.body.pin || '').trim();
-  if (!/^\d{4,8}$/.test(pin)) return fail(res, 400, 'Enter your 4-8 digit Shisha PIN to claim this work.');
+router.post('/orders/:id/claim', requireRoles('SHISHA_CHEF'), async (req, res) => {
+  const pin = String(req.body?.pin || '').trim();
+  if (!/^\d{4,8}$/.test(pin)) return fail(res, 400, 'Enter your 4-8 digit Shisha PIN to claim this order.');
   const attempt = await pool.query(
     'SELECT locked_until > NOW() AS locked FROM public.shisha_production_pin_attempts WHERE staff_id=$1',
     [req.actor.id]
   );
-  if (attempt.rows[0]?.locked) {
-    return fail(res, 429, 'Too many invalid PIN attempts. Try again later.');
-  }
+  if (attempt.rows[0]?.locked) return fail(res, 429, 'Too many invalid PIN attempts. Try again later.');
   const staffResult = await pool.query(
     'SELECT pin_salt, pin_hash FROM public.shisha_staff WHERE id=$1 AND role=\'SHISHA_CHEF\' AND is_active=true',
     [req.actor.id]
@@ -1061,59 +1081,65 @@ router.post('/orders/:id/prepare', requireRoles('SHISHA_CHEF'), async (req, res)
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const result = await client.query('SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const result = await client.query(
+      'SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE',
+      [req.params.id]
+    );
     const order = result.rows[0];
-    if (!order
-      || !['PENDING', 'ASSIGNED'].includes(order.order_status)
-      || (order.assigned_chef_id && order.assigned_chef_id !== req.actor.id)) {
+    if (!order) {
       await client.query('ROLLBACK');
-      return fail(res, 409, 'This order is not available for preparation.');
+      return fail(res, 404, 'Shisha order not found.');
     }
+    const isUnassignedOrder = !order.assigned_chef_id && order.order_status === 'PENDING';
+    const isAssignedToMixer = Number(order.assigned_chef_id) === Number(req.actor.id) && order.order_status === 'ASSIGNED';
+    if (!isUnassignedOrder && !isAssignedToMixer) {
+      await client.query('ROLLBACK');
+      return fail(res, 409, 'This Shisha order has already been claimed or is no longer available.');
+    }
+
     await syncShishaProductionWork(client);
     const workResult = await client.query(
-      `SELECT * FROM public.shisha_production_work WHERE order_id=$1 FOR UPDATE`,
+      `SELECT * FROM public.shisha_production_work
+       WHERE order_id=$1 AND status NOT IN ('Completed', 'Cancelled', 'Voided')
+       FOR UPDATE`,
       [order.id]
     );
-    if (!workResult.rows.length || workResult.rows.some(work => work.staff_id && work.staff_id !== req.actor.id)) {
+    const workUnavailable = isUnassignedOrder
+      ? workResult.rows.some(work => work.staff_id || work.status !== 'Unclaimed')
+      : workResult.rows.some(work => Number(work.staff_id) !== Number(req.actor.id) || work.status !== 'Claimed');
+    if (!workResult.rows.length || workUnavailable) {
       await client.query('ROLLBACK');
-      return fail(res, 409, 'One or more Shisha items have already been claimed.');
+      return fail(res, 409, 'One or more Shisha items are unavailable for this mixer.');
     }
+
     await client.query(
       `INSERT INTO public.shisha_production_events
          (work_id, event_type, to_staff_id, actor_id, from_status, to_status)
-       SELECT id, 'CLAIMED', $2, $2, status, 'Preparing'
+       SELECT id, CASE WHEN status='Unclaimed' THEN 'CLAIMED' ELSE 'STARTED' END,
+              $2, $2, status, 'Preparing'
        FROM public.shisha_production_work
-       WHERE order_id=$1 AND staff_id IS NULL`,
+       WHERE order_id=$1 AND status NOT IN ('Completed', 'Cancelled', 'Voided')`,
       [order.id, req.actor.id]
     );
     await client.query(
       `UPDATE public.shisha_production_work
-       SET staff_id=$2, staff_name=$3, status='Preparing',
-           claimed_at=COALESCE(claimed_at,NOW()), started_at=COALESCE(started_at,NOW()), updated_at=NOW()
-       WHERE order_id=$1 AND (staff_id IS NULL OR staff_id=$2)`,
+       SET staff_id=$2, staff_name=$3, status='Preparing', claimed_at=NOW(), started_at=NOW(), updated_at=NOW()
+       WHERE order_id=$1 AND status NOT IN ('Completed', 'Cancelled', 'Voided')`,
       [order.id, req.actor.id, req.actor.name]
     );
     await client.query(
-      'UPDATE public.shisha_orders SET assigned_chef_id=COALESCE(assigned_chef_id,$1), updated_at=NOW() WHERE id=$2',
+      `UPDATE public.shisha_orders
+       SET assigned_chef_id=$1, order_status='PREPARING', updated_at=NOW()
+       WHERE id=$2`,
       [req.actor.id, order.id]
     );
     await recordHistory(client, order, 'PREPARING', 'PREPARATION_STARTED', req.actor);
     await client.query('COMMIT');
-    void notificationService.sendToUser(order.shisha_waiter_id, {
-      type: 'SHISHA_PREPARATION_STARTED',
-      title: 'Shisha Preparation Started',
-      body: `${req.actor.name} started preparing Shisha order ${orderReference(order.id)}.`,
-      department: 'Shisha',
-      referenceId: order.id,
-      link: `/shisha?order=${order.id}`,
-    }, 'shisha').catch(notificationError => {
-      console.error('Shisha preparation-start notification failed:', notificationError.message);
-    });
     return res.json({ ...(await loadOrder(order.id)), reference: orderReference(order.id) });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Start Shisha preparation error:', error.message);
-    return fail(res, 500, 'Could not start preparation.');
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Claim Shisha order error:', error.message);
+    return fail(res, 500, 'Could not claim the Shisha order.');
   } finally {
     client.release();
   }
@@ -1123,9 +1149,9 @@ router.post('/orders/:id/ready', requireRoles('SHISHA_CHEF'), async (req, res) =
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const result = await client.query('SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE', [req.params.id]);
-    const order = result.rows[0];
-    if (!order || order.assigned_chef_id !== req.actor.id || order.order_status !== 'PREPARING') {
+    const orderResult = await client.query('SELECT * FROM public.shisha_orders WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const order = orderResult.rows[0];
+    if (!order || order.assigned_chef_id !== req.actor.id || !['ASSIGNED', 'PREPARING'].includes(order.order_status)) {
       await client.query('ROLLBACK');
       return fail(res, 409, 'This order is not being prepared by you.');
     }
@@ -1158,7 +1184,7 @@ router.post('/orders/:id/ready', requireRoles('SHISHA_CHEF'), async (req, res) =
     }
     await recordHistory(client, order, 'READY', 'ORDER_READY', req.actor);
     await client.query('COMMIT');
-    void notificationService.sendToUser(order.shisha_waiter_id, {
+    const notification = await notificationService.sendToUser(order.shisha_waiter_id, {
       type: 'SHISHA_ORDER_READY',
       title: 'Shisha Order Ready',
       body: `Shisha order ${orderReference(order.id)} is ready to serve.`,
@@ -1166,7 +1192,19 @@ router.post('/orders/:id/ready', requireRoles('SHISHA_CHEF'), async (req, res) =
       referenceId: order.id,
       link: `/shisha?order=${order.id}`,
     }, 'shisha');
-    return res.json({ ...(await loadOrder(order.id)), reference: orderReference(order.id) });
+    if (!notification.sent) {
+      console.warn('Shisha order-ready push was not delivered:', {
+        orderId: order.id,
+        waiterId: order.shisha_waiter_id,
+        failed: notification.failed || 0,
+        noRecipients: notification.noRecipients === true,
+      });
+    }
+    return res.json({
+      ...(await loadOrder(order.id)),
+      reference: orderReference(order.id),
+      notification_sent: notification.sent > 0,
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Complete Shisha preparation error:', error.message);
@@ -1248,15 +1286,30 @@ router.post('/orders/:id/void-requests', requireRoles('SHISHA_WAITER'), async (r
     );
     await recordHistory(client, order, order.order_status, 'VOID_REQUESTED', req.actor, `${quantity} × ${item.package_name}: ${reason}`);
     await client.query('COMMIT');
-    void notificationService.sendToRoles(['SHISHA_HOD'], {
+    const notification = await notificationService.sendToRoles(['SHISHA_HOD'], {
       type: 'SHISHA_VOID_REQUEST',
       title: 'Shisha Void Request',
       body: `${req.actor.name} requested a void for ${item.package_name} on ${orderReference(order.id)}.`,
       department: 'Shisha',
       referenceId: requestResult.rows[0].id,
+      referenceType: 'SHISHA_VOID_REQUEST',
       link: `/shisha?tab=voids`,
     }, 'shisha');
-    return res.status(201).json(requestResult.rows[0]);
+    if (!notification.sent) {
+      console.warn('Shisha void request push was not delivered:', {
+        requestId: requestResult.rows[0].id,
+        orderId: order.id,
+        sent: notification.sent || 0,
+        failed: notification.failed || 0,
+        noRecipients: notification.noRecipients === true,
+        error: notification.error === true,
+      });
+    }
+    return res.status(201).json({
+      ...requestResult.rows[0],
+      notification_sent: notification.sent > 0,
+      notification_no_recipients: notification.noRecipients === true,
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Create Shisha void request error:', error.message);
@@ -1370,15 +1423,30 @@ async function resolveVoidRequest(req, res, approve) {
     );
     await client.query('COMMIT');
 
-    void notificationService.sendToUser(order.shisha_waiter_id, {
+    const notification = await notificationService.sendToUser(order.shisha_waiter_id, {
       type: approve ? 'SHISHA_VOID_APPROVED' : 'SHISHA_VOID_REJECTED',
       title: approve ? 'Shisha Void Approved' : 'Shisha Void Rejected',
       body: `${orderReference(order.id)}: ${voidRequest.quantity} × ${voidRequest.amount} was ${status.toLowerCase()}.`,
       department: 'Shisha',
       referenceId: voidRequest.id,
+      referenceType: 'SHISHA_VOID_REQUEST',
       link: `/shisha?order=${order.id}`,
     }, 'shisha');
-    return res.json(updated.rows[0]);
+    if (!notification.sent) {
+      console.warn('Shisha void resolution push was not delivered:', {
+        requestId: voidRequest.id,
+        waiterId: order.shisha_waiter_id,
+        sent: notification.sent || 0,
+        failed: notification.failed || 0,
+        noRecipients: notification.noRecipients === true,
+        error: notification.error === true,
+      });
+    }
+    return res.json({
+      ...updated.rows[0],
+      notification_sent: notification.sent > 0,
+      notification_no_recipients: notification.noRecipients === true,
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Resolve Shisha void request error:', error.message);
@@ -1394,6 +1462,15 @@ router.post('/void-requests/:id/reject', requireRoles('SHISHA_HOD'), (req, res) 
 router.post('/orders/:id/payment-request', requireRoles('SHISHA_WAITER'), async (req, res) => {
   const method = normalizeMethod(req.body.payment_method);
   if (!PAYMENT_METHODS.includes(method)) return fail(res, 400, 'Select a supported payment method.');
+  const clientName = String(req.body.client_name || '').trim();
+  const clientPhone = String(req.body.client_phone || '').trim();
+  const expectedPaymentDate = String(req.body.expected_payment_date || '').trim() || null;
+  if (method === 'CREDIT' && (!clientName || clientName.length > 120 || !clientPhone || clientPhone.length > 40)) {
+    return fail(res, 400, 'Enter the client full name and phone number for credit.');
+  }
+  if (method === 'CREDIT' && expectedPaymentDate && !isValidDateOnly(expectedPaymentDate)) {
+    return fail(res, 400, 'Enter a valid expected payment date.');
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1408,11 +1485,34 @@ router.post('/orders/:id/payment-request', requireRoles('SHISHA_WAITER'), async 
       await client.query('ROLLBACK');
       return fail(res, 409, 'This order has no outstanding balance.');
     }
+    if (method === 'CREDIT') {
+      const existingCredit = await client.query(
+        `SELECT id FROM public.shisha_payment_requests
+         WHERE order_id=$1 AND payment_method='CREDIT' AND status='OUTSTANDING'
+         LIMIT 1`,
+        [order.id]
+      );
+      if (existingCredit.rows.length) {
+        await client.query('ROLLBACK');
+        return fail(res, 409, 'Credit details are already recorded. The Shisha HOD can record full or partial payments from the Payments tab.');
+      }
+    }
     const requestStatus = method === 'CREDIT' ? 'OUTSTANDING' : 'PENDING';
-    await client.query(
-      `INSERT INTO public.shisha_payment_requests (order_id, requested_by, payment_method, amount, status, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [order.id, req.actor.id, method, amount, requestStatus, req.body.notes || null]
+    const requestResult = await client.query(
+      `INSERT INTO public.shisha_payment_requests
+         (order_id, requested_by, payment_method, amount, status, notes, client_name, client_phone, expected_payment_date)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [
+        order.id,
+        req.actor.id,
+        method,
+        amount,
+        requestStatus,
+        req.body.notes || null,
+        method === 'CREDIT' ? clientName : null,
+        method === 'CREDIT' ? clientPhone : null,
+        method === 'CREDIT' ? expectedPaymentDate : null,
+      ]
     );
     const nextPaymentStatus = method === 'CREDIT'
       ? 'OUTSTANDING'
@@ -1420,7 +1520,37 @@ router.post('/orders/:id/payment-request', requireRoles('SHISHA_WAITER'), async 
     await client.query('UPDATE public.shisha_orders SET payment_status=$1, updated_at=NOW() WHERE id=$2', [nextPaymentStatus, order.id]);
     await recordHistory(client, order, method === 'CREDIT' ? 'OUTSTANDING' : 'PAYMENT_PENDING', 'PAYMENT_REQUESTED', req.actor, method);
     await client.query('COMMIT');
-    return res.status(201).json({ success: true, status: requestStatus, outstanding_amount: amount });
+    const notificationBody = method === 'CREDIT'
+      ? `${req.actor.name} recorded UGX ${amount.toLocaleString()} credit for ${clientName} on ${orderReference(order.id)}.`
+      : `${req.actor.name} requested ${method} payment of UGX ${amount.toLocaleString()} for ${orderReference(order.id)}.`;
+    const notification = await notificationService.sendToRoles(['SHISHA_HOD'], {
+      type: 'SHISHA_PAYMENT_REQUEST',
+      title: 'Shisha Payment Confirmation',
+      body: notificationBody,
+      department: 'Shisha',
+      referenceId: requestResult.rows[0].id,
+      referenceType: 'SHISHA_PAYMENT_REQUEST',
+      link: '/shisha?tab=payments',
+    }, 'shisha');
+    if (!notification.sent) {
+      console.warn('Shisha payment request push was not delivered:', {
+        requestId: requestResult.rows[0].id,
+        orderId: order.id,
+        method,
+        status: requestStatus,
+        sent: notification.sent || 0,
+        failed: notification.failed || 0,
+        noRecipients: notification.noRecipients === true,
+        error: notification.error === true,
+      });
+    }
+    return res.status(201).json({
+      success: true,
+      status: requestStatus,
+      outstanding_amount: amount,
+      notification_sent: notification.sent > 0,
+      notification_no_recipients: notification.noRecipients === true,
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Shisha payment request error:', error.message);
@@ -1526,9 +1656,23 @@ router.post('/orders/:id/payments', requireRoles('SHISHA_HOD'), async (req, res)
       await client.query('ROLLBACK');
       return fail(res, 409, 'Order not found or already fully settled.');
     }
-    const payment = await recordPayment(client, order, req.body, req.actor);
+    const creditRequest = await client.query(
+      `SELECT id FROM public.shisha_payment_requests
+       WHERE order_id=$1 AND payment_method='CREDIT' AND status='OUTSTANDING'
+       ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+      [order.id]
+    );
+    const paymentResult = await recordPayment(client, order, req.body, req.actor, creditRequest.rows[0]?.id || null);
+    if (creditRequest.rows[0] && paymentResult.outstanding_amount <= 0) {
+      await client.query(
+        `UPDATE public.shisha_payment_requests
+         SET status='CONFIRMED', confirmed_by=$1, confirmed_by_name=$2, confirmed_by_role=$3, confirmed_at=NOW()
+         WHERE id=$4`,
+        [req.actor.id, req.actor.name, req.actor.role, creditRequest.rows[0].id]
+      );
+    }
     await client.query('COMMIT');
-    return res.status(201).json(payment);
+    return res.status(201).json(paymentResult);
   } catch (error) {
     await client.query('ROLLBACK');
     if (error.status) return fail(res, error.status, error.message);
@@ -1621,10 +1765,20 @@ router.get('/reports', async (req, res) => {
     return fail(res, 400, 'Provide a valid date range.');
   }
   try {
-    const [summary, waiters, methods, mixers, voided, voidedItems] = await Promise.all([
+    const [summary, waiters, methods, mixers, voided, voidedItems, creditPayments] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(total_amount),0) AS total_sales,
-          COALESCE(SUM(amount_paid),0) AS amount_collected,
+          (SELECT COALESCE(SUM(p.amount),0) FROM public.shisha_payments p
+           WHERE p.confirmed_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+             AND p.confirmed_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+          ) AS amount_collected,
+          (SELECT COALESCE(SUM(p.amount),0)
+           FROM public.shisha_payments p
+           JOIN public.shisha_payment_requests r ON r.id=p.payment_request_id
+           WHERE r.payment_method='CREDIT'
+             AND p.confirmed_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+             AND p.confirmed_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+          ) AS credit_payments_received,
           COALESCE(SUM(outstanding_amount),0) AS total_outstanding,
           COUNT(*) FILTER (WHERE payment_status='PARTIALLY_PAID')::int AS partially_paid_orders,
           COALESCE(SUM(amount_paid) FILTER (WHERE payment_status='PARTIALLY_PAID'),0) AS partially_paid_amount,
@@ -1636,13 +1790,29 @@ router.get('/reports', async (req, res) => {
       ),
       pool.query(
         `SELECT w.id AS waiter_id, w.name AS waiter_name, COUNT(o.id)::int AS total_orders,
-          COALESCE(SUM(o.total_amount),0) AS total_sales, COALESCE(SUM(o.amount_paid),0) AS amount_collected,
+          COALESCE(SUM(o.total_amount),0) AS total_sales,
+          (SELECT COALESCE(SUM(p.amount),0)
+           FROM public.shisha_orders paid_order
+           JOIN public.shisha_payments p ON p.order_id=paid_order.id
+           WHERE paid_order.shisha_waiter_id=w.id
+             AND p.confirmed_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+             AND p.confirmed_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+          ) AS amount_collected,
           COALESCE(SUM(o.outstanding_amount),0) AS outstanding,
           COALESCE(SUM((SELECT SUM(v.amount) FROM public.shisha_void_requests v
             WHERE v.order_id=o.id AND v.status='APPROVED')),0) AS voided_total
-         FROM public.shisha_orders o JOIN public.shisha_staff w ON w.id=o.shisha_waiter_id
-         WHERE o.created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+         FROM public.shisha_staff w
+         LEFT JOIN public.shisha_orders o ON o.shisha_waiter_id=w.id
+           AND o.created_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
            AND o.created_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+         WHERE w.role='SHISHA_WAITER'
+           AND (o.id IS NOT NULL OR EXISTS (
+             SELECT 1 FROM public.shisha_orders paid_order
+             JOIN public.shisha_payments p ON p.order_id=paid_order.id
+             WHERE paid_order.shisha_waiter_id=w.id
+               AND p.confirmed_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+               AND p.confirmed_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+           ))
          GROUP BY w.id, w.name ORDER BY total_sales DESC`, [from, to]
       ),
       pool.query(
@@ -1685,6 +1855,20 @@ router.get('/reports', async (req, res) => {
          GROUP BY i.package_name ORDER BY amount DESC, item_name`,
         [from, to]
       ),
+      pool.query(
+        `SELECT p.id AS payment_id, p.order_id, o.table_id, w.name AS waiter_name,
+          r.client_name, r.client_phone, r.expected_payment_date,
+          p.payment_method, p.amount, p.transaction_id, p.notes,
+          p.confirmed_by_name, p.confirmed_at
+         FROM public.shisha_payments p
+         JOIN public.shisha_payment_requests r ON r.id=p.payment_request_id AND r.payment_method='CREDIT'
+         JOIN public.shisha_orders o ON o.id=p.order_id
+         JOIN public.shisha_staff w ON w.id=o.shisha_waiter_id
+         WHERE p.confirmed_at >= ($1::date::timestamp AT TIME ZONE 'Africa/Kampala')
+           AND p.confirmed_at < (($2::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Africa/Kampala')
+         ORDER BY p.confirmed_at DESC, p.id DESC`,
+        [from, to]
+      ),
     ]);
     const voidedTotal = Number(voided.rows[0].voided_total || 0);
     const reportSummary = {
@@ -1705,6 +1889,7 @@ router.get('/reports', async (req, res) => {
       summary: reportSummary,
       by_waiter: waiters.rows.map(addGrossSales),
       by_payment_method: methods.rows,
+      credit_payments: creditPayments.rows.map(row => ({ ...row, reference: orderReference(row.order_id) })),
       by_mixer: mixers.rows.map(addGrossSales),
       by_voided_item: voidedItems.rows,
     });

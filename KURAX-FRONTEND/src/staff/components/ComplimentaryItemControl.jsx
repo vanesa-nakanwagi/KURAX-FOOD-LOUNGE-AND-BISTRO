@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import API_URL from "../../config/api";
 
 function readStaffSession() {
@@ -9,139 +9,152 @@ function readStaffSession() {
   }
 }
 
-function originalLineAmount(item) {
-  const stored = Number(item.originalLineAmount);
-  if (Number.isFinite(stored) && stored >= 0) return stored;
-  return Number(item.originalUnitPrice ?? item.price ?? item.unit_price ?? 0)
-    * Number(item.quantity || 1);
-}
-
-export default function ComplimentaryItemControl({ order, item, onUpdated }) {
-  const [saving, setSaving] = useState(false);
-  const [waivedAmount, setWaivedAmount] = useState(
-    Number(item.complimentaryWaivedAmount ?? originalLineAmount(item))
-  );
-  const [reason, setReason] = useState(item.complimentaryReason || "");
+export default function ComplimentaryItemControl({ order, item, onUpdated, presentation = "inline" }) {
+  const [sending, setSending] = useState(false);
+  const [armed, setArmed] = useState(false);
+  const [error, setError] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
   const session = readStaffSession();
   const role = String(session?.role || "").toUpperCase();
-  const canEdit = role === "MANAGER"
+  const canRequest = role === "MANAGER"
     || role === "SUPERVISOR"
     || (role === "WAITER" && Number(item.staff_id ?? order.staff_id ?? order.staffId) === Number(session?.id));
   const isVoided = item.voidProcessed === true || String(item.status || "").toUpperCase() === "VOIDED"
     || ["Voided", "Cancelled"].includes(String(order.status || ""));
+  const itemIndex = item._orderItemIndex;
+  const orderId = item._orderId ?? order.id;
+  const isPending = item.complimentaryRequestPending === true;
 
-  useEffect(() => {
-    setWaivedAmount(Number(item.complimentaryWaivedAmount ?? originalLineAmount(item)));
-    setReason(item.complimentaryReason || "");
-  }, [item.complimentary, item.complimentaryWaivedAmount, item.complimentaryReason, item.price, item.quantity]);
-
-  const save = async (complimentary, amount = waivedAmount) => {
-    if (saving || !canEdit || isVoided) return;
-    setSaving(true);
+  const sendRequest = async () => {
+    if (sending || !canRequest || isVoided || isPending || !Number.isInteger(Number(itemIndex)) || !orderId) return;
+    setSending(true);
+    setError("");
     try {
-      const token = session?.token;
-      const orderId = item._orderId ?? order.id;
       const response = await fetch(
-        `${API_URL}/api/orders/${orderId}/items/${item._orderItemIndex}/complimentary`,
+        `${API_URL}/api/orders/${orderId}/items/${itemIndex}/complimentary`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
           },
-          body: JSON.stringify({
-            complimentary,
-            waivedAmount: Number(amount),
-            reason,
-          }),
+          body: JSON.stringify({ complimentary: true }),
         }
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok && response.status !== 202) {
-        throw new Error(data.error || "Could not update complimentary status.");
+        throw new Error(data.error || "Could not send complimentary request to the cashier.");
       }
-      if (response.status === 202) {
-        window.alert(data.message || "Correction request sent for approval.");
-      }
+      setArmed(false);
       await onUpdated?.();
-    } catch (error) {
-      window.alert(error.message || "Could not update complimentary status.");
+      setModalOpen(false);
+    } catch (requestError) {
+      setError(requestError.message || "Could not send complimentary request to the cashier.");
     } finally {
-      setSaving(false);
+      setSending(false);
     }
   };
 
-  const handleChecked = (checked) => {
-    if (checked) {
-      const amount = Number(item.complimentaryWaivedAmount) > 0
-        ? Number(item.complimentaryWaivedAmount)
-        : originalLineAmount(item);
-      setWaivedAmount(amount);
-      void save(true, amount);
-    } else {
-      setWaivedAmount(0);
-      void save(false, 0);
-    }
-  };
+  if (!canRequest && !isPending && item.complimentary !== true) return null;
 
-  const handleWaiverBlur = () => {
-    const amount = Number(waivedAmount);
-    if (!Number.isFinite(amount) || amount < 0 || amount > originalLineAmount(item)) {
-      window.alert("The waived amount must be between zero and the original item total.");
-      setWaivedAmount(Number(item.complimentaryWaivedAmount || originalLineAmount(item)));
-      return;
-    }
-    if (amount !== Number(item.complimentaryWaivedAmount || 0)) void save(true, amount);
-  };
+  const controls = (
+    <>
+      {item.complimentary === true && (
+        <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black uppercase text-amber-800">
+          Comp · waived UGX {Number(item.complimentaryWaivedAmount || 0).toLocaleString()}
+        </span>
+      )}
+      {isPending ? (
+        <span className="rounded-full bg-orange-100 px-2 py-1 text-[9px] font-black uppercase text-orange-800">
+          Comp request sent to cashier
+        </span>
+      ) : canRequest && !isVoided ? (
+        armed ? (
+          <>
+            <button
+              type="button"
+              onClick={() => void sendRequest()}
+              disabled={sending}
+              className="rounded-full bg-amber-500 px-3 py-1.5 text-[9px] font-black uppercase text-black disabled:opacity-50"
+            >
+              {sending ? "Sending…" : "Send to Cashier"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setArmed(false)}
+              disabled={sending}
+              className="rounded-full border border-zinc-300 px-3 py-1.5 text-[9px] font-bold uppercase text-zinc-600"
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => { setError(""); setArmed(true); }}
+            className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-[9px] font-black uppercase text-amber-800 hover:bg-amber-100"
+          >
+            Comp
+          </button>
+        )
+      ) : null}
+      {error && <span role="alert" className="text-[9px] font-semibold text-red-600">{error}</span>}
+      {isVoided && <span className="text-[8px] text-zinc-500">Voided items cannot be comped.</span>}
+      {item.complimentary === true && !isPending && !canRequest && (
+        <span className="text-[8px] text-zinc-500">Cashier-approved</span>
+      )}
+    </>
+  );
+
+  if (presentation === "modal") {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className="mt-2 rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-[9px] font-black uppercase text-amber-800 hover:bg-amber-100"
+        >
+          {isPending ? "Comp request pending" : item.complimentary === true ? "View comp" : "Comp"}
+        </button>
+        {modalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="complimentary-request-title"
+              className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-5 shadow-xl"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 id="complimentary-request-title" className="text-lg font-black uppercase text-zinc-900">
+                    Complimentary request
+                  </h2>
+                  <p className="mt-1 text-sm font-semibold text-zinc-600">
+                    {item.name || "Order item"} · UGX {(Number(item.price || 0) * Number(item.quantity || 1)).toLocaleString()}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setModalOpen(false); setArmed(false); setError(""); }}
+                  className="rounded-full px-3 py-1 text-sm font-bold text-zinc-500 hover:bg-zinc-100"
+                  aria-label="Close complimentary request"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-black/5 pt-4">
+                {controls}
+              </div>
+            </section>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-black/5 pt-2">
-      <label className="inline-flex items-center gap-1.5 text-[9px] font-bold text-yellow-700">
-        <input
-          type="checkbox"
-          checked={item.complimentary === true}
-          disabled={!canEdit || isVoided || saving}
-          onChange={(event) => handleChecked(event.target.checked)}
-          className="accent-yellow-500"
-        />
-        Complimentary
-      </label>
-      {item.complimentary === true && (
-        <>
-          <label className="inline-flex items-center gap-1 text-[8px] font-semibold text-zinc-500">
-            Waived UGX
-            <input
-              type="number"
-              min="0"
-              max={originalLineAmount(item)}
-              step="1"
-              value={waivedAmount}
-              disabled={!canEdit || isVoided || saving}
-              onChange={(event) => setWaivedAmount(event.target.value)}
-              onBlur={handleWaiverBlur}
-              className="w-24 rounded border border-yellow-500/30 bg-transparent px-1.5 py-1 text-[9px] text-current"
-              aria-label="Complimentary amount waived"
-            />
-          </label>
-          <input
-            type="text"
-            maxLength="500"
-            value={reason}
-            disabled={!canEdit || isVoided || saving}
-            onChange={(event) => setReason(event.target.value)}
-            onBlur={() => {
-              if (reason !== (item.complimentaryReason || "")) {
-                void save(true, Number(item.complimentaryWaivedAmount || waivedAmount));
-              }
-            }}
-            placeholder="Optional reason"
-            aria-label="Complimentary reason"
-            className="min-w-28 flex-1 rounded border border-yellow-500/30 bg-transparent px-1.5 py-1 text-[9px] text-current"
-          />
-        </>
-      )}
-      {saving && <span className="text-[8px] text-zinc-500">Saving…</span>}
-      {!canEdit && <span className="text-[8px] text-zinc-500">Not authorized</span>}
+    <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-black/5 pt-2">
+      {controls}
     </div>
   );
 }

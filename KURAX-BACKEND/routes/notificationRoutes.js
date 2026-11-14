@@ -57,6 +57,10 @@ router.post('/register', async (req, res) => {
     if (!device) {
       return res.status(409).json({ error: 'This installation is registered to a different account.' });
     }
+    console.info(
+      `[NOTIFICATION DEVICE REGISTERED] ${req.notificationUser.role} ` +
+      `(ID: ${req.notificationUser.id}, scope: ${req.notificationUser.scope}, device ID: ${device.id})`
+    );
     return res.status(201).json({ success: true, device });
   } catch (error) {
     console.error('Staff notification registration failed:', error.message);
@@ -71,6 +75,10 @@ router.post('/devices', async (req, res) => {
     if (!device) {
       return res.status(409).json({ error: 'This installation is registered to a different account.' });
     }
+    console.info(
+      `[NOTIFICATION DEVICE REGISTERED] ${req.notificationUser.role} ` +
+      `(ID: ${req.notificationUser.id}, scope: ${req.notificationUser.scope}, device ID: ${device.id})`
+    );
     return res.status(201).json({ success: true, device });
   } catch (error) {
     console.error('Staff notification registration failed:', error.message);

@@ -1,10 +1,10 @@
 // db.js
-import pkg from 'pg';
-const { Pool } = pkg;
+import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const { Pool } = pg;
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rootEnvPath = path.resolve(backendDirectory, '..', '.env');
 const backendEnvPath = path.join(backendDirectory, '.env');
@@ -12,19 +12,97 @@ dotenv.config({ path: rootEnvPath });
 dotenv.config({ path: backendEnvPath });
 dotenv.config();
 
-// Only use SSL for remote (Neon) connections — local Postgres doesn't support/require it
-const isLocalDb =
-  process.env.DATABASE_URL?.includes('localhost') ||
-  process.env.DATABASE_URL?.includes('127.0.0.1') ||
-  process.env.DATABASE_URL?.includes('@database:');
+const connectionString = process.env.DATABASE_URL;
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: isLocalDb ? false : { rejectUnauthorized: false },
-});
+if (!connectionString) {
+  throw new Error('DATABASE_URL is not configured.');
+}
+
+const pool = new Pool({ connectionString });
 
 export async function ensureDatabaseSchema() {
   const statements = [
+    `CREATE TABLE IF NOT EXISTS public.staff (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE,
+      phone TEXT,
+      role TEXT NOT NULL DEFAULT 'WAITER',
+      password_hash TEXT,
+      pin TEXT,
+      pin_salt TEXT,
+      pin_hash TEXT,
+      is_active BOOLEAN DEFAULT true,
+      is_permitted BOOLEAN DEFAULT false,
+      is_requesting BOOLEAN NOT NULL DEFAULT false,
+      daily_order_target INTEGER DEFAULT 0,
+      monthly_income_target NUMERIC DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+    `ALTER TABLE IF EXISTS public.staff ADD COLUMN IF NOT EXISTS pin TEXT;`,
+    `ALTER TABLE IF EXISTS public.staff ADD COLUMN IF NOT EXISTS pin_salt TEXT;`,
+    `ALTER TABLE IF EXISTS public.staff ADD COLUMN IF NOT EXISTS pin_hash TEXT;`,
+    `ALTER TABLE IF EXISTS public.staff ADD COLUMN IF NOT EXISTS is_permitted BOOLEAN DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.staff ADD COLUMN IF NOT EXISTS is_requesting BOOLEAN NOT NULL DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.staff ADD COLUMN IF NOT EXISTS daily_order_target INTEGER DEFAULT 0;`,
+    `ALTER TABLE IF EXISTS public.staff ADD COLUMN IF NOT EXISTS monthly_income_target NUMERIC DEFAULT 0;`,
+    `CREATE TABLE IF NOT EXISTS public.orders (
+      id SERIAL PRIMARY KEY,
+      table_name TEXT,
+      staff_name TEXT,
+      staff_id INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+      staff_role TEXT,
+      items JSONB DEFAULT '[]'::jsonb,
+      total NUMERIC DEFAULT 0,
+      status TEXT DEFAULT 'Pending',
+      payment_method TEXT DEFAULT 'Cash',
+      is_paid BOOLEAN DEFAULT false,
+      payment_confirmed BOOLEAN DEFAULT false,
+      paid_at TIMESTAMPTZ,
+      transaction_id TEXT,
+      public_order_ref TEXT,
+      client_name TEXT,
+      client_phone TEXT,
+      order_type TEXT DEFAULT 'Dine-in',
+      delivery_address TEXT,
+      delivery_note TEXT,
+      sent_to_cashier BOOLEAN DEFAULT false,
+      shift_cleared BOOLEAN DEFAULT false,
+      day_cleared BOOLEAN DEFAULT false,
+      void_reason TEXT,
+      timestamp TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS payment_confirmed BOOLEAN DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS credit_approved BOOLEAN DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS original_order_ids JSONB DEFAULT '[]'::jsonb;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS transaction_id TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS public_order_ref TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS sent_to_cashier BOOLEAN DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS rider_id INTEGER;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS rider_name TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS rider_phone TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS delivery_status TEXT DEFAULT 'Pending';`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS order_type TEXT DEFAULT 'Dine-in';`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS client_name TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS client_phone TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS delivery_address TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS delivery_note TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS dispatched_at TIMESTAMPTZ;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS is_permitted BOOLEAN DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS shift_cleared BOOLEAN DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS day_cleared BOOLEAN DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS staff_role TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS void_reason TEXT;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'Cash';`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT false;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS special_bill_discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0;`,
     `CREATE TABLE IF NOT EXISTS public.notification_devices (
       id SERIAL PRIMARY KEY,
       user_scope TEXT NOT NULL CHECK (user_scope IN ('restaurant', 'shisha')),
@@ -59,8 +137,21 @@ export async function ensureDatabaseSchema() {
     `UPDATE public.notification_devices SET is_active = active WHERE is_active IS NULL;`,
     `UPDATE public.notification_devices SET notifications_enabled = true WHERE notifications_enabled IS NULL;`,
     `UPDATE public.notification_devices SET permission_status = 'default' WHERE permission_status IS NULL;`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS notification_devices_installation_id_unique
-      ON public.notification_devices (installation_id) WHERE installation_id IS NOT NULL;`,
+    `DO $$ DECLARE constraint_record RECORD; BEGIN
+      FOR constraint_record IN
+        SELECT conname
+        FROM pg_constraint
+        WHERE conrelid = 'public.notification_devices'::regclass
+          AND contype = 'u'
+          AND pg_get_constraintdef(oid) IN ('UNIQUE (firebase_installation_id)', 'UNIQUE (installation_id)')
+      LOOP
+        EXECUTE format('ALTER TABLE public.notification_devices DROP CONSTRAINT %I', constraint_record.conname);
+      END LOOP;
+    END $$;`,
+    `DROP INDEX IF EXISTS public.notification_devices_installation_id_unique;`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS notification_devices_user_installation_unique
+      ON public.notification_devices (user_scope, user_id, installation_id)
+      WHERE installation_id IS NOT NULL;`,
     `CREATE INDEX IF NOT EXISTS notification_devices_user_scope_user_active_idx
       ON public.notification_devices (user_scope, user_id) WHERE active = true OR is_active = true;`,
 
@@ -130,6 +221,45 @@ export async function ensureDatabaseSchema() {
     `ALTER TABLE IF EXISTS public.menus ADD COLUMN IF NOT EXISTS is_available BOOLEAN DEFAULT true;`,
     `ALTER TABLE IF EXISTS public.menus ADD COLUMN IF NOT EXISTS customer_visible BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.menus ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;`,
+    `ALTER TABLE IF EXISTS public.menus
+       ADD COLUMN IF NOT EXISTS promotion_enabled BOOLEAN NOT NULL DEFAULT false,
+       ADD COLUMN IF NOT EXISTS promotion_discount_type TEXT NOT NULL DEFAULT 'percentage',
+       ADD COLUMN IF NOT EXISTS promotion_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+       ADD COLUMN IF NOT EXISTS promotion_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+       ADD COLUMN IF NOT EXISTS promotion_starts_at TIMESTAMPTZ,
+       ADD COLUMN IF NOT EXISTS promotion_ends_at TIMESTAMPTZ;`,
+    `UPDATE public.menus
+       SET promotion_enabled = true,
+           promotion_discount_type = 'percentage',
+           promotion_discount_value = promotion_discount_percent
+       WHERE promotion_enabled = false
+         AND promotion_discount_value = 0
+         AND promotion_discount_percent > 0;`,
+    `CREATE TABLE IF NOT EXISTS public.special_discount_settings (
+       id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+       max_discount_type TEXT NOT NULL DEFAULT 'percentage',
+       max_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+       max_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+       updated_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+       updated_by_name TEXT,
+       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     );`,
+    `ALTER TABLE IF EXISTS public.special_discount_settings
+       ADD COLUMN IF NOT EXISTS max_discount_type TEXT NOT NULL DEFAULT 'percentage',
+       ADD COLUMN IF NOT EXISTS max_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+       ADD COLUMN IF NOT EXISTS max_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+       ADD COLUMN IF NOT EXISTS updated_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+       ADD COLUMN IF NOT EXISTS updated_by_name TEXT,
+       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`,
+    `UPDATE public.special_discount_settings
+       SET max_discount_value = max_discount_percent
+       WHERE max_discount_type = 'percentage'
+         AND max_discount_value = 0
+         AND max_discount_percent > 0;`,
+    `INSERT INTO public.special_discount_settings
+       (id, max_discount_type, max_discount_value, max_discount_percent)
+     VALUES (1, 'percentage', 0, 0)
+     ON CONFLICT (id) DO NOTHING;`,
     `CREATE TABLE IF NOT EXISTS public.combos (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -248,6 +378,44 @@ export async function ensureDatabaseSchema() {
     );`,
     `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS settlement_status TEXT NOT NULL DEFAULT 'Pending';`,
     `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS public_order_ref TEXT;`,
+    `CREATE TABLE IF NOT EXISTS public.special_bill_discount_audit (
+       id SERIAL PRIMARY KEY,
+       order_id INTEGER NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+       queue_id INTEGER REFERENCES public.cashier_queue(id) ON DELETE SET NULL,
+       discount_type TEXT NOT NULL DEFAULT 'fixed',
+       discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+       original_bill_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+       discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+       final_payable_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+       reason TEXT NOT NULL DEFAULT '',
+       applied_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+       applied_by_name TEXT NOT NULL DEFAULT '',
+       max_discount_type TEXT NOT NULL DEFAULT 'percentage',
+       max_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+       config_updated_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+       config_updated_by_name TEXT,
+       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     );`,
+    `ALTER TABLE IF EXISTS public.special_bill_discount_audit
+       ADD COLUMN IF NOT EXISTS order_id INTEGER REFERENCES public.orders(id) ON DELETE CASCADE,
+       ADD COLUMN IF NOT EXISTS queue_id INTEGER REFERENCES public.cashier_queue(id) ON DELETE SET NULL,
+       ADD COLUMN IF NOT EXISTS discount_type TEXT NOT NULL DEFAULT 'fixed',
+       ADD COLUMN IF NOT EXISTS discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+       ADD COLUMN IF NOT EXISTS original_bill_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+       ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+       ADD COLUMN IF NOT EXISTS final_payable_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+       ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT '',
+       ADD COLUMN IF NOT EXISTS applied_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+       ADD COLUMN IF NOT EXISTS applied_by_name TEXT NOT NULL DEFAULT '',
+       ADD COLUMN IF NOT EXISTS max_discount_type TEXT NOT NULL DEFAULT 'percentage',
+       ADD COLUMN IF NOT EXISTS max_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+       ADD COLUMN IF NOT EXISTS config_updated_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+       ADD COLUMN IF NOT EXISTS config_updated_by_name TEXT,
+       ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`,
+    `CREATE INDEX IF NOT EXISTS special_bill_discount_audit_order_idx
+       ON public.special_bill_discount_audit (order_id, applied_at DESC);`,
+    `CREATE INDEX IF NOT EXISTS special_bill_discount_audit_date_idx
+       ON public.special_bill_discount_audit (applied_at DESC);`,
     `CREATE UNIQUE INDEX IF NOT EXISTS cashier_queue_public_order_ref_unique
        ON public.cashier_queue (public_order_ref) WHERE public_order_ref IS NOT NULL;`,
     `CREATE TABLE IF NOT EXISTS public.public_payment_requests (
@@ -308,6 +476,7 @@ export async function ensureDatabaseSchema() {
       paid_at TIMESTAMPTZ,
       reject_reason TEXT
     );`,
+    `ALTER TABLE IF EXISTS public.credits ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ;`,
 
     `CREATE TABLE IF NOT EXISTS public.credit_settlements (
       id SERIAL PRIMARY KEY,
@@ -943,11 +1112,7 @@ pool.on('error', (err, client) => {
 (async () => {
   try {
     const client = await pool.connect();
-    console.log(
-      isLocalDb
-        ? 'Database connected successfully to local Postgres'
-        : 'Database connected successfully to Neon'
-    );
+    console.log('Database connected successfully to PostgreSQL');
     client.release();
   } catch (err) {
     console.error('Database connection failed:', err.message);

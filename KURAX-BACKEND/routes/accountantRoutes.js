@@ -67,7 +67,7 @@ router.get('/summary', async (req, res) => {
     );
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('❌ Overview Summary Error:', err.message);
+    console.error('Overview Summary Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -206,7 +206,7 @@ router.get('/credit-summary-monthly', async (req, res) => {
       credits,
     });
   } catch (err) {
-    console.error('❌ Monthly Credit Summary Error:', err.message);
+    console.error(' Monthly Credit Summary Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -221,14 +221,14 @@ router.get('/logs', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    console.error('❌ Overview Logs Error:', err.message);
+    console.error(' Overview Logs Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── 5. SSE — REAL-TIME ACTIVITY STREAM ──────────────────────────────────────
 router.get('/stream', (req, res) => {
-  console.log('🔵 SSE stream connection established');
+  console.log('SSE stream connection established');
   res.setHeader('Content-Type',      'text/event-stream');
   res.setHeader('Cache-Control',     'no-cache');
   res.setHeader('Connection',        'keep-alive');
@@ -245,7 +245,7 @@ router.get('/stream', (req, res) => {
   }, 25_000);
 
   req.on('close', () => {
-    console.log('🔴 SSE stream closed');
+    console.log(' SSE stream closed');
     clearInterval(heartbeat);
     removeSSEClient(res);
   });
@@ -253,7 +253,7 @@ router.get('/stream', (req, res) => {
 
 // ─── 6. WEEKLY REVENUE — for RevenueChart ────────────────────────────────────
 router.get('/weekly-revenue', async (req, res) => {
-  console.log('🔵 /weekly-revenue called');
+  console.log('/weekly-revenue called');
   try {
     const result = await pool.query(`
       WITH day_series AS (
@@ -311,7 +311,7 @@ router.get('/weekly-revenue', async (req, res) => {
     `);
     res.json(result.rows);
   } catch (err) {
-    console.error('❌ Weekly Revenue Error:', err.message);
+    console.error(' Weekly Revenue Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -334,7 +334,7 @@ router.get('/shifts', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    console.error('❌ Overview Shifts Error:', err.message);
+    console.error(' Overview Shifts Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -342,7 +342,7 @@ router.get('/shifts', async (req, res) => {
 // ─── 8. PETTY CASH — GET today's entries ─────────────────────────────────────
 router.get('/petty-cash', async (req, res) => {
   const today = kampalaDate();
-  console.log(`🔵 /petty-cash GET called for ${today}`);
+  console.log(`/petty-cash GET called for ${today}`);
   try {
     const result = await pool.query(
       `SELECT *
@@ -362,7 +362,7 @@ router.get('/petty-cash', async (req, res) => {
       entries,
     });
   } catch (err) {
-    console.error('❌ Petty Cash GET Error:', err.message);
+    console.error('Petty Cash GET Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -407,7 +407,7 @@ router.post('/petty-cash', async (req, res) => {
     });
     res.status(201).json({ ...saved.entry, cash_before: saved.cashBefore, cash_after: saved.cashAfter, journal_entry: journal.reference });
   } catch (err) {
-    console.error('❌ Petty Cash POST Error:', err.message);
+    console.error(' Petty Cash POST Error:', err.message);
     res.status(err.status || 500).json({ error: err.message });
   }
 });
@@ -429,7 +429,7 @@ router.delete('/petty-cash/:id', async (req, res) => {
     });
     res.json({ success: true });
   } catch (err) {
-    console.error('❌ Petty Cash DELETE Error:', err.message);
+    console.error('Petty Cash DELETE Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -509,14 +509,14 @@ router.get('/director/daily-summary', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('❌ Director Daily Summary Error:', err.message);
+    console.error('Director Daily Summary Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── 12. PHYSICAL COUNT – GET latest unsaved entry (if any) ─────────────────
 router.get('/physical-count', async (req, res) => {
-  console.log('🔵 GET /physical-count called');
+  console.log(' GET /physical-count called');
   try {
     const result = await pool.query(
           `SELECT cash,
@@ -560,7 +560,7 @@ router.get('/physical-count', async (req, res) => {
       creditOutstandingToday: Number(row.credit_outstanding_today) || 0
     });
   } catch (err) {
-    console.error('❌ GET /physical-count error:', err.message);
+    console.error(' GET /physical-count error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -572,14 +572,14 @@ router.post('/physical-count', async (req, res) => {
     creditSettledToday, creditOutstandingToday
   } = req.body;
 
-  console.log(`🔵 POST /physical-count – cash: ${cash}, settled: ${creditSettledToday}`);
+  console.log(` POST /physical-count – cash: ${cash}, settled: ${creditSettledToday}`);
 
   if (cash === undefined || mtn === undefined || airtel === undefined || card === undefined) {
     return res.status(400).json({ error: 'Missing required numeric fields' });
   }
 
   try {
-    // Mark any previous unsaved records as saved (only one working copy)
+    // Mark any previous unsaved records as saved 
     await pool.query(`UPDATE physical_counts SET saved = true WHERE saved = false`);
 
     const result = await pool.query(
@@ -599,10 +599,10 @@ router.post('/physical-count', async (req, res) => {
       ]
     );
 
-    console.log(`✅ Physical count saved with id ${result.rows[0].id}`);
+    console.log(`Physical count saved with id ${result.rows[0].id}`);
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) {
-    console.error('❌ POST /physical-count error:', err.message);
+    console.error(' POST /physical-count error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -625,7 +625,7 @@ router.post('/purchases', async (req, res) => {
     );
     res.status(201).json({ success: true });
   } catch (err) {
-    console.error('❌ POST /purchases error:', err.message);
+    console.error(' POST /purchases error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -643,12 +643,12 @@ router.get('/purchases', async (req, res) => {
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
-    console.error('❌ GET /purchases error:', err.message);
+    console.error(' GET /purchases error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── 16. INVENTORY SNAPSHOTS – Record a snapshot ────────────────────────────
+// ─── 16. INVENTORY SNAPSHOTS ────────────────────────────
 router.post('/inventory-snapshots', async (req, res) => {
   const { snapshot_date, total_value, notes } = req.body;
   if (!snapshot_date || total_value === undefined) {
@@ -663,7 +663,7 @@ router.post('/inventory-snapshots', async (req, res) => {
     );
     res.status(201).json({ success: true });
   } catch (err) {
-    console.error('❌ POST /inventory-snapshots error:', err.message);
+    console.error(' POST /inventory-snapshots error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -688,7 +688,7 @@ router.get('/inventory-snapshots', async (req, res) => {
     const result = await pool.query(`SELECT * FROM inventory_snapshots ORDER BY snapshot_date DESC`);
     res.json(result.rows);
   } catch (err) {
-    console.error('❌ GET /inventory-snapshots error:', err.message);
+    console.error('GET /inventory-snapshots error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -703,7 +703,7 @@ router.post('/reports/income-statement', async (req, res) => {
     const report = await getIncomeStatement(startDate, endDate, startTime || null, endTime || null);
     res.json(report);
   } catch (err) {
-    console.error('❌ POST /reports/income-statement error:', err.message);
+    console.error(' POST /reports/income-statement error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -718,7 +718,7 @@ router.post('/reports/balance-sheet', async (req, res) => {
     const report = await getBalanceSheet(asOfDate, startTime || null, endTime || null);
     res.json(report);
   } catch (err) {
-    console.error('❌ POST /reports/balance-sheet error:', err.message);
+    console.error('POST /reports/balance-sheet error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1014,6 +1014,20 @@ router.get('/accounting/historical-summary', async (req, res) => {
         [startDate, endDate, startTime || null, endTime || null]
       ),
     ]);
+    const shishaPaymentsResult = await pool.query(
+      `SELECT p.id, p.order_id, p.payment_method, p.amount, p.transaction_id, p.notes,
+              p.confirmed_by_name, p.confirmed_at, r.client_name, r.client_phone,
+              w.name AS waiter_name
+       FROM public.shisha_payments p
+       JOIN public.shisha_orders o ON o.id=p.order_id
+       JOIN public.shisha_staff w ON w.id=o.shisha_waiter_id
+       LEFT JOIN public.shisha_payment_requests r ON r.id=p.payment_request_id
+       WHERE (p.confirmed_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1 AND $2
+         AND ($3::time IS NULL OR (p.confirmed_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+         AND ($4::time IS NULL OR (p.confirmed_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+       ORDER BY p.confirmed_at DESC LIMIT 500`,
+      [startDate, endDate, startTime || null, endTime || null]
+    );
 
     const daily = dailyResult.rows[0] || {};
     res.json({
@@ -1041,6 +1055,7 @@ router.get('/accounting/historical-summary', async (req, res) => {
       credit_settlements: settlementsResult.rows,
       station_tickets: ticketsResult.rows,
       shisha_orders: shishaResult.rows,
+      shisha_payments: shishaPaymentsResult.rows,
     });
   } catch (err) {
     console.error('Historical accounting summary error:', err.message);
@@ -1206,7 +1221,9 @@ router.get('/accounting/accounts-payable', async (req, res) => {
               pr.created_at, pr.created_at AS updated_at
        FROM public.purchase_receipts pr
        LEFT JOIN public.suppliers s ON s.id = pr.supplier_id
+       LEFT JOIN public.journal_entries purchase_entry ON purchase_entry.reference = 'INV-PUR-' || pr.id::text
        WHERE pr.total_amount > 0
+         AND purchase_entry.status IS DISTINCT FROM 'Reversed'
          AND (
            LOWER(COALESCE(pr.payment_method, '')) LIKE '%credit%'
            OR LOWER(COALESCE(pr.payment_method, '')) LIKE '%payable%'
@@ -1330,6 +1347,8 @@ router.post('/accounting/sales', async (req, res) => {
     const entry = await createSalesJournalEntry({
       amount,
       paymentMethod,
+
+      //the way individual chefs/barman/barista see their panels  is the same way shisha mixers must see their panels
       settlementStatus,
       revenueAccountCode,
       description,

@@ -3,11 +3,19 @@ import pg from 'pg';
 
 const { Client } = pg;
 
-const sourceConn = 'postgresql://postgres:mysql@localhost:5432/kurax_db';
+const sourceConn = process.env.SOURCE_DATABASE_URL;
 const targetConn = process.env.DATABASE_URL;
 
+if (!sourceConn) {
+  throw new Error('SOURCE_DATABASE_URL is not configured. Set it to the source database you are migrating from.');
+}
+
 if (!targetConn) {
-  throw new Error('DATABASE_URL is not configured.');
+  throw new Error('DATABASE_URL is not configured. Set it to the Neon target database URL.');
+}
+
+if (/(^|[:/])localhost(?::|\/|$)/i.test(targetConn) || /(^|[:/])127\.0\.0\.1(?::|\/|$)/i.test(targetConn) || /@database:/i.test(targetConn)) {
+  throw new Error('DATABASE_URL must point to Neon, not the local Postgres container.');
 }
 
 const source = new Client({ connectionString: sourceConn });

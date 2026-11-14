@@ -76,7 +76,7 @@ const PAY_METHODS = [
 ];
 
 // ─── PAY MODAL ────────────────────────────────────────────────────────────────
-function PayModal({ target, onClose, onSend }) {
+function PayModal({ target, onClose, onSend, onComplimentaryUpdated }) {
   const [method,      setMethod]      = useState(null);
   const [creditName,  setCreditName]  = useState("");
   const [creditPhone, setCreditPhone] = useState("");
@@ -84,6 +84,9 @@ function PayModal({ target, onClose, onSend }) {
   const [sending,     setSending]     = useState(false);
 
   const isItem   = target?.type === "item";
+  const complimentaryItems = isItem
+    ? (target?.item ? [target.item] : [])
+    : (target?.items || []);
   const amount   = isItem
     ? Number(target?.item?.price || 0) * Number(target?.item?.quantity || 1)
     : Number(target?.payableTotal ?? target?.total ?? 0);
@@ -135,6 +138,27 @@ function PayModal({ target, onClose, onSend }) {
           </button>
         </div>
         <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
+          {complimentaryItems.length > 0 && (
+            <section className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-900">
+                Complimentary requests
+              </p>
+              <div className="mt-2 divide-y divide-amber-100">
+                {complimentaryItems.map((item, index) => (
+                  <div key={`${item._orderId}-${item._orderItemIndex}-${index}`} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <p className="text-xs font-semibold text-zinc-700">
+                      {item.name} · {fmtUGX(Number(item.price || 0) * Number(item.quantity || 1))}
+                    </p>
+                    <ComplimentaryItemControl
+                      order={{ id: item._orderId ?? target.orderId, tableName: target.tableName, staff_id: item.staff_id }}
+                      item={item}
+                      onUpdated={onComplimentaryUpdated}
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           <div>
             <p className="text-[10px] font-semibold text-yellow-900 uppercase tracking-widest mb-3">Select Payment Method</p>
             <div className="grid grid-cols-2 gap-2">
@@ -567,6 +591,7 @@ function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
                 order={item.order}
                 item={item.orderItem}
                 onUpdated={onComplimentaryUpdated}
+                presentation="modal"
               />
             </div>
           );
@@ -584,7 +609,6 @@ function OrderCard({
   onPayTable,
   onPayItem,
   onVoidItem,
-  onComplimentaryUpdated,
   onMarkTablePaid,
   tablePaymentPending,
   isPaying,
@@ -615,7 +639,8 @@ function OrderCard({
 
   const payableItems = (order.items || []).filter(item =>
     !item._rowPaid && item.status !== "VOIDED" && !item.voidProcessed
-      && !item.paymentRequested && !item.creditRequested && getOrderItemPayableAmount(item) > 0
+      && !item.paymentRequested && !item.creditRequested && !item.complimentaryRequestPending
+      && getOrderItemPayableAmount(item) > 0
   );
 
   const allItemsVoided = order.items?.length > 0 &&
@@ -624,14 +649,15 @@ function OrderCard({
   const allItemsPaidOrRequested = order.items?.length > 0 &&
     order.items.every(item =>
       item._rowPaid === true || item.paymentRequested === true || item.creditRequested === true ||
-      item.status === "VOIDED" || item.voidProcessed === true
+      item.complimentaryRequestPending === true || item.status === "VOIDED" || item.voidProcessed === true
     );
 
   const allItemsPaid      = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
   const hasAnyPaidItems   = nonVoidedItems.some(item => item._rowPaid === true);
   const hasAnyCreditItems = nonVoidedItems.some(item => item.creditRequested === true);
-  const hasAnyPendingItems       = nonVoidedItems.some(item => !item._rowPaid && !item.paymentRequested && !item.creditRequested);
+  const hasAnyPendingItems       = nonVoidedItems.some(item => !item._rowPaid && !item.paymentRequested && !item.creditRequested && !item.complimentaryRequestPending);
   const hasAnyPaymentRequested   = nonVoidedItems.some(item => item.paymentRequested === true);
+  const hasPendingCompRequests   = nonVoidedItems.some(item => item.complimentaryRequestPending === true);
 
   const isAwaitingCashier = tablePaymentPending || hasAnyPaymentRequested;
 
@@ -741,6 +767,7 @@ function OrderCard({
             const isPaid = isItemFullyPaid(item);
             const isItemServed = item.served === true;
             const isPendingPayment = item.paymentRequested === true && !isPaid;
+            const isPendingComp = item.complimentaryRequestPending === true;
             const isCreditRequested = item.creditRequested === true;
             const isVoidRequested = item.voidRequested && !item.voidProcessed;
             return (
@@ -757,6 +784,7 @@ function OrderCard({
                         )}
                         {isVoidRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-orange-400 font-black uppercase">(waiting accountant)</span>}
                         {isPendingPayment && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-yellow-400 font-black uppercase">(awaiting cashier)</span>}
+                        {isPendingComp && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-amber-500 font-black uppercase">(comp request pending cashier)</span>}
                         {isCreditRequested && !isPaid && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">{item.is_partially_paid ? "(partially paid · balance due)" : "(credit pending)"}</span>}
                       </p>
                       <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
@@ -770,7 +798,7 @@ function OrderCard({
                   </div>
                   <div className="flex gap-1 sm:gap-1.5 shrink-0">
                     {isItemServed && !isPaid && item.status !== 'VOIDED' && !item.voidProcessed &&
-                     !isPendingPayment && !isCreditRequested && !tablePaymentPending && !isPaying && (
+                     !isPendingPayment && !isCreditRequested && !isPendingComp && !tablePaymentPending && !isPaying && (
                       <button onClick={() => onPayItem && onPayItem(item, order)}
                         className="p-1.5 bg-yellow-500/10 text-yellow-500 rounded-lg hover:bg-yellow-500/20 transition-all" title="Pay this item individually">
                         <Receipt size={11} />
@@ -806,11 +834,6 @@ function OrderCard({
                     )}
                   </div>
                 </div>
-                <ComplimentaryItemControl
-                  order={order}
-                  item={item}
-                  onUpdated={onComplimentaryUpdated}
-                />
               </div>
             );
           })}
@@ -843,7 +866,7 @@ function OrderCard({
             </button>
           </div>
 
-          {isServed && payableItems.length > 0 && !hasPendingPayment && !isAwaitingCashier && !isPaying && (
+          {isServed && payableItems.length > 0 && !hasPendingPayment && !isAwaitingCashier && !hasPendingCompRequests && !isPaying && (
             <button onClick={() => onPayTable && onPayTable(order)}
               className="w-full py-1.5 sm:py-2.5 bg-yellow-500 text-black font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5 shadow-lg transition-all hover:bg-yellow-400 active:scale-[0.98] shadow-yellow-500/20">
               <Send size={11} /> Pay Full Table
@@ -857,7 +880,7 @@ function OrderCard({
           )}
 
           {isServed && allItemsPaidOrRequested && nonVoidedItems.length > 0 &&
-           payableItems.length === 0 && !hasPendingPayment && !isAwaitingCashier && !allItemsPaid && (
+           payableItems.length === 0 && !hasPendingPayment && !isAwaitingCashier && !hasPendingCompRequests && !allItemsPaid && (
             <button onClick={() => onMarkTablePaid && onMarkTablePaid(order)}
               className="w-full py-1.5 sm:py-2.5 bg-emerald-500 text-black font-black text-[8px] sm:text-[10px] uppercase tracking-widest rounded-lg sm:rounded-xl flex items-center justify-center gap-1 sm:gap-1.5 shadow-lg shadow-emerald-500/20">
               <CheckCircle size={11} /> Mark as Paid
@@ -1050,10 +1073,11 @@ export default function OrderHistory({ onAddItems }) {
       g.total += Number(order.total) || 0;
       g.orderIds.push(order.id);
       g._rows.push({ id: order.id, paid: rowPaid, total: Number(order.total) || 0 });
-      (order.items || []).forEach(item => {
+      (order.items || []).forEach((item, orderItemIndex) => {
         g.items.push({
           ...item,
           _orderId:         order.id,
+          _orderItemIndex:  item._orderItemIndex ?? orderItemIndex,
           staff_id:         order.staff_id,
           _rowPaid:         isItemFullyPaid(item) || (rowPaid && item.complimentary !== true && item.creditRequested !== true),
           voidRequested:    item.voidRequested    || false,
@@ -1363,7 +1387,7 @@ export default function OrderHistory({ onAddItems }) {
                   setIsPaying(true);
                   const payableItems = (o.items || []).filter(item =>
                     !item._rowPaid && !item.creditRequested && item.status !== "VOIDED" &&
-                    !item.voidProcessed && !item.paymentRequested && getOrderItemPayableAmount(item) > 0
+                    !item.voidProcessed && !item.paymentRequested && !item.complimentaryRequestPending && getOrderItemPayableAmount(item) > 0
                   );
                   const payableTotal = payableItems.reduce((sum, item) =>
                     sum + getOrderItemPayableAmount(item), 0);
@@ -1372,12 +1396,12 @@ export default function OrderHistory({ onAddItems }) {
                     tableName:    o.tableName,
                     total:        payableTotal,
                     payableTotal,
+                    items:        payableItems,
                     orderIds:     o.orderIds,
                     orderId:      null,
                   });
                 }}
                 onVoidItem={(item, ord) => setVoidTarget({ item, order: ord })}
-                onComplimentaryUpdated={refreshData}
               />
             ))}
             {filteredOrders.length === 0 && (
@@ -1395,6 +1419,11 @@ export default function OrderHistory({ onAddItems }) {
           target={payTarget}
           onClose={() => { setPayTarget(null); setIsPaying(false); }}
           onSend={async (payload) => { await handleSend(payload); setPayTarget(null); }}
+          onComplimentaryUpdated={() => {
+            setPayTarget(null);
+            setIsPaying(false);
+            refreshData();
+          }}
         />
       )}
       {voidTarget && (

@@ -139,7 +139,10 @@ export default function NewOrder() {
   try {
     const response = await fetch(`${API_URL}/api/orders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${staffUser?.token || ''}`,
+      },
       body: JSON.stringify(orderData),
     });
 

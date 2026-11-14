@@ -211,7 +211,7 @@ export default function BarmanDisplay() {
   };
 
   const [audioEnabled,  setAudioEnabled]  = useState(false);
-  const [showProduction, setShowProduction] = useState(false);
+  const [showProduction, setShowProduction] = useState(isProductionWorker);
   const [searchQuery,   setSearchQuery]   = useState("");
   const [showSummary,   setShowSummary]   = useState(false);
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalDrinks: 0, barmen: [] });
@@ -245,7 +245,7 @@ export default function BarmanDisplay() {
 
   const filteredOrders = useMemo(() => {
     const active    = ["Pending", "Preparing"];
-    const completed = ["Served", "Paid", "Closed", "Credit", "Mixed"];
+    const completed = ["Ready", "Served", "Paid", "Closed", "Credit", "Mixed"];
     const seenSet   = new Set(seenOrderIds);
 
     return (orders || [])
@@ -367,7 +367,7 @@ export default function BarmanDisplay() {
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutDialog(false)}
       />
-      {showProduction && <ProductionPanel station="bar" user={savedUser} onClose={() => setShowProduction(false)} />}
+      {showProduction && <ProductionPanel station="bar" user={savedUser} onClose={isProductionWorker ? confirmLogout : () => setShowProduction(false)} />}
       {claimedWorkError && isProductionWorker && <p role="alert" className="fixed left-4 top-4 z-40 rounded-lg bg-rose-100 px-4 py-2 text-xs font-bold text-rose-800">{claimedWorkError}</p>}
       {claimedWorkMessage && isProductionWorker && <p role="status" className="fixed left-4 top-14 z-40 rounded-lg bg-emerald-100 px-4 py-2 text-xs font-bold text-emerald-900">{claimedWorkMessage}</p>}
 

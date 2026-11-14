@@ -27,10 +27,7 @@ router.get("/monthly-revenue", async (req, res) => {
       FROM orders o
       CROSS JOIN LATERAL (
         SELECT CASE WHEN jsonb_array_length(COALESCE(o.items, '[]'::jsonb)) = 0 THEN COALESCE(o.total, 0)
-          ELSE CASE WHEN BOOL_OR(COALESCE(item->>'complimentary', 'false') = 'true')
-            THEN COALESCE(SUM(${orderItemGrossAmountSql('item')}), 0)
-            ELSE COALESCE(o.total, 0)
-          END
+          ELSE COALESCE(SUM(${orderItemGrossAmountSql('item')}), 0)
         END AS gross_total
         FROM jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
       ) main_items

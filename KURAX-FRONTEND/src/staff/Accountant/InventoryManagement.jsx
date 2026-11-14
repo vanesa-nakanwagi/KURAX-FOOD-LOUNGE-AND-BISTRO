@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowRightLeft, Boxes, Package, Plus, TrendingUp } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, Boxes, Package, Pencil, Plus, TrendingUp, Trash2 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import API_URL from '../../config/api';
 import InventoryWorkflows from './InventoryWorkflows';
@@ -14,6 +14,7 @@ const defaultForm = {
   purchase_conversion_factor: '1',
   unit_cost: '0',
   supplier_name: 'KURAX PRIMARY SUPPLIER',
+  payment_method: 'Cash',
   location_name: 'MAIN STORE',
   station: 'KITCHEN',
   category: 'General',
@@ -80,6 +81,9 @@ export default function InventoryManagement() {
   const [relatedData, setRelatedData] = useState({});
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
+  const [editingItem, setEditingItem] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     setPage(1);
@@ -125,7 +129,7 @@ export default function InventoryManagement() {
       waste: ['waste'],
       'stock-counts': ['stock-counts'],
       adjustments: ['adjustments'],
-      reports: ['reports/low-stock', 'reports/menu-items-without-recipes', 'reports/cogs', 'transactions', 'recipes?station=ALL'],
+      reports: ['reports/low-stock', 'reports/menu-items-without-recipes', 'reports/cogs', 'reports/inventory-activity', 'transactions', 'recipes?station=ALL'],
     };
     const endpoints = endpointsBySection[currentSection.slug] || [];
     const entries = await Promise.all(endpoints.map(async (endpoint) => {
@@ -186,6 +190,44 @@ export default function InventoryManagement() {
   const showPurchaseForm = currentSection.slug === '';
   const workflowSections = ['purchases', 'transfers', 'recipes', 'consumption', 'waste', 'stock-counts', 'adjustments', 'reports'];
 
+  const startEditingItem = (item) => {
+    const currentLocation = locations.find((location) => String(location.id) === String(item.location_id))
+      || locations.find((location) => String(location.name).trim().toLowerCase() === String(item.location_name || '').trim().toLowerCase())
+      || locations[0];
+    setEditingItem(item);
+    setEditForm({
+      item_name: item.item_name || '',
+      category: item.category || 'General',
+      current_quantity: String(item.current_quantity ?? 0),
+      unit: item.unit || 'kg',
+      purchase_unit: item.purchase_unit || item.unit || 'kg',
+      purchase_conversion_factor: String(item.purchase_conversion_factor || '1'),
+      unit_cost: String(item.unit_cost ?? 0),
+      minimum_stock_level: String(item.minimum_stock_level ?? 0),
+      location_id: String(currentLocation?.id ?? ''),
+      station: String(item.station || 'KITCHEN').toUpperCase(),
+    });
+    setActionError('');
+    setActionMessage('');
+  };
+
+  const saveItemEdits = async (event) => {
+    event.preventDefault();
+    if (!editingItem || !editForm) return;
+    setSavingEdit(true);
+    const result = await runInventoryAction(`items/${editingItem.id}`, editForm, 'PATCH', 'Inventory item updated.');
+    if (result) {
+      setEditingItem(null);
+      setEditForm(null);
+    }
+    setSavingEdit(false);
+  };
+
+  const deleteItem = async (item) => {
+    if (!window.confirm(`Delete "${item.item_name}" from active inventory? Historical records will be retained.`)) return;
+    await runInventoryAction(`items/${item.id}`, null, 'DELETE', 'Inventory item deleted.');
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSaving(true);
@@ -193,7 +235,7 @@ export default function InventoryManagement() {
     try {
       const payload = {
         supplier_name: form.supplier_name || 'KURAX PRIMARY SUPPLIER',
-        payment_method: 'Cash',
+        payment_method: form.payment_method,
         items: [{
           item_name: form.item_name,
           quantity: Number(form.quantity || 0),
@@ -267,7 +309,7 @@ export default function InventoryManagement() {
           <StatCard icon={<Boxes size={18} />} label="Inventory Value" value={currency(stats.total_inventory_value)} accent="amber" />
           <StatCard icon={<Package size={18} />} label="Items" value={String(stats.total_items)} accent="slate" />
           <StatCard icon={<AlertTriangle size={18} />} label="Low Stock" value={String(stats.low_stock_items)} accent="rose" />
-          <StatCard icon={<TrendingUp size={18} />} label="Purchases" value={currency(stats.total_purchases)} accent="emerald" />
+          <StatCard icon={<TrendingUp size={18} />} label="Net Purchases" value={currency(stats.total_purchases)} accent="emerald" />
         </div>}
 
         {actionError && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{actionError}</p>}
@@ -286,6 +328,52 @@ export default function InventoryManagement() {
         ) : (
         <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
           {isStockSection && <>
+          {editingItem && editForm && <form onSubmit={saveItemEdits} className="space-y-4 rounded-2xl border border-amber-200 bg-white p-4 shadow-sm xl:col-span-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">Edit stock item</p>
+                <h2 className="text-lg font-black">{editingItem.item_name}</h2>
+              </div>
+              <button type="button" onClick={() => { setEditingItem(null); setEditForm(null); }} className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-bold text-zinc-700">
+                Cancel
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Input label="Item name" value={editForm.item_name} onChange={(value) => setEditForm((current) => ({ ...current, item_name: value }))} />
+              <Input label="Category" value={editForm.category} onChange={(value) => setEditForm((current) => ({ ...current, category: value }))} />
+              <Input label="Current stock" type="number" value={editForm.current_quantity} onChange={(value) => setEditForm((current) => ({ ...current, current_quantity: value }))} />
+              <Select label="Station" value={editForm.station} onChange={(value) => setEditForm((current) => {
+                const allowed = inventoryUnitsForStation(value);
+                const unit = allowed.includes(current.unit) ? current.unit : allowed[0];
+                const purchaseUnit = allowed.includes(current.purchase_unit) ? current.purchase_unit : unit;
+                const factor = defaultPurchaseConversionFactor(unit, purchaseUnit);
+                return { ...current, station: value, unit, purchase_unit: purchaseUnit, purchase_conversion_factor: String(factor || 1) };
+              })} options={['KITCHEN', 'BAR', 'BARISTA']} />
+              <Select label="Stock unit" value={editForm.unit} onChange={(value) => setEditForm((current) => {
+                const factor = defaultPurchaseConversionFactor(value, current.purchase_unit);
+                return {
+                  ...current,
+                  unit: value,
+                  purchase_unit: factor === '' ? value : current.purchase_unit,
+                  purchase_conversion_factor: factor === '' ? '1' : String(factor),
+                };
+              })} options={inventoryUnitsForStation(editForm.station)} />
+              <Select label="Purchase unit" value={editForm.purchase_unit} onChange={(value) => setEditForm((current) => ({
+                ...current,
+                purchase_unit: value,
+                purchase_conversion_factor: String(defaultPurchaseConversionFactor(current.unit, value)),
+              }))} options={inventoryUnitsForStation(editForm.station)} />
+              <Input label={`Stock units per ${editForm.purchase_unit}`} type="number" value={editForm.purchase_conversion_factor} onChange={(value) => setEditForm((current) => ({ ...current, purchase_conversion_factor: value }))} />
+              <Input label="Unit cost" type="number" value={editForm.unit_cost} onChange={(value) => setEditForm((current) => ({ ...current, unit_cost: value }))} />
+              <Input label="Minimum stock" type="number" value={editForm.minimum_stock_level} onChange={(value) => setEditForm((current) => ({ ...current, minimum_stock_level: value }))} />
+              <Select label="Location" value={editForm.location_id} onChange={(value) => setEditForm((current) => ({ ...current, location_id: value }))} options={locations.map((location) => ({ value: String(location.id), label: location.name }))} />
+            </div>
+            <div className="flex justify-end">
+              <button type="submit" disabled={savingEdit} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
+                {savingEdit ? 'Saving…' : 'Save stock changes'}
+              </button>
+            </div>
+          </form>}
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black uppercase tracking-tight">Inventory Stock</h2>
@@ -303,16 +391,17 @@ export default function InventoryManagement() {
                     <th className="px-3 py-2 font-black uppercase tracking-wide">Unit</th>
                     <th className="px-3 py-2 font-black uppercase tracking-wide">Value</th>
                     <th className="px-3 py-2 font-black uppercase tracking-wide">Status</th>
+                    <th className="px-3 py-2 font-black uppercase tracking-wide">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">Loading inventory…</td>
+                      <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">Loading inventory…</td>
                     </tr>
                   ) : visibleItems.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">No inventory items found.</td>
+                      <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">No inventory items found.</td>
                     </tr>
                   ) : (
                     paginatedItems.map((item) => (
@@ -333,6 +422,16 @@ export default function InventoryManagement() {
                           }`}>
                             {item.stock_status || 'IN STOCK'}
                           </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => startEditingItem(item)} aria-label={`Edit ${item.item_name}`} className="rounded-md border border-zinc-300 p-2 text-zinc-700 hover:bg-zinc-100">
+                              <Pencil size={14} />
+                            </button>
+                            <button type="button" onClick={() => deleteItem(item)} aria-label={`Delete ${item.item_name}`} className="rounded-md border border-rose-200 p-2 text-rose-700 hover:bg-rose-50">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -374,6 +473,12 @@ export default function InventoryManagement() {
                 <Input label="Min stock" type="number" value={form.minimum_stock_level} onChange={(value) => setForm((current) => ({ ...current, minimum_stock_level: value }))} />
               </div>
               <Input label="Supplier" value={form.supplier_name} onChange={(value) => setForm((current) => ({ ...current, supplier_name: value }))} />
+              <Select
+                label="Payment method"
+                value={form.payment_method}
+                onChange={(value) => setForm((current) => ({ ...current, payment_method: value }))}
+                options={['Cash', 'Bank', 'Mobile Money', 'Supplier Credit'].map((value) => ({ value, label: value }))}
+              />
               <div className="grid grid-cols-2 gap-3">
                 <Select label="Location" value={form.location_name} onChange={(value) => setForm((current) => ({ ...current, location_name: value }))} options={['MAIN STORE', 'KITCHEN', 'BAR', 'BARISTA']} />
                 <Select label="Station" value={form.station} onChange={(value) => setForm((current) => {
@@ -476,9 +581,11 @@ function Select({ label, value, onChange, options = [] }) {
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 outline-none transition focus:border-zinc-500"
       >
-        {options.map((option) => (
-          <option key={option} value={option}>{option}</option>
-        ))}
+        {options.map((option) => {
+          const optionValue = typeof option === 'string' ? option : option.value;
+          const optionLabel = typeof option === 'string' ? option : option.label;
+          return <option key={optionValue} value={optionValue}>{optionLabel}</option>;
+        })}
       </select>
     </label>
   );

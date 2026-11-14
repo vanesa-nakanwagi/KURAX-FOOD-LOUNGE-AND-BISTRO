@@ -2,6 +2,7 @@ import { Calendar, Clock, MapPin, Tag, Plus } from "lucide-react";
 import { useState } from "react";
 import BookingModal from "./BookingModal.jsx";
 import API_URL from "../../../config/api";   // <-- add this import
+import { formatMenuName } from "../../../utils/menuName.js";
 
 const getParsedTags = (tags) => {
   if (!tags) return [];
@@ -18,6 +19,7 @@ export default function EventCard({ event = {}, onBook }) {
   }
 
   const title = event.title || event.name || "Special Event";
+  const displayTitle = formatMenuName(title);
   
   // FIX: use image_url with absolute URL
   let imageUrl = event.image_url || event.image || event.displayImage;
@@ -47,7 +49,7 @@ export default function EventCard({ event = {}, onBook }) {
           )}
           <img
             src={imageUrl}
-            alt={title}
+            alt={displayTitle}
             onLoad={() => setImgLoaded(true)}
             onError={(e) => {
               setImgLoaded(true);
@@ -77,8 +79,8 @@ export default function EventCard({ event = {}, onBook }) {
 
         <div className="p-8 flex flex-col flex-1 gap-4">
           <div className="space-y-2">
-            <h3 className="font-[Outfit] text-2xl font-small text-yellow-600 dark:text-white">
-              {title}
+            <h3 className="font-[Outfit] text-2xl font-semibold text-yellow-700 transition-colors group-hover:text-yellow-700 dark:text-yellow-300 dark:group-hover:text-yellow-200">
+              {displayTitle}
             </h3>
             <p className="text-[13px] text-zinc-900 dark:text-zinc-400 leading-relaxed font-light line-clamp-3">
               {event.description || "Join us for an exclusive experience at Kurax Food Lounge & Bistro."}
@@ -116,7 +118,7 @@ export default function EventCard({ event = {}, onBook }) {
         <BookingModal
           show={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          eventTitle={title}
+          eventTitle={displayTitle}
         />
       )}
     </>

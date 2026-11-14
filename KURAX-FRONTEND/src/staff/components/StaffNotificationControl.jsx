@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Bell, BellOff, LoaderCircle } from 'lucide-react';
-import { deleteToken, getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging';
+import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging';
 import { getId, getInstallations } from 'firebase/installations';
 import API_URL from '../../config/api';
 import {
@@ -66,7 +66,7 @@ async function registerCurrentDevice(session, isAutoRegistration = false, onProg
   const app = getKuraxFirebaseApp();
   onProgress('Starting notification service worker...');
   const serviceWorkerRegistration = await withTimeout(
-    navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready),
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(() => navigator.serviceWorker.ready),
     15000,
     'Service worker did not become active. Reload the page and check the browser service-worker status.'
   );
@@ -123,18 +123,30 @@ async function registerCurrentDevice(session, isAutoRegistration = false, onProg
     throw new Error(result.error || 'Could not register this device.');
   }
   if (!isAutoRegistration) return result;
-  return result.device || result;
+  return result.device || null;
 }
 
 export default function StaffNotificationControl({ isShisha = false }) {
-  const session = readSession(isShisha);
+  const [session, setSession] = useState(() => readSession(isShisha));
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
+    const syncSession = () => setSession(readSession(isShisha));
+    syncSession();
+    window.addEventListener('kurax:staff-session-changed', syncSession);
+    window.addEventListener('storage', syncSession);
+    return () => {
+      window.removeEventListener('kurax:staff-session-changed', syncSession);
+      window.removeEventListener('storage', syncSession);
+    };
+  }, [isShisha]);
+
+  useEffect(() => {
     let cancelled = false;
+    setChecking(true);
     if (!session?.token || !session?.id) {
       setChecking(false);
       return undefined;
@@ -145,23 +157,50 @@ export default function StaffNotificationControl({ isShisha = false }) {
         const response = await fetch(`${API_URL}/api/notifications/devices`, {
           headers: { Authorization: `Bearer ${session.token}` },
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          throw new Error(`Could not check device registration (HTTP ${response.status}).`);
+        }
         const data = await response.json();
         let installationId = '';
         if (isFirebasePushConfigured && await isSupported()) {
           installationId = await getId(getInstallations(getKuraxFirebaseApp()));
         }
         if (!cancelled) {
+          const permission = 'Notification' in window ? Notification.permission : 'unsupported';
           const isRegistered = Boolean(data.devices?.some((device) => (
-            device.active !== false && device.is_active !== false && device.installation_id === installationId
+            device.active !== false
+            && device.is_active !== false
+            && device.notifications_enabled !== false
+            && device.installation_id === installationId
           )));
-          setEnabled(isRegistered);
-          if (isRegistered && Notification.permission === 'granted') {
-            await registerCurrentDevice(session, true).catch(() => {});
+          if (permission === 'granted' && isFirebasePushConfigured) {
+            try {
+              const registration = await registerCurrentDevice(session, true);
+              if (!registration) throw new Error('Firebase did not return a registered device.');
+              if (!cancelled) {
+                setEnabled(true);
+                setMessage('Notifications are enabled and this device is registered with the server.');
+              }
+            } catch (error) {
+              if (!cancelled) {
+                setEnabled(false);
+                setMessage(`Browser permission is on, but this device is not registered with the server: ${error.message}`);
+              }
+            }
+          } else {
+            setEnabled(isRegistered && permission === 'granted');
+            if (isShisha && !isFirebasePushConfigured) {
+              setMessage('Shisha push notifications are not configured for this deployment.');
+            } else if (isShisha && permission !== 'granted') {
+              setMessage('Enable Shisha notifications here to allow this device and register it with the server.');
+            }
           }
         }
-      } catch {
-        // Ignore background status refresh issues.
+      } catch (error) {
+        if (!cancelled) {
+          setEnabled(false);
+          setMessage(error.message || 'Could not verify notification registration with the server.');
+        }
       } finally {
         if (!cancelled) setChecking(false);
       }
@@ -169,7 +208,7 @@ export default function StaffNotificationControl({ isShisha = false }) {
 
     refreshStatus();
     return () => { cancelled = true; };
-  }, [session?.id, session?.token]);
+  }, [session?.id, session?.token, isShisha]);
 
   useEffect(() => {
     if (!enabled || !isFirebasePushConfigured) return undefined;
@@ -180,13 +219,17 @@ export default function StaffNotificationControl({ isShisha = false }) {
       const messaging = getMessaging(getKuraxFirebaseApp());
       unsubscribe = onMessage(messaging, (payload) => {
         const data = payload.data || {};
-        if (Notification.permission !== 'granted' || !data.title) return;
-        const notice = new Notification(data.title, {
-          body: data.body || '',
-          icon: '/icons/icon-192x192.png',
-          data: { link: data.link || '/' },
-        });
-        notice.onclick = () => openInternalLink(notice.data.link);
+        const title = data.title || payload.notification?.title;
+        const body = data.body || payload.notification?.body || '';
+        if (Notification.permission !== 'granted' || !title) return;
+        navigator.serviceWorker.ready
+          .then((registration) => registration.showNotification(title, {
+            body,
+            icon: '/icons/icon-192x192.png',
+            tag: `${data.type || 'staff'}-${data.referenceId || data.createdAt || Date.now()}`,
+            data: { link: data.link || payload.fcmOptions?.link || '/' },
+          }))
+          .catch((error) => console.error('Could not display staff push notification:', error));
       });
     }).catch(() => {});
     return () => {
@@ -194,15 +237,6 @@ export default function StaffNotificationControl({ isShisha = false }) {
       unsubscribe?.();
     };
   }, [enabled]);
-
-  useEffect(() => {
-    if (!session?.token || !session?.id) return;
-    if (Notification.permission === 'granted' && isFirebasePushConfigured) {
-      registerCurrentDevice(session, true).then(() => {
-        setEnabled(true);
-      }).catch(() => {});
-    }
-  }, [session?.id, session?.token]);
 
   const handleEnable = async () => {
     if (!session?.token) return setMessage('Sign in again to enable staff notifications.');
@@ -216,9 +250,9 @@ export default function StaffNotificationControl({ isShisha = false }) {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') throw new Error('Notification permission was not granted.');
       const result = await registerCurrentDevice(session, false, setMessage);
-      if (!result) throw new Error('The device could not create a Firebase push token.');
+      if (!result?.device) throw new Error('Firebase did not confirm that this device was registered with the server.');
       setEnabled(true);
-      setMessage('Notifications enabled on this device.');
+      setMessage('Notifications are enabled and this device is registered with the server.');
     } catch (error) {
       setMessage(error.message || 'Could not enable notifications.');
     } finally {
@@ -242,7 +276,6 @@ export default function StaffNotificationControl({ isShisha = false }) {
         body: JSON.stringify({ installationId }),
       });
       if (!response.ok && response.status !== 404) throw new Error('Could not disable notifications for this device.');
-      await deleteToken(getMessaging(app)).catch(() => {});
       setEnabled(false);
     } catch (error) {
       setMessage(error.message || 'Could not disable notifications.');
@@ -254,17 +287,24 @@ export default function StaffNotificationControl({ isShisha = false }) {
   if (!session?.token || checking) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[1000] max-w-[calc(100vw-2rem)]">
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[1000] flex max-w-[calc(100vw-2rem)] flex-col items-end">
+      {message && <p role="status" className="pointer-events-auto mb-2 max-w-72 rounded-lg bg-zinc-950/95 px-3 py-2 text-xs text-zinc-200 shadow-lg">{message}</p>}
       <button
         type="button"
         onClick={enabled ? handleDisable : handleEnable}
         disabled={loading}
-        className="flex h-11 w-11 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950 text-white shadow-xl transition-colors hover:border-yellow-500 hover:text-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
-        aria-label={enabled ? 'Disable notifications on this device' : 'Enable staff notifications'}
+        className={`pointer-events-auto flex h-11 items-center justify-center gap-2 border border-zinc-700 bg-zinc-950 px-3 text-white shadow-xl transition-colors hover:border-yellow-500 hover:text-yellow-400 disabled:cursor-not-allowed disabled:opacity-60 ${isShisha ? 'rounded-xl text-xs font-bold' : 'w-11 rounded-full'}`}
+        aria-label={enabled
+          ? `Disable ${isShisha ? 'Shisha ' : ''}notifications on this device`
+          : `Enable ${isShisha ? 'Shisha ' : 'staff '}notifications`}
       >
-        {loading ? <LoaderCircle size={18} className="animate-spin" /> : enabled ? <BellOff size={18} /> : <Bell size={18} />}
+        {loading
+          ? <LoaderCircle size={18} className="animate-spin" />
+          : enabled
+            ? <BellOff size={18} />
+            : <Bell size={18} />}
+        {isShisha && (loading ? 'Registering…' : enabled ? 'Shisha notifications on' : 'Enable Shisha notifications')}
       </button>
-      {message && <p role="status" className="mt-2 max-w-72 rounded-lg bg-zinc-950/95 px-3 py-2 text-xs text-zinc-200 shadow-lg">{message}</p>}
     </div>
   );
 }

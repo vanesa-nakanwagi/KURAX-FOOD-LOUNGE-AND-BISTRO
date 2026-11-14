@@ -16,14 +16,18 @@ if (!connectionString) {
 }
 
 const sql = fs.readFileSync(path.resolve(backendDirectory, '..', 'clear_data.sql'), 'utf8');
-const preservedTables = ['staff', 'menus', 'events', 'combos', 'monthly_targets'];
-const isLocalDb =
-  connectionString.includes('localhost') ||
-  connectionString.includes('127.0.0.1') ||
-  connectionString.includes('@database:');
+const preservedTables = [
+  'staff',
+  'menus',
+  'events',
+  'monthly_targets',
+  'shisha_staff',
+  'shisha_packages',
+  'combos',
+];
+
 const client = new Client({
   connectionString,
-  ssl: isLocalDb ? false : { rejectUnauthorized: false },
 });
 let transactionStarted = false;
 

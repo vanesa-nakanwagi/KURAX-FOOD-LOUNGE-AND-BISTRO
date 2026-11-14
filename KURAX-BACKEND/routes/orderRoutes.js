@@ -6,6 +6,8 @@ import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { buildOpenShiftOrderClause } from '../helpers/shiftVisibility.js';
 import { buildSalesRevenueBreakdown, createSalesJournalEntry } from '../helpers/accounting.js';
 import { createJournalEntry } from '../helpers/accounting.js';
+import notificationService from '../helpers/notificationService.js';
+import { buildStationOrderNotifications } from '../helpers/stationOrderNotifications.js';
 import {
   applyComplimentaryTerms,
   getOrderItemOriginalAmount,
@@ -16,6 +18,7 @@ import {
 } from '../helpers/complimentaryItems.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import logActivity from '../utils/logsActivity.js';
+import { getOrderItemsTotal, snapshotMenuPromotions } from '../helpers/menuPromotions.js';
 
 const router = express.Router();
 
@@ -66,7 +69,8 @@ async function authenticateComplimentaryStaff(req, res, next) {
     [session.id]
   );
   const actor = result.rows[0];
-  if (!actor || actor.is_active === false || actor.role !== session.role) {
+  if (!actor || actor.is_active === false
+    || String(actor.role || '').toUpperCase() !== String(session.role || '').toUpperCase()) {
     return res.status(401).json({ error: 'Staff account is inactive or has changed.' });
   }
   req.complimentaryActor = actor;
@@ -134,6 +138,7 @@ router.get('/', async (req, res) => {
           WHERE c.order_id = o.id
             AND c.status <> 'FullySettled'
         )
+        OR LOWER(COALESCE(o.status, '')) NOT IN ('paid', 'closed', 'voided', 'cancelled', 'served')
         OR o.id IN (
           SELECT id
           FROM public.orders
@@ -190,11 +195,14 @@ router.get('/', async (req, res) => {
           : ['barman', 'bar'].includes(station)
             ? order.barman_ticket_status
             : order.kitchen_ticket_status;
+        const workIsTerminal = ['Cancelled', 'Voided'].includes(work?.status);
+        const itemReady = work?.status === 'Completed'
+          || (ticketStatus === 'Ready' && !workIsTerminal);
         return {
           ...item,
           _orderItemIndex: index,
           served: item.served === true || order.status === 'Served',
-          production_status: work?.status || (ticketStatus === 'Ready' ? 'Completed' : null),
+          production_status: itemReady ? 'Completed' : work?.status || null,
           production_staff_id: work?.staff_id || null,
           production_staff_name: work?.staff_name || null,
           production_claimed_at: work?.claimed_at || null,
@@ -203,7 +211,7 @@ router.get('/', async (req, res) => {
           production_ready_at: work?.ready_at || null,
           production_notification_status: work?.notification_status || null,
           production_notified_at: work?.notified_at || null,
-          readyForService: work ? work.status === 'Completed' : ticketStatus === 'Ready',
+          readyForService: itemReady,
         };
       }) : [];
       return { ...order, items: parsedItems };
@@ -440,13 +448,62 @@ router.post('/', async (req, res) => {
   const { staffId, staffRole, tableName, items, total, sendToStations = false } = req.body;
 
   try {
-    const orderItems = Array.isArray(items)
+    const token = req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7)
+      : null;
+    if (!token) return res.status(401).json({ error: 'Sign in before placing an order.' });
+    let session;
+    try {
+      session = readSessionToken(token);
+    } catch {
+      return res.status(401).json({ error: 'Session expired. Sign in again.' });
+    }
+    if (session.scope !== 'restaurant' || Number(session.id) !== Number(staffId)) {
+      return res.status(403).json({ error: 'Your staff session does not match this order.' });
+    }
+    const staffResult = await pool.query(
+      `SELECT id, name, role, is_active, is_permitted
+       FROM public.staff WHERE id = $1`,
+      [Number(session.id)]
+    );
+    const actor = staffResult.rows[0];
+    if (!actor || actor.is_active === false || actor.role !== session.role) {
+      return res.status(401).json({ error: 'Staff account is inactive or has changed.' });
+    }
+    const actorRole = String(actor.role || '').toUpperCase();
+    if (!['WAITER', 'MANAGER', 'SUPERVISOR'].includes(actorRole)
+        || String(staffRole || '').toUpperCase() !== actorRole) {
+      return res.status(403).json({ error: 'Your account is not permitted to place orders.' });
+    }
+    if (['MANAGER', 'SUPERVISOR'].includes(actorRole) && actor.is_permitted !== true) {
+      return res.status(403).json({ error: 'The Director must grant you permission before you can take orders.' });
+    }
+
+    const submittedItems = Array.isArray(items)
       ? items.map((item) => (
         item && typeof item === 'object' && !Array.isArray(item)
           ? { ...item, station_routing_requested: sendToStations === true }
           : item
       ))
       : items;
+    const itemNames = Array.isArray(submittedItems)
+      ? submittedItems.map((item) => String(item?.name || '').trim().toLowerCase()).filter(Boolean)
+      : [];
+    const itemIds = Array.isArray(submittedItems)
+      ? submittedItems.map((item) => Number(item?.id)).filter((value) => Number.isInteger(value) && value > 0)
+      : [];
+    const catalogResult = itemNames.length || itemIds.length
+      ? await pool.query(
+        `SELECT id, name, price, category, station, promotion_enabled, promotion_discount_type,
+                promotion_discount_value, promotion_discount_percent,
+                promotion_starts_at, promotion_ends_at
+         FROM public.menus
+         WHERE id = ANY($1::int[]) OR LOWER(TRIM(name)) = ANY($2::text[])`,
+        [itemIds, itemNames]
+      )
+      : { rows: [] };
+    const orderItems = snapshotMenuPromotions(submittedItems, catalogResult.rows);
+    const serverTotal = Array.isArray(orderItems) ? getOrderItemsTotal(orderItems) : Number(total);
 
     // CRITICAL FIX: Do NOT set payment_method by default
     // Payment method should be NULL until cashier confirms payment
@@ -457,11 +514,11 @@ router.post('/', async (req, res) => {
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, NOW())
        RETURNING *`,
       [
-        staffId       || 1,
-        staffRole     || 'WAITER',
+        actor.id,
+        actorRole,
         tableName     || 'WALK-IN',
         JSON.stringify(orderItems),
-        total,
+        Number.isFinite(serverTotal) && serverTotal >= 0 ? serverTotal : total,
         null,  // ← FIXED: No default payment method
         'Pending',   // ← FIXED: Status is Pending, not Served
       ]
@@ -491,8 +548,17 @@ router.post('/', async (req, res) => {
       actor:   `Staff ID: ${staffId}`,
       role:    staffRole,
       message: `New order created for ${tableName}`,
-      meta:    { order_id: newOrder.id, total },
+      meta:    { order_id: newOrder.id, total: newOrder.total },
     });
+
+    if (sendToStations === true) {
+      for (const notification of buildStationOrderNotifications(newOrder.id, parsedItems)) {
+        void notificationService.sendToRoles(notification.roles, notification.event)
+          .catch((error) => {
+            console.error(`Could not send ${notification.station} order notification:`, error.message);
+          });
+      }
+    }
 
     res.status(201).json({
       ...newOrder,
@@ -671,6 +737,21 @@ router.post('/void-item', async (req, res) => {
       message: `Void requested: ${item_name} (UGX ${itemTotal.toLocaleString()}) from Order #${order_id}${chefName ? ` - Chef: ${chefName}` : ' - No chef assigned'}`,
       meta: { reason, order_id, table: tableName, amount: itemTotal, chef_name: chefName }
     });
+
+    const accountantNotification = await notificationService.sendToRoles(['ACCOUNTANT'], {
+      type: 'VOID_REQUEST_PENDING',
+      title: 'Item void request needs review',
+      body: `${item_name} at ${tableName} was submitted for void approval (UGX ${itemTotal.toLocaleString()}).`,
+      referenceId: voidRes.rows[0].id,
+      referenceType: 'void_request',
+      link: '/accountant',
+    });
+    console.log(
+      `[VOID REQUEST NOTIFICATION] Request ID: ${voidRes.rows[0].id}; ` +
+      `accountant notifications sent: ${accountantNotification.sent || 0}, ` +
+      `failed: ${accountantNotification.failed || 0}` +
+      `${accountantNotification.noRecipients ? ', no registered Accountant devices' : ''}`
+    );
 
     res.status(201).json({ 
       success: true, 
@@ -860,13 +941,13 @@ router.patch('/:id/items/:itemIndex/serve', async (req, res) => {
 router.patch('/:id/items/:itemIndex/complimentary', authenticateComplimentaryStaff, async (req, res) => {
   const orderId = Number(req.params.id);
   const itemIndex = Number(req.params.itemIndex);
-  const { complimentary, waivedAmount, reason = '' } = req.body || {};
+  const { complimentary, reason = '' } = req.body || {};
   const actor = req.complimentaryActor;
   if (!Number.isInteger(orderId) || orderId <= 0 || !Number.isInteger(itemIndex) || itemIndex < 0) {
     return res.status(400).json({ error: 'A valid order and item index are required.' });
   }
-  if (typeof complimentary !== 'boolean' || (complimentary && waivedAmount === undefined)) {
-    return res.status(400).json({ error: 'Choose whether the item is complimentary and provide its waived amount.' });
+  if (complimentary !== true) {
+    return res.status(400).json({ error: 'Submit a complimentary request for cashier review.' });
   }
   if (typeof reason !== 'string' || reason.length > 500) {
     return res.status(400).json({ error: 'The reason must be 500 characters or fewer.' });
@@ -905,85 +986,40 @@ router.patch('/:id/items/:itemIndex/complimentary', authenticateComplimentarySta
       return res.status(409).json({ error: 'This item has a pending cashier payment request. Wait for the cashier to resolve it first.' });
     }
 
-    let updatedItem;
-    try {
-      updatedItem = applyComplimentaryTerms(item, {
-        complimentary,
-        waivedAmount: complimentary ? waivedAmount : 0,
-        actorId: actor.id,
-        actorName: actor.name,
-        reason,
-      });
-    } catch (error) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: error.message });
-    }
-
-    if (isPostedOrder(order, item)) {
-      const requestResult = await client.query(
-        `INSERT INTO public.complimentary_correction_requests
-           (order_id, order_item_index, requested_complimentary, requested_waived_amount,
-            reason, previous_item, requested_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, status, requested_at`,
-        [orderId, itemIndex, updatedItem.complimentary, updatedItem.complimentaryWaivedAmount,
-          reason.trim() || null, JSON.stringify(item), actor.id]
-      );
-      await client.query('COMMIT');
-      await logActivity(pool, {
-        type: 'COMPLIMENTARY_CORRECTION_REQUESTED',
-        actor: actor.name,
-        role: actor.role,
-        message: `Complimentary correction requested for ${item.name} on Order #${orderId}`,
-        meta: { order_id: orderId, order_item_index: itemIndex, correction_id: requestResult.rows[0].id, reason: reason.trim() || null },
-      });
-      return res.status(202).json({
-        correctionRequest: requestResult.rows[0],
-        message: 'This order item has already been finalized. A Manager, Director, or Accountant must approve the correction.',
-      });
-    }
-
-    items[itemIndex] = updatedItem;
-    const total = getOrderPayableTotal(items);
-    const updatedOrder = await client.query(
-      `UPDATE public.orders SET items = $1, total = $2, updated_at = NOW()
-       WHERE id = $3 RETURNING id, table_name, total, items`,
-      [JSON.stringify(items), total, orderId]
+    const requestResult = await client.query(
+      `INSERT INTO public.complimentary_correction_requests
+         (order_id, order_item_index, requested_complimentary, requested_waived_amount,
+          reason, previous_item, requested_by)
+       VALUES ($1, $2, TRUE, 0, $3, $4, $5)
+       RETURNING id, status, requested_at`,
+      [orderId, itemIndex, reason.trim() || null, JSON.stringify(item), actor.id]
+    );
+    items[itemIndex] = { ...item, complimentaryRequestPending: true };
+    await client.query(
+      'UPDATE public.orders SET items = $1, updated_at = NOW() WHERE id = $2',
+      [JSON.stringify(items), orderId]
     );
     await client.query('COMMIT');
-    if (updatedItem.complimentary && updatedItem.served === true) {
-      try {
-        const consumption = await consumeSoldOrderItems({
-          orderId,
-          items,
-          createdBy: actor.name,
-        });
-        for (const entry of consumption.filter((record) => !['CONSUMED', 'CONSUMED_COST_REVIEW', 'ALREADY_CONSUMED'].includes(record.status))) {
-          console.warn(`Recipe consumption ${entry.status} for complimentary item on order #${orderId}: ${entry.order_item}`);
-        }
-      } catch (error) {
-        console.error(`Recipe consumption failed for complimentary order #${orderId}:`, error.message);
-      }
-    }
     await logActivity(pool, {
-      type: 'ORDER_ITEM_COMPLIMENTARY_UPDATED',
+      type: 'ORDER_ITEM_COMPLIMENTARY_REQUESTED',
       actor: actor.name,
       role: actor.role,
-      message: `${updatedItem.complimentary ? 'Marked' : 'Unmarked'} ${item.name} as complimentary on Order #${orderId}`,
+      message: `Complimentary requested for ${item.name} on Order #${orderId}`,
       meta: {
         order_id: orderId,
         order_item_index: itemIndex,
-        original_amount: updatedItem.originalLineAmount,
-        waived_amount: updatedItem.complimentaryWaivedAmount,
-        payable_amount: updatedItem.payableAmount,
-        reason: updatedItem.complimentaryReason || null,
+        correction_id: requestResult.rows[0].id,
+        reason: reason.trim() || null,
       },
     });
-    return res.json({ ...updatedOrder.rows[0], items, message: 'Complimentary status updated.' });
+    return res.status(202).json({
+      correctionRequest: requestResult.rows[0],
+      message: 'Complimentary request sent to the cashier. The cashier will choose the waived amount.',
+    });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     if (error.code === '23505') {
-      return res.status(409).json({ error: 'A complimentary correction is already awaiting approval for this item.' });
+      return res.status(409).json({ error: 'A complimentary request is already awaiting cashier review for this item.' });
     }
     console.error('Update complimentary item error:', error);
     return res.status(500).json({ error: 'Could not update the complimentary item.' });
@@ -994,7 +1030,7 @@ router.patch('/:id/items/:itemIndex/complimentary', authenticateComplimentarySta
 
 router.get('/complimentary-corrections', authenticateComplimentaryStaff, async (req, res) => {
   const role = String(req.complimentaryActor.role || '').toUpperCase();
-  if (!['MANAGER', 'DIRECTOR', 'ACCOUNTANT'].includes(role)) {
+  if (!['MANAGER', 'DIRECTOR', 'ACCOUNTANT', 'CASHIER'].includes(role)) {
     return res.status(403).json({ error: 'You are not authorized to review complimentary corrections.' });
   }
   try {
@@ -1023,8 +1059,8 @@ router.get('/complimentary-corrections', authenticateComplimentaryStaff, async (
 router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryStaff, async (req, res) => {
   const actor = req.complimentaryActor;
   const role = String(actor.role || '').toUpperCase();
-  if (!['MANAGER', 'DIRECTOR', 'ACCOUNTANT'].includes(role)) {
-    return res.status(403).json({ error: 'You are not authorized to review complimentary corrections.' });
+  if (role !== 'CASHIER') {
+    return res.status(403).json({ error: 'Only a cashier can apply or reject complimentary requests.' });
   }
   const requestId = Number(req.params.requestId);
   const decision = String(req.body?.decision || '').toLowerCase();
@@ -1033,6 +1069,12 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
     return res.status(400).json({ error: 'A valid correction request and approve/reject decision are required.' });
   }
   if (reviewNote.length > 500) return res.status(400).json({ error: 'The review note must be 500 characters or fewer.' });
+  const requestedComplimentary = req.body?.complimentary;
+  const requestedWaivedAmount = req.body?.waivedAmount;
+  if (decision === 'approve' && (typeof requestedComplimentary !== 'boolean'
+    || (requestedComplimentary && requestedWaivedAmount === undefined))) {
+    return res.status(400).json({ error: 'Choose whether to apply a comp and enter its waived amount.' });
+  }
 
   const client = await pool.connect();
   try {
@@ -1049,20 +1091,28 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Pending complimentary correction not found.' });
     }
-    if (Number(correction.requested_by) === Number(actor.id)) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'A different Manager, Director, or Accountant must review your correction request.' });
-    }
     const orderResult = await client.query(
-      `SELECT id, status, total, items FROM public.orders WHERE id = $1 FOR UPDATE`,
+      `SELECT id, staff_id, table_name, status, total, items, shift_cleared, day_cleared FROM public.orders WHERE id = $1 FOR UPDATE`,
       [correction.order_id]
     );
     if (!orderResult.rows.length) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'The correction order no longer exists.' });
     }
+    const order = orderResult.rows[0];
+    const items = parseOrderItems(order.items);
+    const item = items[correction.order_item_index];
+    if (!item) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'The requested order item has since been removed.' });
+    }
 
     if (decision === 'reject') {
+      delete item.complimentaryRequestPending;
+      await client.query(
+        'UPDATE public.orders SET items = $1, updated_at = NOW() WHERE id = $2',
+        [JSON.stringify(items), order.id]
+      );
       await client.query(
         `UPDATE public.complimentary_correction_requests
          SET status = 'Rejected', reviewed_by = $1, reviewed_at = NOW(), review_note = $2
@@ -1080,36 +1130,57 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
       return res.json({ success: true, status: 'Rejected' });
     }
 
-    const order = orderResult.rows[0];
-    const items = parseOrderItems(order.items);
-    const item = items[correction.order_item_index];
-    if (!item || item.voidProcessed === true || String(item.status || '').toUpperCase() === 'VOIDED') {
+    if (item.voidProcessed === true || String(item.status || '').toUpperCase() === 'VOIDED') {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'The requested order item has since been voided or removed.' });
+    }
+    if (item.paymentRequested === true) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Resolve the pending payment request before applying a comp.' });
     }
     const previousPayable = getOrderItemPayableAmount(item);
     const previousPaid = getOrderItemPaidAmount(item);
     const previousWaiver = getOrderItemWaivedAmount(item);
-    const updatedItem = applyComplimentaryTerms(item, {
-      complimentary: correction.requested_complimentary,
-      waivedAmount: correction.requested_waived_amount,
-      actorId: correction.requested_by,
-      actorName: correction.requester_name,
-      reason: correction.reason || '',
-    });
+    const complimentary = requestedComplimentary === undefined
+      ? correction.requested_complimentary
+      : requestedComplimentary;
+    delete item.complimentaryRequestPending;
+    let updatedItem;
+    try {
+      updatedItem = applyComplimentaryTerms(item, {
+        complimentary,
+        waivedAmount: complimentary ? requestedWaivedAmount : 0,
+        actorId: actor.id,
+        actorName: actor.name,
+        reason: correction.reason || '',
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: error.message });
+    }
+    const paymentAmount = Math.max(0, Math.round(
+      (getOrderItemPayableAmount(updatedItem) - previousPaid + Number.EPSILON) * 100
+    ) / 100);
+    const paymentMethod = String(req.body?.paymentMethod || '');
+    const allowedPaymentMethods = ['Cash', 'Card', 'Momo-MTN', 'Momo-Airtel'];
+    if (paymentAmount > 0 && !allowedPaymentMethods.includes(paymentMethod)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Choose a valid payment method for the remaining item balance.' });
+    }
     if (item._rowPaid === true && item.paidAmount === undefined) {
       updatedItem.paidAmount = previousPaid;
     }
     updatedItem.complimentaryApprovedBy = actor.id;
     updatedItem.complimentaryApprovedByName = actor.name;
     updatedItem.complimentaryApprovedAt = new Date().toISOString();
+    const postedOrder = isPostedOrder(order, item);
     const waiverChange = Math.round((updatedItem.complimentaryWaivedAmount - previousWaiver) * 100) / 100;
     const revenueItem = {
       ...item,
       complimentary: false,
       payableAmount: getOrderItemOriginalAmount(item),
     };
-    if (waiverChange !== 0) {
+    if (postedOrder && waiverChange !== 0) {
       const periodResult = await client.query(
         `SELECT period_name, status FROM public.accounting_periods
          WHERE $1::date BETWEEN start_date AND end_date
@@ -1125,7 +1196,7 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
         });
       }
     }
-    if (waiverChange > 0) {
+    if (postedOrder && waiverChange > 0) {
       const revenueLines = buildSalesRevenueBreakdown([revenueItem], waiverChange);
       const remainingReceivable = Math.max(0, previousPayable - previousPaid);
       const receivableCredit = Math.min(waiverChange, remainingReceivable);
@@ -1145,7 +1216,7 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
         postedBy: actor.name,
         lines: journalLines,
       });
-    } else if (waiverChange < 0) {
+    } else if (postedOrder && waiverChange < 0) {
       const amount = Math.abs(waiverChange);
       const revenueLines = buildSalesRevenueBreakdown([revenueItem], amount);
       const previousReceivable = Math.max(0, previousPayable - previousPaid);
@@ -1174,10 +1245,37 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
       });
     }
 
+    let cashierQueueId = null;
+    if (paymentAmount > 0) {
+      updatedItem.paymentRequested = true;
+      const queueItem = {
+        ...updatedItem,
+        _orderId: order.id,
+        _orderItemIndex: correction.order_item_index,
+      };
+      const queueResult = await client.query(
+        `INSERT INTO public.cashier_queue
+           (order_ids, table_name, label, method, amount, is_item, item,
+            requested_by, staff_id, status, created_at)
+         VALUES ($1::jsonb, $2, $3, $4, $5, true, $6::jsonb, $7, $8, 'Pending', NOW())
+         RETURNING id`,
+        [
+          JSON.stringify([order.id]),
+          order.table_name || 'WALK-IN',
+          queueItem.name || 'Order item',
+          paymentMethod,
+          paymentAmount,
+          JSON.stringify(queueItem),
+          correction.requester_name || 'Staff',
+          order.staff_id || correction.requested_by,
+        ]
+      );
+      cashierQueueId = queueResult.rows[0].id;
+    }
     items[correction.order_item_index] = updatedItem;
     await client.query(
-      `UPDATE public.orders SET items = $1, updated_at = NOW() WHERE id = $2`,
-      [JSON.stringify(items), order.id]
+      `UPDATE public.orders SET items = $1, total = $2, updated_at = NOW() WHERE id = $3`,
+      [JSON.stringify(items), postedOrder ? order.total : getOrderPayableTotal(items), order.id]
     );
     await client.query(
       `UPDATE public.complimentary_correction_requests
@@ -1188,7 +1286,7 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
     );
     await client.query('COMMIT');
     await logActivity(pool, {
-      type: 'COMPLIMENTARY_CORRECTION_APPROVED',
+      type: 'ORDER_ITEM_COMPLIMENTARY_APPLIED',
       actor: actor.name,
       role: actor.role,
       message: `Complimentary correction #${requestId} approved for Order #${order.id}`,
@@ -1201,7 +1299,7 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
         review_note: reviewNote || null,
       },
     });
-    return res.json({ success: true, status: 'Approved', item: updatedItem });
+    return res.json({ success: true, status: 'Approved', item: updatedItem, cashier_queue_id: cashierQueueId });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('Review complimentary correction error:', error);
@@ -1239,6 +1337,11 @@ router.patch('/:id/pay', async (req, res) => {
     }
 
     const currentItems = parseOrderItems(order.items);
+    if (currentItems.some((item) => item.complimentaryRequestPending === true)) {
+      return res.status(409).json({
+        error: 'A complimentary request is awaiting cashier review. Resolve it before marking this order paid.',
+      });
+    }
     const hasCollectibleItems = currentItems.some((item) => (
       item.status !== 'VOIDED'
       && item.voidProcessed !== true
@@ -1419,6 +1522,42 @@ router.patch('/:id/pay', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/orders/void-requests/:id/approve - Accountant approves void
 // ─────────────────────────────────────────────────────────────────────────────
+async function notifyWaiterOfVoidDecision(voidRequest, status, decidedBy) {
+  try {
+    const waiterResult = await pool.query(
+      `SELECT s.id
+       FROM public.staff s
+       WHERE UPPER(s.role) = 'WAITER'
+         AND COALESCE(s.is_active, TRUE) = TRUE
+         AND (
+           s.id = (SELECT staff_id FROM public.orders WHERE id = $1)
+           OR LOWER(TRIM(s.name)) = LOWER(TRIM(COALESCE($2, '')))
+         )`,
+      [voidRequest.order_id, voidRequest.waiter_name || voidRequest.requested_by]
+    );
+    const waiterIds = waiterResult.rows.map((row) => row.id);
+    if (!waiterIds.length) {
+      console.warn(`[VOID ${status} NOTIFICATION] No active waiter found for request ${voidRequest.id}.`);
+      return;
+    }
+
+    const notification = await notificationService.sendToUsers(waiterIds, {
+      type: `VOID_${status.toUpperCase()}`,
+      title: `Void request ${status.toLowerCase()}`,
+      body: `Your request to void ${voidRequest.item_name} at ${voidRequest.table_name || 'the table'} was ${status.toLowerCase()} by ${decidedBy}.`,
+      referenceId: voidRequest.id,
+      referenceType: 'void_request',
+      link: '/staff/waiter',
+    });
+    console.log(
+      `[VOID ${status} NOTIFICATION] Request ID: ${voidRequest.id}; ` +
+      `waiter notifications sent: ${notification.sent || 0}, failed: ${notification.failed || 0}`
+    );
+  } catch (error) {
+    console.error(`[VOID ${status} NOTIFICATION] Could not notify requester:`, error.message);
+  }
+}
+
 router.patch('/void-requests/:id/approve', async (req, res) => {
   const { id } = req.params;
   const { approved_by } = req.body;
@@ -1496,6 +1635,7 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
       message: `Approved void request for ${vr.item_name} (Order #${vr.order_id}) - Chef: ${vr.chef_name || 'Unknown'}`,
       meta: { void_id: id, order_id: vr.order_id, item: vr.item_name, chef: vr.chef_name, inventory_reversal: inventoryReversal.status }
     });
+    await notifyWaiterOfVoidDecision(vr, 'Approved', approved_by || 'Accountant');
     
     res.json(result.rows[0]);
   } catch (err) {
@@ -1574,6 +1714,7 @@ router.patch('/void-requests/:id/reject', async (req, res) => {
       message: `Rejected void request for ${vr.item_name} (Order #${vr.order_id})`,
       meta: { void_id: id, order_id: vr.order_id, item: vr.item_name }
     });
+    await notifyWaiterOfVoidDecision(vr, 'Rejected', rejected_by || 'Accountant');
     
     res.json(result.rows[0]);
   } catch (err) {

@@ -119,7 +119,6 @@ export default function DepartmentInventory({ department, embedded = false }) {
             records={records}
             station={config.station}
             canConfigureRecipes
-            canApproveRecipes={isHod}
             onAction={runAction}
           />
         )}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { CheckCircle, X } from "lucide-react";
+import { formatMenuName } from "../../../utils/menuName.js";
 
 export default function BookingModal({ show, onClose, eventTitle }) {
   const [formData, setFormData] = useState({
@@ -142,8 +143,8 @@ export default function BookingModal({ show, onClose, eventTitle }) {
         ) : (
           /* ── FORM VIEW ── */
           <>
-            <h2 className="text-2xl mb-5 text-yellow-500 dark:text-yellow-400 text-center font-semibold">
-              {eventTitle}
+            <h2 className="text-2xl mb-5 text-yellow-700 dark:text-yellow-300 text-center font-semibold">
+              {formatMenuName(eventTitle)}
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">

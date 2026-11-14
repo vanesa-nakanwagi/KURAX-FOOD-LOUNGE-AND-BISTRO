@@ -16,11 +16,13 @@ import DeliveryModal from "./DeliveryModal";
 import DeliveriesPanel from "./DeliveriesPanel";
 import CreditLedgerPanel from "./CreditLedgerPanel";
 import CashierTablesPanel from "./CashierTablesPanel";
+import ComplimentaryRequestsPanel from "./ComplimentaryRequestsPanel";
 import { useData } from "../../customer/components/context/DataContext";
-import { cashierAuthHeaders } from "./cashierApi";
+import { cashierAuthHeaders, readCashierSession } from "./cashierApi";
 import { getOrderItemPayableAmount } from "../../utils/orderItemAmounts";
+import ReceiptPrint from "../components/ReceiptPrint";
 
-// ─── HELPERS (unchanged) ─────────────────────────────────────────────────────
+// ─── HELPERS ─────────────────────────────────────────────────────
 function toLocalDateStr(date) {
   const d = date instanceof Date ? date : new Date(date);
   return [
@@ -47,13 +49,12 @@ function methodStyle(method) {
   }
 }
 
-// ✅ NEW: Full amount formatter (no abbreviation)
 function formatFullAmount(n) {
   const num = Number(n || 0);
   return `UGX ${num.toLocaleString()}`;
 }
 
-// ─── STAT CARD (full numbers) ────────────────────────────────────────────────
+// ─── STAT CARD  ────────────────────────────────────────────────
 function StatCard({ icon, label, value, color, note, trend }) {
   const formattedValue = formatFullAmount(value);
 
@@ -138,11 +139,10 @@ function GrossRevenueCard({ grossSales, creditSettledToday }) {
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function CashierDashboard() {
-  const { todaySummary, dayClosed, dayClosureInfo, refreshData } = useData();
+  const { todaySummary, dayClosed, dayClosureInfo, refreshData, orders: restaurantOrders = [] } = useData();
 
   const loggedInUser = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); }
-    catch { return {}; }
+    return readCashierSession() || {};
   }, []);
   const cashierName = loggedInUser?.name || "Cashier";
   const isDark = false;
@@ -153,6 +153,7 @@ export default function CashierDashboard() {
   const [showShiftSummary,   setShowShiftSummary]   = useState(false);
   const [showReceipt,        setShowReceipt]        = useState(false);
   const [selectedSettlement, setSelectedSettlement] = useState(null);
+  const [confirmedReceipt, setConfirmedReceipt] = useState(null);
 
   const [processingOrder,    setProcessingOrder]    = useState(null);
   const [momoTransactionId,  setMomoTransactionId]  = useState("");
@@ -164,6 +165,15 @@ export default function CashierDashboard() {
 
   const [liveQueue,          setLiveQueue]          = useState([]);
   const [queueError,        setQueueError]         = useState("");
+  const [specialDiscountSettings, setSpecialDiscountSettings] = useState({
+    max_discount_type: "percentage",
+    max_discount_value: 0,
+  });
+  const [showSpecialDiscount, setShowSpecialDiscount] = useState(false);
+  const [specialDiscountType, setSpecialDiscountType] = useState("percentage");
+  const [specialDiscountValue, setSpecialDiscountValue] = useState("");
+  const [specialDiscountReason, setSpecialDiscountReason] = useState("");
+  const [applyingSpecialDiscount, setApplyingSpecialDiscount] = useState(false);
   const [credits,            setCredits]            = useState([]);
   const [history,            setHistory]            = useState([]);
   const [qLoading,           setQLoading]           = useState(true);
@@ -178,7 +188,6 @@ export default function CashierDashboard() {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [today, setToday] = useState(getTodayLocal);
 
-  // ── DAY CLOSURE EFFECT – reset totals when dayClosed becomes true ─────────
   useEffect(() => {
     if (dayClosed) {
       fetchAll();
@@ -196,19 +205,17 @@ export default function CashierDashboard() {
     return () => clearTimeout(t);
   }, []);
 
-  // ── DERIVED TOTALS FROM CONTEXT (live, resets after day closure) ──────────
   const cashRevenue = Number(todaySummary?.total_cash ?? 0);
   const cardRevenue = Number(todaySummary?.total_card ?? 0);
   const momoMTN = Number(todaySummary?.total_mtn ?? 0);
   const momoAirtel = Number(todaySummary?.total_airtel ?? 0);
-  const grossRevenue = cashRevenue + cardRevenue + momoMTN + momoAirtel;
+  const grossRevenue = Number(todaySummary?.total_gross ?? (cashRevenue + cardRevenue + momoMTN + momoAirtel));
   const creditSettledToday = Number(todaySummary?.credit_settlements_today ?? 0);
 
   const totalMobileMoney = momoMTN + momoAirtel;
   const cashOnCounter = Math.max(0, cashRevenue - pettyCashInTotal);
   const netCashAfterPetty = cashRevenue - pettyCashOutTotal;
 
-  // Credit action counts (from credits array) – used only inside CREDITS section now
   const creditNeedsForwarding = useMemo(
     () => credits.filter(c => c.status === "PendingCashier").length,
     [credits]
@@ -223,14 +230,15 @@ export default function CashierDashboard() {
   );
   const totalCreditsNeedingAction = creditNeedsForwarding + creditPendingManager + creditApprovedNotSettled;
 
-  // ─── FETCH ALL DATA (queue, credits, history, petty) ───────────────────────
+
   const fetchAll = useCallback(async () => {
     try {
-      const [qRes, cRes, hRes, pRes] = await Promise.all([
+      const [qRes, cRes, hRes, pRes, discountRes] = await Promise.all([
         fetch(`${API_URL}/api/cashier-ops/cashier-queue`, { headers: cashierAuthHeaders() }),
         fetch(`${API_URL}/api/credits`),
         fetch(`${API_URL}/api/cashier-ops/cashier-history`),
         fetch(`${API_URL}/api/summaries/petty-cash?date=${today}`),
+        fetch(`${API_URL}/api/discounts/config`, { headers: cashierAuthHeaders(), cache: "no-store" }),
       ]);
 
       if (qRes.ok) {
@@ -261,6 +269,9 @@ export default function CashierDashboard() {
           city: o.city,
           location_desc: o.location_desc,
           order_items: Array.isArray(o.order_items) ? o.order_items : [],
+          item: o.item,
+          transaction_id: o.transaction_id,
+          order_ids: o.order_ids,
           public_payment_status: o.public_payment_status,
           public_reject_reason: o.public_reject_reason,
         })));
@@ -270,6 +281,17 @@ export default function CashierDashboard() {
       }
       if (cRes.ok) setCredits(await cRes.json());
       if (hRes.ok) setHistory(await hRes.json());
+      if (discountRes.ok) {
+        const settings = await discountRes.json();
+        setSpecialDiscountSettings({
+          max_discount_type: settings.max_discount_type || "percentage",
+          max_discount_value: Number(settings.max_discount_value ?? settings.max_discount_percent) || 0,
+        });
+      } else {
+        const error = await discountRes.json().catch(() => ({}));
+        console.error("Discount settings unavailable:", error.error || discountRes.statusText);
+        setSpecialDiscountSettings({ max_discount_type: "percentage", max_discount_value: 0 });
+      }
       if (pRes.ok) {
         const summary = await pRes.json();
         setPettyCashInTotal(Number(summary.total_in) || 0);
@@ -318,6 +340,58 @@ export default function CashierDashboard() {
     setMomoTransactionId("");
     setRejecting(false);
     setRejectNote("");
+    setShowSpecialDiscount(false);
+    setSpecialDiscountType("percentage");
+    setSpecialDiscountValue("");
+    setSpecialDiscountReason("");
+  };
+
+  const handleApplySpecialDiscount = async () => {
+    if (!processingOrder || applyingSpecialDiscount) return;
+    const value = Number(specialDiscountValue);
+    const discountAmount = specialDiscountType === "percentage"
+      ? Number(processingOrder.amount) * value / 100
+      : value;
+    if (!Number.isFinite(value) || value <= 0 || !specialDiscountReason.trim()) {
+      alert("Enter a positive discount value and reason.");
+      return;
+    }
+    if (!Number.isFinite(discountAmount) || discountAmount <= 0 || discountAmount >= Number(processingOrder.amount)) {
+      alert("The discount must be positive and leave a payable balance above zero.");
+      return;
+    }
+    setApplyingSpecialDiscount(true);
+    try {
+      const response = await fetch(`${API_URL}/api/discounts/cashier-queue/${processingOrder.id}`, {
+        method: "POST",
+        headers: cashierAuthHeaders(true),
+        body: JSON.stringify({
+          discount_type: specialDiscountType,
+          discount_value: value,
+          reason: specialDiscountReason.trim(),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Could not apply the discount.");
+      const updated = {
+        amount: Number(result.amount_due),
+        special_discount_applied: Number(result.discount_amount),
+      };
+      setProcessingOrder((current) => current && current.id === processingOrder.id
+        ? { ...current, ...updated }
+        : current);
+      setLiveQueue((current) => current.map((item) => item.id === processingOrder.id
+        ? { ...item, ...updated }
+        : item));
+      setShowSpecialDiscount(false);
+      setSpecialDiscountValue("");
+      setSpecialDiscountReason("");
+      alert(`Special bill discount of ${formatFullAmount(result.discount_amount)} applied.`);
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setApplyingSpecialDiscount(false);
+    }
   };
 
   const handleFinalConfirm = async () => {
@@ -337,6 +411,7 @@ export default function CashierDashboard() {
       return;
     }
 
+    setConfirmedReceipt(null);
     setConfirming(true);
     setAnimatingIds(prev => [...prev, order.id]);
     try {
@@ -359,6 +434,44 @@ export default function CashierDashboard() {
         setConfirming(false);
         setAnimatingIds(prev => prev.filter(id => id !== order.id));
         return;
+      }
+      const result = await res.json();
+      if (result.message !== "Already confirmed") {
+        const sourceItems = Array.isArray(order.order_items) && order.order_items.length
+          ? order.order_items
+          : order.item
+            ? [order.item]
+            : (Array.isArray(order.order_ids) ? order.order_ids : []).flatMap(orderId => {
+              const sourceOrder = restaurantOrders.find(candidate => Number(candidate.id) === Number(orderId));
+              return Array.isArray(sourceOrder?.items) ? sourceOrder.items : [];
+            });
+        const payableItems = sourceItems.filter(item =>
+          item.status !== "VOIDED"
+          && item.voidProcessed !== true
+          && item._rowPaid !== true
+          && item.creditRequested !== true
+          && !(item.payment_method || "").toUpperCase().includes("CREDIT")
+          && getOrderItemPayableAmount(item) > 0
+        );
+        setConfirmedReceipt({
+          reference: order.public_order_ref || `POS-${result.new_order_id || order.id}`,
+          date: new Date().toISOString(),
+          table: order.table_name || (order.is_public_order ? "Online order" : ""),
+          customer: order.customer_name,
+          staff: order.requested_by,
+          items: payableItems.length
+            ? payableItems.map(item => ({
+              name: item.name || item.package_name || item.title || "Order item",
+              quantity: Number(item.quantity || 1),
+              total: getOrderItemPayableAmount(item),
+            }))
+            : [{ name: order.label || "Order payment", quantity: 1, total: order.amount }],
+          total: order.amount,
+          amountReceived: order.amount,
+          paymentMethod: order.method,
+          transactionId: order.transaction_id || momoTransactionId.trim(),
+          confirmedBy: cashierName,
+        });
       }
       await fetchAll();
       refreshData();
@@ -498,6 +611,22 @@ export default function CashierDashboard() {
 
   const isMomoProcessing = processingOrder?.method === "Momo-MTN" || processingOrder?.method === "Momo-Airtel";
   const isCredit = processingOrder?.method === "Credit";
+  const discountBillAmount = Number(processingOrder?.amount || 0);
+  const discountValueNumber = Number(specialDiscountValue);
+  const discountPreviewAmount = Number.isFinite(discountValueNumber)
+    ? Number((specialDiscountType === "percentage"
+      ? discountBillAmount * discountValueNumber / 100
+      : discountValueNumber).toFixed(2))
+    : 0;
+  const maximumDiscountAmount = specialDiscountSettings.max_discount_type === "fixed"
+    ? Math.min(discountBillAmount, specialDiscountSettings.max_discount_value)
+    : discountBillAmount * specialDiscountSettings.max_discount_value / 100;
+  const canApplySpecialDiscount = Number.isFinite(discountValueNumber)
+    && discountValueNumber > 0
+    && discountPreviewAmount > 0
+    && discountPreviewAmount < discountBillAmount
+    && discountPreviewAmount <= maximumDiscountAmount
+    && specialDiscountReason.trim().length >= 3;
   const canConfirm = !isMomoProcessing ||
     (/^[A-Za-z0-9-]{4,100}$/.test(momoTransactionId.trim()));
 
@@ -747,6 +876,7 @@ export default function CashierDashboard() {
           )}
 
           {activeSection === "TABLES" && <CashierTablesPanel />}
+          {activeSection === "COMPS" && <ComplimentaryRequestsPanel />}
 
           {activeSection === "CREDITS" && (
             <div className="space-y-6 animate-in fade-in duration-500">
@@ -915,6 +1045,106 @@ export default function CashierDashboard() {
               </span>
             </div>
 
+            {!processingOrder.is_public_order
+              && !isCredit
+              && !processingOrder.is_item
+              && Array.isArray(processingOrder.order_ids)
+              && processingOrder.order_ids.length > 0
+              && specialDiscountSettings.max_discount_value > 0 && (
+                <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-900">Special bill discount</p>
+                      <p className="mt-1 text-[10px] text-amber-800">
+                        Director limit: {specialDiscountSettings.max_discount_type === "fixed"
+                          ? formatFullAmount(specialDiscountSettings.max_discount_value)
+                          : `${specialDiscountSettings.max_discount_value}% of the unpaid balance`}
+                      </p>
+                    </div>
+                    {processingOrder.special_discount_applied > 0 && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-black uppercase text-emerald-700">
+                        Applied {formatFullAmount(processingOrder.special_discount_applied)}
+                      </span>
+                    )}
+                  </div>
+                  {!processingOrder.special_discount_applied && !showSpecialDiscount && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSpecialDiscount(true)}
+                      className="mt-3 rounded-xl border border-amber-300 bg-white px-4 py-2 text-[10px] font-black uppercase text-amber-900 hover:bg-amber-100"
+                    >
+                      Apply discount
+                    </button>
+                  )}
+                  {showSpecialDiscount && !processingOrder.special_discount_applied && (
+                    <div className="mt-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="text-[9px] font-bold uppercase text-amber-900">
+                          Discount type
+                          <select
+                            value={specialDiscountType}
+                            onChange={(event) => setSpecialDiscountType(event.target.value)}
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white p-2 text-sm text-gray-900"
+                          >
+                            <option value="percentage">Percentage (%)</option>
+                            <option value="fixed">Fixed amount (UGX)</option>
+                          </select>
+                        </label>
+                        <label className="text-[9px] font-bold uppercase text-amber-900">
+                          {specialDiscountType === "percentage" ? "Discount (%)" : "Discount (UGX)"}
+                          <input
+                            type="number"
+                            min="0.01"
+                            max={specialDiscountType === "percentage" ? "100" : undefined}
+                            step="0.01"
+                            value={specialDiscountValue}
+                            onChange={(event) => setSpecialDiscountValue(event.target.value)}
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white p-2 text-sm text-gray-900"
+                          />
+                        </label>
+                      </div>
+                      <label className="block text-[9px] font-bold uppercase text-amber-900">
+                        Reason
+                        <textarea
+                          value={specialDiscountReason}
+                          onChange={(event) => setSpecialDiscountReason(event.target.value)}
+                          maxLength={500}
+                          rows={2}
+                          className="mt-1 w-full rounded-lg border border-amber-200 bg-white p-2 text-sm text-gray-900"
+                          placeholder="Reason required for audit"
+                        />
+                      </label>
+                      <div className="rounded-xl bg-white p-3 text-xs text-gray-700">
+                        <p>Discount preview: <strong>{formatFullAmount(discountPreviewAmount)}</strong></p>
+                        <p>Final payable: <strong>{formatFullAmount(Math.max(0, discountBillAmount - discountPreviewAmount))}</strong></p>
+                        {discountPreviewAmount > maximumDiscountAmount && (
+                          <p role="alert" className="mt-1 text-[10px] font-bold text-red-700">
+                            Exceeds the Director limit of {formatFullAmount(maximumDiscountAmount)}.
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowSpecialDiscount(false)}
+                          className="flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-[10px] font-black uppercase text-gray-600"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleApplySpecialDiscount}
+                          disabled={!canApplySpecialDiscount || applyingSpecialDiscount}
+                          className="flex-1 rounded-xl bg-amber-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {applyingSpecialDiscount ? "Applying…" : "Apply discount"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
+
             {processingOrder.is_public_order && (
               <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 mb-6 space-y-3">
                 <p className="text-[9px] font-black text-amber-700 uppercase tracking-widest">
@@ -1046,17 +1276,6 @@ export default function CashierDashboard() {
                 ) : (
                   <>
                     <div className="flex gap-3">
-                      <button onClick={() => setProcessingOrder(null)} className="flex-1 py-4 text-zinc-500 font-black uppercase text-[10px]">
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() => window.print()}
-                        className="flex-1 py-4 border border-black/10 text-black rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-2"
-                      >
-                        <Printer size={14} /> Print
-                      </button>
-                    </div>
-                    <div className="flex gap-3">
                       <button
                         onClick={() => setRejecting(true)}
                         className="flex-1 py-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-2"
@@ -1144,6 +1363,7 @@ export default function CashierDashboard() {
           }}
         />
       )}
+      <ReceiptPrint receipt={confirmedReceipt} onClose={() => setConfirmedReceipt(null)} />
     </div>
   );
 }
@@ -1251,7 +1471,7 @@ function LiveOrderCard({ order, onConfirm, onDelivery }) {
   );
 }
 
-// ─── FORWARDED CREDIT CARD (unchanged – amounts now full) ─────────────────────
+// ─── FORWARDED CREDIT CARD ─────────────────────
 function ForwardedCreditCard({ order }) {
   return (
     <div className="bg-purple-50 border border-purple-200 rounded-[2.5rem] p-5 flex items-center justify-between gap-4 flex-wrap opacity-70">
@@ -1281,7 +1501,7 @@ function ForwardedCreditCard({ order }) {
   );
 }
 
-// ─── HISTORY CARD (full amounts) ─────────────────────────────────────────────
+// ─── HISTORY CARD ─────────────────────────────────────────────
 function HistoryCard({ item }) {
   const { color, icon } = methodStyle(item.method);
   const isPartiallySettled = item.status === "PartiallySettled";
@@ -1350,7 +1570,7 @@ function HistoryCard({ item }) {
   );
 }
 
-// ─── SHIFT SUMMARY MODAL (full amounts) ─────────────────────────────────────
+// ─── SHIFT SUMMARY MODAL ─────────────────────────────────────
 function ShiftSummaryModal({ data, onClose, onFinalize, isFinalizing }) {
   if (!data) return null;
   return (

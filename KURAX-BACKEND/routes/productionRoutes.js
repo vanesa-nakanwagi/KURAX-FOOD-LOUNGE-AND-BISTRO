@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 import pool from '../db.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import { hashStaffPin, verifyStaffPin } from '../helpers/staffPin.js';
-import { refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
+import {
+  notifyCashierOfReadyPublicOrder,
+  refreshPublicOrderPreparationStatus,
+} from '../helpers/publicOrderWorkflow.js';
 import notificationService from '../helpers/notificationService.js';
 import { syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
 
@@ -144,7 +147,7 @@ function canAccessStation(actor, station, allowManagement = true) {
   );
 }
 
-async function ensureTicketWork(client, station) {
+export async function ensureTicketWork(client, station) {
   const { table } = STATIONS[station];
   await client.query(
     `WITH changed AS (
@@ -276,7 +279,7 @@ router.post('/work/:workId/claim', async (req, res) => {
     const staffResult = await pool.query(
       `SELECT id, name, pin_salt, pin_hash FROM public.staff
        WHERE is_active=true AND role=ANY($1::text[])`,
-      [stationConfig.roles]
+      [stationConfig.roles.concat(stationConfig.oversight)]
     );
     const matches = [];
     for (const staff of staffResult.rows) {
@@ -359,6 +362,7 @@ router.patch('/work/:workId/status', async (req, res) => {
   }
 
   const client = await pool.connect();
+  let clientReleased = false;
   try {
     await client.query('BEGIN');
     const locatorResult = await client.query(
@@ -460,31 +464,12 @@ router.patch('/work/:workId/status', async (req, res) => {
         becameReady = readyResult.rows[0] || null;
       }
     }
-    await refreshPublicOrderPreparationStatus(work.order_id, client);
+    const publicOrderStatus = await refreshPublicOrderPreparationStatus(work.order_id, client);
     await client.query('COMMIT');
-    if (status === 'Preparing' && work.staff_id) {
-      try {
-        const orderResult = await pool.query(
-          'SELECT staff_id, table_name FROM public.orders WHERE id=$1',
-          [work.order_id]
-        );
-        const waiterId = orderResult.rows[0]?.staff_id;
-        if (waiterId) {
-          const stationName = work.station === 'bar' ? 'Bar' : work.station === 'barista' ? 'Barista' : 'Kitchen';
-          void notificationService.sendToUser(waiterId, {
-            type: 'PRODUCTION_STARTED',
-            title: `${stationName} Started Preparation`,
-            body: `${req.actor.name} started ${work.item_name} for Order #${work.order_id}${orderResult.rows[0]?.table_name ? ` · Table ${orderResult.rows[0].table_name}` : ''}.`,
-            department: stationName,
-            referenceId: work.order_id,
-            link: `/staff/waiter?order=${work.order_id}`,
-          }).catch((notificationError) => {
-            console.error('Production start notification failed:', notificationError.message);
-          });
-        }
-      } catch (notificationError) {
-        console.error('Production start notification lookup failed:', notificationError.message);
-      }
+    client.release();
+    clientReleased = true;
+    if (publicOrderStatus === 'Ready') {
+      await notifyCashierOfReadyPublicOrder(notificationService, work.order_id);
     }
     res.json({ ...updated.rows[0], ticket_ready: Boolean(becameReady) });
   } catch (err) {
@@ -492,7 +477,7 @@ router.patch('/work/:workId/status', async (req, res) => {
     console.error('Production status update error:', err.message);
     res.status(500).json({ error: 'Could not update production status.' });
   } finally {
-    client.release();
+    if (!clientReleased) client.release();
   }
 });
 
@@ -640,11 +625,17 @@ router.get('/history', async (req, res) => {
   }
 
   try {
+    const stationsToSync = station
+      ? [station]
+      : Object.keys(STATIONS).filter((stationName) => canAccessStation(req.actor, stationName));
+    await Promise.all(stationsToSync.map((stationName) => ensureTicketWork(pool, stationName)));
     const result = await pool.query(
       `SELECT work.id AS work_id, work.station, work.order_id, work.ticket_id, work.item_index,
               work.item_name, work.quantity, work.completed_quantity, work.status,
               work.claimed_at, work.started_at, work.completed_at, work.staff_id,
               COALESCE(staff.name, work.staff_name) AS staff_name,
+              COALESCE(staff.name, work.staff_name, 'Unclaimed') AS claimed_by,
+              item_price.unit_price AS item_price,
               COALESCE(ticket.table_name, work.table_name) AS table_name,
               COALESCE(ticket.created_at, work.order_created_at, work.created_at) AS order_created_at,
               work.item_notes
@@ -653,23 +644,47 @@ router.get('/history', async (req, res) => {
        LEFT JOIN public.kitchen_tickets ticket ON work.station='kitchen' AND ticket.id=work.ticket_id
        LEFT JOIN public.barman_tickets bar_ticket ON work.station='bar' AND bar_ticket.id=work.ticket_id
        LEFT JOIN public.barista_tickets barista_ticket ON work.station='barista' AND barista_ticket.id=work.ticket_id
+       LEFT JOIN LATERAL (
+         SELECT CASE
+                  WHEN COALESCE(item.value->>'price', item.value->>'unit_price') ~ '^[0-9]+(\\.[0-9]+)?$'
+                    THEN COALESCE(item.value->>'price', item.value->>'unit_price')::numeric
+                  ELSE NULL
+                END AS unit_price
+         FROM jsonb_array_elements(COALESCE(ticket.items, bar_ticket.items, barista_ticket.items, '[]'::jsonb))
+           WITH ORDINALITY AS item(value, ordinality)
+         WHERE COALESCE(NULLIF(item.value->>'_orderItemIndex', '')::integer, item.ordinality - 1) = work.item_index
+         LIMIT 1
+       ) item_price ON true
        WHERE ($1::integer IS NULL OR work.staff_id=$1)
-         AND (work.claimed_at AT TIME ZONE 'Africa/Kampala') >= $2::date
-         AND (work.claimed_at AT TIME ZONE 'Africa/Kampala') < ($3::date + INTERVAL '1 day')
+         AND (work.claimed_at IS NOT NULL OR ($1::integer IS NULL AND work.status='Voided'))
+         AND (CASE WHEN work.status='Voided' THEN work.updated_at
+                   ELSE COALESCE(work.claimed_at, work.order_created_at, work.created_at) END
+              AT TIME ZONE 'Africa/Kampala') >= $2::date
+         AND (CASE WHEN work.status='Voided' THEN work.updated_at
+                   ELSE COALESCE(work.claimed_at, work.order_created_at, work.created_at) END
+              AT TIME ZONE 'Africa/Kampala') < ($3::date + INTERVAL '1 day')
          AND ($4::text IS NULL OR work.station=$4)
-       ORDER BY work.claimed_at DESC`,
+       ORDER BY COALESCE(work.claimed_at, work.updated_at) DESC`,
       [staffId, from, to, station]
     );
     res.json({
       staff_id: staffId,
       records: result.rows,
       totals: {
-        items_claimed: result.rows.length,
+        items_claimed: result.rows.filter((item) => item.staff_id != null).length,
         items_started: result.rows.filter((item) => item.started_at).length,
         items_completed: result.rows.filter((item) => item.status === 'Completed').length,
-        orders_handled: new Set(result.rows.map((item) => item.order_id)).size,
+        orders_handled: new Set(result.rows.filter((item) => item.staff_id != null).map((item) => item.order_id)).size,
         orders_completed: new Set(result.rows.filter((item) => item.status === 'Completed').map((item) => item.order_id)).size,
-        quantity_claimed: result.rows.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+        quantity_claimed: result.rows.reduce((sum, item) =>
+          sum + (item.staff_id == null ? 0 : Number(item.quantity || 0)), 0),
+        production_value: result.rows.reduce((sum, item) =>
+          sum + (item.staff_id == null || item.item_price == null ? 0 : Number(item.item_price) * Number(item.quantity || 0)), 0),
+        items_voided: result.rows.filter((item) => item.status === 'Voided').length,
+        quantity_voided: result.rows.reduce((sum, item) =>
+          sum + (item.status === 'Voided' ? Number(item.quantity || 0) : 0), 0),
+        voided_total: result.rows.reduce((sum, item) =>
+          sum + (item.status === 'Voided' ? Number(item.item_price || 0) * Number(item.quantity || 0) : 0), 0),
         quantity_completed: result.rows.reduce((sum, item) =>
           sum + (['Cancelled', 'Voided'].includes(item.status) ? 0 : Number(item.completed_quantity || 0)), 0),
       },

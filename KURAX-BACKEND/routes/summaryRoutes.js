@@ -61,7 +61,7 @@ router.get('/today', async (req, res) => {
     const airtel  = Number(row.total_airtel  || 0);
     const settled = Number(row.total_settled_credits || 0);
 
-    const calculatedGross = cash + card + mtn + airtel + settled;
+    const calculatedGross = Number(row.total_gross ?? (cash + card + mtn + airtel));
 
     res.json({
       summary_date:   today,

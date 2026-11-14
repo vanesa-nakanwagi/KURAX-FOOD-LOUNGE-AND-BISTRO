@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FileText, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
 import API_URL from '../../config/api';
+import { cashierAuthHeaders } from './cashierApi';
 
 const CATEGORIES = [
   'Rent', 'Staff Wages', 'Stock / Supplies', 'Utilities',
@@ -18,7 +19,7 @@ function formatDate(value) {
   return value ? new Date(`${String(value).slice(0, 10)}T00:00:00`).toLocaleDateString() : '';
 }
 
-export default function CashierExpensePanel({ user }) {
+export default function CashierExpensePanel() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -37,15 +38,14 @@ export default function CashierExpensePanel({ user }) {
     const response = await fetch(`${API_URL}/api/cashier-expenses${path}`, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${user?.token || ''}`,
+        ...cashierAuthHeaders(true),
         ...options.headers,
       },
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || 'Expense request failed.');
     return data;
-  }, [user?.token]);
+  }, []);
 
   const loadEntries = useCallback(async () => {
     setLoading(true);

@@ -22,6 +22,14 @@ export function isSoldOrderItem(item = {}) {
   return item._rowPaid === true && !isCredit;
 }
 
+export function directStockQuantity(itemQuantity, item = {}, stock = {}) {
+  const explicitUnit = item.inventory_unit || item.stock_unit || item.sale_unit;
+  if (explicitUnit) {
+    return convertInventoryQuantity(itemQuantity, explicitUnit, stock.unit, stock);
+  }
+  return Number(itemQuantity);
+}
+
 function stationForItem(item = {}) {
   const station = String(item.station || '').trim().toUpperCase();
   if (station === 'BARISTA' || station === 'BARMAN' || station === 'BAR' || station === 'KITCHEN') return station === 'BARMAN' ? 'BAR' : station;
@@ -38,12 +46,147 @@ function businessDateInKampala() {
 export async function consumeSoldOrderItems({ orderId, items, businessDate = businessDateInKampala(), createdBy = 'System' }) {
   const parsedOrderId = Number(orderId);
   if (!Number.isInteger(parsedOrderId) || parsedOrderId <= 0 || !Array.isArray(items)) {
-    throw new Error('A valid order ID and item list are required for recipe consumption.');
+    throw new Error('A valid order ID and item list are required for inventory consumption.');
   }
 
-  async function consumeSingleRecipe({
+  async function consumeDirectItem({ client, orderItemIndex, item, menuName, itemQuantity, station, itemKey }) {
+    const matches = await client.query(
+      `SELECT id
+       FROM public.inventory_items
+       WHERE is_active = true
+         AND LOWER(REGEXP_REPLACE(BTRIM(item_name), '[[:space:]]+', ' ', 'g'))
+             = LOWER(REGEXP_REPLACE(BTRIM($1), '[[:space:]]+', ' ', 'g'))
+       ORDER BY id
+       LIMIT 2`,
+      [menuName]
+    );
+    if (!matches.rows.length) {
+      return { order_item: menuName, status: 'MISSING_INVENTORY_ITEM', message: 'No matching active inventory item; no stock was deducted.' };
+    }
+    if (matches.rows.length > 1) {
+      return { order_item: menuName, status: 'AMBIGUOUS_INVENTORY_ITEM', message: 'Multiple inventory items match this menu item; no stock was deducted.' };
+    }
+
+    const stockResult = await client.query(
+      `SELECT id, item_name, unit, purchase_unit, purchase_conversion_factor,
+              current_quantity, unit_cost, location_id, station
+       FROM public.inventory_items
+       WHERE id = $1 AND is_active = true
+       FOR UPDATE`,
+      [matches.rows[0].id]
+    );
+    const stock = stockResult.rows[0];
+    if (!stock) {
+      return { order_item: menuName, status: 'MISSING_INVENTORY_ITEM', message: 'The matching inventory item is no longer active; no stock was deducted.' };
+    }
+
+    let requiredQuantity;
+    try {
+      requiredQuantity = directStockQuantity(itemQuantity, item, stock);
+    } catch (error) {
+      return { order_item: menuName, status: 'INVALID_INVENTORY_UNIT', message: error.message };
+    }
+    if (!Number.isFinite(requiredQuantity) || requiredQuantity <= 0) {
+      return { order_item: menuName, status: 'INVALID_ORDER_ITEM', message: 'The inventory deduction quantity must be positive.' };
+    }
+
+    const roundedQuantity = await client.query(
+      `SELECT ROUND($1::numeric, 3)::numeric(12,3)::text AS quantity`,
+      [String(requiredQuantity)]
+    );
+    const quantity = roundedQuantity.rows[0].quantity;
+    if (Number(quantity) <= 0) {
+      return { order_item: menuName, status: 'INVALID_ORDER_ITEM', message: 'The inventory deduction quantity is below supported precision.' };
+    }
+
+    const shortageResult = await client.query(
+      `SELECT current_quantity < $1::numeric AS is_short,
+              GREATEST($1::numeric - current_quantity, 0)::numeric(12,3)::text AS shortage
+       FROM public.inventory_items
+       WHERE id = $2`,
+      [quantity, stock.id]
+    );
+    if (shortageResult.rows[0]?.is_short) {
+      return {
+        order_item: menuName,
+        status: 'INSUFFICIENT_STOCK',
+        ingredient: stock.item_name,
+        shortage: shortageResult.rows[0].shortage,
+        available: String(stock.current_quantity || 0),
+      };
+    }
+
+    const unitCost = Number(stock.unit_cost || 0);
+    const costResult = await client.query(
+      `SELECT CASE WHEN $2::numeric > 0
+        THEN ROUND($1::numeric * $2::numeric, 2)::numeric(12,2)::text
+        ELSE '0' END AS cost`,
+      [quantity, String(unitCost)]
+    );
+    const lineCost = costResult.rows[0].cost;
+    const reference = `ORDER-${parsedOrderId}-ITEM-${orderItemIndex}-DIRECT-${stock.id}`;
+    await client.query(
+      `UPDATE public.inventory_items
+       SET current_quantity = current_quantity - $1,
+           inventory_value = (current_quantity - $1) * unit_cost,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [quantity, stock.id]
+    );
+    await client.query(
+      `INSERT INTO public.inventory_consumptions
+         (order_id, order_item_id, recipe_id, recipe_version, item_id, quantity, unit, station, business_date, created_by, reference_number)
+       VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, $7, $8, $9)`,
+      [parsedOrderId, itemKey, stock.id, quantity, normalizeUnit(stock.unit), station, businessDate, createdBy, reference]
+    );
+    await client.query(
+      `INSERT INTO public.inventory_transactions
+         (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value,
+          source_location_id, station, order_id, business_date, created_by, notes)
+       VALUES ($1, $2, 'CONSUMPTION', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        stock.id,
+        reference,
+        quantity,
+        normalizeUnit(stock.unit),
+        String(unitCost),
+        lineCost,
+        stock.location_id,
+        station,
+        parsedOrderId,
+        businessDate,
+        createdBy,
+        unitCost > 0 ? `Direct sale consumption for ${menuName}` : `COST_REVIEW: missing unit cost for ${stock.item_name}`,
+      ]
+    );
+    if (Number(lineCost) > 0) {
+      await createJournalEntry({
+        queryable: client,
+        entryDate: businessDate,
+        description: `COGS for ${menuName}`,
+        sourceTransaction: reference,
+        postedBy: createdBy,
+        reference: `COGS-${reference}`,
+        lines: [
+          { accountCode: '5010', accountName: 'Cost of Goods Sold', debit: Number(lineCost) },
+          { accountCode: '1201', accountName: 'Inventory', credit: Number(lineCost) },
+        ],
+      });
+    }
+    return {
+      order_item: menuName,
+      inventory_item: stock.item_name,
+      quantity,
+      unit: normalizeUnit(stock.unit),
+      cost: Number(lineCost),
+      status: unitCost > 0 ? 'CONSUMED' : 'CONSUMED_COST_REVIEW',
+    };
+  }
+
+  async function consumeSingleMenuItem({
     client,
     orderItemIndex,
+    item,
     menuName,
     menuItemId,
     itemQuantity,
@@ -53,16 +196,38 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
     const recipeResult = await client.query(
       `SELECT * FROM public.inventory_recipes
        WHERE status = 'ACTIVE'
-         AND UPPER(station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END)
-         AND (($2::int IS NOT NULL AND menu_item_id = $2) OR LOWER(menu_name) = LOWER($3))
-       ORDER BY CASE WHEN menu_item_id = $2 THEN 0 ELSE 1 END, version_number DESC
+         AND (($2::int IS NOT NULL AND menu_item_id = $2)
+           OR LOWER(REGEXP_REPLACE(BTRIM(menu_name), '[[:space:]]+', ' ', 'g'))
+              = LOWER(REGEXP_REPLACE(BTRIM($3), '[[:space:]]+', ' ', 'g')))
+       ORDER BY CASE WHEN menu_item_id = $2 THEN 0 ELSE 1 END,
+                CASE WHEN UPPER(station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END) THEN 0 ELSE 1 END,
+                version_number DESC
        LIMIT 1 FOR SHARE`,
       [station, Number.isInteger(menuItemId) && menuItemId > 0 ? menuItemId : null, menuName]
     );
     const recipe = recipeResult.rows[0];
     if (!recipe) {
-      return { order_item: menuName, status: 'MISSING_RECIPE', message: 'Recipe not configured; no stock was deducted.' };
+      const configuredRecipe = await client.query(
+        `SELECT status
+         FROM public.inventory_recipes
+         WHERE (($1::int IS NOT NULL AND menu_item_id = $1)
+           OR LOWER(REGEXP_REPLACE(BTRIM(menu_name), '[[:space:]]+', ' ', 'g'))
+              = LOWER(REGEXP_REPLACE(BTRIM($2), '[[:space:]]+', ' ', 'g')))
+         ORDER BY version_number DESC
+         LIMIT 1
+         FOR SHARE`,
+        [Number.isInteger(menuItemId) && menuItemId > 0 ? menuItemId : null, menuName]
+      );
+      if (configuredRecipe.rows.length) {
+        return {
+          order_item: menuName,
+          status: 'INACTIVE_RECIPE',
+          message: 'A recipe exists but is not active; no stock was deducted.',
+        };
+      }
+      return consumeDirectItem({ client, orderItemIndex, item, menuName, itemQuantity, station, itemKey });
     }
+    const recipeStation = stationForItem({ station: recipe.station });
 
     const ingredientResult = await client.query(
       `SELECT ri.id AS recipe_ingredient_id, ri.ingredient_item_id, ri.ingredient_name,
@@ -164,14 +329,14 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
         `INSERT INTO public.inventory_consumptions
            (order_id, order_item_id, recipe_id, recipe_version, item_id, quantity, unit, station, business_date, created_by, reference_number)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [parsedOrderId, itemKey, recipe.id, String(recipe.version_number || 1), entry.stock.id, entry.quantity, normalizeUnit(entry.stock.unit), station, businessDate, createdBy, reference]
+        [parsedOrderId, itemKey, recipe.id, String(recipe.version_number || 1), entry.stock.id, entry.quantity, normalizeUnit(entry.stock.unit), recipeStation, businessDate, createdBy, reference]
       );
       await client.query(
         `INSERT INTO public.inventory_transactions
            (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value, source_location_id, station, order_id, recipe_id, recipe_version, business_date, created_by, notes)
          SELECT ii.id, $1, 'CONSUMPTION', $2, $3, $4, $5, ii.location_id, $6, $7, $8, $9, $10, $11, $12
          FROM public.inventory_items ii WHERE ii.id = $13`,
-        [reference, entry.quantity, normalizeUnit(entry.stock.unit), unitCost, lineCost, station, parsedOrderId, recipe.id, String(recipe.version_number || 1), businessDate, createdBy, unitCost > 0 ? `Recipe consumption for ${menuName}` : `COST_REVIEW: missing unit cost for ${entry.stock.item_name}`, entry.stock.id]
+        [reference, entry.quantity, normalizeUnit(entry.stock.unit), unitCost, lineCost, recipeStation, parsedOrderId, recipe.id, String(recipe.version_number || 1), businessDate, createdBy, unitCost > 0 ? `Recipe consumption for ${menuName}` : `COST_REVIEW: missing unit cost for ${entry.stock.item_name}`, entry.stock.id]
       );
       if (lineCost > 0) {
         await createJournalEntry({
@@ -234,9 +399,18 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
         for (const component of comboComponents) {
           const resolvedName = component.menu_name || menuName;
           const resolvedItemId = Number(component.menu_item_id || item.menu_item_id || item.menuId || item.menu_id || item.id || 0);
-          const componentResult = await consumeSingleRecipe({
+          const componentItem = {
+            ...item,
+            menu_name: resolvedName,
+            name: resolvedName,
+            inventory_unit: component.inventory_unit || item.inventory_unit,
+            stock_unit: component.stock_unit || item.stock_unit,
+            sale_unit: component.sale_unit || item.sale_unit,
+          };
+          const componentResult = await consumeSingleMenuItem({
             client,
             orderItemIndex: index,
+            item: componentItem,
             menuName: resolvedName,
             menuItemId: resolvedItemId,
             itemQuantity: Number(component.quantity || 1),
@@ -261,9 +435,10 @@ export async function consumeSoldOrderItems({ orderId, items, businessDate = bus
       }
 
       const menuItemId = Number(item.menu_item_id || item.menuId || item.menu_id || item.id);
-      const result = await consumeSingleRecipe({
+      const result = await consumeSingleMenuItem({
         client,
         orderItemIndex: index,
+        item,
         menuName,
         menuItemId,
         itemQuantity: quantity,

@@ -29,12 +29,13 @@ function parseItems(items) {
   return [];
 }
 
-export function getRoutableItemsForStation(items, stationKey) {
+export function getRoutableItemsForStation(items, stationKey, { publicOrder = false } = {}) {
   const station = STATIONS[stationKey];
   if (!station) throw new Error(`Unknown station: ${stationKey}`);
 
   return parseItems(items)
     .map((item, index) => ({ ...item, _orderItemIndex: index }))
+    .filter((item) => !publicOrder || item.payment_confirmed === true)
     .filter((item) => item.payment_confirmed === true || item.station_routing_requested === true)
     .filter((item) => station.matches(String(item.station || (stationKey === 'kitchen' ? 'kitchen' : '')).trim().toLowerCase()));
 }
@@ -63,6 +64,7 @@ export async function syncRoutableStationTickets(queryable, stationKey) {
      WHERE LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided', 'closed', 'served')
        AND COALESCE(o.day_cleared, false) = false
        AND COALESCE(o.shift_cleared, false) = false
+       AND (o.public_order_ref IS NULL OR o.payment_confirmed = true)
        AND (
          expanded.item->'payment_confirmed' = 'true'::jsonb
          OR (
@@ -85,4 +87,10 @@ export async function syncRoutableStationTickets(queryable, stationKey) {
         OR ticket.items IS DISTINCT FROM EXCLUDED.items
         OR ticket.total IS DISTINCT FROM EXCLUDED.total`
   );
+}
+
+export async function syncRoutableStationTicketsForAllStations(queryable) {
+  for (const stationKey of Object.keys(STATIONS)) {
+    await syncRoutableStationTickets(queryable, stationKey);
+  }
 }

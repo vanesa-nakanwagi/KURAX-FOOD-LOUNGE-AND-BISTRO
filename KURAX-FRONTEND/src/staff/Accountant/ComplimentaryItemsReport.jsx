@@ -60,7 +60,6 @@ export default function ComplimentaryItemsReport() {
   const [corrections, setCorrections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [reviewing, setReviewing] = useState(null);
 
   const load = useCallback(async (selectedRange = range) => {
     setLoading(true);
@@ -87,30 +86,6 @@ export default function ComplimentaryItemsReport() {
   const selectPeriod = (nextPeriod) => {
     setPeriod(nextPeriod);
     if (nextPeriod !== "custom") setRange(dateRangeFor(nextPeriod, today));
-  };
-
-  const reviewCorrection = async (id, decision) => {
-    const reviewNote = window.prompt(
-      decision === "approve" ? "Optional approval note:" : "Reason for rejecting this correction:"
-    );
-    if (reviewNote === null) return;
-    if (decision === "reject" && !reviewNote.trim()) {
-      window.alert("Enter a reason before rejecting the correction.");
-      return;
-    }
-    setReviewing(id);
-    setError("");
-    try {
-      await requestJSON(`${API_URL}/api/orders/complimentary-corrections/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ decision, reviewNote }),
-      });
-      await load(range);
-    } catch (reviewError) {
-      setError(reviewError.message || "Unable to review correction.");
-    } finally {
-      setReviewing(null);
-    }
   };
 
   const totals = report?.totals || {};
@@ -238,33 +213,16 @@ export default function ComplimentaryItemsReport() {
 
       {corrections.length > 0 && (
         <section className="space-y-3">
-          <h3 className="text-lg font-black uppercase">Pending corrections</h3>
+          <h3 className="text-lg font-black uppercase">Awaiting cashier</h3>
           {corrections.map((request) => (
             <article key={request.id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
               <div>
                 <p className="font-bold">Order #{request.order_id} · {request.table_name || "WALK-IN"} · {request.item?.name || "Order item"}</p>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Requested waived amount: {formatMoney(request.requested_waived_amount)} · by {request.requester_name || "Staff"} · {request.reason || "No reason supplied"}
+                  Requested by {request.requester_name || "Staff"} · {request.reason || "No reason supplied"}
                 </p>
               </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={reviewing === request.id}
-                  onClick={() => void reviewCorrection(request.id, "approve")}
-                  className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:opacity-50"
-                >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  disabled={reviewing === request.id}
-                  onClick={() => void reviewCorrection(request.id, "reject")}
-                  className="rounded-lg bg-red-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:opacity-50"
-                >
-                  Reject
-                </button>
-              </div>
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-[9px] font-black uppercase text-amber-800">Cashier decision required</span>
             </article>
           ))}
         </section>

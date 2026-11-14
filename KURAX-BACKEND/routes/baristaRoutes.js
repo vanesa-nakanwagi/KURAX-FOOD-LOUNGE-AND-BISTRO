@@ -1,25 +1,9 @@
-/**
- * baristaRoutes.js
- * ─────────────────────────────────────────────────────────────────────────────
- * Mount in server.js:
- *   import baristaRoutes from './routes/baristaRoutes.js';
- *   app.use('/api/barista', baristaRoutes);
- *
- * Endpoints
- * ─────────────────────────────────────────────────────────────────────────────
- *  POST   /tickets                      upsert ticket when order enters barista station
- *  GET    /tickets?date=YYYY-MM-DD      fetch tickets for a date (default today Kampala)
- *  GET    /tickets/summary?date=…       daily report — count, cups, barista breakdown
- *  PATCH  /tickets/:id/status           Pending → Preparing → Ready
- *  PATCH  /tickets/:id/assign-barista   assign a barista to one drink item
- *  PATCH  /clear-shift                  archive active tickets (End Shift)
- */
 
 import express from 'express';
 import pool    from '../db.js';
 import notificationService from '../helpers/notificationService.js';
 import { resolveNotificationUser } from '../middleware/notificationAuth.js';
-import { refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
+import { notifyCashierOfReadyPublicOrder, refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
 import { getRoutableStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
 import { syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
 
@@ -41,10 +25,19 @@ router.post('/tickets', async (req, res) => {
   }
 
   try {
-    const orderResult = await pool.query('SELECT items FROM public.orders WHERE id=$1', [order_id]);
+    const orderResult = await pool.query(
+      'SELECT items, public_order_ref, payment_confirmed FROM public.orders WHERE id=$1',
+      [order_id]
+    );
     if (!orderResult.rows.length) return res.status(404).json({ error: 'Order not found.' });
-    const orderItems = Array.isArray(orderResult.rows[0].items) ? orderResult.rows[0].items : [];
-    const stationItems = getRoutableStationItems(orderItems, orderItems)
+    const order = orderResult.rows[0];
+    if (order.public_order_ref && order.payment_confirmed !== true) {
+      return res.status(409).json({ error: 'Website orders can only be sent to stations after cashier payment confirmation.' });
+    }
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    const stationItems = getRoutableStationItems(orderItems, orderItems, {
+      publicOrder: Boolean(order.public_order_ref),
+    })
       .filter(item => String(item.station || '').toLowerCase() === 'barista');
     if (!stationItems.length) {
       return res.status(409).json({ error: 'This order has no items routed to the barista station.' });
@@ -154,7 +147,7 @@ router.get('/tickets', async (req, res) => {
       ? await pool.query(
         `SELECT t.* FROM barista_tickets t
          JOIN public.orders o ON o.id = t.order_id
-         WHERE t.status IN ('Pending', 'Preparing')
+         WHERE t.status IN ('Pending', 'Preparing', 'Ready')
            AND t.cleared_at IS NULL
            AND COALESCE(o.day_cleared, false) = false
            AND COALESCE(o.shift_cleared, false) = false
@@ -198,7 +191,10 @@ router.patch('/tickets/:id/status', async (req, res) => {
       [status, id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Ticket not found' });
-    await refreshPublicOrderPreparationStatus(result.rows[0].order_id, pool);
+    const publicOrderStatus = await refreshPublicOrderPreparationStatus(result.rows[0].order_id, pool);
+    if (publicOrderStatus === 'Ready') {
+      await notifyCashierOfReadyPublicOrder(notificationService, result.rows[0].order_id);
+    }
     if (status === 'Ready' && actor?.scope === 'restaurant' && ['BARISTA', 'BARISTA_HOD'].includes(actor.role)) {
       try {
         const orderResult = await pool.query('SELECT staff_id FROM public.orders WHERE id = $1', [result.rows[0].order_id]);

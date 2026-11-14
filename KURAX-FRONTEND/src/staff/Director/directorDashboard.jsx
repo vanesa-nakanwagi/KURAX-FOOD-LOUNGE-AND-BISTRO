@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, BarChart3, CreditCard,
   History, Target, Bell, Menu, X, LogOut, Bike,
-  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet, CircleDollarSign, ClipboardList, Flame, Gift
+  BookOpen, CheckCircle2, XCircle, Clock, Hourglass, Wallet, CircleDollarSign, ClipboardList, Flame
 } from "lucide-react";
 
 // ── Local components ──────────────────────────────────────────────────────────
@@ -28,7 +28,8 @@ import AccountingAuditTrail from "../components/AccountingAuditTrail";
 import ReportsPanel from "../Accountant/ReportsPanel";
 import ShishaSalesReports from "../Shisha/ShishaSalesReports";
 import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
-import ComplimentaryItemsReport from "../Accountant/ComplimentaryItemsReport";
+import DiscountAuditReport from "../Accountant/DiscountAuditReport";
+import SpecialDiscountSettings from "./components/SpecialDiscountSettings";
 
 // ── CREDIT STATUS BADGE COMPONENT ────────────────────────────────────────────
 function CreditStatusBadge({ status }) {
@@ -56,7 +57,7 @@ function CreditStatusBadge({ status }) {
 const NAV = [
   { icon: <LayoutDashboard size={18} />, label: "Dashboard",  tab: "TARGETS"  },
   { icon: <BarChart3 size={18} />, label: "Menu Profitability", tab: "MENU_PROFITABILITY" },
-  { icon: <Gift size={18} />, label: "Complimentary Items", tab: "COMPLIMENTARY_ITEMS" },
+  { icon: <CircleDollarSign size={18} />, label: "Discount Controls", tab: "DISCOUNTS" },
   { icon: <Wallet size={18} />,       label: "Reconciliation", tab: "RECONCILIATION" },
   { icon: <CreditCard size={18} />,      label: "Finance & Credits",  tab: "FINANCES"  },
   { icon: <BarChart3 size={18} />,       label: "Staff Performance",   tab: "PERFORMANCE" },
@@ -70,7 +71,9 @@ const NAV = [
 
 export default function DirectorDashboard() {
   const navigate = useNavigate();
-  const [activeTab,       setActiveTab]   = useState("TARGETS");
+  const [activeTab,       setActiveTab]   = useState(() =>
+    new URLSearchParams(window.location.search).get("tab")?.toUpperCase() === "STAFF" ? "STAFF" : "TARGETS"
+  );
   const [isSidebarOpen,   setSidebarOpen] = useState(false);
   const [currentUser,     setCurrentUser] = useState(null);
   const [editingStaff,    setEditingStaff]   = useState(null);
@@ -105,15 +108,25 @@ export default function DirectorDashboard() {
 
   // ── Fetch staff ────────────────────────────────────────────────────────────
   useEffect(() => {
-    (async () => {
+    let active = true;
+    let timer;
+    const fetchStaff = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/staff`);
+        const res = await fetch(`${API_URL}/api/staff`, { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
-          setStaffList(Array.isArray(data) ? data : []);
+          if (active) setStaffList(Array.isArray(data) ? data : []);
         }
       } catch (e) { console.error("Staff pull failed:", e); }
-    })();
+      finally {
+        if (active) timer = setTimeout(fetchStaff, 10000);
+      }
+    };
+    fetchStaff();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [setStaffList]);
 
   // ── Fetch credits data ─────────────────────────────────────────────────────
@@ -255,11 +268,17 @@ export default function DirectorDashboard() {
   const handleToggle = async (id, current) => {
     try {
       const res = await fetch(`${API_URL}/api/staff/toggle-permission/${id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentUser?.token || ''}`,
+        },
         body: JSON.stringify({ is_permitted: !current }),
       });
-      if (res.ok) setStaffList(prev => prev.map(s => s.id === id ? { ...s, is_permitted: !current } : s));
-      else { const e = await res.json(); alert(e.error || "Permission update failed."); }
+      const result = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setStaffList(prev => prev.map(s => s.id === id ? { ...s, ...result.staff } : s));
+      } else alert(result.error || "Permission update failed.");
     } catch { alert("Connection error."); }
   };
 
@@ -443,7 +462,12 @@ export default function DirectorDashboard() {
             {activeTab === "DEPARTMENT_REPORTS" && <DepartmentHod department="all" embedded />}
             {activeTab === "SHISHA_SALES" && <ShishaSalesReports />}
             {activeTab === "MENU_PROFITABILITY" && <ReportsPanel hideFinancialTabs />}
-            {activeTab === "COMPLIMENTARY_ITEMS" && <ComplimentaryItemsReport />}
+            {activeTab === "DISCOUNTS" && (
+              <div className="space-y-8">
+                <SpecialDiscountSettings />
+                <DiscountAuditReport />
+              </div>
+            )}
             {activeTab === "AUDIT_TRAIL" && <AccountingAuditTrail />}
           </div>
         </main>

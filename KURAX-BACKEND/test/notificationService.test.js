@@ -65,3 +65,18 @@ test('normalizeDeviceRegistration accepts already-normalized snake_case values',
   assert.equal(normalized.permission_status, 'granted');
   assert.equal(normalized.notifications_enabled, true);
 });
+
+test('one Firebase installation can be registered separately to different staff accounts', () => {
+  const payload = {
+    installationId: 'shared-device',
+    fcmToken: 'shared-token',
+    permissionStatus: 'granted',
+  };
+  const waiter = normalizeDeviceRegistration(payload, { scope: 'restaurant', id: 7 });
+  const chef = normalizeDeviceRegistration(payload, { scope: 'restaurant', id: 13 });
+
+  assert.equal(waiter.installation_id, chef.installation_id);
+  assert.equal(waiter.fcm_token, chef.fcm_token);
+  assert.equal(waiter.user_id, 7);
+  assert.equal(chef.user_id, 13);
+});

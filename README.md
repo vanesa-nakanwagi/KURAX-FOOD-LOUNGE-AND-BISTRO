@@ -1,6 +1,20 @@
 # KURAX-FOOD-LOUNGE-AND-BISTRO
 A modern web platform for Kurax Food Lounge &amp; Bistro, designed to scale into menu management, reservations, staff roles, and content management.
 
+## Database Connectivity
+
+The app uses a local PostgreSQL database named `kurax_db` in Docker Compose. Its data is persisted in the `postgres_data` Docker volume. Set `POSTGRES_PASSWORD` in the root `.env` to a long random value; Compose publishes PostgreSQL on `DB_PORT` (5432 by default), and the backend connects to the private Compose database service. The hosted database is not used by the running app.
+
+To copy the existing Neon database before switching, set `NEON_DATABASE_URL` in the root `.env` to Neon’s **direct (non-pooled) PostgreSQL connection string**. The importer streams a full PostgreSQL archive into the empty local database, including schema objects and data, then verifies table lists and row counts. Pause writes to the hosted database during the copy. The import is one-time and refuses to overwrite a non-empty local database; it does not modify Neon.
+
+```powershell
+docker compose up -d database
+docker compose --profile migration run --rm database-import
+docker compose up --build -d
+```
+
+After the import succeeds, leave `NEON_DATABASE_URL` empty or remove it. Only the migration service reads it; the backend connects to local `kurax_db`.
+
 ## Shisha Department
 
 The Shisha workspace is available at `/shisha` and uses its own staff accounts, packages, orders, status history, payment requests, and payment records. Its packages are internal-only and are not part of the public menu API or restaurant cashier workflow. Shisha tables are created automatically when the backend starts.
@@ -26,7 +40,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 
 Keep this key secret, back it up securely, and use the same key on every backend instance. If the key is lost or changed, stored PINs cannot be retrieved, although sign-in continues to work; existing accounts need a PIN reset to make their PIN retrievable with the new key. Existing accounts created before this feature also need a PIN reset once the key is configured.
 
-Shisha staff PINs are emailed using the backend's Gmail mailer. Add these to `KURAX-BACKEND/.env` and restart the backend to enable delivery:
+Shisha and restaurant staff PIN emails use the same backend Gmail mailer. For Docker Compose, set these in the repository root `.env` (the Compose backend loads that file). For running the backend directly with Node, set them in `KURAX-BACKEND/.env` or the root `.env`, then restart the backend:
 
 ```env
 EMAIL_USER=your-sending-address@gmail.com

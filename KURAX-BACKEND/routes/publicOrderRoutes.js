@@ -13,6 +13,9 @@ import {
   normalizePublicCustomer,
 } from '../helpers/publicOrderValidation.js';
 import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
+import notificationService from '../helpers/notificationService.js';
+import { buildStationOrderNotifications } from '../helpers/stationOrderNotifications.js';
+import { syncRoutableStationTicketsForAllStations } from '../helpers/stationOrderTickets.js';
 import requireCashier from '../middleware/cashierAuth.js';
 
 const router = express.Router();
@@ -34,7 +37,9 @@ router.post('/payment-requests', async (req, res) => {
              FROM public.combos
              WHERE id = $1 AND website_published = true
                AND COALESCE(is_available, true) = true`
-          : `SELECT id, name, price + COALESCE(website_extra_fee, 0) AS price, category, station
+          : `SELECT id, name, price + COALESCE(website_extra_fee, 0) AS price, category, station,
+                      promotion_enabled, promotion_discount_type, promotion_discount_value,
+                      promotion_discount_percent, promotion_starts_at, promotion_ends_at
                FROM public.menus
                WHERE id = $1 AND website_published = true
                  AND COALESCE(is_available, true) = true`,
@@ -54,6 +59,7 @@ router.post('/payment-requests', async (req, res) => {
   const reference = `KX-${randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()}`;
   const paymentMethod = customer.paymentProvider === 'MTN' ? 'Momo-MTN' : 'Momo-Airtel';
   const client = await pool.connect();
+  let clientReleased = false;
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`public-order-request:${requestKey}`]);
@@ -116,6 +122,23 @@ router.post('/payment-requests', async (req, res) => {
       ]
     );
     await client.query('COMMIT');
+    client.release();
+    clientReleased = true;
+    try {
+      const notification = await notificationService.sendToRoles(['CASHIER'], {
+        type: 'PUBLIC_ORDER_PAYMENT_REQUEST',
+        title: 'New website order',
+        body: `${reference} from ${customer.customerName} is awaiting payment confirmation.`,
+        referenceId: queueId,
+        referenceType: 'cashier_queue',
+        link: '/cashier',
+      });
+      if (notification.error || notification.failed || notification.noRecipients) {
+        console.warn(`Public order cashier notification was not fully delivered for ${reference}:`, notification);
+      }
+    } catch (notificationError) {
+      console.error(`Public order cashier notification failed for ${reference}:`, notificationError.message);
+    }
     return res.status(201).json({
       orderReference: reference,
       amount: total,
@@ -130,7 +153,7 @@ router.post('/payment-requests', async (req, res) => {
     console.error('Public payment request creation failed:', error.message);
     return res.status(500).json({ error: 'Unable to create your payment request. Please try again.' });
   } finally {
-    client.release();
+    if (!clientReleased) client.release();
   }
 });
 
@@ -181,6 +204,7 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
   let committedOrderId;
   let committedItems;
   let transactionCommitted = false;
+  let clientReleased = false;
   try {
     await client.query('BEGIN');
     const queueResult = await client.query(
@@ -274,25 +298,6 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
       );
       committedOrderId = orderResult.rows[0].id;
 
-      const ticketTables = {
-        kitchen: 'public.kitchen_tickets',
-        barman: 'public.barman_tickets',
-        barista: 'public.barista_tickets',
-      };
-      for (const [station, stationOrderItems] of Object.entries(stationItems)) {
-        if (!stationOrderItems.length) continue;
-        const stationTotal = stationOrderItems.reduce(
-          (sum, item) => sum + Number(item.price || item.unit_price || 0) * (Number(item.quantity) || 1),
-          0
-        );
-        await client.query(
-          `INSERT INTO ${ticketTables[station]}
-             (order_id, table_name, staff_name, staff_role, items, total, status, ticket_date)
-           VALUES ($1, 'PUBLIC-WEB', 'Public Website', 'CUSTOMER', $2::jsonb, $3,
-                   'Pending', (NOW() AT TIME ZONE 'Africa/Kampala')::date)`,
-          [committedOrderId, JSON.stringify(stationOrderItems), stationTotal]
-        );
-      }
     } else {
       const orderResult = await client.query(
         `UPDATE public.orders
@@ -316,6 +321,7 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
       }
       committedOrderId = orderResult.rows[0].id;
     }
+    await syncRoutableStationTicketsForAllStations(client);
     committedItems = paidItems;
 
     await client.query(
@@ -365,6 +371,22 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
 
     await client.query('COMMIT');
     transactionCommitted = true;
+    client.release();
+    clientReleased = true;
+    for (const notification of buildStationOrderNotifications(
+      committedOrderId,
+      committedItems,
+      paymentRequest.public_order_ref
+    )) {
+      try {
+        const delivery = await notificationService.sendToRoles(notification.roles, notification.event);
+        if (delivery.error || delivery.failed || delivery.noRecipients) {
+          console.warn(`Public order ${notification.station} notification was not fully delivered for ${paymentRequest.public_order_ref}:`, delivery);
+        }
+      } catch (notificationError) {
+        console.error(`Public order ${notification.station} notification failed for ${paymentRequest.public_order_ref}:`, notificationError.message);
+      }
+    }
     return res.json({
       success: true,
       orderId: committedOrderId,
@@ -377,7 +399,7 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
       error: error.statusCode ? error.message : 'Payment confirmation failed. No order was finalized.',
     });
   } finally {
-    client.release();
+    if (!clientReleased) client.release();
     if (transactionCommitted && committedOrderId && committedItems) {
       try {
         const consumption = await consumeSoldOrderItems({

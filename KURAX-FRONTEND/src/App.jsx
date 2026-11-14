@@ -1,7 +1,6 @@
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import ScrollToHash from "./customer/components/home/ScrollToHash";
 import { useState, useEffect } from "react";
-import { installNotificationSessionSync } from './utils/notificationSessionSync';
 // Public Pages
 import HomePage from "./customer/pages/HomePage.jsx";
 import MenusPage from "./customer/pages/menuPage.jsx";
@@ -29,7 +28,92 @@ function InternalStaffNotifications() {
   const { pathname } = useLocation();
   const isShisha = pathname.startsWith('/shisha');
   const isStaffRoute = /^\/(director|cashier|staff\/(waiter|manager)|supervisor|accountant|kitchen|barman|barista|shisha)(\/|$)/.test(pathname);
-  return isStaffRoute ? <StaffNotificationControl isShisha={isShisha} /> : null;
+  return isStaffRoute ? <StaffNotificationControl key={isShisha ? 'shisha' : 'restaurant'} isShisha={isShisha} /> : null;
+}
+
+function getSessionExpiry(storageKey) {
+  const storedSession = localStorage.getItem(storageKey);
+  if (!storedSession) return null;
+
+  try {
+    const { token } = JSON.parse(storedSession);
+    const payload = token?.split('.')[1];
+    if (!payload) return 0;
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const claims = JSON.parse(window.atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')));
+    const expiresAt = Number(claims.exp) * 1000;
+    return Number.isFinite(expiresAt) ? expiresAt : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function SessionExpiryHandler() {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let timer;
+
+    function checkSessionExpiry() {
+      window.clearTimeout(timer);
+      let nextExpiry = Infinity;
+      let staffSessionExpired = false;
+      let sessionExpired = false;
+
+      for (const storageKey of ['kurax_user', 'kurax_cashier_session', 'kurax_shisha_session']) {
+        const expiresAt = getSessionExpiry(storageKey);
+        if (expiresAt === null) continue;
+
+        if (expiresAt <= Date.now()) {
+          sessionExpired = true;
+          if (storageKey === 'kurax_user' || storageKey === 'kurax_cashier_session') {
+            localStorage.removeItem('kurax_user');
+            localStorage.removeItem('kurax_cashier_session');
+            staffSessionExpired = true;
+          } else {
+            localStorage.removeItem(storageKey);
+          }
+        } else {
+          nextExpiry = Math.min(nextExpiry, expiresAt);
+        }
+      }
+
+      const onStaffRoute = (pathname.startsWith('/staff/') && !/^\/staff\/login(?:\/|$)/.test(pathname))
+        || /^\/(director|cashier|supervisor|accountant|kitchen|barman|barista|content-creator)(\/|$)/.test(pathname);
+      if (staffSessionExpired && onStaffRoute) {
+        navigate('/staff/login', { replace: true });
+      }
+
+      if (nextExpiry !== Infinity) {
+        timer = window.setTimeout(checkSessionExpiry, Math.max(0, nextExpiry - Date.now()));
+      }
+      if (sessionExpired) {
+        window.setTimeout(() => window.dispatchEvent(new Event('kurax:staff-session-changed')), 0);
+      }
+    }
+
+    function handleStorageChange() {
+      window.dispatchEvent(new Event('kurax:staff-session-changed'));
+      checkSessionExpiry();
+    }
+
+    checkSessionExpiry();
+    window.addEventListener('kurax:staff-session-changed', checkSessionExpiry);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', checkSessionExpiry);
+    document.addEventListener('visibilitychange', checkSessionExpiry);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('kurax:staff-session-changed', checkSessionExpiry);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', checkSessionExpiry);
+      document.removeEventListener('visibilitychange', checkSessionExpiry);
+    };
+  }, [navigate, pathname]);
+
+  return null;
 }
 
 //  PWA Install Prompt Component
@@ -153,12 +237,12 @@ export default function App() {
   // Register service worker on app mount
   useEffect(() => {
     registerServiceWorker();
-    installNotificationSessionSync();
   }, []);
 
   return (
     <>
       <ScrollToHash />
+      <SessionExpiryHandler />
       <Routes>
         {/* --- PUBLIC CUSTOMER PAGES --- */}
         <Route path="/" element={<HomePage />} />

@@ -3,6 +3,15 @@ function originalAmountSql(item) {
     NULLIF(${item}->>'originalLineAmount', '')::numeric,
     COALESCE(
       NULLIF(${item}->>'originalUnitPrice', '')::numeric,
+      NULLIF(${item}->>'original_unit_price', '')::numeric
+    ) * COALESCE(NULLIF(${item}->>'quantity', '')::numeric, 1),
+    CASE
+      WHEN COALESCE(${item}->>'complimentary', 'false') = 'true'
+        AND NULLIF(${item}->>'payableAmount', '') IS NOT NULL
+      THEN NULLIF(${item}->>'payableAmount', '')::numeric
+        + COALESCE(NULLIF(${item}->>'complimentaryWaivedAmount', '')::numeric, 0)
+    END,
+    COALESCE(
       NULLIF(${item}->>'price', '')::numeric,
       NULLIF(${item}->>'unit_price', '')::numeric,
       0
@@ -22,10 +31,17 @@ function storedLineAmountSql(item) {
 }
 
 export function orderItemGrossAmountSql(item = 'item') {
-  return `CASE WHEN COALESCE(${item}->>'complimentary', 'false') = 'true'
-    THEN ${originalAmountSql(item)}
-    ELSE ${storedLineAmountSql(item)}
-  END`;
+  return originalAmountSql(item);
+}
+
+export function orderItemNetAmountSql(item = 'item') {
+  return `GREATEST(
+    0,
+    ${originalAmountSql(item)}
+      - COALESCE(NULLIF(${item}->>'menuDiscountAmount', '')::numeric, 0)
+      - COALESCE(NULLIF(${item}->>'specialBillDiscountAmount', '')::numeric, 0)
+      - COALESCE(NULLIF(${item}->>'complimentaryWaivedAmount', '')::numeric, 0)
+  )`;
 }
 
 export function orderItemPayableAmountSql(item = 'item') {

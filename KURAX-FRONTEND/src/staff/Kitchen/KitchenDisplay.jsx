@@ -206,7 +206,7 @@ export default function KitchenDisplay() {
   };
 
   const [audioEnabled,  setAudioEnabled]  = useState(false);
-  const [showProduction, setShowProduction] = useState(false);
+  const [showProduction, setShowProduction] = useState(isProductionWorker);
   const [searchQuery,   setSearchQuery]   = useState("");
   const [showSummary,   setShowSummary]   = useState(false);
   const [shiftStats,    setShiftStats]    = useState({ totalOrders: 0, totalItems: 0, chefs: [] });
@@ -244,7 +244,7 @@ export default function KitchenDisplay() {
         if (isProductionWorker) return false;
         // ── Status gate: only active kitchen statuses ──────────────────────
         const kitchenStatus = order.kitchen_ticket_status || "Pending";
-        if (!["Pending", "Preparing"].includes(kitchenStatus)) return false;
+        if (!["Pending", "Preparing", "Ready"].includes(kitchenStatus)) return false;
         if (!ticketOrderIds.includes(Number(order.id))) return false;
         if (isProductionWorker && !claimedWorkByOrder.has(Number(order.id))) return false;
 
@@ -375,7 +375,7 @@ export default function KitchenDisplay() {
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutDialog(false)}
       />
-      {showProduction && <ProductionPanel station="kitchen" user={savedUser} onClose={() => setShowProduction(false)} />}
+      {showProduction && <ProductionPanel station="kitchen" user={savedUser} onClose={isProductionWorker ? confirmLogout : () => setShowProduction(false)} />}
       {claimedWorkError && isProductionWorker && <p role="alert" className="fixed left-4 top-4 z-40 rounded-lg bg-rose-100 px-4 py-2 text-xs font-bold text-rose-800">{claimedWorkError}</p>}
       {claimedWorkMessage && isProductionWorker && <p role="status" className="fixed left-4 top-14 z-40 rounded-lg bg-emerald-100 px-4 py-2 text-xs font-bold text-emerald-900">{claimedWorkMessage}</p>}
 

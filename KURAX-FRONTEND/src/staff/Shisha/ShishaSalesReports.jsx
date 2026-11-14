@@ -45,6 +45,7 @@ function reportSections(report) {
         ['Gross sales before voids', currency(summary.gross_sales)],
         ['Approved voids', `${currency(summary.voided_total)} (${summary.voided_quantity ?? 0} items)`],
         ['Collected', currency(summary.amount_collected)],
+        ['Credit payments received', currency(summary.credit_payments_received)],
         ['Outstanding', currency(summary.total_outstanding)],
         ['Partially paid orders', summary.partially_paid_orders ?? 0],
         ['Partially paid amount', currency(summary.partially_paid_amount)],
@@ -71,6 +72,20 @@ function reportSections(report) {
       title: 'Collected by payment method',
       columns: ['Payment method', 'Confirmed payments', 'Amount'],
       rows: (report?.by_payment_method || []).map(row => [row.payment_method, row.payment_count, currency(row.amount)]),
+    },
+    {
+      title: 'Credit payment settlements',
+      columns: ['Date', 'Order', 'Client', 'Phone', 'Waiter', 'Method', 'Amount', 'Reference'],
+      rows: (report?.credit_payments || []).map(row => [
+        row.confirmed_at ? new Date(row.confirmed_at).toLocaleString() : '-',
+        row.reference,
+        row.client_name || '-',
+        row.client_phone || '-',
+        row.waiter_name || '-',
+        row.payment_method,
+        currency(row.amount),
+        row.transaction_id || '-',
+      ]),
     },
   ];
 }
@@ -181,6 +196,7 @@ export default function ShishaSalesReports({ dark = false }) {
         ['Approved voids (UGX)', Number(summary.voided_total || 0)],
         ['Approved void quantity', Number(summary.voided_quantity || 0)],
         ['Collected (UGX)', Number(summary.amount_collected || 0)],
+        ['Credit payments received (UGX)', Number(summary.credit_payments_received || 0)],
         ['Outstanding (UGX)', Number(summary.total_outstanding || 0)],
         ['Partially paid orders', Number(summary.partially_paid_orders || 0)],
         ['Partially paid amount (UGX)', Number(summary.partially_paid_amount || 0)],
@@ -203,6 +219,19 @@ export default function ShishaSalesReports({ dark = false }) {
         ['Payment method', 'Confirmed payments', 'Amount (UGX)'],
         ...(report.by_payment_method || []).map(row => [row.payment_method, Number(row.payment_count || 0), Number(row.amount || 0)]),
       ]],
+      ['Credit Settlements', [
+        ['Date', 'Order', 'Client', 'Phone', 'Waiter', 'Method', 'Amount (UGX)', 'Transaction / Reference'],
+        ...(report.credit_payments || []).map(row => [
+          row.confirmed_at ? new Date(row.confirmed_at).toLocaleString() : '-',
+          row.reference,
+          row.client_name || '-',
+          row.client_phone || '-',
+          row.waiter_name || '-',
+          row.payment_method,
+          Number(row.amount || 0),
+          row.transaction_id || '-',
+        ]),
+      ]],
     ];
     sheets.forEach(([name, rows]) => XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), name));
     XLSX.writeFile(workbook, `shisha-sales-${from}-to-${to}.xlsx`);
@@ -212,6 +241,7 @@ export default function ShishaSalesReports({ dark = false }) {
   const cards = [
     ['Sales', currency(summary.total_sales), CircleDollarSign],
     ['Collected', currency(summary.amount_collected), Download],
+    ['Credit received', currency(summary.credit_payments_received), CircleDollarSign],
     ['Outstanding', currency(summary.total_outstanding), CalendarDays],
     ['Orders', Number(summary.total_orders || 0).toLocaleString(), Flame],
   ];
@@ -252,7 +282,7 @@ export default function ShishaSalesReports({ dark = false }) {
       {loading && <p role="status" className={`flex items-center gap-2 text-sm font-semibold ${muted}`}><RefreshCw size={15} className="animate-spin" /> Loading Shisha sales…</p>}
 
       {!loading && report && <>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {cards.map(([label, value, Icon]) => <article key={label} className={`flex items-center gap-3 rounded-lg border p-4 ${dark ? 'border-white/10 bg-zinc-900' : 'border-zinc-200 bg-white'}`}>
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-amber-100 text-amber-800"><Icon size={18} /></span>
             <div className="min-w-0"><p className={`text-xs font-bold uppercase ${muted}`}>{label}</p><p className={`mt-1 truncate text-lg font-black ${heading}`}>{value}</p></div>
@@ -262,6 +292,7 @@ export default function ShishaSalesReports({ dark = false }) {
           <DataTable title="Sales by waiter" columns={sections[1].columns} rows={sections[1].rows} dark={dark} />
           <DataTable title="Sales by mixer" columns={sections[2].columns} rows={sections[2].rows} dark={dark} />
           <DataTable title="Collected by payment method" columns={sections[4].columns} rows={sections[4].rows} dark={dark} />
+          <DataTable title="Credit payments received" columns={sections[5].columns} rows={sections[5].rows} dark={dark} />
           <DataTable title="Payment status" columns={['Metric', 'Value']} rows={[
             ['Partially paid orders', Number(summary.partially_paid_orders || 0).toLocaleString()],
             ['Partially paid amount', currency(summary.partially_paid_amount)],

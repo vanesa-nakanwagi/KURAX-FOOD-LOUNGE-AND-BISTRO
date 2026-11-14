@@ -15,6 +15,7 @@ import { useData } from "../../../customer/components/context/DataContext";
 import API_URL from "../../../config/api";
 import StaffSalesPerformance from "../../components/StaffSalesPerformance";
 import ShishaSalesReports from "../../Shisha/ShishaSalesReports";
+import useOrderPermission from "../../hooks/useOrderPermission";
 
 // ── MENU CONFIGURATION (Shift Removed) ──────────────────────────────────────
 const SUPERVISOR_MENU = [
@@ -34,7 +35,8 @@ export default function SupervisorLayout() {
   const [selectedTableData, setSelectedTableData] = useState(null);
 
   const { theme } = useTheme();
-  const { currentUser, isGranted } = useData();
+  const { currentUser } = useData();
+  const isGranted = useOrderPermission(currentUser);
   const isDark = theme === "dark";
 
   const savedUser = (() => { 
@@ -150,24 +152,51 @@ function LockedView({ name, role }) {
   const { currentUser } = useData();
   const [requestSent, setRequestSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [requestError, setRequestError] = useState('');
 
   useEffect(() => {
-    if (localStorage.getItem(`perm_req_${currentUser?.id}`)) setRequestSent(true);
-  }, [currentUser?.id]);
+    if (!currentUser?.id || !currentUser?.token) return undefined;
+    let active = true;
+    const checkRequest = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/staff/permission/${currentUser.id}`, {
+          headers: { Authorization: `Bearer ${currentUser.token}` },
+        });
+        if (!response.ok) return;
+        const result = await response.json();
+        if (active) setRequestSent(result.is_requesting === true);
+      } catch (error) {
+        if (active) console.error('Order permission status check failed:', error);
+      }
+    };
+    checkRequest();
+    const timer = setInterval(checkRequest, 10000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [currentUser?.id, currentUser?.token]);
 
   const handleRequest = async () => {
     setLoading(true);
+    setRequestError('');
     try {
       const res = await fetch(`${API_URL}/api/staff/request-permission`, {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ staffId: currentUser.id, staffName: currentUser.name }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentUser?.token || ''}`,
+        },
+        body: JSON.stringify({}),
       });
+      const result = await res.json().catch(() => ({}));
       if (res.ok) {
         setRequestSent(true);
-        localStorage.setItem(`perm_req_${currentUser?.id}`, "true");
-      }
-    } catch (err) { console.error(err); }
+      } else setRequestError(result.error || 'Could not send your request.');
+    } catch (err) {
+      console.error('Order permission request failed:', err);
+      setRequestError('Could not reach the server. Please try again.');
+    }
     finally { setLoading(false); }
   };
 
@@ -177,7 +206,7 @@ function LockedView({ name, role }) {
         <div className={`w-28 h-28 rounded-[2.5rem] flex items-center justify-center border-2 transition-all duration-700 rotate-6 ${
           requestSent ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" : "bg-yellow-500/10 border-yellow-500/20 text-yellow-500"
         }`}>
-          {requestSent ? <ShieldCheck size={48} className="animate-pulse" /> : <Lock size={48} />}
+          {requestSent ? <ShieldCheck size={48} /> : <Lock size={48} />}
         </div>
         <div className="absolute -top-1 -right-1 p-2.5 rounded-2xl bg-black border border-white/10">
           <Zap className={requestSent ? "text-emerald-500" : "text-yellow-500"} size={20} />
@@ -185,12 +214,12 @@ function LockedView({ name, role }) {
       </div>
       <div className="space-y-2 mb-10">
         <h2 className="text-3xl font-black uppercase italic tracking-tighter">
-          {requestSent ? "Signal Sent" : "Access Locked"}
+          {requestSent ? "Request Sent" : "Order Access Needed"}
         </h2>
         <p className="text-zinc-500 max-w-[300px] mx-auto text-[10px] font-bold uppercase tracking-[0.2em] leading-relaxed opacity-60">
           {requestSent
-            ? "Your request is live. Wait for the Director to grant ordering power."
-            : `Hey ${name?.split(" ")[0]}, authorization is required for ${role}s to take orders.`}
+            ? "Your request is pending. Resend the alert if the Director has not received it."
+            : `Hey ${name?.split(" ")[0]}, ask the Director to approve your access before taking orders.`}
         </p>
       </div>
       <div className="flex flex-col gap-4 w-full max-w-[280px]">
@@ -200,13 +229,23 @@ function LockedView({ name, role }) {
             className="px-6 py-5 bg-yellow-500 text-black rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3"
           >
             {loading ? <RefreshCcw size={16} className="animate-spin" /> : <Bell size={16} />}
-            Request Power
+            Request access
           </button>
         ) : (
-          <div className="px-6 py-5 bg-emerald-500/10 text-emerald-500 border-2 border-emerald-500/20 rounded-3xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
-            <RefreshCcw size={14} className="animate-spin" /> Awaiting Sync
-          </div>
+          <>
+            <div role="status" className="px-6 py-5 bg-emerald-500/10 text-emerald-500 border-2 border-emerald-500/20 rounded-3xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+              <Clock size={14} /> Waiting for Director approval
+            </div>
+            <button
+              onClick={handleRequest}
+              disabled={loading}
+              className="px-6 py-3 bg-zinc-800 text-zinc-200 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? "Sending alert..." : "Resend notification"}
+            </button>
+          </>
         )}
+        {requestError && <p role="alert" className="text-xs font-semibold text-rose-400">{requestError}</p>}
       </div>
     </div>
   );

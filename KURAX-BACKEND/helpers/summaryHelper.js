@@ -7,6 +7,7 @@ import pool from '../db.js';
  *
  * @param {Object} params
  * @param {number} params.amount                - Payment amount
+ * @param {number} [params.grossAmount]         - Full selling price before waivers and discounts
  * @param {string} params.method                - Cash | Card | Momo-MTN | Momo-Airtel | Credit | Mixed
  * @param {string} [params.date]                - YYYY-MM-DD (defaults to today Kampala time)
  * @param {number} [params.orderCount]          - Orders to add to count (default 1)
@@ -14,7 +15,14 @@ import pool from '../db.js';
  *                                                  Increments total_settled_credits only.
  *                                                  NEVER touches gross, cash, card, or momo totals.
  */
-export async function updateDailySummary({ amount, method, date, orderCount = 1, is_credit_settlement = false }) {
+export async function updateDailySummary({
+  amount,
+  grossAmount = amount,
+  method,
+  date,
+  orderCount = 1,
+  is_credit_settlement = false,
+}) {
   const summaryDate = date || (() => {
     const kampala = new Date(Date.now() + 3 * 60 * 60 * 1000);
     return [
@@ -63,8 +71,9 @@ export async function updateDailySummary({ amount, method, date, orderCount = 1,
   const isMixed  = m === 'mixed';
 
   // Credits are IOUs — they NEVER count toward gross revenue.
-  // Gross only includes money the business has physically received.
-  const grossAmt = isCredit ? 0 : amt;
+  // For sales, grossAmount is the full item value before discounts or waivers;
+  // payment-method columns continue to record the amount actually received.
+  const grossAmt = isCredit ? 0 : Number(grossAmount) || 0;
 
   try {
     await pool.query(

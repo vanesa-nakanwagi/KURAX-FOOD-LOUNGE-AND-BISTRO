@@ -156,12 +156,14 @@ export const DataProvider = ({ children }) => {
       const permissionUrl = user ? `${API_URL}/api/staff/permission/${user.id}` : null;
 
       const [staffRes, orderRes, menuRes, comboRes, eventRes, permRes] = await Promise.allSettled([
-        fetch(`${API_URL}/api/staff`),
+        fetch(`${API_URL}/api/staff`, { cache: 'no-store' }),
         fetch(`${API_URL}/api/orders`),
         fetch(`${API_URL}/api/menus`),
         fetch(`${API_URL}/api/combos`),
         fetch(`${API_URL}/api/events`),
-        permissionUrl ? fetch(permissionUrl) : Promise.reject('No User'),
+        permissionUrl
+          ? fetch(permissionUrl, { headers: { Authorization: `Bearer ${user.token}` } })
+          : Promise.reject('No User'),
       ]);
 
       const menuData = menuRes.status === 'fulfilled' && menuRes.value.ok ? await menuRes.value.json() : [];

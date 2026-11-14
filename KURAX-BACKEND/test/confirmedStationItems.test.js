@@ -58,6 +58,26 @@ test('staff-routed items reach stations before cashier confirmation', () => {
   );
 });
 
+test('public orders expose only paid items to stations after cashier confirmation', () => {
+  const publicItems = [
+    { name: 'Paid dish', station: 'Kitchen', payment_confirmed: true },
+    { name: 'Unpaid drink', station: 'Barista', station_routing_requested: true },
+  ];
+
+  assert.deepEqual(
+    getRoutableStationItems(publicItems, publicItems, { publicOrder: true }).map(({ name }) => name),
+    ['Paid dish']
+  );
+  assert.deepEqual(
+    getRoutableStationItems(
+      [{ ...publicItems[0], payment_confirmed: false }],
+      [{ ...publicItems[0], payment_confirmed: false }],
+      { publicOrder: true }
+    ),
+    []
+  );
+});
+
 test('active station tickets expose HOD-assigned items before cashier confirmation', () => {
   const ticketItems = [
     { name: 'Kurax Burger', station: 'Kitchen', assignedTo: 'Benji', payment_confirmed: false },

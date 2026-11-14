@@ -35,6 +35,39 @@ test('partial waiver records payable and preserves actual paid amount', () => {
   assert.equal(getOrderItemPaidAmount(item), 3000);
 });
 
+test('a UGX 50000 waiver on a UGX 150000 item preserves gross and leaves UGX 100000 payable', () => {
+  const item = applyComplimentaryTerms(
+    { name: 'Dinner', price: 150000, quantity: 1 },
+    { complimentary: true, waivedAmount: 50000, actorId: 4, actorName: 'Cashier' }
+  );
+
+  assert.equal(getOrderItemOriginalAmount(item), 150000);
+  assert.equal(getOrderItemPayableAmount(item), 100000);
+});
+
+test('stored payable amount is honored for promotional and special bill discounts', () => {
+  const promoItem = {
+    name: 'Meal',
+    price: 9000,
+    quantity: 1,
+    originalLineAmount: 10000,
+    payableAmount: 9000,
+    menuDiscountAmount: 1000,
+    pricingSnapshot: true,
+  };
+  const discountedItem = {
+    ...promoItem,
+    price: 8000,
+    payableAmount: 8000,
+    line_total: 8000,
+    specialBillDiscountAmount: 1000,
+  };
+
+  assert.equal(getOrderItemPayableAmount(promoItem), 9000);
+  assert.equal(getOrderItemPayableAmount(discountedItem), 8000);
+  assert.equal(getOrderPayableTotal([promoItem, discountedItem]), 17000);
+});
+
 test('order total excludes waived and voided lines without affecting ordinary lines', () => {
   const complimentary = applyComplimentaryTerms(
     { name: 'Juice', price: 6000, quantity: 1 },

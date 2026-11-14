@@ -1,4 +1,4 @@
--- Clear every public table except staff, menus, events, combos, and monthly_targets.
+-- Clear every public table except the explicitly preserved business tables.
 -- Related tables such as combo_items are cleared; no CASCADE is used so preserved
 -- table data cannot be removed indirectly.
 DO $$
@@ -10,7 +10,15 @@ BEGIN
     FROM information_schema.tables
     WHERE table_schema = 'public'
       AND table_type = 'BASE TABLE'
-      AND table_name NOT IN ('staff', 'menus', 'events', 'combos', 'monthly_targets');
+      AND table_name NOT IN (
+          'staff',
+          'menus',
+          'events',
+          'monthly_targets',
+          'shisha_staff',
+          'shisha_packages',
+          'combos'
+      );
 
     IF tables_to_clear IS NOT NULL THEN
         EXECUTE 'TRUNCATE TABLE ' || tables_to_clear || ' RESTART IDENTITY';
@@ -25,4 +33,8 @@ SELECT 'events', COUNT(*) FROM public.events
 UNION ALL
 SELECT 'combos', COUNT(*) FROM public.combos
 UNION ALL
-SELECT 'monthly_targets', COUNT(*) FROM public.monthly_targets;
+SELECT 'monthly_targets', COUNT(*) FROM public.monthly_targets
+UNION ALL
+SELECT 'shisha_staff', COUNT(*) FROM public.shisha_staff
+UNION ALL
+SELECT 'shisha_packages', COUNT(*) FROM public.shisha_packages;

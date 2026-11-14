@@ -48,6 +48,31 @@ test('menu items and combos share the same catalog-priced order flow', async () 
   assert.equal(calculatePublicOrderTotal(items), 49000);
 });
 
+test('public menu checkout applies the active promotion to the server-priced order snapshot', async () => {
+  const [item] = await buildPublicOrderItems(
+    [{ id: 1, quantity: 2, price: 25000 }],
+    async () => ({
+      id: 1,
+      name: 'Chicken Wrap',
+      price: 25000,
+      category: 'Food',
+      station: 'Kitchen',
+      promotion_enabled: true,
+      promotion_discount_type: 'percentage',
+      promotion_discount_value: 10,
+      promotion_starts_at: '2000-01-01T00:00:00.000Z',
+      promotion_ends_at: '2099-12-31T23:59:59.999Z',
+    })
+  );
+
+  assert.equal(item.price, 22500);
+  assert.equal(item.originalUnitPrice, 25000);
+  assert.equal(item.originalLineAmount, 50000);
+  assert.equal(item.menuDiscountAmount, 5000);
+  assert.equal(item.payableAmount, 45000);
+  assert.equal(calculatePublicOrderTotal([item]), 45000);
+});
+
 test('public checkout rejects unavailable items and invalid quantities', async () => {
   await assert.rejects(
     buildPublicOrderItems([{ id: 99, quantity: 1 }], async () => null),

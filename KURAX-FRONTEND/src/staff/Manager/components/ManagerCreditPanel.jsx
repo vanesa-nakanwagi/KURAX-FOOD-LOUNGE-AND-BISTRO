@@ -52,7 +52,7 @@ function CreditApprovalCard({ credit, managerName, onAction }) {
       const res = await fetch(`${API_URL}/api/manager/credits/${credit.id}/reject`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rejected_by: managerName, reason: reason.trim() }),
+        body: JSON.stringify({ credit_id: credit.id, rejected_by: managerName, reason: reason.trim() }),
       });
       if (res.ok) onAction();
       else {

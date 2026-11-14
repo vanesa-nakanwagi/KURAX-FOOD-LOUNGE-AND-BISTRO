@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, Bike, RotateCcw, LogOut, X, Wallet, BookOpen, Menu, Table2
+  LayoutDashboard, Bike, RotateCcw, LogOut, X, Wallet, BookOpen, Menu, Table2, Sparkles
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
 import { useTheme } from "../../customer/components/context/ThemeContext";
 import { useData } from "../../customer/components/context/DataContext";
 import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
+import API_URL from "../../config/api";
+import { CASHIER_SESSION_KEY, cashierAuthHeaders, readCashierSession } from "./cashierApi";
 
 
 const MENU_ITEMS = [
   { id: "PENDING",     label: "My Collection",  icon: LayoutDashboard },
   { id: "CLOSED",      label: "Order Status",   icon: RotateCcw },
   { id: "TABLES",      label: "View Tables",    icon: Table2 },
+  { id: "COMPS",       label: "Comp Requests",  icon: Sparkles },
   { id: "CREDITS",     label: "Credit Ledger",  icon: BookOpen },
   { id: "PETTY CASH",  label: "Log Petty Cash", icon: Wallet },
   { id: "DELIVERIES",  label: "Riders",         icon: Bike },
@@ -20,6 +23,7 @@ const MENU_ITEMS = [
 
 const BOTTOM_NAV_ITEMS = [
   { id: "PENDING",    label: "Collect", icon: LayoutDashboard },
+  { id: "COMPS",      label: "Comp Requests", icon: Sparkles },
   { id: "DELIVERIES", label: "Riders",  icon: Bike },
 ];
 
@@ -43,6 +47,7 @@ export default function SideBar({
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [complimentaryBadge, setComplimentaryBadge] = useState(0);
 
   const isDark = theme === "dark";
   const fullName = currentUser?.name || "Cashier";
@@ -55,6 +60,32 @@ export default function SideBar({
     return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const loadComplimentaryCount = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/orders/complimentary-corrections`, {
+          headers: cashierAuthHeaders(),
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || "Could not load complimentary request count.");
+        }
+        if (active) setComplimentaryBadge(Array.isArray(data) ? data.length : 0);
+      } catch (error) {
+        console.error("Cashier complimentary request count failed:", error);
+      }
+    };
+
+    void loadComplimentaryCount();
+    const timer = window.setInterval(() => void loadComplimentaryCount(), 8000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const handleLogout = () => {
     setShowLogoutDialog(true);
   };
@@ -62,7 +93,19 @@ export default function SideBar({
   const confirmLogout = () => {
     setShowLogoutDialog(false);
     localStorage.removeItem("user");
-    localStorage.removeItem("kurax_user");
+    const cashierSession = readCashierSession();
+    localStorage.removeItem(CASHIER_SESSION_KEY);
+    try {
+      const staffSession = JSON.parse(localStorage.getItem("kurax_user") || "null");
+      if (
+        staffSession?.role?.toUpperCase() === "CASHIER" &&
+        (!cashierSession?.id || String(staffSession.id) === String(cashierSession.id))
+      ) {
+        localStorage.removeItem("kurax_user");
+      }
+    } catch (error) {
+      console.error("Unable to clear cashier session:", error);
+    }
     setCurrentUser(null);
     navigate("/staff/login", { replace: true });
   };
@@ -99,6 +142,7 @@ export default function SideBar({
   const getBadge = (itemId) => {
     if (itemId === "DELIVERIES") return deliveryBadge;
     if (itemId === "CREDITS") return creditBadge;
+    if (itemId === "COMPS") return complimentaryBadge;
     return 0;
   };
 

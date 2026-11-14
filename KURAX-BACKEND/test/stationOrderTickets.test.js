@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getRoutableItemsForStation, syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
+import {
+  getRoutableItemsForStation,
+  syncRoutableStationTickets,
+  syncRoutableStationTicketsForAllStations,
+} from '../helpers/stationOrderTickets.js';
 
 const items = [
   { name: 'Burger', station: 'Kitchen', price: 12000, quantity: 1, payment_confirmed: true },
@@ -40,6 +44,22 @@ test('staff-routed unpaid items are grouped into their assigned stations', () =>
   assert.deepEqual(getRoutableItemsForStation(staffItems, 'bar').map(({ name }) => name), ['Juice']);
 });
 
+test('public website orders require confirmed payment even if a station route flag is set', () => {
+  const publicItems = [
+    { name: 'Paid dish', station: 'Kitchen', payment_confirmed: true },
+    { name: 'Unpaid drink', station: 'Barista', station_routing_requested: true },
+  ];
+
+  assert.deepEqual(
+    getRoutableItemsForStation(publicItems, 'kitchen', { publicOrder: true }).map(({ name }) => name),
+    ['Paid dish']
+  );
+  assert.deepEqual(
+    getRoutableItemsForStation(publicItems, 'barista', { publicOrder: true }),
+    []
+  );
+});
+
 test('station ticket sync upserts confirmed or staff-routed items and leaves ticket status intact', async () => {
   let query;
   await syncRoutableStationTickets({
@@ -53,6 +73,7 @@ test('station ticket sync upserts confirmed or staff-routed items and leaves tic
   assert.match(query, /ON CONFLICT \(order_id\) DO UPDATE/);
   assert.match(query, /expanded\.item->'payment_confirmed' = 'true'::jsonb/);
   assert.match(query, /o\.public_order_ref IS NULL/);
+  assert.match(query, /o\.public_order_ref IS NULL OR o\.payment_confirmed = true/);
   assert.match(query, /expanded\.item->'station_routing_requested' = 'true'::jsonb/);
   assert.match(query, /LOWER\(BTRIM\(expanded\.item->>'station'\)\) = 'barista'/);
   assert.match(query, /OR ticket\.items IS DISTINCT FROM EXCLUDED\.items/);
@@ -80,6 +101,25 @@ test('each station sync writes to its existing ticket table and preserves statio
     assert.match(query, stationCondition);
     assert.match(query, /'_orderItemIndex'/);
     assert.match(query, /GROUP BY o\.id, o\.table_name, o\.staff_name, o\.staff_role/);
+  }
+});
+
+test('public payment confirmation can synchronize tickets for every intended station', async () => {
+  const statements = [];
+  await syncRoutableStationTicketsForAllStations({
+    async query(sql) {
+      statements.push(sql);
+      return { rows: [], rowCount: 1 };
+    },
+  });
+
+  assert.equal(statements.length, 3);
+  assert.match(statements[0], /INSERT INTO public\.kitchen_tickets/);
+  assert.match(statements[1], /INSERT INTO public\.barman_tickets/);
+  assert.match(statements[2], /INSERT INTO public\.barista_tickets/);
+  for (const sql of statements) {
+    assert.match(sql, /o\.public_order_ref IS NULL OR o\.payment_confirmed = true/);
+    assert.match(sql, /expanded\.item->'payment_confirmed' = 'true'::jsonb/);
   }
 });
 

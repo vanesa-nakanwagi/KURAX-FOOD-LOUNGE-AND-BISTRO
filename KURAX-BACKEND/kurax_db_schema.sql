@@ -1,7 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
 --  KURAX FOOD LOUNGE & BISTRO — Complete Database Schema
---  Reconstructed from full conversation history
---  Run in order — dependencies are respected
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- ─── EXTENSIONS ───────────────────────────────────────────────────────────────
@@ -23,6 +21,7 @@ CREATE TABLE IF NOT EXISTS staff (
   pin_hash              TEXT,
   is_active             BOOLEAN     DEFAULT true,
   is_permitted          BOOLEAN     DEFAULT false,   -- supervisor permission flag
+  is_requesting         BOOLEAN     NOT NULL DEFAULT false,
   daily_order_target    INTEGER     DEFAULT 0,
   monthly_income_target NUMERIC     DEFAULT 0,
   created_at            TIMESTAMPTZ DEFAULT NOW(),
@@ -32,12 +31,14 @@ CREATE TABLE IF NOT EXISTS staff (
 ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS pin TEXT;
 ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS pin_salt TEXT;
 ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS pin_hash TEXT;
+ALTER TABLE public.staff ADD COLUMN IF NOT EXISTS is_requesting BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS public.notification_devices (
   id SERIAL PRIMARY KEY,
   user_scope TEXT NOT NULL CHECK (user_scope IN ('restaurant', 'shisha')),
   user_id INTEGER NOT NULL,
-  firebase_installation_id TEXT NOT NULL UNIQUE,
+  firebase_installation_id TEXT,
+  installation_id TEXT,
   fcm_token TEXT NOT NULL,
   platform TEXT NOT NULL CHECK (platform IN ('web', 'android', 'ios')),
   user_agent TEXT,
@@ -46,6 +47,10 @@ CREATE TABLE IF NOT EXISTS public.notification_devices (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS notification_devices_user_installation_unique
+  ON public.notification_devices (user_scope, user_id, installation_id)
+  WHERE installation_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS notification_devices_user_active_idx
   ON public.notification_devices (user_scope, user_id) WHERE is_active = true;
@@ -65,9 +70,63 @@ CREATE TABLE IF NOT EXISTS menus (
   published   BOOLEAN     DEFAULT false,
   customer_visible BOOLEAN DEFAULT false,
   website_published BOOLEAN,
+  promotion_enabled BOOLEAN NOT NULL DEFAULT false,
+  promotion_discount_type TEXT NOT NULL DEFAULT 'percentage'
+    CHECK (promotion_discount_type IN ('percentage', 'fixed')),
+  promotion_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0
+    CHECK (promotion_discount_value >= 0),
+  promotion_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+  promotion_starts_at TIMESTAMPTZ,
+  promotion_ends_at TIMESTAMPTZ,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.menus
+  ADD COLUMN IF NOT EXISTS promotion_enabled BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS promotion_discount_type TEXT NOT NULL DEFAULT 'percentage',
+  ADD COLUMN IF NOT EXISTS promotion_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS promotion_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS promotion_starts_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS promotion_ends_at TIMESTAMPTZ;
+
+UPDATE public.menus
+SET promotion_enabled = true,
+    promotion_discount_type = 'percentage',
+    promotion_discount_value = promotion_discount_percent
+WHERE promotion_enabled = false
+  AND promotion_discount_value = 0
+  AND promotion_discount_percent > 0;
+
+CREATE TABLE IF NOT EXISTS public.special_discount_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  max_discount_type TEXT NOT NULL DEFAULT 'percentage'
+    CHECK (max_discount_type IN ('percentage', 'fixed')),
+  max_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (max_discount_value >= 0),
+  max_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0
+    CHECK (max_discount_percent >= 0 AND max_discount_percent <= 100),
+  updated_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+  updated_by_name TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.special_discount_settings
+  ADD COLUMN IF NOT EXISTS max_discount_type TEXT NOT NULL DEFAULT 'percentage',
+  ADD COLUMN IF NOT EXISTS max_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS max_discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS updated_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS updated_by_name TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+UPDATE public.special_discount_settings
+SET max_discount_value = max_discount_percent
+WHERE max_discount_type = 'percentage'
+  AND max_discount_value = 0
+  AND max_discount_percent > 0;
+
+INSERT INTO public.special_discount_settings (id, max_discount_type, max_discount_value, max_discount_percent)
+VALUES (1, 'percentage', 0, 0)
+ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS combos (
   id SERIAL PRIMARY KEY,
@@ -144,6 +203,7 @@ CREATE TABLE IF NOT EXISTS orders (
   --              assignedTo, assignedAt, complimentary, originalLineAmount,
   --              complimentaryWaivedAmount, payableAmount, paidAmount }
   total           NUMERIC     DEFAULT 0,
+  special_bill_discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
   status          TEXT        DEFAULT 'Pending',
   -- statuses: Pending, Preparing, Ready, Delayed, Served, Paid, Mixed, Credit, Voided
   payment_method  TEXT        DEFAULT 'Cash',
@@ -165,6 +225,9 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.orders
+  ADD COLUMN IF NOT EXISTS special_bill_discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS public.complimentary_correction_requests (
   id SERIAL PRIMARY KEY,
@@ -255,6 +318,47 @@ CREATE TABLE IF NOT EXISTS cashier_queue (
   updated_at     TIMESTAMPTZ   DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.special_bill_discount_audit (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  queue_id INTEGER REFERENCES public.cashier_queue(id) ON DELETE SET NULL,
+  discount_type TEXT NOT NULL CHECK (discount_type IN ('percentage', 'fixed')),
+  discount_value NUMERIC(12,2) NOT NULL CHECK (discount_value > 0),
+  original_bill_amount NUMERIC(12,2) NOT NULL CHECK (original_bill_amount >= 0),
+  discount_amount NUMERIC(12,2) NOT NULL CHECK (discount_amount > 0),
+  final_payable_amount NUMERIC(12,2) NOT NULL CHECK (final_payable_amount >= 0),
+  reason TEXT NOT NULL,
+  applied_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+  applied_by_name TEXT NOT NULL,
+  max_discount_type TEXT NOT NULL,
+  max_discount_value NUMERIC(12,2) NOT NULL,
+  config_updated_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+  config_updated_by_name TEXT,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS special_bill_discount_audit_order_idx
+  ON public.special_bill_discount_audit (order_id, applied_at DESC);
+CREATE INDEX IF NOT EXISTS special_bill_discount_audit_date_idx
+  ON public.special_bill_discount_audit (applied_at DESC);
+
+ALTER TABLE public.special_bill_discount_audit
+  ADD COLUMN IF NOT EXISTS order_id INTEGER REFERENCES public.orders(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS queue_id INTEGER REFERENCES public.cashier_queue(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS discount_type TEXT NOT NULL DEFAULT 'fixed',
+  ADD COLUMN IF NOT EXISTS discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS original_bill_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS final_payable_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS applied_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS applied_by_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS max_discount_type TEXT NOT NULL DEFAULT 'percentage',
+  ADD COLUMN IF NOT EXISTS max_discount_value NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS config_updated_by INTEGER REFERENCES public.staff(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS config_updated_by_name TEXT,
+  ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 CREATE INDEX IF NOT EXISTS idx_cashier_queue_status       ON cashier_queue (status);
 CREATE INDEX IF NOT EXISTS idx_cashier_queue_requested_by ON cashier_queue (requested_by);
 
@@ -319,6 +423,8 @@ CREATE TABLE IF NOT EXISTS credits (
   created_at      TIMESTAMPTZ  DEFAULT NOW(),
   updated_at      TIMESTAMPTZ  DEFAULT NOW()
 );
+
+ALTER TABLE IF EXISTS public.credits ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_credits_paid       ON credits (paid);
 CREATE INDEX IF NOT EXISTS idx_credits_table_name ON credits (table_name);
@@ -570,7 +676,8 @@ CREATE TABLE IF NOT EXISTS public.notification_devices (
   id SERIAL PRIMARY KEY,
   user_scope TEXT NOT NULL CHECK (user_scope IN ('restaurant', 'shisha')),
   user_id INTEGER NOT NULL,
-  firebase_installation_id TEXT NOT NULL UNIQUE,
+  firebase_installation_id TEXT,
+  installation_id TEXT,
   fcm_token TEXT NOT NULL,
   platform TEXT NOT NULL CHECK (platform IN ('web', 'android', 'ios')),
   user_agent TEXT,
@@ -579,6 +686,10 @@ CREATE TABLE IF NOT EXISTS public.notification_devices (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS notification_devices_user_installation_unique
+  ON public.notification_devices (user_scope, user_id, installation_id)
+  WHERE installation_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS notification_devices_user_active_idx
   ON public.notification_devices (user_scope, user_id) WHERE is_active = true;

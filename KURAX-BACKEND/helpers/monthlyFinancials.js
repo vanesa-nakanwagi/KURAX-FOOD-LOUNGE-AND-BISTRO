@@ -1,4 +1,7 @@
-import { orderItemGrossAmountSql, orderItemPayableAmountSql } from './orderItemSalesAmounts.js';
+import {
+  orderItemGrossAmountSql,
+  orderItemPayableAmountSql,
+} from './orderItemSalesAmounts.js';
 
 export function calculateMonthlyFinancials({ grossSales = 0, collectedSales = grossSales, creditSettlements = 0, expenses = 0 } = {}) {
   const gross = Number(grossSales) || 0;
@@ -16,7 +19,7 @@ export function calculateMonthlyFinancials({ grossSales = 0, collectedSales = gr
 }
 
 export async function getMonthlyFinancials(pool, month) {
-  const [salesResult, settlementsResult, pettyResult, expensesResult, cashierExpensesResult] = await Promise.all([
+  const [salesResult, complimentaryResult, settlementsResult, pettyResult, expensesResult, cashierExpensesResult] = await Promise.all([
     pool.query(`
       SELECT
         COALESCE(SUM(main_items.gross_total), 0) AS gross_sales,
@@ -33,10 +36,7 @@ export async function getMonthlyFinancials(pool, month) {
             ELSE COALESCE(SUM(${orderItemPayableAmountSql('item')}), 0)
           END AS total,
           CASE WHEN jsonb_array_length(COALESCE(o.items, '[]'::jsonb)) = 0 THEN COALESCE(o.total, 0)
-            ELSE CASE WHEN BOOL_OR(COALESCE(item->>'complimentary', 'false') = 'true')
-              THEN COALESCE(SUM(${orderItemGrossAmountSql('item')}), 0)
-              ELSE COALESCE(SUM(${orderItemPayableAmountSql('item')}), 0)
-            END
+            ELSE COALESCE(SUM(${orderItemGrossAmountSql('item')}), 0)
           END AS gross_total
         FROM jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
         WHERE LOWER(COALESCE(item->>'station','')) <> 'shisha'
@@ -55,6 +55,36 @@ export async function getMonthlyFinancials(pool, month) {
           WHERE o2.original_order_ids IS NOT NULL
             AND o2.original_order_ids::text LIKE '%' || o.id::text || '%'
         )
+    `, [month]),
+    pool.query(`
+      SELECT
+        COALESCE(SUM(CASE
+          WHEN COALESCE(item->>'complimentary', 'false') = 'true'
+            AND (
+              COALESCE(item->>'_rowPaid', 'false') = 'true'
+              OR COALESCE(item->>'is_partially_paid', 'false') = 'true'
+            )
+          THEN LEAST(
+            ${orderItemPayableAmountSql('item')},
+            GREATEST(COALESCE(
+              NULLIF(item->>'paidAmount', '')::numeric,
+              NULLIF(item->>'partial_amount_paid', '')::numeric,
+              NULLIF(item->>'amount_paid', '')::numeric,
+              0
+            ), 0)
+          )
+          ELSE 0
+        END), 0) AS complimentary_paid,
+        COALESCE(SUM(CASE
+          WHEN COALESCE(item->>'complimentary', 'false') = 'true'
+          THEN GREATEST(COALESCE(NULLIF(item->>'complimentaryWaivedAmount', '')::numeric, 0), 0)
+          ELSE 0
+        END), 0) AS complimentary_waived
+      FROM orders o
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
+      WHERE TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+        AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
+        AND LOWER(COALESCE(item->>'station','')) <> 'shisha'
     `, [month]),
     pool.query(`
       SELECT
@@ -107,6 +137,8 @@ export async function getMonthlyFinancials(pool, month) {
     ...financials,
     totalCollected: financials.collectedSales + financials.creditSettlements,
     orderCount: Number(sales.order_count),
+    complimentaryPaid: Number(complimentaryResult.rows[0].complimentary_paid) || 0,
+    complimentaryWaived: Number(complimentaryResult.rows[0].complimentary_waived) || 0,
     settlementCount: Number(settlementBreakdown.settlement_count),
     salesBreakdown: {
       cash: Number(sales.cash),

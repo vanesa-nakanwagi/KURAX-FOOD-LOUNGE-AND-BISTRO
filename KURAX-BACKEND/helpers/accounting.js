@@ -1383,8 +1383,20 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
          COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
            * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
        ) AS amount,
-       COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
-         * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1) AS gross_amount
+       COALESCE(
+         NULLIF(item->>'originalLineAmount', '')::numeric,
+         COALESCE(
+           NULLIF(item->>'originalUnitPrice', '')::numeric,
+           NULLIF(item->>'price', '')::numeric,
+           NULLIF(item->>'unit_price', '')::numeric
+         ) * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+       ) AS gross_amount,
+       CASE WHEN COALESCE(item->>'voidProcessed', 'false') = 'true'
+                  OR UPPER(COALESCE(item->>'status', '')) = 'VOIDED'
+         THEN 0 ELSE COALESCE(NULLIF(item->>'menuDiscountAmount', '')::numeric, 0) END AS menu_discount_amount,
+       CASE WHEN COALESCE(item->>'voidProcessed', 'false') = 'true'
+                  OR UPPER(COALESCE(item->>'status', '')) = 'VOIDED'
+         THEN 0 ELSE COALESCE(NULLIF(item->>'specialBillDiscountAmount', '')::numeric, 0) END AS special_discount_amount
      FROM public.orders o
      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
      LEFT JOIN LATERAL (
@@ -1428,10 +1440,12 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
   ), pool.query(
     `SELECT item->>'station' AS station, item->>'category' AS category,
             COALESCE(
-              NULLIF(item->>'line_total', '')::numeric,
-              NULLIF(item->>'lineTotal', '')::numeric,
-              COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
-                * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
+              NULLIF(item->>'originalLineAmount', '')::numeric,
+              COALESCE(
+                NULLIF(item->>'originalUnitPrice', '')::numeric,
+                NULLIF(item->>'price', '')::numeric,
+                NULLIF(item->>'unit_price', '')::numeric
+              ) * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
             ) AS amount
      FROM public.void_requests vr
      JOIN public.orders o ON o.id = vr.order_id
@@ -1462,6 +1476,8 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
   const refundTotals = aggregateIncomeStatementRevenue(refundsResult.rows);
   const grossSales = salesResult.rows.reduce((sum, row) => sum + Number(row.gross_amount ?? row.amount ?? 0), 0);
   const totalDiscounts = salesResult.rows.reduce((sum, row) => sum + Math.max(0, Number(row.gross_amount ?? row.amount ?? 0) - Number(row.amount || 0)), 0);
+  const menuDiscounts = salesResult.rows.reduce((sum, row) => sum + Number(row.menu_discount_amount || 0), 0);
+  const specialBillDiscounts = salesResult.rows.reduce((sum, row) => sum + Number(row.special_discount_amount || 0), 0);
   const totalRefunds = refundsResult.rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
   for (const [code, amount] of Object.entries(refundTotals)) revenueTotals[code] = (revenueTotals[code] || 0) - amount;
   const revenue = result.rows.filter((row) => row.category === 'Revenue');
@@ -1479,6 +1495,9 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
     endDate,
     grossSales,
     totalDiscounts,
+    menuDiscounts,
+    specialBillDiscounts,
+    voidedSales: totalRefunds,
     totalRefunds,
     netSales: totalRevenue,
     revenue: revenue.map((row) => ({

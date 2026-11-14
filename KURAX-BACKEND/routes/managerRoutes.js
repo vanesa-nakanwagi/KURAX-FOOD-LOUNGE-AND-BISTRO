@@ -4,6 +4,12 @@ import { buildSalesRevenueBreakdown, createSalesJournalEntry } from '../helpers/
 import PDFDocument from 'pdfkit';
 import { getCounterCash } from '../helpers/pettyCash.js';
 import { calculateMonthlyFinancials, getMonthlyFinancials } from '../helpers/monthlyFinancials.js';
+import {
+  getOrderItemOriginalAmount,
+  getOrderItemPaidAmount,
+  getOrderItemPayableAmount,
+} from '../helpers/complimentaryItems.js';
+import notificationService from '../helpers/notificationService.js';
 
 const router = express.Router();
 
@@ -162,6 +168,11 @@ router.get('/analytics/daily', async (req, res) => {
           OR LOWER(status) IN ('paid', 'closed', 'confirmed', 'credit', 'served')
         )
         AND payment_confirmed = true
+        AND NOT EXISTS (
+          SELECT 1 FROM orders o2
+          WHERE o2.original_order_ids IS NOT NULL
+            AND o2.original_order_ids::text LIKE '%' || orders.id::text || '%'
+        )
     `, [targetDate]);
 
     let cashTotal = 0, mtnTotal = 0, airtelTotal = 0, cardTotal = 0, creditTotal = 0, totalGross = 0;
@@ -179,8 +190,11 @@ router.get('/analytics/daily', async (req, res) => {
         const isItemPaid = item._rowPaid === true || Boolean(order.public_order_ref);
         if (!isItemPaid) continue;
 
-        const itemTotal = (Number(item.price) || 0) * (Number(item.quantity) || 1);
-        orderConfirmedTotal += itemTotal;
+        const itemGross = getOrderItemOriginalAmount(item);
+        const itemTotal = order.public_order_ref
+          ? getOrderItemPayableAmount(item)
+          : getOrderItemPaidAmount(item);
+        orderConfirmedTotal += itemGross;
         orderHasConfirmedPayment = true;
 
         const method = ((item.payment_method || order.payment_method || 'Cash')).toUpperCase();
@@ -1902,6 +1916,18 @@ router.patch('/credits/:id/approve', async (req, res) => {
       `UPDATE credits SET status = 'Approved', approved_by = $1, approved_at = NOW(), updated_at = NOW() WHERE id = $2`,
       [approved_by || 'Manager', id]
     );
+    const cashierNotification = await notificationService.sendToRoles(['CASHIER'], {
+      type: 'CREDIT_APPROVED',
+      title: 'Credit request approved',
+      body: `${creditRes.rows[0].client_name || 'Client'}'s credit for ${creditRes.rows[0].table_name || 'the table'} (UGX ${Number(creditRes.rows[0].amount).toLocaleString()}) was approved by ${approved_by || 'Manager'}.`,
+      referenceId: creditRes.rows[0].cashier_queue_id || id,
+      referenceType: creditRes.rows[0].cashier_queue_id ? 'cashier_queue' : 'credit',
+      link: '/cashier',
+    });
+    console.log(
+      `[CREDIT APPROVED NOTIFICATION] Credit ID: ${id}; cashier notifications sent: ` +
+      `${cashierNotification.sent || 0}, failed: ${cashierNotification.failed || 0}`
+    );
     res.json({ success: true, message: 'Credit approved' });
   } catch (err) {
     console.error('Credit approval error:', err);
@@ -1915,17 +1941,200 @@ router.patch('/credits/:id/approve', async (req, res) => {
 router.patch('/credits/:id/reject', async (req, res) => {
   const { id } = req.params;
   const { rejected_by, reason } = req.body;
+  const decidedBy = rejected_by || 'Manager';
+  const rejectionReason = reason || 'Rejected by manager';
+  const client = await pool.connect();
   try {
-    const creditRes = await pool.query(`SELECT * FROM credits WHERE id = $1`, [id]);
-    if (creditRes.rows.length === 0) return res.status(404).json({ error: 'Credit not found' });
-    await pool.query(
-      `UPDATE credits SET status = 'Rejected', rejected_by = $1, reject_reason = $2, rejected_at = NOW(), updated_at = NOW() WHERE id = $3`,
-      [rejected_by || 'Manager', reason || 'Rejected by manager', id]
+    await client.query('BEGIN');
+    let queue;
+    let credit;
+    const requestedCreditId = Number(req.body?.credit_id);
+
+    if (Number.isInteger(requestedCreditId) && requestedCreditId > 0) {
+      const creditResult = await client.query(
+        `SELECT * FROM public.credits
+         WHERE id = $1 AND status = 'PendingManagerApproval'
+         FOR UPDATE`,
+        [requestedCreditId]
+      );
+      credit = creditResult.rows[0];
+      if (credit?.cashier_queue_id) {
+        const queueResult = await client.query(
+          `SELECT * FROM public.cashier_queue
+           WHERE id = $1 AND method = 'Credit' AND status = 'PendingManagerApproval'
+           FOR UPDATE`,
+          [credit.cashier_queue_id]
+        );
+        queue = queueResult.rows[0];
+      }
+    } else {
+      const queueResult = await client.query(
+        `SELECT * FROM public.cashier_queue
+         WHERE id = $1 AND method = 'Credit' AND status = 'PendingManagerApproval'
+         FOR UPDATE`,
+        [id]
+      );
+      queue = queueResult.rows[0];
+      if (queue) {
+        const creditResult = await client.query(
+          `SELECT * FROM public.credits WHERE cashier_queue_id = $1 FOR UPDATE`,
+          [queue.id]
+        );
+        credit = creditResult.rows[0];
+      } else {
+        const creditResult = await client.query(
+          `SELECT * FROM public.credits
+           WHERE id = $1 AND status = 'PendingManagerApproval'
+           FOR UPDATE`,
+          [id]
+        );
+        credit = creditResult.rows[0];
+        if (credit?.cashier_queue_id) {
+          const linkedQueueResult = await client.query(
+            `SELECT * FROM public.cashier_queue
+             WHERE id = $1 AND method = 'Credit' AND status = 'PendingManagerApproval'
+             FOR UPDATE`,
+            [credit.cashier_queue_id]
+          );
+          queue = linkedQueueResult.rows[0];
+        }
+      }
+    }
+
+    if (!queue) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Credit request not found or no longer awaiting manager approval.' });
+    }
+    if (!credit) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'The credit ledger record for this request was not found.' });
+    }
+
+    await client.query(
+      `UPDATE public.credits
+       SET status = 'Rejected', rejected_by = $1, reject_reason = $2,
+           rejected_at = NOW(), updated_at = NOW()
+       WHERE id = $3`,
+      [decidedBy, rejectionReason, credit.id]
     );
-    res.json({ success: true, message: 'Credit rejected' });
+    await client.query(
+      `UPDATE public.cashier_queue
+       SET status = 'Rejected', confirmed_by = $1, confirmed_at = NOW()
+       WHERE id = $2`,
+      [decidedBy, queue.id]
+    );
+
+    let orderIds = queue.order_ids || [];
+    if (typeof orderIds === 'string') {
+      try {
+        orderIds = JSON.parse(orderIds);
+      } catch (error) {
+        throw new Error(`Could not parse order IDs for rejected credit queue item ${queue.id}: ${error.message}`);
+      }
+    }
+    if (!Array.isArray(orderIds)) orderIds = [];
+
+    let queueItem = queue.item;
+    if (typeof queueItem === 'string') {
+      try {
+        queueItem = JSON.parse(queueItem);
+      } catch (error) {
+        throw new Error(`Could not parse item for rejected credit queue item ${queue.id}: ${error.message}`);
+      }
+    }
+    const itemIndex = Number(queueItem?._orderItemIndex);
+    let waiterId = Number(queue.staff_id) || null;
+    for (const orderId of orderIds) {
+      if (queueItem?._orderId && Number(queueItem._orderId) !== Number(orderId)) continue;
+      const orderResult = await client.query(
+        `SELECT id, staff_id, items FROM public.orders WHERE id = $1 FOR UPDATE`,
+        [orderId]
+      );
+      const order = orderResult.rows[0];
+      if (!order) continue;
+      if (!waiterId && order.staff_id) waiterId = Number(order.staff_id);
+
+      let items = order.items;
+      if (typeof items === 'string') {
+        try {
+          items = JSON.parse(items);
+        } catch (error) {
+          throw new Error(`Could not parse items for order ${order.id}: ${error.message}`);
+        }
+      }
+      if (!Array.isArray(items)) continue;
+
+      const updatedItems = items.map((item, index) => {
+        const matchesRequestedItem = queue.is_item
+          ? Boolean(queueItem?.name)
+            ? item.name === queueItem.name
+            : Number.isInteger(itemIndex) && itemIndex >= 0 && index === itemIndex
+          : item.creditRequested === true
+            || String(item.payment_method || '').toUpperCase().includes('CREDIT');
+        if (!matchesRequestedItem) return item;
+        return {
+          ...item,
+          creditRequested: true,
+          creditRejected: true,
+          creditRejectionReason: rejectionReason,
+          payment_method: item.payment_method || 'Credit',
+        };
+      });
+      if (updatedItems.some((item, index) => item !== items[index])) {
+        await client.query(
+          `UPDATE public.orders SET items = $1, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify(updatedItems), order.id]
+        );
+      }
+    }
+    await client.query('COMMIT');
+
+    if (!waiterId && queue.requested_by) {
+      const waiterResult = await pool.query(
+        `SELECT id FROM public.staff
+         WHERE UPPER(role) = 'WAITER' AND COALESCE(is_active, TRUE) = TRUE
+           AND LOWER(TRIM(name)) = LOWER(TRIM($1))`,
+        [queue.requested_by]
+      );
+      waiterId = waiterResult.rows[0]?.id || null;
+    }
+    if (waiterId) {
+      const waiterNotification = await notificationService.sendToUser(waiterId, {
+        type: 'CREDIT_REJECTED',
+        title: 'Credit request rejected — payment required',
+        body: `${credit.client_name || 'Client'}'s credit for ${credit.table_name || queue.table_name || 'the table'} was rejected. Collect payment from the client.`,
+        referenceId: queue.id,
+        referenceType: 'cashier_queue',
+        link: '/staff/waiter',
+      });
+      console.log(
+        `[CREDIT REJECTED WAITER NOTIFICATION] Queue ID: ${queue.id}; ` +
+        `sent: ${waiterNotification.sent || 0}, failed: ${waiterNotification.failed || 0}`
+      );
+    } else {
+      console.warn(`[CREDIT REJECTED WAITER NOTIFICATION] No waiter found for queue item ${queue.id}.`);
+    }
+
+    const cashierNotification = await notificationService.sendToRoles(['CASHIER'], {
+      type: 'CREDIT_REJECTED',
+      title: 'Credit request rejected',
+      body: `${credit.client_name || 'Client'}'s credit for ${credit.table_name || queue.table_name || 'the table'} (UGX ${Number(credit.amount).toLocaleString()}) was rejected by ${decidedBy}. Collect payment from the client.`,
+      referenceId: queue.id,
+      referenceType: 'cashier_queue',
+      link: '/cashier',
+    });
+    console.log(
+      `[CREDIT REJECTED NOTIFICATION] Queue ID: ${queue.id}; cashier notifications sent: ` +
+      `${cashierNotification.sent || 0}, failed: ${cashierNotification.failed || 0}`
+    );
+
+    res.json({ success: true, message: 'Credit rejected; payment is due from the client.' });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Credit rejection error:', err);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

@@ -117,21 +117,31 @@ function normalizeEvent(event, recipient, userScope) {
 }
 
 async function sendTokens(tokens, data) {
-  if (!tokens.length) return { sent: 0 };
+  if (!tokens.length) return { sent: 0, failed: 0 };
   let client;
   try {
     client = getAdminMessaging();
   } catch (error) {
     console.warn('FCM is not configured; staff notification was not sent:', error.message);
-    return { sent: 0, unavailable: true };
+    return { sent: 0, failed: tokens.length, unavailable: true };
   }
 
   let sent = 0;
+  let failed = 0;
   for (let start = 0; start < tokens.length; start += 500) {
     const batch = tokens.slice(start, start + 500);
     try {
       const result = await client.sendEachForMulticast({ tokens: batch, data });
       sent += result.successCount;
+      failed += result.failureCount;
+      for (const response of result.responses) {
+        if (!response.success) {
+          console.error('FCM staff notification delivery failed:', {
+            type: data.type,
+            error: response.error?.code || response.error?.message || 'Unknown FCM error',
+          });
+        }
+      }
       const invalidTokens = result.responses.flatMap((response, index) => (
         response.success ? [] : response.error?.code === 'messaging/registration-token-not-registered'
           || response.error?.code === 'messaging/invalid-registration-token'
@@ -147,10 +157,11 @@ async function sendTokens(tokens, data) {
         );
       }
     } catch (error) {
+      failed += batch.length;
       console.error('FCM notification batch failed:', error.message);
     }
   }
-  return { sent };
+  return { sent, failed };
 }
 
 const notificationService = {
@@ -162,13 +173,11 @@ const notificationService = {
          user_scope, user_id, installation_id, firebase_installation_id, fcm_token, platform, browser,
          user_agent, is_pwa, permission_status, notifications_enabled, active, is_active, last_seen_at, updated_at, created_at
        ) VALUES (
-         $1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, true, true, NOW(), NOW(), NOW()
-       )
-      ON CONFLICT (installation_id) WHERE installation_id IS NOT NULL DO UPDATE SET
-         user_scope = EXCLUDED.user_scope,
-         user_id = EXCLUDED.user_id,
-         firebase_installation_id = EXCLUDED.installation_id,
-         fcm_token = EXCLUDED.fcm_token,
+          $1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, true, true, NOW(), NOW(), NOW()
+        )
+       ON CONFLICT (user_scope, user_id, installation_id) WHERE installation_id IS NOT NULL DO UPDATE SET
+          firebase_installation_id = EXCLUDED.installation_id,
+          fcm_token = EXCLUDED.fcm_token,
          platform = EXCLUDED.platform,
          browser = EXCLUDED.browser,
          user_agent = EXCLUDED.user_agent,
@@ -248,6 +257,7 @@ const notificationService = {
          WHERE user_scope = $1 AND user_id = $2 AND active = true AND is_active = true AND notifications_enabled = true`,
         [userScope, Number(userId)]
       );
+      if (!result.rows.length) return { sent: 0, failed: 0, noRecipients: true };
       return sendTokens(
         result.rows.map((row) => row.fcm_token),
         normalizeEvent(event, userId, userScope)
@@ -277,7 +287,10 @@ const notificationService = {
 
       const payloads = [...byUser.entries()].map(([userId, tokens]) => sendTokens(tokens, normalizeEvent(event, userId, userScope)));
       const results = await Promise.all(payloads);
-      return { sent: results.reduce((total, result) => total + (result.sent || 0), 0) };
+      return {
+        sent: results.reduce((total, result) => total + (result.sent || 0), 0),
+        failed: results.reduce((total, result) => total + (result.failed || 0), 0),
+      };
     } catch (error) {
       console.error('Could not load batch notification devices:', error.message);
       return { sent: 0, error: true };
@@ -291,10 +304,18 @@ const notificationService = {
         `SELECT DISTINCT d.user_id, d.user_scope, d.fcm_token
          FROM public.notification_devices d
          JOIN ${table} s ON s.id = d.user_id
-         WHERE d.user_scope = $1 AND d.active = true AND d.is_active = true AND d.notifications_enabled = true AND s.is_active = true
+         WHERE d.user_scope = $1 AND d.active = true AND d.is_active = true AND d.notifications_enabled = true
+           AND COALESCE(s.is_active, true) = true
            AND UPPER(s.role) = ANY($2::text[])`,
         [userScope, roles.map((role) => String(role).toUpperCase())]
       );
+      if (!result.rows.length) {
+        console.warn('No registered notification devices found for staff roles:', {
+          roles: roles.map((role) => String(role).toUpperCase()),
+          userScope,
+        });
+        return { sent: 0, failed: 0, noRecipients: true };
+      }
       const sends = new Map();
       for (const row of result.rows) {
         const data = normalizeEvent(event, row.user_id, row.user_scope);
@@ -303,7 +324,10 @@ const notificationService = {
         sends.get(key).tokens.push(row.fcm_token);
       }
       const results = await Promise.all([...sends.values()].map(({ data, tokens }) => sendTokens(tokens, data)));
-      return { sent: results.reduce((total, result) => total + result.sent, 0) };
+      return {
+        sent: results.reduce((total, result) => total + result.sent, 0),
+        failed: results.reduce((total, result) => total + result.failed, 0),
+      };
     } catch (error) {
       console.error('Could not resolve staff notification recipients:', error.message);
       return { sent: 0, error: true };

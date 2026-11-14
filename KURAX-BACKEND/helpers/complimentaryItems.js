@@ -20,11 +20,11 @@ export function getOrderItemWaivedAmount(item = {}) {
 
 export function getOrderItemPayableAmount(item = {}) {
   const originalAmount = getOrderItemOriginalAmount(item);
-  if (item.complimentary !== true) return originalAmount;
   const storedPayable = Number(item.payableAmount);
   if (Number.isFinite(storedPayable) && storedPayable >= 0 && storedPayable <= originalAmount) {
     return roundMoney(storedPayable);
   }
+  if (item.complimentary !== true) return originalAmount;
   return roundMoney(originalAmount - getOrderItemWaivedAmount(item));
 }
 

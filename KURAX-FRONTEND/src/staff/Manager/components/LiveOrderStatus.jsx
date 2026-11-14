@@ -427,7 +427,7 @@ function CreditsPanel({ credits, pendingCredits, withCashierCredits = [], partia
       const res = await fetch(`${API_URL}/api/manager/credits/${creditId}/reject`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rejected_by: managerName, reason: rejectReason.trim() }),
+        body: JSON.stringify({ credit_id: creditId, rejected_by: managerName, reason: rejectReason.trim() }),
       });
       if (res.ok) { onRefresh(); }
       else { const err = await res.json(); alert(err.error || "Failed to reject"); }

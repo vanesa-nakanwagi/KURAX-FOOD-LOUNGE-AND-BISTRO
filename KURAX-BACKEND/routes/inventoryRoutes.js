@@ -22,11 +22,6 @@ const ROLE_STATIONS = {
   BAR_HOD: 'BAR',
   BARISTA_HOD: 'BARISTA',
 };
-const HOD_STATION_ROLES = {
-  KITCHEN: 'KITCHEN_HOD',
-  BAR: 'BAR_HOD',
-  BARISTA: 'BARISTA_HOD',
-};
 const RECIPE_VIEW_ROLES = new Set([
   ...Object.keys(ROLE_STATIONS),
   'ACCOUNTANT',
@@ -34,6 +29,42 @@ const RECIPE_VIEW_ROLES = new Set([
   'MANAGER',
   'SUPERVISOR',
 ]);
+
+async function authenticateAccountant(req, res, next) {
+  const token = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7).trim()
+    : '';
+  if (!token) return res.status(401).json({ error: 'Sign in as an accountant to manage inventory items.' });
+
+  let session;
+  try {
+    session = readSessionToken(token);
+  } catch {
+    return res.status(401).json({ error: 'Session expired. Sign in again.' });
+  }
+  if (session.scope !== 'restaurant' || !session.id) {
+    return res.status(401).json({ error: 'A valid staff session is required.' });
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT id, name, role, is_active FROM public.staff WHERE id = $1',
+      [session.id]
+    );
+    const actor = result.rows[0];
+    if (!actor || actor.is_active === false || actor.role !== session.role) {
+      return res.status(401).json({ error: 'Staff account is inactive or has changed.' });
+    }
+    if (actor.role !== 'ACCOUNTANT') {
+      return res.status(403).json({ error: 'Only an accountant can edit or delete inventory items.' });
+    }
+    req.inventoryActor = actor;
+    return next();
+  } catch (error) {
+    console.error('Inventory item authentication error:', error.message);
+    return res.status(500).json({ error: 'Could not verify accountant access.' });
+  }
+}
 
 function normalizeStation(value) {
   const station = String(value || '').trim().toUpperCase();
@@ -76,6 +107,29 @@ function canManageStation(req, station) {
   const normalized = normalizeStation(station);
   const authorizedStation = ROLE_STATIONS[req.inventoryActor?.role];
   return Boolean(normalized && authorizedStation === normalized);
+}
+
+async function activateRecipeVersion(client, recipe, updatedBy) {
+  await client.query(
+    `UPDATE public.inventory_recipes
+     SET status = 'INACTIVE', updated_at = NOW(), updated_by = $5
+     WHERE id <> $1
+       AND status = 'ACTIVE'
+       AND UPPER(station) IN ($4, CASE WHEN $4 = 'BAR' THEN 'BARMAN' ELSE $4 END)
+       AND (
+         menu_item_id = $2
+         OR (menu_item_id IS NULL AND LOWER(menu_name) = LOWER($3))
+       )`,
+    [recipe.id, recipe.menu_item_id, recipe.menu_name, normalizeStation(recipe.station), updatedBy]
+  );
+  const result = await client.query(
+    `UPDATE public.inventory_recipes
+     SET status = 'ACTIVE', updated_at = NOW(), updated_by = $2
+     WHERE id = $1
+     RETURNING *`,
+    [recipe.id, updatedBy]
+  );
+  return result.rows[0];
 }
 
 function requestedRecipeStation(req, value, res) {
@@ -127,6 +181,25 @@ function stockStatus(item) {
   return 'IN STOCK';
 }
 
+async function postInventoryValueAdjustment(client, { amount, reference, description, actor }) {
+  const value = Number(Math.abs(amount).toFixed(2));
+  if (value === 0) return;
+
+  const inventoryDebit = amount > 0;
+  await createJournalEntry({
+    entryDate: currentBusinessDate(),
+    description,
+    sourceTransaction: reference,
+    postedBy: actor,
+    reference,
+    queryable: client,
+    lines: [
+      { accountCode: '1201', accountName: 'Inventory', debit: inventoryDebit ? value : 0, credit: inventoryDebit ? 0 : value },
+      { accountCode: '5009', accountName: 'Other Operating Expenses', debit: inventoryDebit ? 0 : value, credit: inventoryDebit ? value : 0 },
+    ],
+  });
+}
+
 function isActiveOrderItem(item = {}) {
   return item.voidProcessed !== true && String(item.status || '').toUpperCase() !== 'VOIDED';
 }
@@ -173,6 +246,7 @@ async function resolveItemIdByName(name, station = null) {
   const result = await pool.query(
     `SELECT id FROM public.inventory_items
      WHERE LOWER(item_name) = LOWER($1)
+       AND is_active = true
        AND ($2::text IS NULL OR UPPER(COALESCE(station, 'KITCHEN')) IN ($2, CASE WHEN $2 = 'BAR' THEN 'BARMAN' ELSE $2 END))
      ORDER BY id
      LIMIT 1`,
@@ -197,6 +271,12 @@ async function buildItemSummary(item) {
 
 router.get('/locations', async (req, res) => {
   try {
+    await pool.query(
+      `INSERT INTO public.inventory_locations (name, type, is_active)
+       VALUES ('MAIN STORE', 'STORE', true), ('KITCHEN', 'STATION', true),
+              ('BAR', 'STATION', true), ('BARISTA', 'STATION', true)
+       ON CONFLICT (name) DO UPDATE SET is_active = true, updated_at = NOW()`
+    );
     const result = await pool.query(
       `SELECT * FROM public.inventory_locations WHERE is_active = true ORDER BY name ASC`
     );
@@ -363,6 +443,273 @@ router.post('/items', async (req, res) => {
   }
 });
 
+router.patch('/items/:id', authenticateAccountant, async (req, res) => {
+  const itemId = Number(req.params.id);
+  if (!Number.isInteger(itemId) || itemId < 1) {
+    return res.status(400).json({ error: 'A valid inventory item is required.' });
+  }
+
+  const {
+    item_name,
+    category,
+    unit,
+    purchase_unit,
+    purchase_conversion_factor,
+    minimum_stock_level,
+    current_quantity,
+    unit_cost,
+    location_id,
+    station,
+  } = req.body || {};
+  const finalName = String(item_name || '').trim();
+  const finalStation = normalizeInventoryStation(station);
+  const finalUnit = normalizeUnit(unit);
+  const finalPurchaseUnit = normalizeUnit(purchase_unit);
+
+  if (!finalName) return res.status(400).json({ error: 'Item name is required.' });
+  if (!finalStation) return res.status(400).json({ error: 'Select a valid inventory station.' });
+  if (!isInventoryPurchaseUnitForStock(finalUnit, finalPurchaseUnit, finalStation)) {
+    return res.status(400).json({ error: 'Select stock and purchase units supported by the selected station.' });
+  }
+  if (!isValidDecimal(current_quantity, true) || !isValidDecimal(minimum_stock_level, true)) {
+    return res.status(400).json({ error: 'Stock quantity and minimum stock must be valid non-negative numbers.' });
+  }
+  if (!isValidDecimal(unit_cost, true, 2)) {
+    return res.status(400).json({ error: 'Unit cost must be a valid non-negative amount.' });
+  }
+
+  let conversionFactor;
+  try {
+    conversionFactor = configuredPurchaseConversionFactor(
+      finalUnit,
+      finalPurchaseUnit,
+      purchase_conversion_factor,
+      { unit: finalUnit, purchase_unit: finalPurchaseUnit }
+    );
+  } catch (error) {
+    return res.status(error instanceof UnitConversionError ? 400 : 500).json({ error: error.message });
+  }
+
+  const finalLocationId = location_id ? Number(location_id) : null;
+  if (!Number.isInteger(finalLocationId) || finalLocationId < 1) {
+    return res.status(400).json({ error: 'Select a valid inventory location.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const location = await client.query(
+      'SELECT id FROM public.inventory_locations WHERE id = $1 AND is_active = true',
+      [finalLocationId]
+    );
+    if (!location.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'The selected inventory location is unavailable.' });
+    }
+
+    const existingResult = await client.query(
+      'SELECT * FROM public.inventory_items WHERE id = $1 AND is_active = true FOR UPDATE',
+      [itemId]
+    );
+    const existing = existingResult.rows[0];
+    if (!existing) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Active inventory item not found.' });
+    }
+
+    const reference = `INV-EDIT-${itemId}-${Date.now()}`;
+    const result = await client.query(
+      `UPDATE public.inventory_items
+       SET item_name = $1, category = $2, unit = $3, base_unit = $3,
+           purchase_unit = $4, purchase_conversion_factor = $5,
+           minimum_stock_level = $6, current_quantity = $7, unit_cost = $8,
+           inventory_value = $7::numeric * $8::numeric, location_id = $9,
+           station = $10, updated_by = $11, updated_at = NOW()
+       WHERE id = $12 AND is_active = true
+       RETURNING *`,
+      [
+        finalName,
+        String(category || 'General').trim() || 'General',
+        finalUnit,
+        finalPurchaseUnit,
+        conversionFactor,
+        Number(minimum_stock_level),
+        Number(current_quantity),
+        Number(unit_cost),
+        finalLocationId,
+        finalStation,
+        req.inventoryActor.name,
+        itemId,
+      ]
+    );
+    const updated = result.rows[0];
+    const oldValue = Number((Number(existing.current_quantity) * Number(existing.unit_cost)).toFixed(2));
+    const newValue = Number((Number(updated.current_quantity) * Number(updated.unit_cost)).toFixed(2));
+    const valueChange = Number((newValue - oldValue).toFixed(2));
+
+    await postInventoryValueAdjustment(client, {
+      amount: valueChange,
+      reference,
+      description: `Inventory value adjustment for ${updated.item_name}`,
+      actor: req.inventoryActor.name,
+    });
+
+    const quantityChange = Number((Number(updated.current_quantity) - Number(existing.current_quantity)).toFixed(3));
+    if (quantityChange !== 0) {
+      const adjustmentType = quantityChange > 0 ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT';
+      await client.query(
+        `INSERT INTO public.inventory_adjustments
+           (item_id, location_id, adjustment_type, quantity, reason, business_date, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [itemId, updated.location_id, adjustmentType, Math.abs(quantityChange), 'Accountant inventory edit', currentBusinessDate(), req.inventoryActor.name]
+      );
+      await client.query(
+        `INSERT INTO public.inventory_transactions
+           (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value,
+            source_location_id, destination_location_id, station, business_date, created_by, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [
+          itemId,
+          reference,
+          adjustmentType,
+          Math.abs(quantityChange),
+          updated.unit,
+          updated.unit_cost,
+          Math.abs(valueChange),
+          quantityChange < 0 ? existing.location_id : null,
+          quantityChange > 0 ? updated.location_id : null,
+          updated.station,
+          currentBusinessDate(),
+          req.inventoryActor.name,
+          'Accountant inventory edit',
+        ]
+      );
+    }
+
+    await client.query(
+      `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
+       VALUES ('inventory_item', $1, 'updated', $2, $3)`,
+      [itemId, req.inventoryActor.name, JSON.stringify({
+        before: {
+          item_name: existing.item_name,
+          category: existing.category,
+          current_quantity: existing.current_quantity,
+          unit_cost: existing.unit_cost,
+          inventory_value: oldValue,
+          location_id: existing.location_id,
+          station: existing.station,
+        },
+        after: {
+          item_name: updated.item_name,
+          category: updated.category,
+          current_quantity: updated.current_quantity,
+          unit_cost: updated.unit_cost,
+          inventory_value: newValue,
+          location_id: updated.location_id,
+          station: updated.station,
+        },
+        value_change: valueChange,
+        reference,
+      })]
+    );
+    await client.query('COMMIT');
+    return res.json(await buildItemSummary(result.rows[0]));
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Inventory item update error:', error.message);
+    return res.status(500).json({ error: 'Could not update inventory item.' });
+  } finally {
+    client.release();
+  }
+});
+
+router.delete('/items/:id', authenticateAccountant, async (req, res) => {
+  const itemId = Number(req.params.id);
+  if (!Number.isInteger(itemId) || itemId < 1) {
+    return res.status(400).json({ error: 'A valid inventory item is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const itemResult = await client.query(
+      'SELECT * FROM public.inventory_items WHERE id = $1 AND is_active = true FOR UPDATE',
+      [itemId]
+    );
+    const item = itemResult.rows[0];
+    if (!item) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Active inventory item not found.' });
+    }
+
+    const quantity = Number(item.current_quantity || 0);
+    const value = Number((quantity * Number(item.unit_cost || 0)).toFixed(2));
+    const reference = `INV-DELETE-${itemId}-${Date.now()}`;
+    await client.query(
+      `UPDATE public.inventory_items
+       SET is_active = false, current_quantity = 0, inventory_value = 0,
+           updated_by = $1, updated_at = NOW()
+       WHERE id = $2`,
+      [req.inventoryActor.name, itemId]
+    );
+
+    if (quantity > 0) {
+      await client.query(
+        `INSERT INTO public.inventory_adjustments
+           (item_id, location_id, adjustment_type, quantity, reason, business_date, created_by)
+         VALUES ($1, $2, 'ADJUSTMENT_OUT', $3, $4, $5, $6)`,
+        [itemId, item.location_id, quantity, 'Inventory item deleted; remaining stock written off', currentBusinessDate(), req.inventoryActor.name]
+      );
+      await client.query(
+        `INSERT INTO public.inventory_transactions
+           (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value,
+            source_location_id, destination_location_id, station, business_date, created_by, notes)
+         VALUES ($1, $2, 'ADJUSTMENT_OUT', $3, $4, $5, $6, $7, NULL, $8, $9, $10, $11)`,
+        [
+          itemId,
+          reference,
+          quantity,
+          item.unit,
+          item.unit_cost,
+          value,
+          item.location_id,
+          item.station,
+          currentBusinessDate(),
+          req.inventoryActor.name,
+          'Inventory item deleted; remaining stock written off',
+        ]
+      );
+    }
+
+    await postInventoryValueAdjustment(client, {
+      amount: -value,
+      reference,
+      description: `Inventory write-off for deleted item ${item.item_name}`,
+      actor: req.inventoryActor.name,
+    });
+    await client.query(
+      `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
+       VALUES ('inventory_item', $1, 'deleted', $2, $3)`,
+      [itemId, req.inventoryActor.name, JSON.stringify({
+        item_name: item.item_name,
+        quantity,
+        unit: item.unit,
+        unit_cost: item.unit_cost,
+        inventory_value: value,
+        reference,
+      })]
+    );
+    await client.query('COMMIT');
+    return res.json({ message: 'Inventory item deleted and accounting updated.' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Inventory item delete error:', error.message);
+    return res.status(500).json({ error: 'Could not delete inventory item.' });
+  } finally {
+    client.release();
+  }
+});
+
 router.post('/purchases', async (req, res) => {
   const payload = req.body || {};
   const items = Array.isArray(payload.items) ? payload.items : [payload];
@@ -396,7 +743,10 @@ router.post('/purchases', async (req, res) => {
       let item = null;
 
       if (itemIdNumber) {
-        const found = await client.query(`SELECT * FROM public.inventory_items WHERE id = $1 FOR UPDATE`, [Number(itemIdNumber)]);
+        const found = await client.query(
+          `SELECT * FROM public.inventory_items WHERE id = $1 AND is_active = true FOR UPDATE`,
+          [Number(itemIdNumber)]
+        );
         item = found.rows[0];
       }
 
@@ -575,10 +925,200 @@ router.post('/purchases', async (req, res) => {
   }
 });
 
+router.post('/purchases/:id/reverse', authenticateAccountant, async (req, res) => {
+  const purchaseId = Number(req.params.id);
+  const reason = String(req.body?.reason || '').trim();
+  if (!Number.isInteger(purchaseId) || purchaseId < 1) {
+    return res.status(400).json({ error: 'A valid purchase receipt is required.' });
+  }
+  if (!reason) return res.status(400).json({ error: 'A reason is required to reverse a purchase.' });
+  if (reason.length > 1000) return res.status(400).json({ error: 'The reversal reason must be 1000 characters or fewer.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const receiptResult = await client.query(
+      `SELECT pr.*, s.name AS supplier_name
+       FROM public.purchase_receipts pr
+       LEFT JOIN public.suppliers s ON s.id = pr.supplier_id
+       WHERE pr.id = $1
+       FOR UPDATE OF pr`,
+      [purchaseId]
+    );
+    const receipt = receiptResult.rows[0];
+    if (!receipt) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Purchase receipt not found.' });
+    }
+
+    const originalResult = await client.query(
+      `SELECT * FROM public.journal_entries WHERE reference = $1 FOR UPDATE`,
+      [`INV-PUR-${purchaseId}`]
+    );
+    const original = originalResult.rows[0];
+    if (!original) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This receipt has no original accounting entry and cannot be reversed automatically.' });
+    }
+    if (original.status !== 'Posted' || original.reversal_of) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This purchase receipt has already been reversed or its accounting entry is not posted.' });
+    }
+
+    let reversalDate = currentBusinessDate();
+    let periodResult = await client.query(
+      `SELECT start_date::text AS start_date
+       FROM public.accounting_periods
+       WHERE status = 'Open' AND $1::date BETWEEN start_date AND end_date
+       ORDER BY start_date DESC LIMIT 1 FOR SHARE`,
+      [reversalDate]
+    );
+    if (!periodResult.rows.length) {
+      periodResult = await client.query(
+        `SELECT start_date::text AS start_date
+         FROM public.accounting_periods
+         WHERE status = 'Open' AND start_date > $1::date
+         ORDER BY start_date ASC LIMIT 1 FOR SHARE`,
+        [reversalDate]
+      );
+      if (!periodResult.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'No open accounting period is available for this reversal.' });
+      }
+      reversalDate = periodResult.rows[0].start_date;
+    }
+
+    const linesResult = await client.query(
+      `SELECT account_code, account_name, debit, credit
+       FROM public.general_ledger
+       WHERE journal_entry_id = $1
+       ORDER BY id
+       FOR SHARE`,
+      [original.id]
+    );
+    if (!linesResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'The original purchase has no ledger lines and cannot be reversed.' });
+    }
+
+    const purchaseItemsResult = await client.query(
+      `SELECT pri.*, ii.item_name, ii.unit AS stock_unit, ii.unit_cost AS current_unit_cost,
+              ii.current_quantity AS available_quantity, ii.location_id AS current_location_id,
+              ii.station AS current_station, ii.is_active
+       FROM public.purchase_receipt_items pri
+       JOIN public.inventory_items ii ON ii.id = pri.item_id
+       WHERE pri.purchase_id = $1
+       ORDER BY pri.id
+       FOR UPDATE OF ii`,
+      [purchaseId]
+    );
+    if (!purchaseItemsResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This receipt has no inventory lines and cannot be reversed automatically.' });
+    }
+
+    for (const item of purchaseItemsResult.rows) {
+      const quantity = Number(item.normalized_stock_quantity ?? item.quantity);
+      if (item.is_active && Number(item.available_quantity) + 0.0001 < quantity) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: `Cannot reverse this receipt: only ${item.available_quantity} ${item.stock_unit} of ${item.item_name} remain in stock. Full reversal is blocked until the receipt quantities can be reconciled with inventory.`,
+        });
+      }
+    }
+
+    const actor = req.inventoryActor.name;
+    const reference = `REV-PUR-${purchaseId}-${Date.now()}`;
+    const description = `Reversal of purchase receipt ${receipt.receipt_number || purchaseId}: ${reason}`;
+    for (const item of purchaseItemsResult.rows) {
+      if (!item.is_active) continue;
+      const quantity = Number(item.normalized_stock_quantity ?? item.quantity);
+      await client.query(
+        `UPDATE public.inventory_items
+         SET current_quantity = current_quantity - $1::numeric,
+             inventory_value = (current_quantity - $1::numeric) * unit_cost,
+             updated_by = $2, updated_at = NOW()
+         WHERE id = $3`,
+        [quantity, actor, item.item_id]
+      );
+      await client.query(
+        `INSERT INTO public.inventory_transactions
+           (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value,
+            source_location_id, station, supplier_id, business_date, created_by, notes)
+         VALUES ($1, $2, 'RETURN_TO_SUPPLIER', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          item.item_id,
+          reference,
+          quantity,
+          item.stock_unit || item.unit,
+          item.current_unit_cost || item.unit_cost,
+          item.total_cost,
+          item.current_location_id,
+          item.current_station,
+          receipt.supplier_id,
+          reversalDate,
+          actor,
+          `Reversal of purchase receipt ${receipt.receipt_number || purchaseId}: ${reason}`,
+        ]
+      );
+    }
+
+    const reversalResult = await client.query(
+      `INSERT INTO public.journal_entries (
+         reference, entry_date, description, source_transaction, posted_by,
+         reversal_of, reversal_reason, status, system_type
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'Posted', $8)
+       RETURNING *`,
+      [reference, reversalDate, description, `Reversal of ${original.reference}`, actor, original.id, reason, original.system_type || 'MAIN']
+    );
+    const reversal = reversalResult.rows[0];
+    for (const line of linesResult.rows) {
+      await client.query(
+        `INSERT INTO public.general_ledger (
+           journal_entry_id, account_code, account_name, debit, credit,
+           entry_date, description, source_transaction, posted_by
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [reversal.id, line.account_code, line.account_name, line.credit, line.debit,
+          reversalDate, description, `Reversal of ${original.reference}`, actor]
+      );
+    }
+    await client.query(
+      `UPDATE public.journal_entries SET status = 'Reversed' WHERE id = $1`,
+      [original.id]
+    );
+    await client.query(
+      `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
+       VALUES ('purchase_receipt', $1, 'reversed', $2, $3),
+              ('journal_entry', $4, 'reversed', $2, $5),
+              ('journal_entry', $6, 'posted_reversal', $2, $7)`,
+      [
+        purchaseId,
+        actor,
+        JSON.stringify({ reason, reversal_reference: reference, reversal_date: reversalDate }),
+        original.id,
+        JSON.stringify({ reversal_id: reversal.id, reversal_reference: reference, reason, reversal_date: reversalDate }),
+        reversal.id,
+        JSON.stringify({ original_id: original.id, original_reference: original.reference, reason, reversal_date: reversalDate }),
+      ]
+    );
+    await client.query('COMMIT');
+    res.json({ success: true, reversal_reference: reference, reversal_date: reversalDate });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Purchase receipt reversal error:', error.message);
+    res.status(500).json({ error: 'Could not reverse purchase receipt.' });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/purchases', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT pr.*, s.name AS supplier_name,
+              (je.status = 'Reversed') AS is_reversed,
+              reversal.reference AS reversal_reference,
+              reversal.reversal_reason,
               COALESCE((SELECT json_agg(row_to_json(pi)) FROM (
                 SELECT pri.*, ii.item_name, ii.unit AS normalized_stock_unit FROM public.purchase_receipt_items pri
                 JOIN public.inventory_items ii ON ii.id = pri.item_id
@@ -586,6 +1126,8 @@ router.get('/purchases', async (req, res) => {
               ) pi), '[]'::json) AS items
        FROM public.purchase_receipts pr
        LEFT JOIN public.suppliers s ON s.id = pr.supplier_id
+       LEFT JOIN public.journal_entries je ON je.reference = 'INV-PUR-' || pr.id::text
+       LEFT JOIN public.journal_entries reversal ON reversal.reversal_of = je.id
        ORDER BY pr.business_date DESC, pr.id DESC`
     );
     res.json(result.rows);
@@ -750,16 +1292,27 @@ router.get('/recipes', async (req, res) => {
     const station = requestedRecipeStation(req, req.query.station, res);
     if (res.headersSent) return;
     const result = await pool.query(
-      `SELECT r.*, COALESCE((SELECT json_agg(row_to_json(ri)) FROM (
+      `WITH ranked_recipes AS (
+         SELECT r.*,
+                ROW_NUMBER() OVER (
+                  PARTITION BY COALESCE(r.menu_item_id::text, LOWER(TRIM(r.menu_name))),
+                               CASE WHEN UPPER(r.station) = 'BARMAN' THEN 'BAR' ELSE UPPER(r.station) END
+                  ORDER BY (r.status = 'ACTIVE') DESC, r.updated_at DESC NULLS LAST,
+                           r.created_at DESC, r.version_number DESC, r.id DESC
+                ) AS recipe_rank
+         FROM public.inventory_recipes r
+         WHERE ($1 = 'ALL' OR UPPER(r.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
+       )
+       SELECT r.*, COALESCE((SELECT json_agg(row_to_json(ri)) FROM (
         SELECT ri.*, ii.item_name AS ingredient_name
         FROM public.recipe_ingredients ri
         LEFT JOIN public.inventory_items ii ON ii.id = ri.ingredient_item_id
         WHERE ri.recipe_id = r.id
       ) ri), '[]'::json) AS ingredients
-       FROM public.inventory_recipes r
-      WHERE ($1 = 'ALL' OR UPPER(r.station) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
-       ORDER BY r.created_at DESC`
-          , [station || 'ALL']
+       FROM ranked_recipes r
+       WHERE r.recipe_rank = 1
+       ORDER BY r.created_at DESC`,
+      [station || 'ALL']
     );
     res.json(result.rows);
   } catch (error) {
@@ -786,7 +1339,8 @@ router.get('/recipes/menu-items', async (req, res) => {
           OR (r.menu_item_id IS NULL AND LOWER(r.menu_name) = LOWER(m.name)
             AND UPPER(r.station) IN (CASE WHEN UPPER(m.station) = 'BARMAN' THEN 'BAR' ELSE UPPER(m.station) END,
                          CASE WHEN UPPER(m.station) IN ('BAR', 'BARMAN') THEN 'BARMAN' ELSE UPPER(m.station) END))
-         ORDER BY r.version_number DESC, r.created_at DESC
+         ORDER BY (r.status = 'ACTIVE') DESC, r.updated_at DESC NULLS LAST,
+                  r.created_at DESC, r.version_number DESC
          LIMIT 1
        ) recipe ON true
        WHERE m.published = true
@@ -869,29 +1423,50 @@ router.post('/recipes', async (req, res) => {
     }
 
     await client.query('SELECT pg_advisory_xact_lock($1)', [menuItemId]);
-    const versionResult = await client.query(
-      `SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version
-       FROM public.inventory_recipes WHERE menu_item_id = $1 OR (menu_item_id IS NULL AND LOWER(menu_name) = LOWER($2) AND UPPER(station) IN ($3, CASE WHEN $3 = 'BAR' THEN 'BARMAN' ELSE $3 END))`,
+    const existingResult = await client.query(
+      `SELECT * FROM public.inventory_recipes
+       WHERE (menu_item_id = $1 OR (menu_item_id IS NULL AND LOWER(menu_name) = LOWER($2)))
+         AND UPPER(station) IN ($3, CASE WHEN $3 = 'BAR' THEN 'BARMAN' ELSE $3 END)
+       ORDER BY (status = 'ACTIVE') DESC, updated_at DESC NULLS LAST, created_at DESC, id DESC
+       LIMIT 1
+       FOR UPDATE`,
       [menuItemId, menuItem.name, station]
     );
-    const recipeResult = await client.query(
-      `INSERT INTO public.inventory_recipes (menu_item_id, menu_name, station, version_number, status, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, 'DRAFT', $5, $5)
-       RETURNING *`,
-      [menuItem.id, menuItem.name, station, Number(versionResult.rows[0].next_version), req.inventoryActor.name]
-    );
+    let recipe;
+    if (existingResult.rows[0]) {
+      const currentRecipe = existingResult.rows[0];
+      await client.query('DELETE FROM public.recipe_ingredients WHERE recipe_id = $1', [currentRecipe.id]);
+      const updatedRecipe = await client.query(
+        `UPDATE public.inventory_recipes
+         SET menu_item_id = $2, menu_name = $3, station = $4, version_number = 1,
+             status = 'DRAFT', updated_at = NOW(), updated_by = $5
+         WHERE id = $1
+         RETURNING *`,
+        [currentRecipe.id, menuItem.id, menuItem.name, station, req.inventoryActor.name]
+      );
+      recipe = updatedRecipe.rows[0];
+    } else {
+      const recipeResult = await client.query(
+        `INSERT INTO public.inventory_recipes (menu_item_id, menu_name, station, version_number, status, created_by, updated_by)
+         VALUES ($1, $2, $3, 1, 'DRAFT', $4, $4)
+         RETURNING *`,
+        [menuItem.id, menuItem.name, station, req.inventoryActor.name]
+      );
+      recipe = recipeResult.rows[0];
+    }
 
     for (const ingredient of ingredients) {
       const stockItem = stockItems.get(Number(ingredient.ingredient_item_id));
       await client.query(
         `INSERT INTO public.recipe_ingredients (recipe_id, ingredient_item_id, ingredient_name, quantity, unit)
          VALUES ($1, $2, $3, $4, $5)`,
-        [recipeResult.rows[0].id, stockItem.id, stockItem.item_name, String(ingredient.quantity), normalizeUnit(ingredient.unit || stockItem.unit)]
+        [recipe.id, stockItem.id, stockItem.item_name, String(ingredient.quantity), normalizeUnit(ingredient.unit || stockItem.unit)]
       );
     }
 
+    const activeRecipe = await activateRecipeVersion(client, recipe, req.inventoryActor.name);
     await client.query('COMMIT');
-    res.status(201).json({ recipe: recipeResult.rows[0], ingredients });
+    res.status(existingResult.rows[0] ? 200 : 201).json({ recipe: activeRecipe, ingredients });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: error.message });
@@ -917,13 +1492,9 @@ router.put('/recipes/:id', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'You can only edit recipes for your assigned department.' });
     }
-    if (currentRecipe.status !== 'DRAFT') {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Submitted or active recipes are immutable. Save a new version instead.' });
-    }
     if (!ingredients.length || ingredients.some((ingredient) => !Number.isInteger(Number(ingredient.ingredient_item_id)) || !isValidDecimal(ingredient.quantity))) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Each draft recipe needs inventory ingredients with quantities greater than zero.' });
+      return res.status(400).json({ error: 'Each recipe needs inventory ingredients with quantities greater than zero.' });
     }
     const ingredientIds = [...new Set(ingredients.map((ingredient) => Number(ingredient.ingredient_item_id)))];
     const stockResult = await client.query(
@@ -957,9 +1528,13 @@ router.put('/recipes/:id', async (req, res) => {
         [Number(id), stockItem.id, stockItem.item_name, String(ingredient.quantity), normalizeUnit(ingredient.unit || stockItem.unit)]
       );
     }
-    const recipe = await client.query(`UPDATE public.inventory_recipes SET updated_at = NOW(), updated_by = $2 WHERE id = $1 RETURNING *`, [Number(id), req.inventoryActor.name]);
+    await client.query(
+      `UPDATE public.inventory_recipes SET version_number = 1 WHERE id = $1`,
+      [Number(id)]
+    );
+    const recipe = await activateRecipeVersion(client, currentRecipe, req.inventoryActor.name);
     await client.query('COMMIT');
-    res.json(recipe.rows[0]);
+    res.json(recipe);
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: error.message });
@@ -968,72 +1543,53 @@ router.put('/recipes/:id', async (req, res) => {
   }
 });
 
-router.post('/recipes/:id/submit', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const existing = await pool.query(`SELECT station FROM public.inventory_recipes WHERE id = $1`, [Number(id)]);
-    if (!existing.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
-    if (!canManageStation(req, existing.rows[0].station)) return res.status(403).json({ error: 'You can only submit recipes for your assigned department.' });
-    const result = await pool.query(
-      `UPDATE public.inventory_recipes SET status = 'SUBMITTED', updated_at = NOW(), updated_by = $2 WHERE id = $1 AND status = 'DRAFT' RETURNING *`,
-      [Number(id), req.inventoryActor.name]
-    );
-    if (!result.rows[0]) return res.status(409).json({ error: 'Only draft recipes can be submitted.' });
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+router.delete('/recipes/:id', async (req, res) => {
+  const recipeId = Number(req.params.id);
+  if (!Number.isInteger(recipeId) || recipeId <= 0) {
+    return res.status(400).json({ error: 'A valid recipe ID is required.' });
   }
-});
 
-router.post('/recipes/:id/approve', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const existing = await pool.query(`SELECT station FROM public.inventory_recipes WHERE id = $1`, [Number(id)]);
-    if (!existing.rows[0]) return res.status(404).json({ error: 'Recipe not found.' });
-    if (HOD_STATION_ROLES[normalizeStation(existing.rows[0].station)] !== req.inventoryActor.role) {
-      return res.status(403).json({ error: 'Only the department HOD can approve this recipe.' });
-    }
-    const result = await pool.query(
-      `UPDATE public.inventory_recipes SET status = 'APPROVED', approved_by = $1, approved_at = NOW(), updated_at = NOW(), updated_by = $1 WHERE id = $2 AND status = 'SUBMITTED' RETURNING *`,
-      [req.inventoryActor.name, Number(id)]
-    );
-    if (!result.rows[0]) return res.status(409).json({ error: 'Only submitted recipes can be approved.' });
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/recipes/:id/activate', async (req, res) => {
-  const { id } = req.params;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const current = await client.query(`SELECT * FROM public.inventory_recipes WHERE id = $1 FOR UPDATE`, [Number(id)]);
-    const recipe = current.rows[0];
+    const result = await client.query(
+      'SELECT id, menu_name, station, version_number, status FROM public.inventory_recipes WHERE id = $1 FOR UPDATE',
+      [recipeId]
+    );
+    const recipe = result.rows[0];
     if (!recipe) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Recipe not found.' });
     }
-    if (HOD_STATION_ROLES[normalizeStation(recipe.station)] !== req.inventoryActor.role) {
+    if (!canManageStation(req, recipe.station)) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Only the department HOD can activate this recipe.' });
+      return res.status(403).json({ error: 'You can only remove recipes for your assigned department.' });
     }
-    if (recipe.status !== 'APPROVED') {
+    if (recipe.status === 'INACTIVE') {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Only approved recipes can be activated.' });
+      return res.status(409).json({ error: 'This recipe is already inactive.' });
     }
+
     await client.query(
-      `UPDATE public.inventory_recipes SET status = 'INACTIVE', updated_at = NOW(), updated_by = $3
-      WHERE menu_item_id = $1 AND UPPER(station) IN ($2, CASE WHEN $2 = 'BAR' THEN 'BARMAN' ELSE $2 END) AND status = 'ACTIVE'`,
-      [recipe.menu_item_id, normalizeStation(recipe.station), req.inventoryActor.name]
+      `UPDATE public.inventory_recipes
+       SET status = 'INACTIVE', updated_at = NOW(), updated_by = $2
+       WHERE id = $1`,
+      [recipeId, req.inventoryActor.name]
     );
-    const result = await client.query(
-      `UPDATE public.inventory_recipes SET status = 'ACTIVE', updated_at = NOW(), updated_by = $2 WHERE id = $1 RETURNING *`,
-      [Number(id), req.inventoryActor.name]
+    await client.query(
+      `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
+       VALUES ('inventory_recipe', $1, 'deactivated', $2, $3)`,
+      [recipeId, req.inventoryActor.name, JSON.stringify({
+        menu_name: recipe.menu_name,
+        station: recipe.station,
+        version_number: recipe.version_number,
+        previous_status: recipe.status,
+        history_preserved: true,
+      })]
     );
+
     await client.query('COMMIT');
-    res.json(result.rows[0]);
+    res.json({ id: recipeId, status: 'INACTIVE' });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: error.message });
@@ -1374,7 +1930,11 @@ router.get('/dashboard', async (req, res) => {
         AND ${shishaInventoryFilterSql('ii')}
     `);
 
-    const purchaseTotal = await pool.query(`SELECT COALESCE(SUM(total_amount), 0) AS total_purchases FROM public.purchase_receipts`);
+    const purchaseTotal = await pool.query(
+      `SELECT COALESCE(SUM(pr.total_amount) FILTER (WHERE je.status IS DISTINCT FROM 'Reversed'), 0) AS total_purchases
+       FROM public.purchase_receipts pr
+       LEFT JOIN public.journal_entries je ON je.reference = 'INV-PUR-' || pr.id::text`
+    );
     const consumptionTotal = await pool.query(`SELECT COALESCE(SUM(quantity * unit_cost), 0) AS total_consumption FROM public.inventory_transactions WHERE transaction_type = 'CONSUMPTION'`);
     const wasteTotal = await pool.query(`SELECT COALESCE(SUM(quantity * unit_cost), 0) AS total_waste FROM public.inventory_transactions WHERE transaction_type = 'WASTE'`);
 
@@ -1386,6 +1946,87 @@ router.get('/dashboard', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/reports/inventory-activity', async (req, res) => {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
+  const startDate = req.query.startDate || today;
+  const endDate = req.query.endDate || today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || startDate > endDate) {
+    return res.status(400).json({ error: 'A valid startDate and endDate range is required.' });
+  }
+
+  try {
+    const station = ROLE_STATIONS[req.inventoryActor.role];
+    const [transactionsResult, stockResult] = await Promise.all([
+      pool.query(
+        `SELECT it.business_date::text AS business_date, it.reference_number, ii.item_name,
+                it.transaction_type, it.quantity, it.unit, it.unit_cost, it.total_value,
+                UPPER(COALESCE(it.station, 'KITCHEN')) AS station,
+                sl.name AS source_location, dl.name AS destination_location,
+                s.name AS supplier_name, it.notes
+         FROM public.inventory_transactions it
+         LEFT JOIN public.inventory_items ii ON ii.id = it.item_id
+         LEFT JOIN public.inventory_locations sl ON sl.id = it.source_location_id
+         LEFT JOIN public.inventory_locations dl ON dl.id = it.destination_location_id
+         LEFT JOIN public.suppliers s ON s.id = it.supplier_id
+         WHERE it.business_date BETWEEN $1::date AND $2::date
+           AND ($3::text IS NULL OR UPPER(COALESCE(it.station, 'KITCHEN')) IN ($3, CASE WHEN $3 = 'BAR' THEN 'BARMAN' ELSE $3 END))
+         ORDER BY it.business_date DESC, it.id DESC`,
+        [startDate, endDate, station || null]
+      ),
+      pool.query(
+        `SELECT ii.item_name, UPPER(COALESCE(ii.station, 'KITCHEN')) AS station,
+                ii.current_quantity, ii.unit, ii.unit_cost,
+                ii.current_quantity * ii.unit_cost AS inventory_value,
+                il.name AS location_name, s.name AS supplier_name
+         FROM public.inventory_items ii
+         LEFT JOIN public.inventory_locations il ON il.id = ii.location_id
+         LEFT JOIN public.suppliers s ON s.id = ii.supplier_id
+         WHERE ii.is_active = true
+           AND ${shishaInventoryFilterSql('ii')}
+           AND ($1::text IS NULL OR UPPER(COALESCE(ii.station, 'KITCHEN')) IN ($1, CASE WHEN $1 = 'BAR' THEN 'BARMAN' ELSE $1 END))
+         ORDER BY ii.item_name, ii.id`,
+        [station || null]
+      ),
+    ]);
+
+    const transactions = transactionsResult.rows.map((row) => ({
+      ...row,
+      quantity: Number(row.quantity || 0),
+      unit_cost: Number(row.unit_cost || 0),
+      total_value: Number(row.total_value || 0),
+    }));
+    const totalsByType = transactions.reduce((totals, row) => {
+      const current = totals[row.transaction_type] || { count: 0, quantity: 0, value: 0 };
+      current.count += 1;
+      current.quantity += row.quantity;
+      current.value += row.total_value;
+      totals[row.transaction_type] = current;
+      return totals;
+    }, {});
+    const stock = stockResult.rows.map((row) => ({
+      ...row,
+      current_quantity: Number(row.current_quantity || 0),
+      unit_cost: Number(row.unit_cost || 0),
+      inventory_value: Number(row.inventory_value || 0),
+    }));
+
+    res.json({
+      startDate,
+      endDate,
+      generatedAt: new Date().toISOString(),
+      totalsByType,
+      netPurchases: (totalsByType.PURCHASE?.value || 0) - (totalsByType.RETURN_TO_SUPPLIER?.value || 0),
+      transactionCount: transactions.length,
+      inventoryValue: stock.reduce((total, row) => total + row.inventory_value, 0),
+      transactions,
+      currentStock: stock,
+    });
+  } catch (error) {
+    console.error('Inventory activity report failed:', error.message);
+    res.status(500).json({ error: 'Could not load the inventory activity report.' });
   }
 });
 

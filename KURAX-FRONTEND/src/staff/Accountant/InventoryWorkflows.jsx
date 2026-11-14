@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { FileSpreadsheet, FileText, Printer, RotateCcw, Trash2 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { downloadReportPdf } from '../reportExport';
 import {
   defaultPurchaseConversionFactor,
   inventoryUnitsForStation,
@@ -10,6 +13,21 @@ const STATIONS = ['KITCHEN', 'BAR', 'BARISTA'];
 
 function today() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
+}
+
+function getInventoryPeriodRange(period, currentDate = today()) {
+  const endDate = new Date(`${currentDate}T00:00:00.000Z`);
+  if (period === 'yesterday') endDate.setUTCDate(endDate.getUTCDate() - 1);
+  const end = endDate.toISOString().slice(0, 10);
+  if (period === 'today' || period === 'yesterday') return { start: end, end };
+  if (period === 'weekly') {
+    const weekday = endDate.getUTCDay() || 7;
+    const startDate = new Date(endDate);
+    startDate.setUTCDate(startDate.getUTCDate() - weekday + 1);
+    return { start: startDate.toISOString().slice(0, 10), end };
+  }
+  if (period === 'monthly') return { start: `${end.slice(0, 7)}-01`, end };
+  return null;
 }
 
 function getAccountantName() {
@@ -133,6 +151,7 @@ function History({ title, columns, rows, empty }) {
 function PurchaseWorkflow({ items, locations, records, onAction }) {
   const [form, setForm] = useState({ item_id: '', item_name: '', quantity: '', stock_unit: 'kg', purchase_unit: 'kg', purchase_conversion_factor: '1', unit_cost: '', supplier_name: '', location_id: '', station: 'KITCHEN', category: 'General', minimum_stock_level: '0', payment_method: 'Cash', receipt_number: '', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [reversingAll, setReversingAll] = useState(false);
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const stationUnits = inventoryUnitsForStation(form.station);
 
@@ -165,6 +184,48 @@ function PurchaseWorkflow({ items, locations, records, onAction }) {
   };
 
   const rows = records.purchases || [];
+  const grossPurchaseTotal = rows.reduce((total, row) => total + Number(row.total_amount || 0), 0);
+  const reversedPurchaseTotal = rows.reduce((total, row) => total + (row.is_reversed ? Number(row.total_amount || 0) : 0), 0);
+  const netPurchaseTotal = grossPurchaseTotal - reversedPurchaseTotal;
+  const reversePurchase = async (row) => {
+    const receiptNumber = row.receipt_number || row.id;
+    if (!window.confirm(`Delete purchase receipt ${receiptNumber}? Its amount will be removed from net purchases and stock/accounting will be reversed. The audit history will be retained.`)) return;
+    const reason = window.prompt(`Why are you deleting receipt ${receiptNumber}?`);
+    if (!reason?.trim()) return;
+    await onAction(
+      `purchases/${row.id}/reverse`,
+      { reason: reason.trim() },
+      'POST',
+      'Purchase receipt reversed; stock and accounting have been updated.'
+    );
+  };
+  const receiptsToReverse = rows.filter((row) => !row.is_reversed);
+  const reverseAllPurchases = async () => {
+    if (!receiptsToReverse.length) return;
+    if (!window.confirm(`Reverse all ${receiptsToReverse.length} recorded purchase receipt(s)? This will remove their quantities from stock and reverse their accounting entries.`)) return;
+    const reason = window.prompt('Enter the reason for reversing all purchase receipts:');
+    if (!reason?.trim()) return;
+
+    setReversingAll(true);
+    let reversed = 0;
+    const failed = [];
+    for (const receipt of receiptsToReverse) {
+      const result = await onAction(
+        `purchases/${receipt.id}/reverse`,
+        { reason: reason.trim() },
+        'POST',
+        `Receipt ${receipt.receipt_number || receipt.id} reversed.`
+      );
+      if (result) reversed += 1;
+      else failed.push(receipt.receipt_number || String(receipt.id));
+    }
+    setReversingAll(false);
+    window.alert(
+      failed.length
+        ? `Reversed ${reversed} receipt(s). Could not reverse: ${failed.join(', ')}. Check the error message and resolve stock or accounting-period issues before retrying.`
+        : `Successfully reversed all ${reversed} purchase receipt(s).`
+    );
+  };
   return (
     <div className="space-y-6">
       <Panel title="Receive Purchase" description="Set the packaging factor per item (for example, 24 bottles per crate); purchases normalize stock before updating inventory and accounting.">
@@ -230,14 +291,69 @@ function PurchaseWorkflow({ items, locations, records, onAction }) {
           <div className="md:col-span-2 xl:col-span-3"><SubmitButton disabled={saving}>{saving ? 'Recording…' : 'Record purchase'}</SubmitButton></div>
         </form>
       </Panel>
-      <History title="Purchase history" rows={rows} empty="No purchases have been recorded." columns={[
+      <Panel title="Purchase history" description="Reversals are retained in the receipt history and excluded from the net purchase total.">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-wide text-emerald-800">Net recorded purchases</p>
+            <p className="mt-1 text-xl font-black text-emerald-950">UGX {netPurchaseTotal.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-emerald-800">Gross: UGX {grossPurchaseTotal.toLocaleString()} · Reversed: UGX {reversedPurchaseTotal.toLocaleString()}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={reverseAllPurchases} disabled={reversingAll || !receiptsToReverse.length} className="inline-flex items-center gap-2 rounded-lg border border-rose-200 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50">
+              <RotateCcw size={16} /> {reversingAll ? 'Reversing…' : 'Reverse all receipts'}
+            </button>
+            <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-zinc-700">
+              <Printer size={16} /> Print purchase report
+            </button>
+          </div>
+        </div>
+        <Table rows={rows} empty="No purchases have been recorded." columns={[
         { label: 'Date', key: 'business_date' },
         { label: 'Receipt', key: 'receipt_number' },
         { label: 'Supplier', key: 'supplier_name' },
         { label: 'Payment', key: 'payment_method' },
-        { label: 'Amount', render: (row) => `UGX ${Number(row.total_amount || 0).toLocaleString()}` },
+        { label: 'Amount', render: (row) => <span className={row.is_reversed ? 'line-through text-zinc-400' : ''}>UGX {Number(row.total_amount || 0).toLocaleString()}</span> },
         { label: 'Items', render: (row) => (row.items || []).map((item) => `${item.item_name} (${item.quantity} ${item.unit} → ${item.normalized_stock_quantity ?? item.quantity} ${item.normalized_stock_unit || item.unit})`).join(', ') || '—' },
+        { label: 'Status', render: (row) => row.is_reversed ? `Reversed${row.reversal_reason ? `: ${row.reversal_reason}` : ''}` : 'Recorded' },
+        { label: 'Action', render: (row) => row.is_reversed
+          ? '—'
+          : <button type="button" onClick={() => reversePurchase(row)} className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2 py-1 font-bold text-rose-700 hover:bg-rose-50"><Trash2 size={13} /> Delete</button> },
       ]} />
+      <div className="purchase-print-area" hidden>
+        <h1>Kurax Food Lounge &amp; Bistro</h1>
+        <h2>Purchase receipts report</h2>
+        <p>Generated: {new Date().toLocaleString()}</p>
+        <p>Gross receipts: UGX {grossPurchaseTotal.toLocaleString()}</p>
+        <p>Reversed receipts: UGX {reversedPurchaseTotal.toLocaleString()}</p>
+        <p><strong>Net recorded purchases: UGX {netPurchaseTotal.toLocaleString()}</strong></p>
+        <table>
+          <thead><tr><th>Date</th><th>Receipt</th><th>Supplier</th><th>Payment</th><th>Amount (UGX)</th><th>Status</th><th>Items</th></tr></thead>
+          <tbody>{rows.map((row) => (
+            <tr key={row.id}>
+              <td>{row.business_date}</td>
+              <td>{row.receipt_number || row.id}</td>
+              <td>{row.supplier_name || '—'}</td>
+              <td>{row.payment_method || '—'}</td>
+              <td>{Number(row.total_amount || 0).toLocaleString()}</td>
+              <td>{row.is_reversed ? `Reversed${row.reversal_reason ? `: ${row.reversal_reason}` : ''}` : 'Recorded'}</td>
+              <td>{(row.items || []).map((item) => `${item.item_name} (${item.quantity} ${item.unit})`).join(', ')}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          .purchase-print-area, .purchase-print-area * { visibility: visible !important; }
+          .purchase-print-area { display: block !important; position: absolute; inset: 0; width: 100%; padding: 24px; color: #111; font: 12px Arial, sans-serif; }
+          .purchase-print-area h1 { font-size: 20px; font-weight: bold; }
+          .purchase-print-area h2 { margin: 8px 0; font-size: 16px; }
+          .purchase-print-area table { width: 100%; margin-top: 16px; border-collapse: collapse; }
+          .purchase-print-area th, .purchase-print-area td { border: 1px solid #999; padding: 6px; text-align: left; }
+          .purchase-print-area th { background: #eee !important; }
+        }
+      `}</style>
+      </Panel>
     </div>
   );
 }
@@ -286,18 +402,18 @@ function TransferWorkflow({ items, locations, records, onAction }) {
   );
 }
 
-function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'ALL', canConfigureRecipes = false, canApproveRecipes = false }) {
+function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'ALL', canConfigureRecipes = false }) {
   const [search, setSearch] = useState('');
   const [stationFilter, setStationFilter] = useState(station);
   const [selectedMenuId, setSelectedMenuId] = useState('');
   const [ingredients, setIngredients] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [editingRecipeId, setEditingRecipeId] = useState('');
   const selectedMenu = menuItems.find((menu) => String(menu.id) === selectedMenuId);
   const menuRecipes = (records.recipes || []).filter((recipe) =>
     String(recipe.menu_item_id || '') === selectedMenuId ||
     (!recipe.menu_item_id && recipe.menu_name?.toLowerCase() === selectedMenu?.name?.toLowerCase())
   );
-  const editableDraft = menuRecipes.find((recipe) => recipe.status === 'DRAFT');
   const normalizeDepartment = (value) => {
     const department = String(value || '').toUpperCase();
     if (department === 'BARMAN') return 'BAR';
@@ -317,6 +433,7 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
       String(recipe.menu_item_id || '') === String(menu.id) ||
       (!recipe.menu_item_id && recipe.menu_name?.toLowerCase() === menu.name.toLowerCase())
     );
+    setEditingRecipeId(existing ? String(existing.id) : '');
     setIngredients(existing?.ingredients?.length
       ? existing.ingredients.map((ingredient) => ({
         ingredient_item_id: String(ingredient.ingredient_item_id || ''),
@@ -326,33 +443,46 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
       : [{ ingredient_item_id: '', quantity: '', unit: 'g' }]);
   };
 
-  const costLines = ingredients.map((ingredient) => {
-    const stockItem = recipeInventoryItems.find((item) => String(item.id) === ingredient.ingredient_item_id);
-    const quantity = Number(ingredient.quantity);
-    if (!stockItem || !Number.isFinite(quantity) || quantity <= 0 || Number(stockItem.unit_cost || 0) <= 0) return null;
-    try {
-      return quantity * recipeUnitConversionFactor(ingredient.unit, stockItem.unit, stockItem) * Number(stockItem.unit_cost);
-    } catch {
-      return null;
-    }
-  });
-  const estimatedCost = costLines.every((cost) => cost !== null) ? costLines.reduce((sum, cost) => sum + cost, 0) : null;
-
   const submit = async (event) => {
     event.preventDefault();
     if (!selectedMenu || !menuStation || ingredients.some((ingredient) => !recipeInventoryItems.some((item) => String(item.id) === ingredient.ingredient_item_id))) return;
     setSaving(true);
     const payloadIngredients = ingredients.map((row) => ({ ingredient_item_id: Number(row.ingredient_item_id), quantity: String(row.quantity), unit: row.unit }));
-    const path = editableDraft ? `recipes/${editableDraft.id}` : 'recipes';
-    const method = editableDraft ? 'PUT' : 'POST';
-    await onAction(path, { menu_item_id: Number(selectedMenu.id), ingredients: payloadIngredients }, method, 'Recipe version saved as a draft.');
+    const recipeToEdit = (records.recipes || []).find((recipe) => String(recipe.id) === editingRecipeId);
+    const path = recipeToEdit ? `recipes/${recipeToEdit.id}` : 'recipes';
+    const method = recipeToEdit ? 'PUT' : 'POST';
+    const result = await onAction(path, { menu_item_id: Number(selectedMenu.id), ingredients: payloadIngredients }, method, 'Recipe saved and is now active.');
+    if (result) setEditingRecipeId('');
     setSaving(false);
   };
 
-  const updateStatus = async (recipe, action, message) => onAction(`recipes/${recipe.id}/${action}`, {}, 'POST', message);
+  const editRecipe = (recipe) => {
+    const menu = menuItems.find((item) =>
+      String(item.id) === String(recipe.menu_item_id) ||
+      (!recipe.menu_item_id && item.name?.toLowerCase() === recipe.menu_name?.toLowerCase())
+    );
+    if (!menu) return;
+    setSelectedMenuId(String(menu.id));
+    setEditingRecipeId(String(recipe.id));
+    setIngredients(recipe.ingredients?.length
+      ? recipe.ingredients.map((ingredient) => ({
+        ingredient_item_id: String(ingredient.ingredient_item_id || ''),
+        quantity: String(ingredient.quantity || ''),
+        unit: normalizeInventoryUnit(ingredient.unit || 'g'),
+      }))
+      : [{ ingredient_item_id: '', quantity: '', unit: 'g' }]);
+  };
+
+  const deleteRecipe = async (recipe) => {
+    if (!window.confirm(`Remove ${recipe.menu_name} recipe from use?`)) return;
+    setSaving(true);
+    await onAction(`recipes/${recipe.id}`, {}, 'DELETE', 'Recipe removed from use. Recipe history was preserved.');
+    setSaving(false);
+  };
+
   return (
     <div className="space-y-6">
-      <Panel title="Department menu items" description="Select an existing menu item to view its recipe status or configure a new version.">
+      <Panel title="Department menu items" description="Select an existing menu item to view or edit its recipe.">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
           <Input label="Search menu items" value={search} onChange={setSearch} />
           {station === 'ALL' && <Select label="Department" value={stationFilter} onChange={setStationFilter} options={[{ value: 'ALL', label: 'All departments' }, ...STATIONS.map((value) => ({ value, label: value }))]} />}
@@ -367,7 +497,7 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
           {!filteredMenus.length && <p className="py-5 text-sm text-zinc-500">No published menu items match this department and search.</p>}
         </div>
       </Panel>
-      {selectedMenu && canConfigureRecipes && <Panel title={`${menuRecipes.length ? 'Update' : 'Configure'} ${selectedMenu.name}`} description="Saving creates a new draft version. The active recipe stays unchanged until the new version is approved and activated.">
+      {selectedMenu && canConfigureRecipes && <Panel title={`${menuRecipes.length ? 'Update' : 'Configure'} ${selectedMenu.name}`} description="Recipe units follow each inventory item's stock unit. Set liquids to L, packets to pack, or sachets to sachet in Inventory Management; compatible recipe units will appear here.">
         <form onSubmit={submit} className="space-y-4">
           {!menuStation && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">This menu item has no station assignment. Assign it to Kitchen, Bar, or Barista before configuring a recipe.</p>}
           {menuStation && !recipeInventoryItems.length && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">No inventory ingredients are assigned to {menuStation}. Assign ingredients to this station before configuring a recipe.</p>}
@@ -377,33 +507,32 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
               <Select label={`Ingredient ${index + 1}`} value={ingredient.ingredient_item_id} onChange={(value) => {
                 const chosen = recipeInventoryItems.find((item) => String(item.id) === value);
                 setIngredients((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ingredient_item_id: value, unit: chosen?.unit || row.unit } : row));
-              }} options={recipeInventoryItems.map((item) => ({ value: String(item.id), label: `${item.item_name} · ${Number(item.current_quantity || 0)} ${item.unit} · UGX ${Number(item.unit_cost || 0).toLocaleString()}` }))} required />
+              }} options={recipeInventoryItems.map((item) => ({ value: String(item.id), label: `${item.item_name} · ${Number(item.current_quantity || 0)} ${item.unit}` }))} required />
               <Input label="Quantity per serving" type="number" min="0.001" value={ingredient.quantity} onChange={(value) => changeIngredient(index, 'quantity', value)} required />
               <Select label="Unit" value={ingredient.unit} onChange={(value) => changeIngredient(index, 'unit', value)} options={(stockItem ? recipeUnitsForItem(stockItem) : []).map((value) => ({ value, label: value }))} />
               <button type="button" title="Remove ingredient" onClick={() => setIngredients((current) => current.filter((_, rowIndex) => rowIndex !== index))} disabled={ingredients.length === 1} className="h-10 rounded-lg border border-zinc-300 px-3 text-sm font-bold text-zinc-600 disabled:opacity-40">Remove</button>
-              <p className="text-xs text-zinc-500 md:col-span-4">Available: {stockItem ? `${Number(stockItem.current_quantity || 0)} ${stockItem.unit} · UGX ${Number(stockItem.unit_cost || 0).toLocaleString()} per ${stockItem.unit}` : 'Select an inventory item'}</p>
+              <p className="text-xs text-zinc-500 md:col-span-4">Available: {stockItem ? `${Number(stockItem.current_quantity || 0)} ${stockItem.unit}` : 'Select an inventory item'}</p>
             </div>;
           })}
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" onClick={() => setIngredients((current) => [...current, { ingredient_item_id: '', quantity: '', unit: 'g' }])} disabled={!menuStation || !recipeInventoryItems.length} className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-bold text-zinc-700 disabled:opacity-40">Add ingredient</button>
-            <SubmitButton disabled={saving || !menuStation || !recipeInventoryItems.length || !ingredients.length || ingredients.some((ingredient) => !recipeInventoryItems.some((item) => String(item.id) === ingredient.ingredient_item_id))}>{saving ? 'Saving…' : 'Save recipe draft'}</SubmitButton>
-            <span className="text-sm font-bold text-zinc-700">Estimated cost per serving: {estimatedCost === null ? 'Cost unavailable; review ingredient costs' : `UGX ${estimatedCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</span>
+            <SubmitButton disabled={saving || !menuStation || !recipeInventoryItems.length || !ingredients.length || ingredients.some((ingredient) => !recipeInventoryItems.some((item) => String(item.id) === ingredient.ingredient_item_id))}>{saving ? 'Saving…' : 'Save recipe'}</SubmitButton>
+            {editingRecipeId && <span className="text-sm text-zinc-600">Changes update this recipe.</span>}
           </div>
         </form>
       </Panel>}
-      <Panel title="Recipe approval queue">
+      <Panel title="Saved recipes" description="When this menu item is ordered, the active recipe tells us how much stock to use.">
         <div className="space-y-3">
           {(records.recipes || []).length === 0 ? <p className="py-5 text-center text-sm text-zinc-500">No recipes have been created.</p> : (records.recipes || []).map((recipe) => (
             <article key={recipe.id} className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 className="font-bold text-zinc-900">{recipe.menu_name} <span className="ml-2 text-xs font-semibold text-zinc-500">{recipe.station}</span></h3>
-                <p className="mt-1 text-xs text-zinc-500">Version {recipe.version_number} · {recipe.status} · {(recipe.ingredients || []).map((ingredient) => `${ingredient.ingredient_name}: ${ingredient.quantity} ${ingredient.unit}`).join(', ')}</p>
+                <p className="mt-1 text-xs text-zinc-500">{recipe.status === 'ACTIVE' ? 'Active · In use' : recipe.status === 'INACTIVE' ? 'Inactive' : 'Draft'} · {(recipe.ingredients || []).map((ingredient) => `${ingredient.ingredient_name}: ${ingredient.quantity} ${ingredient.unit}`).join(', ')}</p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {recipe.status === 'DRAFT' && <button type="button" onClick={() => updateStatus(recipe, 'submit', 'Recipe submitted for approval.')} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-900">Submit</button>}
-                {canApproveRecipes && recipe.status === 'SUBMITTED' && <button type="button" onClick={() => updateStatus(recipe, 'approve', 'Recipe approved.')} className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-900">Approve</button>}
-                {canApproveRecipes && recipe.status === 'APPROVED' && <button type="button" onClick={() => updateStatus(recipe, 'activate', 'Recipe activated for consumption.')} className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-bold text-white">Activate</button>}
-              </div>
+              {canConfigureRecipes && <div className="flex gap-2">
+                <button type="button" onClick={() => editRecipe(recipe)} disabled={saving} className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-bold text-zinc-700 disabled:opacity-40">Edit</button>
+                <button type="button" onClick={() => deleteRecipe(recipe)} disabled={saving || recipe.status === 'INACTIVE'} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700 disabled:opacity-40">Delete</button>
+              </div>}
             </article>
           ))}
         </div>
@@ -573,25 +702,151 @@ function CountWorkflow({ items, locations, records, onAction, adjustment = false
 
 function ReportsWorkflow({ records, onAction }) {
   const businessToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
-  const [dateRange, setDateRange] = useState({ start: `${businessToday.slice(0, 7)}-01`, end: businessToday });
+  const [dateRange, setDateRange] = useState({ start: businessToday, end: businessToday });
+  const [selectedPeriod, setSelectedPeriod] = useState('today');
   const [report, setReport] = useState(records['reports/cogs'] || null);
+  const [inventoryReport, setInventoryReport] = useState(records['reports/inventory-activity'] || null);
   const [loadingReport, setLoadingReport] = useState(false);
+  const runReports = async (range = dateRange) => {
+    setLoadingReport(true);
+    try {
+      const query = new URLSearchParams({ startDate: range.start, endDate: range.end });
+      const [activityResult, cogsResult] = await Promise.all([
+        onAction(`reports/inventory-activity?${query}`, {}, 'GET', 'Inventory report refreshed.'),
+        onAction(`reports/cogs?${query}`, {}, 'GET', 'Inventory profitability report refreshed.'),
+      ]);
+      if (activityResult) setInventoryReport(activityResult);
+      if (cogsResult) setReport(cogsResult);
+    } finally {
+      setLoadingReport(false);
+    }
+  };
   const loadReport = async (event) => {
     event.preventDefault();
-    setLoadingReport(true);
-    const result = await onAction(`reports/cogs?startDate=${dateRange.start}&endDate=${dateRange.end}`, {}, 'GET', 'Inventory profitability report refreshed.');
-    if (result) setReport(result);
-    setLoadingReport(false);
+    setSelectedPeriod('custom');
+    await runReports(dateRange);
+  };
+  const selectPeriod = async (period) => {
+    setSelectedPeriod(period);
+    if (period === 'custom') return;
+    const range = getInventoryPeriodRange(period, businessToday);
+    setDateRange(range);
+    await runReports(range);
+  };
+  const inventoryReportSections = inventoryReport ? [
+    {
+      title: 'Inventory activity summary',
+      columns: ['Metric', 'Count', 'Quantity', 'Value (UGX)'],
+      rows: [
+        ...Object.entries(inventoryReport.totalsByType || {}).map(([type, totals]) => [type, totals.count, totals.quantity, totals.value]),
+        ['Net purchases', '', '', inventoryReport.netPurchases],
+        ['Current inventory value', '', '', inventoryReport.inventoryValue],
+        ['Transactions', inventoryReport.transactionCount, '', ''],
+      ],
+    },
+    {
+      title: 'Inventory transactions',
+      columns: ['Date', 'Reference', 'Item', 'Type', 'Quantity', 'Unit', 'Unit cost (UGX)', 'Value (UGX)', 'Department', 'From', 'To', 'Supplier', 'Notes'],
+      rows: (inventoryReport.transactions || []).map((row) => [
+        row.business_date, row.reference_number, row.item_name, row.transaction_type,
+        row.quantity, row.unit, row.unit_cost, row.total_value, row.station,
+        row.source_location, row.destination_location, row.supplier_name, row.notes,
+      ]),
+    },
+    {
+      title: 'Current stock snapshot',
+      columns: ['Item', 'Department', 'Location', 'Quantity', 'Unit', 'Unit cost (UGX)', 'Inventory value (UGX)', 'Supplier'],
+      rows: (inventoryReport.currentStock || []).map((row) => [
+        row.item_name, row.station, row.location_name, row.current_quantity, row.unit,
+        row.unit_cost, row.inventory_value, row.supplier_name,
+      ]),
+    },
+  ] : [];
+  const exportInventoryExcel = () => {
+    if (!inventoryReport) return;
+    const workbook = XLSX.utils.book_new();
+    for (const section of inventoryReportSections) {
+      const sheet = XLSX.utils.aoa_to_sheet([[section.title], section.columns, ...section.rows]);
+      sheet['!cols'] = section.columns.map((column) => ({ wch: Math.min(32, Math.max(14, column.length + 2)) }));
+      XLSX.utils.book_append_sheet(workbook, sheet, section.title.slice(0, 31));
+    }
+    XLSX.writeFile(workbook, `inventory_report_${inventoryReport.startDate}_to_${inventoryReport.endDate}.xlsx`);
+  };
+  const exportInventoryPdf = () => {
+    if (!inventoryReport) return;
+    downloadReportPdf({
+      filename: `inventory_report_${inventoryReport.startDate}_to_${inventoryReport.endDate}.pdf`,
+      title: 'Inventory Activity Report',
+      from: inventoryReport.startDate,
+      to: inventoryReport.endDate,
+      periodText: `Business activity: ${inventoryReport.startDate} to ${inventoryReport.endDate} · Current stock snapshot generated ${new Date(inventoryReport.generatedAt).toLocaleString()}`,
+      companyName: 'KURAX FOOD LOUNGE AND BISTRO',
+      footerLabel: 'Inventory Report',
+      orientation: 'landscape',
+      sections: inventoryReportSections,
+    });
   };
 
   return (
     <div className="space-y-6">
-      <Panel title="COGS and profitability" description={report ? `${report.startDate} to ${report.endDate} · Kampala business dates` : 'Select a business-date period to calculate COGS and profitability.'}>
+      <Panel title="Inventory activity report" description="Review dated stock movements and download Excel or PDF reports. Current stock is shown as a snapshot at report time.">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {[
+            ['today', 'Today'],
+            ['yesterday', 'Yesterday'],
+            ['weekly', 'Weekly'],
+            ['monthly', 'Monthly'],
+            ['custom', 'Custom'],
+          ].map(([period, label]) => (
+            <button
+              key={period}
+              type="button"
+              onClick={() => selectPeriod(period)}
+              className={`rounded-lg px-3 py-2 text-xs font-bold ${selectedPeriod === period ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <form onSubmit={loadReport} className="mb-5 flex flex-wrap items-end gap-3">
-          <Input label="Start date" type="date" value={dateRange.start} onChange={(value) => setDateRange((current) => ({ ...current, start: value }))} required />
-          <Input label="End date" type="date" value={dateRange.end} onChange={(value) => setDateRange((current) => ({ ...current, end: value }))} required />
+          <Input label="Start date" type="date" value={dateRange.start} onChange={(value) => { setSelectedPeriod('custom'); setDateRange((current) => ({ ...current, start: value })); }} required />
+          <Input label="End date" type="date" value={dateRange.end} onChange={(value) => { setSelectedPeriod('custom'); setDateRange((current) => ({ ...current, end: value })); }} required />
           <SubmitButton disabled={loadingReport}>{loadingReport ? 'Loading…' : 'Run report'}</SubmitButton>
+          <button type="button" disabled={!inventoryReport || loadingReport} onClick={exportInventoryExcel} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-emerald-800 disabled:opacity-50">
+            <FileSpreadsheet size={16} /> Download Excel
+          </button>
+          <button type="button" disabled={!inventoryReport || loadingReport} onClick={exportInventoryPdf} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-rose-800 disabled:opacity-50">
+            <FileText size={16} /> Download PDF
+          </button>
         </form>
+        {inventoryReport && <>
+          <p className="mb-4 text-xs text-zinc-500">Activity: {inventoryReport.startDate} to {inventoryReport.endDate} · Generated {new Date(inventoryReport.generatedAt).toLocaleString()}</p>
+          <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="border-l-2 border-emerald-500 bg-zinc-50 px-4 py-3"><p className="text-[10px] font-black uppercase text-zinc-500">Net purchases</p><p className="mt-1 text-lg font-black">UGX {Number(inventoryReport.netPurchases || 0).toLocaleString()}</p></div>
+            <div className="border-l-2 border-amber-500 bg-zinc-50 px-4 py-3"><p className="text-[10px] font-black uppercase text-zinc-500">Current inventory value</p><p className="mt-1 text-lg font-black">UGX {Number(inventoryReport.inventoryValue || 0).toLocaleString()}</p></div>
+            <div className="border-l-2 border-sky-500 bg-zinc-50 px-4 py-3"><p className="text-[10px] font-black uppercase text-zinc-500">Stock movements</p><p className="mt-1 text-lg font-black">{Number(inventoryReport.transactionCount || 0).toLocaleString()}</p></div>
+          </div>
+          <div className="grid gap-5">
+            <History title="Inventory transactions in period" rows={inventoryReport.transactions || []} empty="No inventory transactions in this period." columns={[
+              { label: 'Date', key: 'business_date' },
+              { label: 'Reference', key: 'reference_number' },
+              { label: 'Item', key: 'item_name' },
+              { label: 'Type', key: 'transaction_type' },
+              { label: 'Quantity', render: (row) => `${row.quantity} ${row.unit}` },
+              { label: 'Value', render: (row) => `UGX ${Number(row.total_value || 0).toLocaleString()}` },
+              { label: 'Department', key: 'station' },
+            ]} />
+            <History title="Current stock snapshot" rows={inventoryReport.currentStock || []} empty="No active inventory items." columns={[
+              { label: 'Item', key: 'item_name' },
+              { label: 'Department', key: 'station' },
+              { label: 'Location', key: 'location_name' },
+              { label: 'Current quantity', render: (row) => `${row.current_quantity} ${row.unit}` },
+              { label: 'Value', render: (row) => `UGX ${Number(row.inventory_value || 0).toLocaleString()}` },
+            ]} />
+          </div>
+        </>}
+      </Panel>
+      <Panel title="COGS and profitability" description={report ? `${report.startDate} to ${report.endDate} · Kampala business dates` : 'Select a business-date period to calculate COGS and profitability.'}>
         {report && <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
@@ -657,7 +912,6 @@ function ReportsWorkflow({ records, onAction }) {
       <History title="Menu items with active recipes" rows={(records.recipes || []).filter((recipe) => recipe.status === 'ACTIVE')} empty="No menu items currently have active recipes." columns={[
         { label: 'Menu item', key: 'menu_name' },
         { label: 'Station', key: 'station' },
-        { label: 'Recipe version', key: 'version_number' },
         { label: 'Status', key: 'status' },
       ]} />
       <History title="Recent inventory transactions" rows={records.transactions || []} empty="No inventory transactions found." columns={[
@@ -672,10 +926,10 @@ function ReportsWorkflow({ records, onAction }) {
   );
 }
 
-export default function InventoryWorkflows({ section, items, menuItems, locations, records, onAction, station, canConfigureRecipes = false, canApproveRecipes = false }) {
+export default function InventoryWorkflows({ section, items, menuItems, locations, records, onAction, station, canConfigureRecipes = false }) {
   if (section === 'purchases') return <PurchaseWorkflow items={items} locations={locations} records={records} onAction={onAction} />;
   if (section === 'transfers') return <TransferWorkflow items={items} locations={locations} records={records} onAction={onAction} />;
-  if (section === 'recipes') return <RecipeWorkflow items={items} menuItems={menuItems} records={records} onAction={onAction} station={station} canConfigureRecipes={canConfigureRecipes} canApproveRecipes={canApproveRecipes} />;
+  if (section === 'recipes') return <RecipeWorkflow items={items} menuItems={menuItems} records={records} onAction={onAction} station={station} canConfigureRecipes={canConfigureRecipes} />;
   if (section === 'consumption') return <ConsumptionWorkflow records={records} menuItems={menuItems} />;
   if (section === 'waste') return <WasteWorkflow items={items} records={records} onAction={onAction} station={station} />;
   if (section === 'stock-counts') return <CountWorkflow items={items} locations={locations} records={records} onAction={onAction} />;

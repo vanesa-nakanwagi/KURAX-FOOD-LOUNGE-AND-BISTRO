@@ -11,7 +11,7 @@ import pool    from '../db.js';
 import logActivity from '../utils/logsActivity.js';
 import notificationService from '../helpers/notificationService.js';
 import { resolveNotificationUser } from '../middleware/notificationAuth.js';
-import { refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
+import { notifyCashierOfReadyPublicOrder, refreshPublicOrderPreparationStatus } from '../helpers/publicOrderWorkflow.js';
 import { getRoutableStationItems, getStationItemsTotal } from '../helpers/confirmedStationItems.js';
 import { syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
 
@@ -31,10 +31,19 @@ router.post('/tickets', async (req, res) => {
   const { order_id, table_name, staff_name, staff_role, items = [], total = 0, status = 'Pending' } = req.body;
 
   try {
-    const orderResult = await pool.query('SELECT items FROM public.orders WHERE id=$1', [order_id]);
+    const orderResult = await pool.query(
+      'SELECT items, public_order_ref, payment_confirmed FROM public.orders WHERE id=$1',
+      [order_id]
+    );
     if (!orderResult.rows.length) return res.status(404).json({ error: 'Order not found.' });
-    const orderItems = Array.isArray(orderResult.rows[0].items) ? orderResult.rows[0].items : [];
-    const stationItems = getRoutableStationItems(orderItems, orderItems)
+    const order = orderResult.rows[0];
+    if (order.public_order_ref && order.payment_confirmed !== true) {
+      return res.status(409).json({ error: 'Website orders can only be sent to stations after cashier payment confirmation.' });
+    }
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    const stationItems = getRoutableStationItems(orderItems, orderItems, {
+      publicOrder: Boolean(order.public_order_ref),
+    })
       .filter(item => !['bar', 'barman', 'barista', 'shisha'].includes(String(item.station || '').toLowerCase()));
     if (!stationItems.length) {
       return res.status(409).json({ error: 'This order has no items routed to the kitchen.' });
@@ -119,7 +128,7 @@ router.get('/tickets', async (req, res) => {
       ? await pool.query(
         `SELECT t.* FROM kitchen_tickets t
          JOIN public.orders o ON o.id = t.order_id
-         WHERE t.status IN ('Pending', 'Preparing')
+         WHERE t.status IN ('Pending', 'Preparing', 'Ready')
            AND COALESCE(t.cleared_by_kitchen, false) = false
            AND COALESCE(o.day_cleared, false) = false
            AND COALESCE(o.shift_cleared, false) = false
@@ -161,7 +170,8 @@ router.patch('/tickets/:id/status', async (req, res) => {
     );
     const ticket = result.rows[0];
     if (!ticket) return res.status(404).json({ error: 'Kitchen ticket not found.' });
-    await refreshPublicOrderPreparationStatus(ticket.order_id, pool);
+    const publicOrderStatus = await refreshPublicOrderPreparationStatus(ticket.order_id, pool);
+    if (publicOrderStatus === 'Ready') await notifyCashierOfReadyPublicOrder(notificationService, ticket.order_id);
 
     if (status === 'Ready' && actor?.scope === 'restaurant' && ['CHEF', 'KITCHEN_HOD'].includes(actor.role)) {
       try {

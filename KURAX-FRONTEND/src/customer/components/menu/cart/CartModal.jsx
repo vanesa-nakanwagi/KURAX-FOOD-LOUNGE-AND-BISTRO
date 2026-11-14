@@ -1,6 +1,7 @@
 import CheckoutForm from "../checkout/CheckoutForm.jsx";
 import { Trash2, Plus, X } from "lucide-react";
 import { getImageSrc } from "../../../../utils/imageHelper.js";
+import { formatMenuName } from "../../../../utils/menuName.js";
 export default function CartModal({
   isCartOpen,
   onClose,
@@ -58,8 +59,8 @@ export default function CartModal({
 />
 
                   <div className="flex-1 flex flex-col gap-3">
-                    <h3 className="font-semibold text-lg text-gray-900 dark:text-white">
-                      {activeDish.name}
+                    <h3 className="text-xl font-semibold text-yellow-600 dark:text-yellow-300">
+                      {formatMenuName(activeDish.name)}
                     </h3>
 
                     <span className="text-yellow-500 font-bold">
@@ -151,8 +152,8 @@ export default function CartModal({
                         />
 
                         <div className="flex-1 min-w-0"> {/* <-- LAYOUT FIX: Allow text block to shrink */}
-                          <h3 className="font-semibold text-gray-900 dark:text-white truncate">
-                            {item.name}
+                          <h3 className="truncate text-base font-semibold text-yellow-600 dark:text-yellow-300">
+                            {formatMenuName(item.name)}
                           </h3>
                           <p className="text-sm text-gray-600 dark:text-gray-400">
                             UGX {(item.price * item.quantity).toLocaleString()}

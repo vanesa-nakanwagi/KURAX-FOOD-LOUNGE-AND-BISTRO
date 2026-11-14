@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import LogoutConfirmDialog from '../components/LogoutConfirmDialog';
 import {
   ArrowLeft, ArrowRight, Ban, Check, ChefHat, CircleDollarSign, ClipboardList, Eye, EyeOff, Flame, LogOut,
-  Download, Package, Plus, RefreshCw, Users, Wallet,
+  Download, Package, Plus, RefreshCw, Search, Users, Wallet,
 } from 'lucide-react';
 import API_URL from '../../config/api';
 import { downloadReportPdf } from '../reportExport';
+import ReceiptPrint from '../components/ReceiptPrint';
 import kuraxLogo from '../../customer/assets/images/logo.jpeg';
 import { EyeOpen, EyeClosed, EnvelopeIcon, LockIcon, ImageCarousel, UnderlineInput } from '../StaffLogin.jsx';
 
@@ -18,16 +19,24 @@ const METHODS = [
   ['CREDIT', 'Credit'],
 ];
 
-function readSession() {
+function readSession(requiredRole) {
   try {
-    const staff = JSON.parse(localStorage.getItem('kurax_user') || 'null');
-    if (staff?.token) return { ...staff, scope: 'restaurant' };
     const shisha = JSON.parse(localStorage.getItem('kurax_shisha_session') || 'null');
     if (shisha?.token) return { ...shisha, scope: 'shisha' };
+    if (requiredRole) return null;
+    const staff = JSON.parse(localStorage.getItem('kurax_user') || 'null');
+    if (staff?.token) return { ...staff, scope: 'restaurant' };
   } catch {
     return null;
   }
   return null;
+}
+
+function shishaPathForRole(role) {
+  const normalizedRole = String(role || '').toUpperCase();
+  if (normalizedRole === 'SHISHA_WAITER') return '/shisha/waiter';
+  if (normalizedRole === 'SHISHA_CHEF') return '/shisha/mixer';
+  return '/shisha';
 }
 
 async function request(path, token, options = {}) {
@@ -129,7 +138,8 @@ function Field({ label, ...props }) {
 
 export default function ShishaDepartment({ requiredRole = null }) {
   const navigate = useNavigate();
-  const [session, setSession] = useState(readSession);
+  const { search } = useLocation();
+  const [session, setSession] = useState(() => readSession(requiredRole));
   const [email, setEmail] = useState('');
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -138,8 +148,10 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const [tab, setTab] = useState('');
   const [packages, setPackages] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [tableSearch, setTableSearch] = useState('');
   const [staff, setStaff] = useState([]);
   const [paymentRequests, setPaymentRequests] = useState([]);
+  const [receipt, setReceipt] = useState(null);
   const [voidRequests, setVoidRequests] = useState([]);
   const [report, setReport] = useState(null);
   const [productionHistory, setProductionHistory] = useState({ records: [], totals: {} });
@@ -166,6 +178,12 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const [busy, setBusy] = useState(false);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
+  useEffect(() => {
+    const refreshSession = () => setSession(readSession(requiredRole));
+    window.addEventListener('kurax:staff-session-changed', refreshSession);
+    return () => window.removeEventListener('kurax:staff-session-changed', refreshSession);
+  }, [requiredRole]);
+
   const role = String(session?.role || '').toUpperCase();
   const routeRoleMismatch = Boolean(session?.token && requiredRole && role !== requiredRole);
   const loginAudience = requiredRole === 'SHISHA_CHEF'
@@ -178,6 +196,9 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const isChef = role === 'SHISHA_CHEF';
   const isDirector = role === 'DIRECTOR';
   const canReport = isHod || ['DIRECTOR', 'MANAGER', 'ACCOUNTANT'].includes(role);
+  const visibleOrders = isHod
+    ? orders.filter(order => String(order.table_id ?? '').toLowerCase().includes(tableSearch.trim().toLowerCase()))
+    : orders;
   const emailError = touchedEmail && !email.trim()
     ? 'Email is required'
     : touchedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -193,7 +214,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
     : isWaiter
       ? [['take-order', 'Take order', Plus], ['my-orders', 'My orders', ClipboardList]]
       : isChef
-      ? [['my-orders', 'My assigned orders', ClipboardList], ['production', 'Production history', ClipboardList]]
+      ? [['production', 'Production history', ClipboardList]]
         : canReport
           ? [['production', 'Production history', ClipboardList], ['reports', 'Reports', CircleDollarSign], ...(isDirector ? [['setup', 'HOD access', Users]] : [])]
           : [];
@@ -202,13 +223,18 @@ export default function ShishaDepartment({ requiredRole = null }) {
     if (navItems.length && !navItems.some(([key]) => key === tab)) setTab(navItems[0][0]);
   }, [role, tab]);
 
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(search).get('tab');
+    if (requestedTab && navItems.some(([key]) => key === requestedTab)) setTab(requestedTab);
+  }, [search, role]);
+
   async function loadData() {
     if (!session?.token) return;
     const requests = [];
     if (isHod || isWaiter) requests.push(
       request('/packages', session.token).then(data => setPackages(readList(data, 'packages', 'Shisha packages')))
     );
-    if (isHod || isWaiter || isChef) {
+    if (isHod || isWaiter) {
       requests.push(request('/orders', session.token).then(setOrders));
     }
     if (isHod) {
@@ -274,10 +300,11 @@ export default function ShishaDepartment({ requiredRole = null }) {
         throw new Error(`This route is for ${loginAudience} accounts.`);
       }
       const next = { ...data.user, token: data.token, scope: 'shisha' };
-      localStorage.removeItem('kurax_user');
       localStorage.setItem('kurax_shisha_session', JSON.stringify(next));
       setSession(next);
+      window.dispatchEvent(new Event('kurax:staff-session-changed'));
       setPin('');
+      navigate(shishaPathForRole(next.role), { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -294,6 +321,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
     localStorage.removeItem('kurax_shisha_session');
     localStorage.removeItem('kurax_user');
     setSession(null);
+    window.dispatchEvent(new Event('kurax:staff-session-changed'));
     navigate('/shisha', { replace: true });
   }
 
@@ -465,6 +493,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
             ['Gross sales before voids', money(summary.gross_sales)],
             ['Approved voids', `${money(summary.voided_total)} · ${summary.voided_quantity || 0} items`],
             ['Collected', money(summary.amount_collected)],
+            ['Credit payments received', money(summary.credit_payments_received)],
             ['Outstanding', money(summary.total_outstanding)],
             ['Partially paid amount', money(summary.partially_paid_amount)],
             ['Partially paid orders', summary.partially_paid_orders ?? 0],
@@ -490,6 +519,20 @@ export default function ShishaDepartment({ requiredRole = null }) {
           title: 'Collected by payment method',
           columns: ['Payment method', 'Confirmed payments', 'Amount'],
           rows: (report.by_payment_method || []).map(row => [row.payment_method, row.payment_count, money(row.amount)]),
+        },
+        {
+          title: 'Credit payment settlements',
+          columns: ['Date', 'Order', 'Client', 'Phone', 'Waiter', 'Method', 'Amount', 'Reference'],
+          rows: (report.credit_payments || []).map(row => [
+            row.confirmed_at ? new Date(row.confirmed_at).toLocaleString() : '-',
+            row.reference,
+            row.client_name || '-',
+            row.client_phone || '-',
+            row.waiter_name || '-',
+            row.payment_method,
+            money(row.amount),
+            row.transaction_id || '-',
+          ]),
         },
       ],
     });
@@ -567,7 +610,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
   }
 
   if (routeRoleMismatch) {
-    return <main className="grid min-h-screen place-items-center bg-[#f4f3ef] p-6 text-zinc-900"><section className="max-w-md rounded-xl border border-zinc-200 bg-white p-6 text-center"><h1 className="text-xl font-black">Different Shisha role</h1><p className="mt-2 text-sm text-zinc-600">This route is for {loginAudience} accounts.</p><button onClick={() => { localStorage.removeItem('kurax_shisha_session'); setSession(null); navigate('/shisha', { replace: true }); }} className="mt-4 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950">Sign in with another account</button></section></main>;
+    return <Navigate to={shishaPathForRole(role)} replace />;
   }
 
   return (
@@ -586,12 +629,12 @@ export default function ShishaDepartment({ requiredRole = null }) {
       </header>
       <div className="mx-auto max-w-[1440px] px-5 py-6 md:px-8 md:py-8">
         <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">{isHod ? 'Department control' : isWaiter ? 'Floor service' : isChef ? 'Preparation station' : 'Management visibility'}</p><h1 className="mt-1 text-3xl font-black tracking-tight">{isHod ? 'Shisha station' : isWaiter ? 'Shisha service' : isChef ? 'Mixer orders' : 'Shisha sales'}</h1></div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">{isHod ? 'Department control' : isWaiter ? 'Floor service' : isChef ? 'Preparation station' : 'Management visibility'}</p><h1 className="mt-1 text-3xl font-black tracking-tight">{isHod ? 'Shisha station' : isWaiter ? 'Shisha Waiter' : isChef ? 'Mixer orders' : 'Shisha sales'}</h1></div>
           <div className="text-xs font-medium text-zinc-500">Separate from restaurant orders and cashiering</div>
         </div>
 
         <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-zinc-200" aria-label="Shisha workspace">
-          {navItems.map(([key, label, Icon]) => <button key={key} onClick={() => setTab(key)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition ${tab === key ? 'border-amber-600 text-zinc-950' : 'border-transparent text-zinc-500 hover:text-zinc-900'}`}><Icon size={16} />{label}</button>)}
+          {navItems.map(([key, label, Icon]) => <button key={key} onClick={() => setTab(key)} aria-label={key === 'voids' && voidRequests.length ? `${label}, ${voidRequests.length} pending` : label} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition ${tab === key ? 'border-amber-600 text-zinc-950' : 'border-transparent text-zinc-500 hover:text-zinc-900'}`}><Icon size={16} />{label}{key === 'voids' && voidRequests.length > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-black leading-none text-white">{voidRequests.length > 99 ? '99+' : voidRequests.length}</span>}</button>)}
         </nav>
 
         {(error || message) && <div className={`mb-5 flex items-center justify-between rounded-lg border px-4 py-3 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">{error || message}<button onClick={() => { setError(''); setMessage(''); }} aria-label="Dismiss" className="ml-4 font-bold">×</button></div>}
@@ -609,8 +652,8 @@ export default function ShishaDepartment({ requiredRole = null }) {
         )}
 
         {(tab === 'station' || tab === 'my-orders') && (isHod || isWaiter || isChef) && (
-          <section><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">{isHod ? 'My Production' : isWaiter ? 'Your Shisha orders' : 'My assigned production'}</h2><p className="text-sm text-zinc-500">Updates automatically every 12 seconds.</p></div><span className="rounded-full bg-zinc-200 px-3 py-1 text-xs font-bold">{orders.length} orders</span></div>
-            {orders.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{orders.map(order => <OrderCard key={order.id} order={order} role={role} paymentMethods={paymentMethods} setPaymentMethods={setPaymentMethods} token={session.token} runAction={runAction} busy={busy} />)}</div> : <Empty text="No Shisha orders yet." />}
+          <section><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">{isHod ? 'My Production' : isWaiter ? 'Your Shisha orders' : 'My assigned production'}</h2><p className="text-sm text-zinc-500">Updates automatically every 12 seconds.</p></div><div className="flex flex-wrap items-center gap-3">{isHod && <label className="relative block"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" /><input aria-label="Search tables" type="search" placeholder="Search table..." value={tableSearch} onChange={event => setTableSearch(event.target.value)} className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm sm:w-48" /></label>}<span className="rounded-full bg-zinc-200 px-3 py-1 text-xs font-bold">{visibleOrders.length} orders</span></div></div>
+            {visibleOrders.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{visibleOrders.map(order => <OrderCard key={order.id} order={order} role={role} staffId={session.id} paymentMethods={paymentMethods} setPaymentMethods={setPaymentMethods} token={session.token} runAction={runAction} refreshData={loadData} error={error} busy={busy} />)}</div> : <Empty text={tableSearch.trim() ? `No Shisha orders found for table "${tableSearch.trim()}".` : 'No Shisha orders yet.'} />}
           </section>
         )}
 
@@ -666,7 +709,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
           </section>
         )}
 
-        {tab === 'payments' && isHod && <PaymentPanel requests={paymentRequests} token={session.token} inputs={paymentInputs} setInputs={setPaymentInputs} runAction={runAction} busy={busy} />}
+        {tab === 'payments' && isHod && <PaymentPanel requests={paymentRequests} orders={orders} token={session.token} inputs={paymentInputs} setInputs={setPaymentInputs} runAction={runAction} busy={busy} confirmedBy={session.name} setReceipt={setReceipt} />}
 
         {tab === 'team' && isHod && (
           <section className="grid gap-5 xl:grid-cols-[340px_1fr]"><form onSubmit={saveStaff} className="h-fit rounded-xl border border-zinc-200 bg-white p-5"><h2 className="text-lg font-black">Add Shisha staff</h2><p className="mb-4 mt-1 text-sm text-zinc-500">Separate department login and PIN.</p><div className="grid gap-3"><Field label="Full name" value={staffForm.name} onChange={event => setStaffForm({ ...staffForm, name: event.target.value })} required /><Field label="Email" type="email" value={staffForm.email} onChange={event => setStaffForm({ ...staffForm, email: event.target.value })} required /><label className="grid gap-1.5 text-xs font-semibold text-zinc-600">4-8 digit PIN<div className="flex gap-2"><input type={showStaffPin ? 'text' : 'password'} inputMode="numeric" pattern="[0-9]{4,8}" maxLength={8} value={staffForm.pin} onChange={event => setStaffForm({ ...staffForm, pin: event.target.value.replace(/\\D/g, '') })} required className="min-w-0 flex-1 rounded-lg border border-zinc-200 px-3 py-2.5 text-sm outline-none focus:border-amber-500" /><button type="button" title="Generate 4-digit PIN" aria-label="Generate 4-digit PIN" onClick={() => { const values = new Uint32Array(1); window.crypto.getRandomValues(values); setStaffForm({ ...staffForm, pin: String(1000 + (values[0] % 9000)) }); setShowStaffPin(true); }} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50"><RefreshCw size={15} /></button><button type="button" title={showStaffPin ? 'Hide PIN' : 'Show PIN'} aria-label={showStaffPin ? 'Hide PIN' : 'Show PIN'} onClick={() => setShowStaffPin(!showStaffPin)} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50">{showStaffPin ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label><label className="grid gap-1.5 text-xs font-semibold text-zinc-600">Role<select value={staffForm.role} onChange={event => setStaffForm({ ...staffForm, role: event.target.value })} className="rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm"><option value="SHISHA_WAITER">Shisha Waiter</option><option value="SHISHA_CHEF">Shisha Chef / Mixer</option></select></label><Button type="submit" tone="accent" disabled={busy}><Plus size={16} /> Create account</Button></div></form>
@@ -725,6 +768,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
         {tab === 'reports' && canReport && <ReportsPanel report={report} mode={reportMode} setMode={chooseReportMode} from={reportFrom} to={reportTo} setFrom={setReportFrom} setTo={setReportTo} reportMonth={reportMonth} setReportMonth={value => { if (!value) return; setReportMonth(value); const [from, to] = rangeForMonth(value); setReportFrom(from); setReportTo(to); }} onDownload={downloadShishaReport} />}
       </div>
       </main>
+      <ReceiptPrint receipt={receipt} onClose={() => setReceipt(null)} />
     </>
   );
 }
@@ -733,18 +777,50 @@ function Empty({ text }) {
   return <div className="rounded-xl border border-dashed border-zinc-300 bg-white/60 px-5 py-14 text-center text-sm font-medium text-zinc-500">{text}</div>;
 }
 
-function OrderCard({ order, role, paymentMethods, setPaymentMethods, token, runAction, busy }) {
+function OrderCard({ order, role, staffId, paymentMethods, setPaymentMethods, token, runAction, refreshData, error, busy }) {
   const [history, setHistory] = useState(null);
   const [voidInputs, setVoidInputs] = useState({});
+  const [creditModalOpen, setCreditModalOpen] = useState(false);
+  const [creditDetails, setCreditDetails] = useState({ name: '', phone: '', expectedPaymentDate: '' });
   const [claimPin, setClaimPin] = useState('');
   const [claimingItemId, setClaimingItemId] = useState(null);
-  const [preparePin, setPreparePin] = useState('');
+  const [orderClaimPin, setOrderClaimPin] = useState('');
   const doPost = (endpoint, body, message) => runAction(() => request(endpoint, token, { method: 'POST', body }), message);
-  const startPreparation = async event => {
+  const submitCreditRequest = async event => {
     event.preventDefault();
-    const started = await doPost(`/orders/${order.id}/prepare`, { pin: preparePin }, 'Preparation started.');
-    if (started) setPreparePin('');
+    const saved = await doPost(`/orders/${order.id}/payment-request`, {
+      payment_method: 'CREDIT',
+      client_name: creditDetails.name.trim(),
+      client_phone: creditDetails.phone.trim(),
+      expected_payment_date: creditDetails.expectedPaymentDate || null,
+    }, result => result.notification_sent
+      ? 'Credit details saved; the Shisha HOD was notified.'
+      : result.notification_no_recipients
+        ? 'Credit details saved, but no Shisha HOD device is registered with notifications enabled.'
+        : 'Credit details saved, but the Shisha HOD push could not be delivered.');
+    if (saved) {
+      setCreditModalOpen(false);
+      setCreditDetails({ name: '', phone: '', expectedPaymentDate: '' });
+      setPaymentMethods(current => ({ ...current, [order.id]: '' }));
+    }
   };
+  const requestPayment = () => {
+    if (paymentMethods[order.id] === 'CREDIT') {
+      setCreditModalOpen(true);
+      return;
+    }
+    return doPost(`/orders/${order.id}/payment-request`, { payment_method: paymentMethods[order.id] }, result => result.notification_sent
+      ? 'Payment request sent; the Shisha HOD was notified.'
+      : result.notification_no_recipients
+        ? 'Payment request saved, but no Shisha HOD device is registered with notifications enabled.'
+        : 'Payment request saved, but the Shisha HOD push could not be delivered.');
+  };
+  const claimOrder = async event => {
+    event.preventDefault();
+    const claimed = await doPost(`/orders/${order.id}/claim`, { pin: orderClaimPin }, 'PIN verified. Order claimed.');
+    if (claimed) setOrderClaimPin('');
+  };
+  const hasAnyClaimedWork = (order.items || []).some(item => item.production_staff_id);
   const notifyWaiter = item => runAction(async () => {
     try {
       if (item.production_status === 'Claimed') {
@@ -764,7 +840,7 @@ function OrderCard({ order, role, paymentMethods, setPaymentMethods, token, runA
         body: {},
       });
     } catch (error) {
-      await loadData();
+      await refreshData();
       throw error;
     }
   }, 'The Shisha item was marked ready and the waiter was notified.');
@@ -818,7 +894,11 @@ function OrderCard({ order, role, paymentMethods, setPaymentMethods, token, runA
               item_id: item.id,
               quantity: Number(input.quantity),
               reason: input.reason,
-            }, 'Void request sent to the Shisha HOD.');
+            }, result => result.notification_sent
+              ? 'Void request sent to the Shisha HOD.'
+              : result.notification_no_recipients
+                ? 'Void request saved, but no Shisha HOD device is registered with notifications enabled.'
+                : 'Void request saved, but the Shisha HOD push could not be delivered.');
           }} className="mt-2 grid gap-2 sm:grid-cols-[90px_1fr_auto]">
             <input aria-label={`Void quantity for ${item.name}`} type="number" min="1" max={availableQuantity} step="1" required value={input.quantity} onChange={event => setVoidInputs(current => ({ ...current, [item.id]: { ...input, quantity: event.target.value } }))} className="w-full rounded-md border border-zinc-200 px-2 py-1.5 text-xs" />
             <input aria-label={`Void reason for ${item.name}`} required maxLength="500" value={input.reason} onChange={event => setVoidInputs(current => ({ ...current, [item.id]: { ...input, reason: event.target.value } }))} placeholder="Reason for void" className="min-w-0 rounded-md border border-zinc-200 px-2 py-1.5 text-xs" />
@@ -828,13 +908,40 @@ function OrderCard({ order, role, paymentMethods, setPaymentMethods, token, runA
       })}</div>
       <div className="grid gap-1 text-xs text-zinc-500"><span>Waiter: {order.waiter_name}</span>{order.chef_name && <span>Mixer: {order.chef_name}</span>}{order.notes && <span>Note: {order.notes}</span>}<span>Payment: {String(order.payment_status).replaceAll('_', ' ')} · paid {money(order.amount_paid)} · due {money(order.outstanding_amount)}</span></div>
       <div className="mt-4 flex flex-wrap gap-2">
-        {role === 'SHISHA_CHEF' && ['PENDING', 'ASSIGNED'].includes(order.order_status) && <form onSubmit={startPreparation} className="flex flex-wrap items-center gap-2"><input aria-label={`PIN to start order ${order.reference || order.id}`} type="password" inputMode="numeric" pattern="[0-9]{4,8}" minLength={4} maxLength={8} required value={preparePin} onChange={event => setPreparePin(event.target.value.replace(/\D/g, ''))} placeholder="4-8 digit PIN" disabled={busy} className="w-32 rounded-lg border border-zinc-200 px-3 py-2 text-sm tracking-widest disabled:opacity-50" /><Button type="submit" tone="accent" disabled={busy}>Start preparation</Button></form>}
-        {role === 'SHISHA_CHEF' && order.order_status === 'PREPARING' && <Button tone="accent" disabled={busy} onClick={() => doPost(`/orders/${order.id}/ready`, {}, 'Shisha order marked ready. The waiter has been notified.')}>Mark ready</Button>}
+        {role === 'SHISHA_CHEF' && ((order.order_status === 'PENDING' && !order.assigned_chef_id && !hasAnyClaimedWork) || (order.order_status === 'ASSIGNED' && Number(order.assigned_chef_id) === Number(staffId))) && <form onSubmit={claimOrder} className="flex flex-wrap items-center gap-2"><input aria-label={`Mixer PIN to claim order ${order.reference || order.id}`} type="password" inputMode="numeric" pattern="[0-9]{4,8}" minLength={4} maxLength={8} required value={orderClaimPin} onChange={event => setOrderClaimPin(event.target.value.replace(/\D/g, ''))} placeholder="Mixer PIN" disabled={busy} className="w-32 rounded-lg border border-zinc-200 px-3 py-2 text-sm tracking-widest disabled:opacity-50" /><Button type="submit" tone="accent" disabled={busy}>Verify PIN</Button></form>}
+        {role === 'SHISHA_CHEF' && ['ASSIGNED', 'PREPARING'].includes(order.order_status) && Number(order.assigned_chef_id) === Number(staffId) && <Button tone="accent" disabled={busy} onClick={() => doPost(`/orders/${order.id}/ready`, {}, result => result.notification_sent ? 'Shisha waiter notified; order marked ready.' : 'Order marked ready, but the waiter push was not delivered. Check that their device notifications are enabled.')}>Notify Shisha waiter</Button>}
         {role === 'SHISHA_WAITER' && order.order_status === 'READY' && <Button tone="accent" disabled={busy} onClick={() => doPost(`/orders/${order.id}/serve`, {}, 'Order marked served.')}>Serve <Check size={15} /></Button>}
-        {role === 'SHISHA_WAITER' && ['SERVED', 'PARTIALLY_PAID', 'OUTSTANDING'].includes(order.order_status) && Number(order.outstanding_amount) > 0 && <><select aria-label="Payment method" value={paymentMethods[order.id] || ''} onChange={event => setPaymentMethods({ ...paymentMethods, [order.id]: event.target.value })} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm"><option value="">Payment method</option>{METHODS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Button disabled={busy || !paymentMethods[order.id]} onClick={() => doPost(`/orders/${order.id}/payment-request`, { payment_method: paymentMethods[order.id] }, 'Payment request sent to the Shisha HOD.')}>Request payment</Button></>}
+        {role === 'SHISHA_WAITER' && order.has_credit_request && Number(order.outstanding_amount) > 0 && <span className="self-center text-xs font-semibold text-amber-800">Credit details saved; the HOD can record payments.</span>}
+        {role === 'SHISHA_WAITER' && !order.has_credit_request && ['SERVED', 'PARTIALLY_PAID', 'OUTSTANDING'].includes(order.order_status) && Number(order.outstanding_amount) > 0 && <><select aria-label="Payment method" value={paymentMethods[order.id] || ''} onChange={event => {
+          const method = event.target.value;
+          setPaymentMethods(current => ({ ...current, [order.id]: method }));
+          if (method === 'CREDIT') {
+            setCreditDetails({ name: '', phone: '', expectedPaymentDate: '' });
+            setCreditModalOpen(true);
+          }
+        }} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm"><option value="">Payment method</option>{METHODS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Button disabled={busy || !paymentMethods[order.id]} onClick={requestPayment}>{paymentMethods[order.id] === 'CREDIT' ? 'Enter credit details' : 'Request payment'}</Button></>}
         <button onClick={async () => { try { setHistory(await request(`/orders/${order.id}/history`, token)); } catch { setHistory([]); } }} className="px-2 text-xs font-bold text-zinc-500 underline">History</button>
       </div>
       {history && <div className="mt-4 border-t border-zinc-100 pt-3">{history.map(item => <p key={item.id} className="py-1 text-xs text-zinc-500"><strong className="text-zinc-800">{item.to_status.replaceAll('_', ' ')}</strong> · {item.actor_name} · {new Date(item.created_at).toLocaleString()}{item.notes ? ` · ${item.notes}` : ''}</p>)}</div>}
+      {creditModalOpen && <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 p-4" role="presentation">
+        <form onSubmit={submitCreditRequest} className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby={`credit-title-${order.id}`}>
+          <h2 id={`credit-title-${order.id}`} className="text-lg font-black">Client credit details</h2>
+          <p className="mt-1 text-sm text-zinc-500">{order.reference || `SH-${String(order.id).padStart(4, '0')}`} · outstanding {money(order.outstanding_amount)}</p>
+          {error && <p className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800" role="alert">{error}</p>}
+          <div className="mt-4 grid gap-3">
+            <Field label="Client full name" value={creditDetails.name} onChange={event => setCreditDetails(current => ({ ...current, name: event.target.value }))} maxLength={120} required />
+            <Field label="Client phone number" type="tel" value={creditDetails.phone} onChange={event => setCreditDetails(current => ({ ...current, phone: event.target.value }))} maxLength={40} required />
+            <Field label="Expected payment date (optional)" type="date" value={creditDetails.expectedPaymentDate} onChange={event => setCreditDetails(current => ({ ...current, expectedPaymentDate: event.target.value }))} />
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button type="button" tone="quiet" disabled={busy} onClick={() => {
+              setCreditModalOpen(false);
+              setPaymentMethods(current => ({ ...current, [order.id]: '' }));
+            }}>Cancel</Button>
+            <Button type="submit" tone="accent" disabled={busy}>Save credit details</Button>
+          </div>
+        </form>
+      </div>}
     </article>
   );
 }
@@ -849,31 +956,73 @@ function VoidRequestsPanel({ requests, token, runAction, busy }) {
         <p className="mt-1 text-xs text-zinc-500">Requested by {item.waiter_name} · Order balance {money(item.outstanding_amount)}</p>
         <p className="mt-3 rounded-lg bg-zinc-50 p-3 text-sm">{item.reason}</p>
         <div className="mt-4 flex gap-2">
-          <Button tone="accent" disabled={busy} onClick={() => runAction(() => request(`/void-requests/${item.id}/approve`, token, { method: 'POST', body: {} }), 'Void approved. Order balance and reports updated.')}>Approve void</Button>
-          <Button tone="quiet" disabled={busy} onClick={() => runAction(() => request(`/void-requests/${item.id}/reject`, token, { method: 'POST', body: {} }), 'Void request rejected.')}>Reject</Button>
+          <Button tone="accent" disabled={busy} onClick={() => runAction(() => request(`/void-requests/${item.id}/approve`, token, { method: 'POST', body: {} }), result => result.notification_sent
+            ? 'Void approved; waiter notified. Order balance and reports updated.'
+            : result.notification_no_recipients
+              ? 'Void approved, but no waiter device is registered with notifications enabled.'
+              : 'Void approved, but the waiter push could not be delivered.')}>Approve void</Button>
+          <Button tone="quiet" disabled={busy} onClick={() => runAction(() => request(`/void-requests/${item.id}/reject`, token, { method: 'POST', body: {} }), result => result.notification_sent
+            ? 'Void request rejected; waiter notified.'
+            : result.notification_no_recipients
+              ? 'Void request rejected, but no waiter device is registered with notifications enabled.'
+              : 'Void request rejected, but the waiter push could not be delivered.')}>Reject</Button>
         </div>
       </article>)}</div> : <Empty text="No Shisha void requests are awaiting approval." />}
     </section>
   );
 }
 
-function PaymentPanel({ requests, token, inputs, setInputs, runAction, busy }) {
+function PaymentPanel({ requests, orders, token, inputs, setInputs, runAction, busy, confirmedBy, setReceipt }) {
   return (
     <section><div className="mb-4"><h2 className="text-lg font-black">Payment requests</h2><p className="text-sm text-zinc-500">Confirm receipts here. Credit balances remain open until recorded payments settle them.</p></div>
       {requests.length ? <div className="grid gap-3">{requests.map(item => {
-        const input = inputs[item.id] || { amount: item.amount, transaction_id: '', notes: '', method: 'CASH' };
-        const update = patch => setInputs(current => ({ ...current, [item.id]: { ...input, ...patch } }));
         const isCredit = item.payment_method === 'CREDIT' || item.status === 'OUTSTANDING';
         const pending = item.status === 'PENDING';
+        const input = inputs[item.id] || { amount: isCredit ? item.outstanding_amount : item.amount, transaction_id: '', notes: '', method: 'CASH' };
+        const transactionRequired = ['MTN_MOBILE_MONEY', 'AIRTEL_MONEY', 'CARD']
+          .includes(isCredit ? input.method : item.payment_method);
+        const update = patch => setInputs(current => ({ ...current, [item.id]: { ...input, ...patch } }));
         const settle = async () => {
-          await request(isCredit ? `/orders/${item.order_id}/payments` : `/payments/${item.id}/confirm`, token, {
+          if (transactionRequired && !input.transaction_id.trim()) {
+            throw new Error('Transaction/reference ID is required for mobile money and card payments.');
+          }
+          const result = await request(isCredit ? `/orders/${item.order_id}/payments` : `/payments/${item.id}/confirm`, token, {
             method: 'POST', body: isCredit
               ? { amount: input.amount, payment_method: input.method, transaction_id: input.transaction_id, notes: input.notes }
               : { amount: input.amount, transaction_id: input.transaction_id, notes: input.notes },
           });
+          const order = orders.find(candidate => Number(candidate.id) === Number(item.shisha_order_id));
+          setReceipt({
+            reference: item.reference,
+            date: new Date().toISOString(),
+            table: item.table_id,
+            staff: item.waiter_name,
+            items: (order?.items || []).map(line => ({
+              name: line.name,
+              quantity: line.quantity,
+              total: line.line_total,
+            })),
+            total: item.total_amount,
+            amountReceived: result.payment?.amount ?? input.amount,
+            amountPaid: result.amount_paid,
+            balance: result.outstanding_amount,
+            paymentMethod: isCredit ? input.method : item.payment_method,
+            transactionId: input.transaction_id,
+            confirmedBy,
+          });
+          if (isCredit) {
+            setInputs(current => ({
+              ...current,
+              [item.id]: {
+                ...input,
+                amount: result.outstanding_amount > 0 ? String(result.outstanding_amount) : '',
+              },
+            }));
+          }
+          return result;
         };
-        return <article key={item.id} className="grid gap-4 rounded-xl border border-zinc-200 bg-white p-4 lg:grid-cols-[1fr_1.2fr] lg:items-center"><div><div className="flex flex-wrap items-center gap-2"><p className="font-black">{item.reference} · Table {item.table_id}</p><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${pending ? 'bg-amber-100 text-amber-900' : isCredit ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>{item.status}</span></div><p className="mt-1 text-sm text-zinc-500">{item.waiter_name} · {item.payment_method.replaceAll('_', ' ')} · Requested {money(item.amount)}</p><p className="mt-1 text-xs text-zinc-500">Paid {money(item.amount_paid)} · Outstanding {money(item.outstanding_amount)}</p></div>
-          {(pending || (isCredit && Number(item.outstanding_amount) > 0)) && <div className="grid gap-2 sm:grid-cols-2"><Field label={isCredit ? 'Payment amount' : 'Amount received'} type="number" min="0.01" max={item.outstanding_amount} step="0.01" value={input.amount} onChange={event => update({ amount: event.target.value })} /><label className="grid gap-1.5 text-xs font-semibold text-zinc-600">{isCredit ? 'Method received' : 'Transaction / reference ID'}{isCredit ? <select value={input.method} onChange={event => update({ method: event.target.value })} className="rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm">{METHODS.filter(([method]) => method !== 'CREDIT').map(([method, label]) => <option key={method} value={method}>{label}</option>)}</select> : <input value={input.transaction_id} onChange={event => update({ transaction_id: event.target.value })} placeholder={item.payment_method.includes('MONEY') || item.payment_method === 'CARD' ? 'Required' : 'Optional'} className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm" />}</label>{isCredit && ['MTN_MOBILE_MONEY', 'AIRTEL_MONEY', 'CARD'].includes(input.method) && <Field label="Transaction / reference ID" value={input.transaction_id} onChange={event => update({ transaction_id: event.target.value })} required />}<Field label="Confirmation note" value={input.notes} onChange={event => update({ notes: event.target.value })} /><div className="flex items-end"><Button tone="accent" disabled={busy} onClick={() => runAction(settle, isCredit ? 'Credit settlement recorded.' : 'Payment confirmed.')}>{isCredit ? 'Record payment' : 'Confirm payment'}</Button></div></div>}
+        return <article key={item.id} className="grid gap-4 rounded-xl border border-zinc-200 bg-white p-4 lg:grid-cols-[1fr_1.2fr] lg:items-center"><div><div className="flex flex-wrap items-center gap-2"><p className="font-black">{item.reference} · Table {item.table_id}</p><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${pending ? 'bg-amber-100 text-amber-900' : isCredit ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>{item.status}</span></div><p className="mt-1 text-sm text-zinc-500">{item.waiter_name} · {item.payment_method.replaceAll('_', ' ')} · Requested {money(item.amount)}</p>{isCredit && <p className="mt-1 text-sm font-semibold text-zinc-700">Client: {item.client_name || 'Not recorded'}{item.client_phone ? ` · ${item.client_phone}` : ''}</p>}{isCredit && item.expected_payment_date && <p className="mt-1 text-xs text-zinc-500">Expected payment: {item.expected_payment_date}</p>}<p className="mt-1 text-xs text-zinc-500">Paid {money(item.amount_paid)} · Outstanding {money(item.outstanding_amount)}</p></div>
+          {(pending || (isCredit && Number(item.outstanding_amount) > 0)) && <div className="grid gap-2 sm:grid-cols-2"><Field label={isCredit ? 'Payment amount' : 'Amount received'} type="number" min="0.01" max={item.outstanding_amount} step="0.01" value={input.amount} onChange={event => update({ amount: event.target.value })} /><label className="grid gap-1.5 text-xs font-semibold text-zinc-600">{isCredit ? 'Method received' : 'Transaction / reference ID'}{isCredit ? <select value={input.method} onChange={event => update({ method: event.target.value })} className="rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm">{METHODS.filter(([method]) => method !== 'CREDIT').map(([method, label]) => <option key={method} value={method}>{label}</option>)}</select> : <input value={input.transaction_id} onChange={event => update({ transaction_id: event.target.value })} required={transactionRequired} aria-required={transactionRequired} placeholder={transactionRequired ? 'Required' : 'Optional'} className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm" />}</label>{isCredit && ['MTN_MOBILE_MONEY', 'AIRTEL_MONEY', 'CARD'].includes(input.method) && <Field label="Transaction / reference ID" value={input.transaction_id} onChange={event => update({ transaction_id: event.target.value })} required />}<Field label="Confirmation note" value={input.notes} onChange={event => update({ notes: event.target.value })} /><div className="flex items-end"><Button tone="accent" disabled={busy || (transactionRequired && !input.transaction_id.trim())} onClick={() => runAction(settle, isCredit ? 'Credit settlement recorded.' : 'Payment confirmed.')}>{isCredit ? 'Record payment' : 'Confirm payment'}</Button></div></div>}
         </article>;
       })}</div> : <Empty text="No payment requests to review." />}
     </section>
@@ -888,6 +1037,7 @@ function ReportsPanel({ report, mode, setMode, from, to, setFrom, setTo, reportM
     ['Gross sales before voids', money(summary.gross_sales), CircleDollarSign],
     ['Approved voids', `${money(summary.voided_total)} · ${summary.voided_quantity || 0} items`, Ban],
     ['Collected', money(summary.amount_collected), Wallet],
+    ['Credit received', money(summary.credit_payments_received), Wallet],
     ['Outstanding', money(summary.total_outstanding), CircleDollarSign],
     ['Partially paid', `${money(summary.partially_paid_amount)} · ${summary.partially_paid_orders || 0} orders`, ClipboardList],
     ['Fully settled', summary.fully_settled_orders, Check],
@@ -897,9 +1047,10 @@ function ReportsPanel({ report, mode, setMode, from, to, setFrom, setTo, reportM
       {mode === 'specific-month' && <div className="mb-4 max-w-xs"><Field label="Report month" type="month" value={reportMonth} onChange={event => setReportMonth(event.target.value)} /></div>}
       {mode === 'custom' && <div className="mb-4 flex flex-wrap gap-3"><Field label="From" type="date" value={from} onChange={event => setFrom(event.target.value)} /><Field label="To" type="date" value={to} onChange={event => setTo(event.target.value)} /></div>}
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{stats.map(([label, value, Icon]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><div className="flex items-center justify-between"><span className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</span><Icon size={16} className="text-amber-700" /></div><p className="mt-3 text-2xl font-black">{value ?? 0}</p></article>)}</div>
-      <div className="grid gap-5 xl:grid-cols-2"><div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Sales by Shisha waiter</h3></div>{(report?.by_waiter || []).map(row => <div key={row.waiter_id} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.waiter_name}</p><p className="text-xs text-zinc-500">{row.total_orders} orders · {money(row.amount_collected)} collected · {money(row.voided_total)} voided</p></div><p className="text-sm font-black">{money(row.total_sales)}</p></div>)}{!report?.by_waiter?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No orders in this date range.</p>}</div>
+      <div className="grid gap-5 xl:grid-cols-2"><div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Sales by Shisha waiter</h3><p className="text-xs text-zinc-500">Collected amounts are based on payments received in the selected date range.</p></div>{(report?.by_waiter || []).map(row => <div key={row.waiter_id} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.waiter_name}</p><p className="text-xs text-zinc-500">{row.total_orders} orders · {money(row.amount_collected)} collected · {money(row.voided_total)} voided</p></div><p className="text-sm font-black">{money(row.total_sales)}</p></div>)}{!report?.by_waiter?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No orders in this date range.</p>}</div>
         <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Collected by payment method</h3></div>{(report?.by_payment_method || []).map(row => <div key={row.payment_method} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.payment_method.replaceAll('_', ' ')}</p><p className="text-xs text-zinc-500">{row.payment_count} confirmed payments</p></div><p className="text-sm font-black">{money(row.amount)}</p></div>)}{!report?.by_payment_method?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No confirmed payments in this date range.</p>}</div>
         <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Approved voids by item</h3></div>{(report?.by_voided_item || []).map(row => <div key={row.item_name} className="grid grid-cols-[1fr_auto] gap-3 border-b border-zinc-100 px-4 py-3 last:border-0"><div><p className="text-sm font-bold">{row.item_name}</p><p className="text-xs text-zinc-500">{row.quantity} units voided</p></div><p className="text-sm font-black">{money(row.amount)}</p></div>)}{!report?.by_voided_item?.length && <p className="px-4 py-8 text-center text-sm text-zinc-400">No approved voids in this date range.</p>}</div>
+        <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white xl:col-span-2"><div className="border-b border-zinc-100 px-4 py-4"><h3 className="font-black">Credit payments received</h3><p className="text-xs text-zinc-500">Each full or partial credit payment is listed by its receipt date.</p></div><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-zinc-50 text-xs font-bold text-zinc-500">        <tr>{['Date', 'Order', 'Client', 'Phone', 'Waiter', 'Method', 'Amount', 'Reference'].map(label => <th key={label} className="px-4 py-3">{label}</th>)}</tr></thead><tbody>{(report?.credit_payments || []).map(payment => <tr key={payment.payment_id} className="border-t border-zinc-100"><td className="px-4 py-3">{new Date(payment.confirmed_at).toLocaleString()}</td><td className="px-4 py-3 font-semibold">{payment.reference}</td><td className="px-4 py-3">{payment.client_name || '-'}</td><td className="px-4 py-3">{payment.client_phone || '-'}</td><td className="px-4 py-3">{payment.waiter_name || '-'}</td><td className="px-4 py-3">{payment.payment_method.replaceAll('_', ' ')}</td><td className="px-4 py-3 font-semibold">{money(payment.amount)}</td><td className="px-4 py-3">{payment.transaction_id || '-'}</td></tr>)}{!report?.credit_payments?.length && <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-zinc-400">No credit payments in this date range.</td></tr>}</tbody></table></div>
       </div>
     </section>
   );

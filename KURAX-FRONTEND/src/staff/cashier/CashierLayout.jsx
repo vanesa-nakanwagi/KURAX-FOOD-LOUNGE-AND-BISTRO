@@ -5,7 +5,7 @@ import { Receipt, Wallet, LogOut, CheckCircle2, FileText } from "lucide-react";
 import logo from "../../../assets/images/logo.jpeg";
 import API_URL from "../../../config/api";
 import CashierExpensePanel from "./CashierExpensePanel";
-import { cashierAuthHeaders } from "./cashierApi";
+import { cashierAuthHeaders, readCashierSession } from "./cashierApi";
 
 // ─── Kampala date helper ──────────────────────────────────────────────────────
 function getKampalaDate() {
@@ -24,8 +24,7 @@ function getCashierShiftKey(staffId) {
 export default function CashierLayout() {
   // ── User State ──────────────────────────────────────────────────────────────
   const [user] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); }
-    catch { return {}; }
+    return readCashierSession() || {};
   });
   const staffId   = user?.id   || user?.staff_id  || "unknown";
   const staffName = user?.name || "Cashier";
@@ -143,7 +142,7 @@ export default function CashierLayout() {
           />
         )}
 
-        {activeTab === "expenses" && <CashierExpensePanel user={user} />}
+        {activeTab === "expenses" && <CashierExpensePanel />}
         
         {activeTab === "petty" && (
           <PettyCashPanel

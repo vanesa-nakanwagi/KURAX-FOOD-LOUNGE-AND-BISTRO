@@ -1,10 +1,44 @@
 import express from 'express';
 import pool from '../db.js';
 import nodemailer from 'nodemailer';
-import { createSessionToken } from '../middleware/sessionTokens.js';
+import { createSessionToken, readSessionToken } from '../middleware/sessionTokens.js';
 import { hashStaffPin, verifyStaffPin } from '../helpers/staffPin.js';
+import notificationService from '../helpers/notificationService.js';
 
 const router = express.Router();
+const ORDERING_ROLES = new Set(['MANAGER', 'SUPERVISOR']);
+
+async function authenticateStaff(req, res, next) {
+  const token = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7)
+    : null;
+  if (!token) return res.status(401).json({ error: 'Sign in to manage order permissions.' });
+
+  let session;
+  try {
+    session = readSessionToken(token);
+  } catch {
+    return res.status(401).json({ error: 'Session expired. Sign in again.' });
+  }
+  if (session.scope !== 'restaurant' || !Number.isInteger(Number(session.id)) || Number(session.id) < 1) {
+    return res.status(401).json({ error: 'A valid restaurant staff session is required.' });
+  }
+  try {
+    const result = await pool.query(
+      'SELECT id, name, role, is_active FROM public.staff WHERE id = $1',
+      [Number(session.id)]
+    );
+    const actor = result.rows[0];
+    if (!actor || actor.is_active === false || actor.role !== session.role) {
+      return res.status(401).json({ error: 'Staff account is inactive or has changed.' });
+    }
+    req.staffActor = actor;
+    return next();
+  } catch (error) {
+    console.error('Staff permission authentication error:', error.message);
+    return res.status(500).json({ error: 'Could not verify staff access.' });
+  }
+}
 
 /**
  * EMAIL CONFIGURATION
@@ -38,6 +72,7 @@ router.get('/', async (req, res) => {
          END, 
          name ASC`
     );
+    res.set('Cache-Control', 'no-store');
     res.json(result.rows);
   } catch (err) {
     console.error('Fetch Staff Error:', err.message);
@@ -157,15 +192,41 @@ router.post('/login', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. TOGGLE PERMISSION & RESET REQUEST
 // ─────────────────────────────────────────────────────────────────────────────
-router.patch('/toggle-permission/:id', async (req, res) => {
+router.patch('/toggle-permission/:id', authenticateStaff, async (req, res) => {
   const { id } = req.params;
   const { is_permitted } = req.body;
+  if (req.staffActor.role !== 'DIRECTOR') {
+    return res.status(403).json({ error: 'Only the Director can change order permissions.' });
+  }
+  if (typeof is_permitted !== 'boolean') {
+    return res.status(400).json({ error: 'Order permission must be enabled or disabled.' });
+  }
   try {
-    await pool.query(
-      'UPDATE staff SET is_permitted = $1, is_requesting = FALSE WHERE id = $2',
-      [is_permitted, id]
+    const result = await pool.query(
+      `UPDATE public.staff SET is_permitted = $1, is_requesting = FALSE
+       WHERE id = $2 AND UPPER(role) = ANY($3::text[])
+       RETURNING id, name, role, is_permitted, is_requesting`,
+      [is_permitted, Number(id), [...ORDERING_ROLES]]
     );
-    res.json({ success: true });
+    if (!result.rows[0]) return res.status(404).json({ error: 'Manager or supervisor not found.' });
+    const staff = result.rows[0];
+    if (is_permitted) {
+      const role = String(staff.role || '').toUpperCase();
+      const notification = await notificationService.sendToUser(staff.id, {
+        type: 'ORDER_PERMISSION_GRANTED',
+        title: 'Order access approved',
+        body: 'The Director approved your request. You can now take orders.',
+        referenceId: staff.id,
+        referenceType: 'staff_order_permission',
+        link: role === 'SUPERVISOR' ? '/supervisor' : '/staff/manager',
+      });
+      console.log(
+        `[PERMISSION GRANTED] ${staff.name} (${role}, ID: ${staff.id}); ` +
+        `notifications sent: ${notification.sent || 0}, failed: ${notification.failed || 0}` +
+        `${notification.sent === 0 && !notification.failed ? ', no registered staff devices' : ''}`
+      );
+    }
+    return res.json({ success: true, staff: result.rows[0] });
   } catch (err) {
     console.error('Toggle Permission Error:', err.message);
     res.status(500).json({ error: "Failed to update permission" });
@@ -175,12 +236,46 @@ router.patch('/toggle-permission/:id', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. REQUEST ORDERING POWER
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/request-permission', async (req, res) => {
-  const { staffId, staffName } = req.body;
+router.post('/request-permission', authenticateStaff, async (req, res) => {
+  if (!ORDERING_ROLES.has(req.staffActor.role)) {
+    return res.status(403).json({ error: 'Only managers and supervisors can request order access.' });
+  }
   try {
-    await pool.query('UPDATE staff SET is_requesting = TRUE WHERE id = $1', [staffId]);
-    console.log(`\n[PERMISSION REQUEST] 🔔 from ${staffName} (ID: ${staffId})`);
-    res.status(200).json({ success: true, message: "Request logged." });
+    const result = await pool.query(
+      `UPDATE public.staff SET is_requesting = TRUE
+       WHERE id = $1 AND COALESCE(is_permitted, FALSE) = FALSE AND COALESCE(is_requesting, FALSE) = FALSE
+       RETURNING id, name, role`,
+      [req.staffActor.id]
+    );
+    let staff = result.rows[0];
+    if (!staff) {
+      const current = await pool.query(
+        'SELECT id, name, role, is_permitted, is_requesting FROM public.staff WHERE id = $1',
+        [req.staffActor.id]
+      );
+      if (current.rows[0]?.is_permitted) {
+        return res.status(409).json({ error: 'Your account already has order access.' });
+      }
+      if (!current.rows[0]?.is_requesting) {
+        return res.status(404).json({ error: 'Staff account not found.' });
+      }
+      staff = current.rows[0];
+    }
+
+    const notification = await notificationService.sendToRoles(['DIRECTOR'], {
+      type: 'ORDER_PERMISSION_REQUEST',
+      title: 'Order access request',
+      body: `${staff.name} (${staff.role.toLowerCase()}) is requesting permission to take orders.`,
+      referenceId: staff.id,
+      referenceType: 'staff_order_permission',
+      link: '/director?tab=STAFF',
+    });
+    console.log(
+      `[PERMISSION REQUEST] ${staff.name} (${staff.role}, ID: ${staff.id}); ` +
+      `director notifications sent: ${notification.sent || 0}, failed: ${notification.failed || 0}` +
+      `${notification.noRecipients ? ', no registered Director devices' : ''}`
+    );
+    return res.status(200).json({ success: true, is_requesting: true });
   } catch (err) {
     console.error('Request Permission Error:', err.message);
     res.status(500).json({ error: "Failed to send request." });
@@ -399,12 +494,18 @@ router.delete('/terminate/:id', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 11. LIVE PERMISSION SYNC (For Frontend polling)
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/permission/:id', async (req, res) => {
+router.get('/permission/:id', authenticateStaff, async (req, res) => {
   const { id } = req.params;
+  if (Number(id) !== req.staffActor.id) {
+    return res.status(403).json({ error: 'You can only view your own order permission.' });
+  }
   try {
-    const result = await pool.query('SELECT is_permitted FROM staff WHERE id = $1', [id]);
+    const result = await pool.query('SELECT is_permitted, is_requesting FROM public.staff WHERE id = $1', [id]);
     if (result.rows.length === 0) return res.status(404).json({ error: "Not found" });
-    res.json({ is_granted: result.rows[0].is_permitted });
+    res.json({
+      is_granted: result.rows[0].is_permitted,
+      is_requesting: result.rows[0].is_requesting,
+    });
   } catch (err) {
     console.error('Permission Sync Error:', err.message);
     res.status(500).json({ error: "Sync error" });

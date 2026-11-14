@@ -1,16 +1,3 @@
-// ─── CreditLedgerPanel.jsx ────────────────────────────────────────────────────
-// Full credit ledger for the cashier.
-// Shows:
-//   • Credits pending cashier action (needs forwarding to manager)
-//   • Credits pending manager (read-only, waiting)
-//   • Approved credits – settle here (partial or full)
-//   • Fully settled credits (history)
-//   • Running totals of all credit settlements today
-//
-// Props:
-//   cashierName – logged-in cashier's name
-// ─────────────────────────────────────────────────────────────────────────────
-
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BookOpen, CheckCircle, XCircle, User, Phone,
@@ -78,8 +65,7 @@ function SettleModal({ credit, cashierName, onClose, onSettled }) {
     if (!canSubmit) return;
     setLoading(true);
     try {
-      //const res = await fetch(`${API_URL}/api/credits/${credit.id}/settle`, {
-      const res = await fetch(`${API_URL}/api/cashier-ops/credits/${credit.id}/settle`, {
+      const res = await fetch(`${API_URL}/api/credits/${credit.id}/settle`, {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
@@ -256,7 +242,6 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
   const [expanded,  setExpanded]  = useState(false);
   const [forwarding, setForwarding] = useState(false);
 
-  // Fix: Map status correctly - handle both 'PendingManagerApproval' and 'PendingManager'
   const status = credit.status === "PendingManagerApproval" ? "PendingManagerApproval" : 
                  (credit.status === "PendingManager" ? "PendingManagerApproval" : credit.status);
   
@@ -444,12 +429,12 @@ function CreditRow({ credit, cashierName, onSettle, onForward, onRefresh }) {
             </div>
           )}
 
-          {(status === "Approved" || status === "PartiallySettled") && (
+          {(["Approved", "PartiallySettled", "Rejected"].includes(status) && balance > 0) && (
             <button
               onClick={() => onSettle(credit)}
               className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-md shadow-blue-500/20"
             >
-              <CircleDollarSign size={14} /> Record Settlement Payment
+              <CircleDollarSign size={14} /> Record {status === "Rejected" ? "Payment Due" : "Settlement Payment"}
             </button>
           )}
         </div>
@@ -508,12 +493,11 @@ export default function CreditLedgerPanel({ cashierName }) {
     return base;
   }, [credits, todayKey]);
 
-  // ── Filtered list - FIXED: Proper status mapping ───────────────────────────
+  
   const getFilteredCredits = (statusFilter) => {
     if (statusFilter === "ALL") return credits;
     
     return credits.filter(c => {
-      // Map both 'PendingManager' and 'PendingManagerApproval' to the same filter
       if (statusFilter === "PendingManagerApproval") {
         return c.status === "PendingManagerApproval" || c.status === "PendingManager";
       }
@@ -523,10 +507,12 @@ export default function CreditLedgerPanel({ cashierName }) {
 
   const filtered = getFilteredCredits(filter);
 
-  // ── Counts for badges - FIXED: Include both status variations ──────────────
   const needsAction = credits.filter(c => c.status === "PendingCashier").length;
   const pendingMgr = credits.filter(c => c.status === "PendingManagerApproval" || c.status === "PendingManager").length;
-  const readyToSettle = credits.filter(c => ["Approved", "PartiallySettled"].includes(c.status)).length;
+  const readyToSettle = credits.filter(c =>
+    ["Approved", "PartiallySettled", "Rejected"].includes(c.status) &&
+    Number(c.amount) > Number(c.amount_paid || 0)
+  ).length;
 
   const FILTERS = [
     { key: "ALL",                    label: "All" },
@@ -594,12 +580,12 @@ export default function CreditLedgerPanel({ cashierName }) {
           )}
           {readyToSettle > 0 && (
             <button
-              onClick={() => setFilter("Approved")}
+              onClick={() => setFilter("ALL")}
               className="flex items-center gap-2 px-4 py-2.5 bg-cyan-50 border border-cyan-200 rounded-2xl hover:bg-cyan-100 transition-all"
             >
               <CircleDollarSign size={12} className="text-cyan-600" />
               <span className="text-[10px] font-black text-cyan-700 uppercase tracking-widest">
-                {readyToSettle} Ready to Settle
+                {readyToSettle} Payments Due
               </span>
             </button>
           )}

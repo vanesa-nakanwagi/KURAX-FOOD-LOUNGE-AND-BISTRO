@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { Plus, SearchX, UtensilsCrossed, Sparkles } from "lucide-react";
 import { getImageSrc } from "../../../utils/imageHelper";
+import { formatMenuName } from "../../../utils/menuName.js";
 
 // Helper: determine which tab this item belongs to (case‑insensitive, trimmed)
 export const getEffectiveCategory = (item) => {
@@ -96,14 +97,19 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 md:gap-5 pb-6">
           {filteredMenus.map((item) => {
+            const displayName = formatMenuName(item.name);
             const isNew = item.created_at && (new Date() - new Date(item.created_at)) / (1000 * 60 * 60) <= 168;
+            const originalPrice = Number(item.list_price ?? item.price);
+            const currentPrice = Number(item.price);
+            const promotionActive = item.promotion_active === true || item.promotion_active === "true";
+            const hasPromotion = promotionActive && Number.isFinite(originalPrice) && originalPrice > currentPrice;
             return (
               <div
                 key={item.id}
-                className={`group relative font-outfit flex flex-col rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border transition-all duration-500 hover:-translate-y-2
+                className={`group relative font-outfit flex h-full flex-col rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border transition-all duration-500 hover:-translate-y-2
                   ${theme === "dark" ? "bg-[#0A0A0A] border-zinc-800/40" : "bg-white border-zinc-100"}`}
               >
-                <div className="relative h-44 sm:h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
+                <div className="relative h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
                   <div className="absolute top-2.5 left-2.5 right-2.5 flex justify-end items-start z-10">
                     {isNew && (
                       <div className="bg-yellow-500 text-black text-[9px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 uppercase tracking-wider border border-white/10 shadow">
@@ -113,23 +119,23 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                   </div>
                   <img
                     src={getImageSrc(item.image_url)}
-                    alt={item.name}
+                    alt={displayName}
                     className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                     onError={(e) => { e.target.src = "https://via.placeholder.com/300?text=No+Image"; }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
                 </div>
-                <div className="p-4 sm:p-6 flex-1 flex flex-col justify-between">
-                  <div className="space-y-2 text-left">
-                    <h4 className={`text-lg font-[Outfit] tracking-tight group-hover:text-yellow-600 transition-colors line-clamp-1 ${theme === "dark" ? "text-white" : "text-yellow-700"}`}>
-                      {item.name}
+                <div className="flex flex-1 flex-col p-4">
+                  <div className="text-left">
+                    <h4 className="h-10 overflow-hidden line-clamp-2 text-lg font-semibold leading-5 tracking-normal text-yellow-700 transition-colors group-hover:text-yellow-700 dark:text-yellow-300 dark:group-hover:text-yellow-200">
+                      {displayName}
                     </h4>
-                    <p className={`text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed line-clamp-2 ${theme === "dark" ? "text-zinc-400" : "text-zinc-900"}`}>
-                      {item.description?.substring(0, 80) || `Freshly prepared signature ${item.name}`}
+                    <p className={`h-12 text-[14px] font-light leading-relaxed line-clamp-2 ${theme === "dark" ? "text-zinc-400" : "text-zinc-900"}`}>
+                      {item.description?.substring(0, 80) || `Freshly prepared signature ${displayName}`}
                       {item.description?.length > 80 && "..."}
                     </p>
                   </div>
-                  <div className={`flex items-center justify-between pt-5 mt-4 border-t ${theme === "dark" ? "border-zinc-800/50" : "border-zinc-200"}`}>
+                  <div className={`mt-auto flex items-center justify-between border-t pt-3 ${theme === "dark" ? "border-zinc-800/50" : "border-zinc-200"}`}>
                     <button
                       onClick={() => onAddItem(item)}
                       className="flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-600 text-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
@@ -138,10 +144,20 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                       Order Now
                     </button>
                     <div className="text-right">
-                      <span className={`block text-xl tracking-tighter leading-none ${theme === "dark" ? "text-white" : "text-zinc-900"}`}>
-                        {Number(item.price).toLocaleString()}
+                      {hasPromotion && (
+                        <span className="mb-1 block text-sm font-semibold text-zinc-700 dark:text-zinc-300 line-through decoration-red-600 decoration-2">
+                          {originalPrice.toLocaleString()}
+                        </span>
+                      )}
+                      <span className={`block text-xl tracking-tighter leading-none ${hasPromotion ? "text-red-600 dark:text-red-400" : theme === "dark" ? "text-white" : "text-zinc-900"}`}>
+                        {currentPrice.toLocaleString()}
                       </span>
                       <span className="text-[8px] sm:text-[9px] text-yellow-600 font-bold uppercase tracking-wider leading-none">UGX</span>
+                      {hasPromotion && (
+                        <span className="mt-1 block text-[8px] font-bold uppercase tracking-wider leading-none text-red-600">
+                          Limited-time offer
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
