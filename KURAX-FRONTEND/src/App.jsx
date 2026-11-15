@@ -7,6 +7,7 @@ import MenusPage from "./customer/pages/menuPage.jsx";
 import CombosPage from "./customer/pages/combosPage.jsx";
 import EventsPage from "./customer/pages/eventsPage.jsx";
 import ReservationsPage from "./customer/components/reservations/Reservations.jsx";
+import SEO from "./customer/components/common/SEO.jsx";
 
 // Staff & Admin Routes
 import WaiterRoutes from "./staff/routes/WaiterRoutes";
@@ -241,6 +242,7 @@ export default function App() {
 
   return (
     <>
+      <SEO />
       <ScrollToHash />
       <SessionExpiryHandler />
       <Routes>

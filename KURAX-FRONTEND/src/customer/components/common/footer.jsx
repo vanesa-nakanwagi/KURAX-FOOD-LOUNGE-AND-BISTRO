@@ -34,11 +34,11 @@ export default function FooterGlobal() {
   const navigate = useNavigate(); // Hook for hidden portal navigation
 
   const quickLinks = [
-    { label: 'Home', href: '/#hero' },
-    { label: 'Menu', href: '/#menus' },
+    { label: 'Home', href: '/' },
+    { label: 'Menu', href: '/menus' },
     { label: 'About', href: '/#about' },
     { label: 'Location', href: '/#visit' },
-    { label: 'Bookings', href: '/#events' },
+    { label: 'Bookings', href: '/reservations' },
   ];
 
   const paymentMethods = [
