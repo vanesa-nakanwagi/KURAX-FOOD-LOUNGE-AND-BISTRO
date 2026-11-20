@@ -1,9 +1,10 @@
 import express from 'express';
 import pool from '../db.js';
-import nodemailer from 'nodemailer';
 import { createSessionToken, readSessionToken } from '../middleware/sessionTokens.js';
 import { hashStaffPin, verifyStaffPin } from '../helpers/staffPin.js';
 import notificationService from '../helpers/notificationService.js';
+import { assertPinIsAvailable } from '../helpers/pinUniqueness.js';
+import { sendAccountPinEmail } from '../helpers/smtp.js';
 
 const router = express.Router();
 const ORDERING_ROLES = new Set(['MANAGER', 'SUPERVISOR']);
@@ -39,17 +40,6 @@ async function authenticateStaff(req, res, next) {
     return res.status(500).json({ error: 'Could not verify staff access.' });
   }
 }
-
-/**
- * EMAIL CONFIGURATION
- */
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. FETCH ALL STAFF (For dropdown/selection)
@@ -89,35 +79,67 @@ router.post('/activate', async (req, res) => {
     return res.status(400).json({ error: "All fields are required." });
   }
 
+  let client;
+  let transactionStarted = false;
   try {
-    const checkUser = await pool.query('SELECT email FROM staff WHERE email = $1', [email]);
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionStarted = true;
+    const checkUser = await client.query('SELECT email FROM public.staff WHERE lower(trim(email)) = lower(trim($1))', [email]);
     if (checkUser.rows.length > 0) {
+      await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(400).json({ error: "An account with this email already exists." });
     }
 
+    await assertPinIsAvailable(client, pin);
     const defaultPermission = (role === 'WAITER' || role === 'DIRECTOR');
     const { salt, hash } = await hashStaffPin(pin);
     
-    const newStaff = await pool.query(
-      `INSERT INTO staff (name, email, pin, pin_salt, pin_hash, role, is_permitted, monthly_income_target, daily_order_target)
+    const newStaff = await client.query(
+      `INSERT INTO public.staff (name, email, pin, pin_salt, pin_hash, role, is_permitted, monthly_income_target, daily_order_target)
        VALUES ($1, $2, NULL, $3, $4, $5, $6, 0, 0)
        RETURNING id, name, email, role, is_permitted, monthly_income_target, daily_order_target`,
       [name, email, salt, hash, role, defaultPermission]
     );
 
-    res.status(201).json({ message: "✅ Account activated!", staff: newStaff.rows[0] });
-
-    // Background Email
-    transporter.sendMail({
-      from: `"Kurax Lounge & Bistro" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Welcome to the Team',
-      html: `<h1 style="color: #eab308;">Welcome, ${name}!</h1><p>Your PIN: <b>${pin}</b></p><p>Role: ${role}</p>`
-    }).catch(err => console.error("Mail Error:", err.message));
-
+    await sendAccountPinEmail({
+      name,
+      email,
+      role,
+      pin,
+      department: 'Kurax staff',
+    });
+    await client.query('COMMIT');
+    transactionStarted = false;
+    return res.status(201).json({
+      message: "Account activated and PIN emailed.",
+      staff: newStaff.rows[0],
+      emailSent: true,
+    });
   } catch (err) {
+    if (transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Staff activation rollback error:', rollbackError.message);
+      }
+    }
+    if (err.code === 'PIN_ALREADY_IN_USE' || err.code === 'PIN_UNIQUENESS_CONFIG_MISSING') {
+      return res.status(err.statusCode || 409).json({ error: err.message });
+    }
+    if (err.code === 'SMTP_CONFIG_MISSING' || err.code === 'SMTP_SEND_FAILED') {
+      console.error('Staff PIN email failed:', err.cause?.message || err.message);
+      return res.status(err.code === 'SMTP_CONFIG_MISSING' ? 503 : 502).json({
+        error: 'Could not deliver the PIN email. The account was not created; check the backend SMTP settings and try again.',
+      });
+    }
     console.error('Activation Error:', err.message);
-    res.status(500).json({ error: "System error: Could not save staff." });
+    return res.status(err.code === '23505' ? 400 : 500).json({
+      error: err.code === '23505' ? "An account with this email already exists." : "System error: Could not save staff.",
+    });
+  } finally {
+    client?.release();
   }
 });
 
@@ -519,24 +541,41 @@ router.patch('/update/:id', async (req, res) => {
   const { id } = req.params;
   const { name, email, role, pin } = req.body;
 
+  let client;
+  let transactionStarted = false;
   try {
     let result;
     if (pin !== undefined && pin !== null && pin !== '') {
+      const staffId = Number(id);
+      if (!Number.isInteger(staffId) || staffId <= 0) {
+        return res.status(400).json({ error: 'A valid staff account is required.' });
+      }
       if (!/^\d{4,8}$/.test(String(pin))) {
         return res.status(400).json({ error: 'PIN must be 4-8 digits.' });
       }
+      client = await pool.connect();
+      await client.query('BEGIN');
+      transactionStarted = true;
+      await assertPinIsAvailable(client, String(pin), { excludeStaffId: staffId });
       const { salt, hash } = await hashStaffPin(pin);
-      result = await pool.query(
-        `UPDATE staff
+      result = await client.query(
+        `UPDATE public.staff
          SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role),
              pin = NULL, pin_salt = $4, pin_hash = $5, updated_at = NOW()
          WHERE id = $6
          RETURNING id, name, email, role, monthly_income_target, daily_order_target`,
-        [name, email, role, salt, hash, id]
+        [name, email, role, salt, hash, staffId]
       );
+      if (result.rowCount === 0) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return res.status(404).json({ error: "Staff member not found" });
+      }
+      await client.query('COMMIT');
+      transactionStarted = false;
     } else {
       result = await pool.query(
-        `UPDATE staff
+        `UPDATE public.staff
          SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role),
              updated_at = NOW()
          WHERE id = $4
@@ -550,10 +589,22 @@ router.patch('/update/:id', async (req, res) => {
     }
 
     console.log(`👤 STAFF UPDATED | ID: ${id} | Name: ${result.rows[0].name}`);
-    res.json({ success: true, staff: result.rows[0] });
+    return res.json({ success: true, staff: result.rows[0] });
   } catch (err) {
+    if (transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Staff update rollback error:', rollbackError.message);
+      }
+    }
+    if (err.code === 'PIN_ALREADY_IN_USE' || err.code === 'PIN_UNIQUENESS_CONFIG_MISSING') {
+      return res.status(err.statusCode || 409).json({ error: err.message });
+    }
     console.error('Update Staff Error:', err.message);
-    res.status(500).json({ error: "Failed to update staff details" });
+    return res.status(500).json({ error: "Failed to update staff details" });
+  } finally {
+    client?.release();
   }
 });
 

@@ -1,8 +1,19 @@
 import express from 'express';
 import pool from '../db.js';
+import { readSessionToken } from '../middleware/sessionTokens.js';
 import logActivity, { registerSSEClient, removeSSEClient } from '../utils/logsActivity.js';
 import { createPettyExpense, getCounterCash } from '../helpers/pettyCash.js';
 import { getPageWindow, parsePagination, toSearchPattern } from '../helpers/pagination.js';
+import {
+  createCashbookTransaction,
+  getCashbookActorCapabilities,
+  getCashbookAuditTrail,
+  getCashbookData,
+  getCashbookReconciliations,
+  reverseCashbookTransaction,
+  saveCashbookReconciliation,
+  updateCashbookTransaction,
+} from '../helpers/cashbook.js';
 import {
   createExpenseJournalEntry,
   createSalesJournalEntry,
@@ -23,6 +34,48 @@ import {
 } from '../helpers/accounting.js';
 
 const router = express.Router();
+
+async function authenticateCashbookActor(req, res, next) {
+  const token = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7).trim()
+    : '';
+  if (!token) return res.status(401).json({ error: 'Sign in to access the cashbook.' });
+
+  let session;
+  try {
+    session = readSessionToken(token);
+  } catch {
+    return res.status(401).json({ error: 'Session expired. Sign in again.' });
+  }
+  if (session.scope !== 'restaurant' || !session.id) {
+    return res.status(401).json({ error: 'A valid staff session is required.' });
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT id, name, role, is_active FROM public.staff WHERE id = $1',
+      [session.id]
+    );
+    const actor = result.rows[0];
+    if (!actor || actor.is_active === false || actor.role !== session.role) {
+      return res.status(401).json({ error: 'Staff account is inactive or has changed.' });
+    }
+    if (!['ACCOUNTANT', 'MANAGER', 'DIRECTOR'].includes(actor.role)) {
+      return res.status(403).json({ error: 'Accounting Centre access is required.' });
+    }
+    req.cashbookActor = {
+      id: Number(actor.id),
+      name: String(actor.name || actor.role),
+      role: actor.role,
+    };
+    return next();
+  } catch (error) {
+    console.error('Cashbook staff authentication failed:', error.message);
+    return res.status(500).json({ error: 'Could not verify accounting access.' });
+  }
+}
+
+router.use('/accounting/cashbook', authenticateCashbookActor);
 
 ensureAccountingDataModel()
   .then(() => syncConfirmedCashierSales())
@@ -724,6 +777,137 @@ router.post('/reports/balance-sheet', async (req, res) => {
 });
 
 // ─── 20. ACCOUNTING FOUNDATION ROUTES ───────────────────────────────────────
+function isValidAccountingDate(value) {
+  const date = String(value || '');
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date)
+    && Number.isFinite(parsed.getTime())
+    && parsed.toISOString().slice(0, 10) === date;
+}
+
+function cashbookDateRange(query) {
+  const endDate = String(query.endDate || kampalaDate());
+  const startDate = String(query.startDate || `${endDate.slice(0, 7)}-01`);
+  if (!isValidAccountingDate(startDate) || !isValidAccountingDate(endDate) || startDate > endDate) {
+    throw Object.assign(new Error('Choose a valid cashbook date range.'), { statusCode: 400 });
+  }
+  return { startDate, endDate };
+}
+
+function sendCashbookError(res, error, fallback) {
+  if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+  console.error(`${fallback}:`, error.message);
+  return res.status(500).json({ error: fallback });
+}
+
+function cashbookTransactionId(value) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+router.get('/accounting/cashbook', async (req, res) => {
+  try {
+    const { startDate, endDate } = cashbookDateRange(req.query);
+    await syncConfirmedCashierSales({ startDate, endDate });
+    const result = await getCashbookData({
+      startDate,
+      endDate,
+      accountCode: req.query.accountCode || '',
+      search: req.query.search || '',
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+    res.json({
+      ...result,
+      capabilities: getCashbookActorCapabilities(req.cashbookActor),
+    });
+  } catch (error) {
+    sendCashbookError(res, error, 'Could not load the cashbook.');
+  }
+});
+
+router.post('/accounting/cashbook', async (req, res) => {
+  if (!getCashbookActorCapabilities(req.cashbookActor).can_create) {
+    return res.status(403).json({ error: 'You do not have permission to create cashbook transactions.' });
+  }
+  try {
+    const result = await createCashbookTransaction(req.body || {}, req.cashbookActor);
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) {
+    sendCashbookError(res, error, 'Could not create the cashbook transaction.');
+  }
+});
+
+router.put('/accounting/cashbook/:id', async (req, res) => {
+  const id = cashbookTransactionId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'A valid cashbook transaction is required.' });
+  try {
+    const transaction = await updateCashbookTransaction(id, req.body || {}, req.cashbookActor);
+    res.json({ transaction });
+  } catch (error) {
+    sendCashbookError(res, error, 'Could not update the cashbook transaction.');
+  }
+});
+
+router.post('/accounting/cashbook/:id/reverse', async (req, res) => {
+  if (!getCashbookActorCapabilities(req.cashbookActor).can_reverse) {
+    return res.status(403).json({ error: 'Only a manager or director can reverse cashbook transactions.' });
+  }
+  const id = cashbookTransactionId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'A valid cashbook transaction is required.' });
+  try {
+    const result = await reverseCashbookTransaction(
+      id,
+      req.body?.reversal_date,
+      req.body?.reason,
+      req.cashbookActor
+    );
+    res.json(result);
+  } catch (error) {
+    sendCashbookError(res, error, 'Could not reverse the cashbook transaction.');
+  }
+});
+
+router.get('/accounting/cashbook/reconciliations', async (req, res) => {
+  const date = String(req.query.date || kampalaDate());
+  if (!isValidAccountingDate(date)) {
+    return res.status(400).json({ error: 'Choose a valid reconciliation date.' });
+  }
+  try {
+    const result = await getCashbookReconciliations(date);
+    res.json({
+      ...result,
+      capabilities: getCashbookActorCapabilities(req.cashbookActor),
+    });
+  } catch (error) {
+    sendCashbookError(res, error, 'Could not load daily reconciliations.');
+  }
+});
+
+router.post('/accounting/cashbook/reconciliations', async (req, res) => {
+  if (!getCashbookActorCapabilities(req.cashbookActor).can_reconcile) {
+    return res.status(403).json({ error: 'You do not have permission to reconcile cashbook accounts.' });
+  }
+  try {
+    const reconciliation = await saveCashbookReconciliation(req.body || {}, req.cashbookActor);
+    res.status(201).json({ reconciliation });
+  } catch (error) {
+    sendCashbookError(res, error, 'Could not save the daily reconciliation.');
+  }
+});
+
+router.get('/accounting/cashbook/audit-trail', async (req, res) => {
+  try {
+    res.json(await getCashbookAuditTrail({
+      page: req.query.page,
+      limit: req.query.limit,
+      search: req.query.search,
+    }));
+  } catch (error) {
+    sendCashbookError(res, error, 'Could not load the cashbook audit trail.');
+  }
+});
+
 router.get('/accounting/overview', async (req, res) => {
   try {
     const today = kampalaDate();

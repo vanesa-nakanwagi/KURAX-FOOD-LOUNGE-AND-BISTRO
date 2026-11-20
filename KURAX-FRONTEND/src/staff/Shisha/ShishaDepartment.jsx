@@ -374,9 +374,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
       setStaffForm({ name: '', email: '', pin: '', role: 'SHISHA_WAITER' });
       setShowStaffPin(false);
       return result;
-    }, result => result.emailSent
-      ? 'Shisha account created and PIN emailed.'
-      : 'Account created, but the PIN email could not be sent. Check backend EMAIL_USER and EMAIL_PASS, then securely give the staff member the PIN you entered.');
+    }, 'Shisha account created and PIN emailed.');
   }
 
   function editStaffPin(person) {

@@ -37,8 +37,9 @@ export default function ContactPage() {
     city: 'Kampala, Uganda',
     hours: 'Monday - Sunday: 8:00 AM - 1:00 AM',
     contact: {
-      phone: '+256 700 123 456',
-      email: 'hello@kurax.ug',
+      phone: '+256 770 322 898',
+      alternatePhone: '+256 745 763 167',
+      email: 'kuraxfoodloungeandbistro@gmail.com',
     },
     proximity: [
       '5 mins from Kyanja Market',

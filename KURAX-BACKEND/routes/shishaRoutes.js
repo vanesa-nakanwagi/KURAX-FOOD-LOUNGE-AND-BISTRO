@@ -1,6 +1,5 @@
 import express from 'express';
 import multer from 'multer';
-import nodemailer from 'nodemailer';
 import {
   randomBytes, scrypt as scryptCallback, timingSafeEqual,
 } from 'node:crypto';
@@ -13,6 +12,8 @@ import notificationService from '../helpers/notificationService.js';
 import {
   encryptShishaPin, isValidShishaPinEncryptionKey,
 } from '../helpers/shishaPinEncryption.js';
+import { assertPinIsAvailable } from '../helpers/pinUniqueness.js';
+import { sendAccountPinEmail } from '../helpers/smtp.js';
 
 const router = express.Router();
 const scrypt = promisify(scryptCallback);
@@ -22,10 +23,6 @@ const SHISHA_REPORT_ROLES = [...REPORT_ROLES, 'SUPERVISOR'];
 const PAYMENT_METHODS = ['MTN_MOBILE_MONEY', 'AIRTEL_MONEY', 'CARD', 'CASH', 'CREDIT'];
 const uploadDirectory = path.join(process.cwd(), 'uploads', 'shisha');
 fs.mkdirSync(uploadDirectory, { recursive: true });
-const mailer = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-});
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -179,16 +176,44 @@ export async function initShishaTables() {
   for (const statement of statements) await pool.query(statement);
 
   if (process.env.SHISHA_ADMIN_EMAIL && process.env.SHISHA_ADMIN_PIN) {
-    const salt = randomBytes(16).toString('hex');
-    const hash = (await scrypt(String(process.env.SHISHA_ADMIN_PIN), salt, 64)).toString('hex');
-    const encryptedPin = isValidShishaPinEncryptionKey()
-      ? encryptShishaPin(String(process.env.SHISHA_ADMIN_PIN))
-      : null;
-    await pool.query(
-      `INSERT INTO public.shisha_staff (name, email, role, pin_salt, pin_hash, pin_encrypted)
-       VALUES ($1, $2, 'SHISHA_HOD', $3, $4, $5) ON CONFLICT (email) DO NOTHING`,
-      [process.env.SHISHA_ADMIN_NAME || 'Shisha HOD', process.env.SHISHA_ADMIN_EMAIL.toLowerCase(), salt, hash, encryptedPin]
-    );
+    const pin = String(process.env.SHISHA_ADMIN_PIN);
+    const email = process.env.SHISHA_ADMIN_EMAIL.trim().toLowerCase();
+    const client = await pool.connect();
+    let transactionStarted = false;
+    try {
+      await client.query('BEGIN');
+      transactionStarted = true;
+      const existing = await client.query(
+        'SELECT id FROM public.shisha_staff WHERE lower(email) = $1',
+        [email]
+      );
+      if (!existing.rows.length) {
+        await assertPinIsAvailable(client, pin);
+        const salt = randomBytes(16).toString('hex');
+        const hash = (await scrypt(pin, salt, 64)).toString('hex');
+        const encryptedPin = isValidShishaPinEncryptionKey()
+          ? encryptShishaPin(pin)
+          : null;
+        await client.query(
+          `INSERT INTO public.shisha_staff (name, email, role, pin_salt, pin_hash, pin_encrypted)
+           VALUES ($1, $2, 'SHISHA_HOD', $3, $4, $5)`,
+          [process.env.SHISHA_ADMIN_NAME || 'Shisha HOD', email, salt, hash, encryptedPin]
+        );
+      }
+      await client.query('COMMIT');
+      transactionStarted = false;
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackError) {
+          console.error('Shisha HOD bootstrap rollback error:', rollbackError.message);
+        }
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 
@@ -210,26 +235,6 @@ async function verifyPin(pin, salt, hash) {
   if (expected.length !== 64 || !salt) return false;
   const actual = await scrypt(String(pin), salt, expected.length);
   return actual.length === expected.length && timingSafeEqual(expected, actual);
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, character => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[character]);
-}
-
-async function emailShishaPin({ name, email, role, pin }) {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return false;
-  const safeName = escapeHtml(name);
-  const safeRole = role.replaceAll('_', ' ');
-  await mailer.sendMail({
-    from: `"Kurax Lounge & Bistro" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: 'Your Kurax Shisha Department login',
-    text: `Hello ${name}, your Shisha Department login is ${email}. Your PIN is ${pin}. Sign in at ${process.env.FRONTEND_URL || 'http://localhost:5173'}/shisha.`,
-    html: `<p>Hello ${safeName},</p><p>Your Shisha Department account is ready.</p><p>Email: <strong>${escapeHtml(email)}</strong><br>Role: <strong>${escapeHtml(safeRole)}</strong><br>PIN: <strong>${escapeHtml(pin)}</strong></p><p>Sign in at <a href="${escapeHtml(process.env.FRONTEND_URL || 'http://localhost:5173')}/shisha">Kurax Shisha</a>.</p><p>Please keep your PIN private.</p>`,
-  });
-  return true;
 }
 
 async function authenticate(req, res, next) {
@@ -469,56 +474,100 @@ router.post('/staff', async (req, res) => {
   if (!isValidShishaPinEncryptionKey()) {
     return fail(res, 503, 'PIN encryption is not configured. Set SHISHA_PIN_ENCRYPTION_KEY on the backend.');
   }
+  let client;
+  let transactionStarted = false;
   try {
     const encryptedPin = encryptShishaPin(pin);
     const { salt, hash } = await hashPin(pin);
-    const result = await pool.query(
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionStarted = true;
+    await assertPinIsAvailable(client, pin);
+    const result = await client.query(
       `INSERT INTO public.shisha_staff (name, email, role, pin_salt, pin_hash, pin_encrypted)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, role, is_active, created_at`,
       [name, email, role, salt, hash, encryptedPin]
     );
 
     const staff = result.rows[0];
-    let emailSent = false;
-
-    try {
-      emailSent = await emailShishaPin({ name, email, role, pin });
-    } catch (emailError) {
-      console.error('Shisha PIN email failed:', emailError.message);
-    }
-
+    await sendAccountPinEmail({ name, email, role, pin, department: 'Shisha' });
+    await client.query('COMMIT');
+    transactionStarted = false;
     return res.status(201).json({
       staff,
-      emailSent,
+      emailSent: true,
     });
   } catch (error) {
+    if (transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Shisha account creation rollback error:', rollbackError.message);
+      }
+    }
     if (error.code === '23505') return fail(res, 409, 'That email already has a Shisha account.');
+    if (error.code === 'PIN_ALREADY_IN_USE' || error.code === 'PIN_UNIQUENESS_CONFIG_MISSING') {
+      return fail(res, error.statusCode || 409, error.message);
+    }
+    if (error.code === 'SMTP_CONFIG_MISSING' || error.code === 'SMTP_SEND_FAILED') {
+      console.error('Shisha PIN email failed:', error.cause?.message || error.message);
+      return fail(res, error.code === 'SMTP_CONFIG_MISSING' ? 503 : 502, 'Could not deliver the PIN email. The account was not created; check the backend SMTP settings and try again.');
+    }
     console.error('Create Shisha staff error:', error.message);
     return fail(res, 500, 'Could not create the Shisha account.');
+  } finally {
+    client?.release();
   }
 });
 
 router.patch('/staff/:id', requireRoles('SHISHA_HOD'), async (req, res) => {
   const hasPinUpdate = Object.prototype.hasOwnProperty.call(req.body, 'pin');
   if (hasPinUpdate) {
+    const staffId = Number(req.params.id);
+    if (!Number.isInteger(staffId) || staffId <= 0) return fail(res, 400, 'A valid Shisha account is required.');
     const pin = String(req.body.pin || '').trim();
     if (!/^\d{4,8}$/.test(pin)) return fail(res, 400, 'A 4-8 digit PIN is required.');
     if (!isValidShishaPinEncryptionKey()) {
       return fail(res, 503, 'PIN encryption is not configured. Set SHISHA_PIN_ENCRYPTION_KEY on the backend.');
     }
+    let client;
+    let transactionStarted = false;
     try {
       const encryptedPin = encryptShishaPin(pin);
       const { salt, hash } = await hashPin(pin);
-      const result = await pool.query(
+      client = await pool.connect();
+      await client.query('BEGIN');
+      transactionStarted = true;
+      await assertPinIsAvailable(client, pin, { excludeShishaStaffId: staffId });
+      const result = await client.query(
         `UPDATE public.shisha_staff SET pin_salt=$1, pin_hash=$2, pin_encrypted=$3, updated_at=NOW()
          WHERE id=$4 AND role <> 'SHISHA_HOD'
          RETURNING id, name, email, role, is_active`,
-        [salt, hash, encryptedPin, req.params.id]
+        [salt, hash, encryptedPin, staffId]
       );
-      return result.rows[0] ? res.json(result.rows[0]) : fail(res, 404, 'Waiter or mixer account not found.');
+      if (!result.rows[0]) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+        return fail(res, 404, 'Waiter or mixer account not found.');
+      }
+      await client.query('COMMIT');
+      transactionStarted = false;
+      return res.json(result.rows[0]);
     } catch (error) {
+      if (transactionStarted) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackError) {
+          console.error('Shisha PIN update rollback error:', rollbackError.message);
+        }
+      }
+      if (error.code === 'PIN_ALREADY_IN_USE' || error.code === 'PIN_UNIQUENESS_CONFIG_MISSING') {
+        return fail(res, error.statusCode || 409, error.message);
+      }
       console.error('Update Shisha staff PIN error:', error.message);
       return fail(res, 500, 'Could not update the account PIN.');
+    } finally {
+      client?.release();
     }
   }
 

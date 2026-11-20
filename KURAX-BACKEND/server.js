@@ -160,8 +160,8 @@ async function startServer() {
   console.log('Accounting schema verified/initialized');
   await initComplimentaryTables();
   console.log('Complimentary item correction schema verified/initialized');
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('Shisha PIN email is disabled: configure EMAIL_USER and EMAIL_PASS in the backend environment.');
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn('Staff and Shisha PIN emails are unavailable: configure SMTP_HOST, SMTP_USER, and SMTP_PASS in the backend environment.');
   }
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT} on 0.0.0.0`);

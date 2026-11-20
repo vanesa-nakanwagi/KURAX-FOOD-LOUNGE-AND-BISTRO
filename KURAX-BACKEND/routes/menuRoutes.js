@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import { getEffectiveMenuPrice, parsePromotionSettings } from '../helpers/menuPromotions.js';
+import { removeStoredMenuImage, uploadMenuImage } from '../helpers/menuImageStorage.js';
 import logActivity from '../utils/logsActivity.js';
 
 const router = express.Router();
@@ -111,6 +112,11 @@ function serializeMenu(menu) {
 async function removeMenuImage(imageUrl) {
   if (!imageUrl) return;
   try {
+    if (await removeStoredMenuImage(imageUrl)) return;
+  } catch (error) {
+    console.error('Menu image cleanup failed:', error.message);
+  }
+  try {
     const parsedUrl = new URL(imageUrl, 'http://localhost');
     if (!parsedUrl.pathname.startsWith('/uploads/')) return;
     const filePath = path.join(UPLOADS_DIRECTORY, path.basename(decodeURIComponent(parsedUrl.pathname)));
@@ -144,7 +150,7 @@ router.get('/', async (req, res) => {
 
 // --- POST NEW MENU ---
 router.post('/', upload.single('image'), async (req, res) => {
-  const uploadedImageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+  let uploadedImageUrl = req.file ? `/uploads/${req.file.filename}` : null;
   try {
     if (!await authorizePromotionEditor(req, res)) {
       await removeMenuImage(uploadedImageUrl);
@@ -165,6 +171,9 @@ router.post('/', upload.single('image'), async (req, res) => {
     if (promotion.error) {
       await removeMenuImage(uploadedImageUrl);
       return res.status(400).json({ error: promotion.error });
+    }
+    if (req.file) {
+      uploadedImageUrl = (await uploadMenuImage(req.file)).imageUrl;
     }
     const imageUrl = uploadedImageUrl || req.body.image_url || null;
     
@@ -215,7 +224,7 @@ router.post('/', upload.single('image'), async (req, res) => {
 router.put('/:id', upload.single('image'), async (req, res) => {
   const { id } = req.params;
   const { name, description, price, category, station, published, website_published, website_extra_fee } = req.body;
-  const uploadedImageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+  let uploadedImageUrl = req.file ? `/uploads/${req.file.filename}` : null;
   try {
     if (!await authorizePromotionEditor(req, res)) {
       await removeMenuImage(uploadedImageUrl);
@@ -244,6 +253,9 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     if (promotion.error) {
       await removeMenuImage(uploadedImageUrl);
       return res.status(400).json({ error: promotion.error });
+    }
+    if (req.file) {
+      uploadedImageUrl = (await uploadMenuImage(req.file)).imageUrl;
     }
     const imageUrl = uploadedImageUrl || String(req.body.image_url || '').trim() || null;
 

@@ -4,6 +4,7 @@ import { readSessionToken } from '../middleware/sessionTokens.js';
 import { summarizeDepartmentCredits } from '../helpers/departmentCreditSummary.js';
 import { syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
 import { hashStaffPin } from '../helpers/staffPin.js';
+import { assertPinIsAvailable } from '../helpers/pinUniqueness.js';
 import { ensureTicketWork } from './productionRoutes.js';
 
 const router = express.Router();
@@ -511,20 +512,40 @@ router.post('/:department/staff', requireDepartmentDirector, async (req, res) =>
   if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\d{4,8}$/.test(pin)) {
     return fail(res, 400, 'Name, valid email, and a 4-8 digit PIN are required.');
   }
+  let client;
+  let transactionStarted = false;
   try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionStarted = true;
+    await assertPinIsAvailable(client, pin);
     const { salt, hash } = await hashStaffPin(pin);
-    const result = await pool.query(
+    const result = await client.query(
       `INSERT INTO public.staff
          (name, email, pin, pin_salt, pin_hash, role, is_active, is_permitted, monthly_income_target, daily_order_target)
        VALUES ($1, $2, NULL, $3, $4, $5, true, false, 0, 0)
        RETURNING id, name, email, role, is_active, created_at`,
       [name, email, salt, hash, req.department.staffRole]
     );
+    await client.query('COMMIT');
+    transactionStarted = false;
     return res.status(201).json({ staff: result.rows[0] });
   } catch (error) {
+    if (transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Create department staff rollback error:', rollbackError.message);
+      }
+    }
+    if (error.code === 'PIN_ALREADY_IN_USE' || error.code === 'PIN_UNIQUENESS_CONFIG_MISSING') {
+      return fail(res, error.statusCode || 409, error.message);
+    }
     if (error.code === '23505') return fail(res, 409, 'That email already has a staff account.');
     console.error('Create department staff error:', error.message);
     return fail(res, 500, 'Could not create the department account.');
+  } finally {
+    client?.release();
   }
 });
 
@@ -535,6 +556,7 @@ router.patch('/:department/staff/:id', requireDepartmentDirector, async (req, re
   const updates = [];
   const values = [];
   const body = req.body || {};
+  let pinToSet = null;
   if (Object.prototype.hasOwnProperty.call(body, 'name')) {
     const name = String(body.name || '').trim();
     if (!name) return fail(res, 400, 'Staff name is required.');
@@ -548,35 +570,68 @@ router.patch('/:department/staff/:id', requireDepartmentDirector, async (req, re
     updates.push(`email=$${values.length}`);
   }
   if (Object.prototype.hasOwnProperty.call(body, 'pin') && String(body.pin || '').trim()) {
-    const pin = String(body.pin).trim();
-    if (!/^\d{4,8}$/.test(pin)) return fail(res, 400, 'PIN must contain 4-8 digits.');
-    const { salt, hash } = await hashStaffPin(pin);
-    values.push(salt);
-    updates.push(`pin_salt=$${values.length}`);
-    values.push(hash);
-    updates.push(`pin_hash=$${values.length}`);
-    updates.push('pin=NULL');
+    pinToSet = String(body.pin).trim();
+    if (!/^\d{4,8}$/.test(pinToSet)) return fail(res, 400, 'PIN must contain 4-8 digits.');
   }
   if (Object.prototype.hasOwnProperty.call(body, 'is_active')) {
     if (typeof body.is_active !== 'boolean') return fail(res, 400, 'Account status must be active or inactive.');
     values.push(body.is_active);
     updates.push(`is_active=$${values.length}`);
   }
-  if (!updates.length) return fail(res, 400, 'Provide account details or status to update.');
+  if (!updates.length && !pinToSet) return fail(res, 400, 'Provide account details or status to update.');
 
-  values.push(staffId, req.department.staffRole);
+  let client;
+  let transactionStarted = false;
   try {
-    const result = await pool.query(
+    let queryable = pool;
+    if (pinToSet) {
+      client = await pool.connect();
+      await client.query('BEGIN');
+      transactionStarted = true;
+      await assertPinIsAvailable(client, pinToSet, { excludeStaffId: staffId });
+      const { salt, hash } = await hashStaffPin(pinToSet);
+      values.push(salt);
+      updates.push(`pin_salt=$${values.length}`);
+      values.push(hash);
+      updates.push(`pin_hash=$${values.length}`);
+      updates.push('pin=NULL');
+      queryable = client;
+    }
+    values.push(staffId, req.department.staffRole);
+    const result = await queryable.query(
       `UPDATE public.staff SET ${updates.join(', ')}, updated_at=NOW()
        WHERE id=$${values.length - 1} AND role=$${values.length}
        RETURNING id, name, email, role, is_active`,
       values
     );
-    return result.rows[0] ? res.json(result.rows[0]) : fail(res, 404, 'Department staff member not found.');
+    if (!result.rows[0]) {
+      if (transactionStarted) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+      }
+      return fail(res, 404, 'Department staff member not found.');
+    }
+    if (transactionStarted) {
+      await client.query('COMMIT');
+      transactionStarted = false;
+    }
+    return res.json(result.rows[0]);
   } catch (error) {
+    if (transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Update department staff rollback error:', rollbackError.message);
+      }
+    }
+    if (error.code === 'PIN_ALREADY_IN_USE' || error.code === 'PIN_UNIQUENESS_CONFIG_MISSING') {
+      return fail(res, error.statusCode || 409, error.message);
+    }
     if (error.code === '23505') return fail(res, 409, 'That email already has a staff account.');
     console.error('Update department staff error:', error.message);
     return fail(res, 500, 'Could not update the department account.');
+  } finally {
+    client?.release();
   }
 });
 

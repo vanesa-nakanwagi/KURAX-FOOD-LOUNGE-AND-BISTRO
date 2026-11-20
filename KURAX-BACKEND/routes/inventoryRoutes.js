@@ -207,6 +207,8 @@ function isActiveOrderItem(item = {}) {
 function getPaymentAccount(paymentMethod) {
   const method = String(paymentMethod || 'Cash').toLowerCase();
   if (method.includes('bank')) return '1002';
+  if (method.includes('mtn')) return '1006';
+  if (method.includes('airtel')) return '1007';
   if (method.includes('momo') || method.includes('mobile')) return '1003';
   if (method.includes('payable') || method.includes('supplier') || method.includes('credit')) return '2001';
   return '1001';

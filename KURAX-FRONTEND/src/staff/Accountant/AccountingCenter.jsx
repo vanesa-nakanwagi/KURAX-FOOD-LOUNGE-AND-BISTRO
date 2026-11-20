@@ -15,11 +15,13 @@ import * as XLSX from "xlsx";
 import API_URL from "../../config/api";
 import { downloadReportPdf } from "../reportExport";
 import ReportsPanel from "./ReportsPanel";
+import Cashbook from "./Cashbook";
 import Pagination from "../components/Pagination";
 
 const VIEWS = [
   { key: "accounts", label: "Chart of Accounts", icon: BookOpen },
   { key: "cash", label: "Cash / Bank", icon: Wallet },
+  { key: "cashbook", label: "Cashbook", icon: Wallet },
   { key: "journals", label: "Journal Entries", icon: FileText },
   { key: "ledger", label: "General Ledger", icon: Landmark },
   { key: "audit", label: "Audit Trail", icon: ClipboardList },
@@ -119,7 +121,14 @@ function formatAuditDetails(details) {
     transaction_type: "Transaction type",
      source_transaction: "Source transaction",
   };
-  const accountNames = { "1001": "Counter Cash", "1002": "Bank", "1003": "Mobile Money", "1005": "Kurax Savings" };
+  const accountNames = {
+    "1001": "Counter Cash",
+    "1002": "Bank",
+    "1003": "Mobile Money",
+    "1005": "Kurax Savings",
+    "1006": "MTN Mobile Money",
+    "1007": "Airtel Money",
+  };
 
   return Object.entries(value).map(([key, item]) => {
     const label = labels[key] || key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -279,7 +288,7 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
   }, [searchInput]);
 
   const loadView = useCallback(async (targetView = view) => {
-    if (["statements", "expenses"].includes(targetView)) return;
+    if (["statements", "expenses", "cashbook"].includes(targetView)) return;
     setLoading(true);
     setError("");
     const query = new URLSearchParams({ startDate: dateRange.start, endDate: dateRange.end });
@@ -484,7 +493,11 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
         </section>
       )}
 
-      {!['statements', 'expenses'].includes(view) && (
+      {view === "cashbook" && (
+        <Cashbook initialDateRange={dateRange} onDateRangeChange={changeDateRange} />
+      )}
+
+      {!['statements', 'expenses', 'cashbook'].includes(view) && (
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-gray-200 pb-4">
             <div className="flex flex-wrap items-end gap-3">

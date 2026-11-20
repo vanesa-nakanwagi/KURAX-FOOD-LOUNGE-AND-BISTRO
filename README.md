@@ -40,21 +40,24 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 
 Keep this key secret, back it up securely, and use the same key on every backend instance. If the key is lost or changed, stored PINs cannot be retrieved, although sign-in continues to work; existing accounts need a PIN reset to make their PIN retrievable with the new key. Existing accounts created before this feature also need a PIN reset once the key is configured.
 
-Shisha and restaurant staff PIN emails use the same backend Gmail mailer. For Docker Compose, set these in the repository root `.env` (the Compose backend loads that file). For running the backend directly with Node, set them in `KURAX-BACKEND/.env` or the root `.env`, then restart the backend:
+Restaurant staff and Shisha account PINs are sent through the backend SMTP transport when accounts are created. If SMTP is missing or delivery fails, account creation fails rather than leaving an account whose PIN was not emailed. For Docker Compose, set these in the repository root `.env` (the Compose backend loads that file). For running the backend directly with Node, set them in `KURAX-BACKEND/.env` or the root `.env`, then restart the backend:
 
 ```env
-EMAIL_USER=your-sending-address@gmail.com
-EMAIL_PASS=<Google app password>
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-sending-address@gmail.com
+SMTP_PASS=<Google app password>
+SMTP_FROM="KURAX Food Lounge & Bistro"
 FRONTEND_URL=http://localhost:5173
 ```
 
-For Gmail, `EMAIL_PASS` must be an App Password for the sending account, not its normal sign-in password. Use your deployed frontend URL for `FRONTEND_URL` in production. HODs can retrieve or reset waiter and mixer PINs from the Team tab.
+For Gmail, `SMTP_PASS` must be an App Password for the sending account, not its normal sign-in password. Use your deployed frontend URL for `FRONTEND_URL` in production. Configure SMTP before creating accounts; never commit the app password.
 
 ## Menu Image Storage
 
-Menu images are saved by the backend in `KURAX-BACKEND/uploads/` and served from `/uploads/`. The backend creates the directory when an image is uploaded. For deployments that replace containers or use ephemeral filesystems, mount persistent storage at this directory so uploaded images remain available after redeployments.
+Menu images use the `menu-images` Supabase Storage bucket when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are configured on the backend. Create that bucket as public so its image URLs can be displayed on the website, and set `MENU_IMAGE_BUCKET` if using a different bucket name. The service-role key must remain backend-only. If Supabase Storage is not configured, menu images are saved in `KURAX-BACKEND/uploads/`; for deployments with ephemeral filesystems, mount persistent storage at this directory.
 
-The frontend's `VITE_API_URL` must be reachable by the browser. Docker deployments can leave it blank because Nginx proxies same-origin `/api` requests to the backend. For Vercel, set `VITE_API_URL` in the Vercel build environment to the publicly reachable HTTPS backend origin; do not use a private `10.x` address.
+Menu image files that are already missing from the production backend (404 responses) cannot be restored by this change; re-upload those images in the content manager after configuring Storage. The frontend's `VITE_API_URL` must be reachable by the browser. Docker deployments can leave it blank because Nginx proxies same-origin `/api` requests to the backend. For Vercel, set `VITE_API_URL` in the Vercel build environment to the publicly reachable HTTPS backend origin; do not use a private `10.x` address.
 
 ## Internal Staff Push Notifications
 

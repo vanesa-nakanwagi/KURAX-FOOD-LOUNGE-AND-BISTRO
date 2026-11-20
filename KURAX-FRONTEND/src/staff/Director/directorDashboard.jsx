@@ -233,9 +233,7 @@ export default function DirectorDashboard() {
         }
         setShowCreate(false);
         setEditingStaff(null);
-        alert(result.emailSent
-          ? "Shisha HOD account created. The sign-in email and PIN were sent."
-          : "Shisha HOD account created, but the PIN email could not be sent. Check backend EMAIL_USER and EMAIL_PASS, then securely provide the PIN you set.");
+        alert("Shisha HOD account created. The sign-in email and PIN were sent.");
       } catch (e) {
         console.error("Create Shisha HOD error:", e);
         alert("Could not create the Shisha HOD account.");

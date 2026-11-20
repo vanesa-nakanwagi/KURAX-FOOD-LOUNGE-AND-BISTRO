@@ -3,18 +3,17 @@ import { useNavigate, Link, useLocation } from "react-router-dom";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import { 
-  Plus, Sparkles, ArrowRight, Calendar, 
-  Truck, Clock, CreditCard, ZoomIn
+  ArrowRight, Calendar, Truck, Clock, CreditCard
 } from "lucide-react";
 
 // Existing Utils & Components
 import { getImageSrc } from "../../../utils/imageHelper.js";
-import { formatMenuName } from "../../../utils/menuName.js";
 import Navbar from "./Navbar.jsx";
 import API_URL from "../../../config/api";
 import { useCart } from "../context/CartContext.jsx";
 import CartModal from "../menu/cart/CartModal.jsx";
 import MenuImageViewer from "../menu/MenuImageViewer.jsx";
+import { MenuCard } from "../menu/menu.jsx";
 import BookingModal from "../events/BookingModal.jsx";
 import EventCard from "../events/EventCard.jsx";
 import FooterGlobal from "../common/footer.jsx";
@@ -363,7 +362,7 @@ export default function Home() {
       {/* Signature Dishes Section */}
       <section id="menus" className="py-24 px-6 bg-[#f4f3ef] border-b border-zinc-200">
         <motion.div 
-          className="max-w-7xl mx-auto"
+          className="max-w-7xl mx-auto px-5 md:px-12"
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, amount: 0.2 }}
@@ -386,7 +385,7 @@ export default function Home() {
             </Link>
           </motion.header>
           
-          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 items-start gap-6 md:gap-8">
             {loadingMenus ? (
               [...Array(4)].map((_, i) => <div key={i} className="h-[400px] bg-zinc-100 rounded-3xl animate-pulse" />)
             ) : (
@@ -407,7 +406,7 @@ export default function Home() {
       {/* Signature Combos Section */}
       <section id="combos" className="py-24 px-6 bg-[#f4f3ef] border-b border-zinc-200">
         <motion.div
-          className="max-w-7xl mx-auto"
+          className="max-w-7xl mx-auto px-5 md:px-12"
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, amount: 0.2 }}
@@ -427,7 +426,7 @@ export default function Home() {
             </div>
           </motion.header>
 
-          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 items-start gap-6 md:gap-8">
             {loadingCombos ? (
               [...Array(4)].map((_, index) => (
                 <div key={index} className="h-[400px] bg-zinc-100 rounded-3xl animate-pulse" />
@@ -557,84 +556,15 @@ export default function Home() {
 
 // Menu Card Helper
 function HomeMenuCard({ item, onOrder, onViewImage, badge = "New" }) {
-  const imageUrl = getImageSrc(item.image_url);
-  const originalPrice = Number(item.website_list_price ?? item.list_price ?? item.price);
-  const currentPrice = Number(item.price);
-  const promotionActive = item.promotion_active === true || item.promotion_active === 'true';
-  const hasPromotion = promotionActive && originalPrice > currentPrice;
-  const savingsPercent = hasPromotion ? Math.round((originalPrice - currentPrice) / originalPrice * 100) : 0;
-
   return (
-    <motion.div 
-      variants={fadeInUp}
-      whileHover={{ y: -8 }}
-      className="group relative flex h-full flex-col bg-white rounded-[1rem] font-outfit overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 transition-all duration-500"
-    >
-      <div className="relative h-56 overflow-hidden">
-        <button type="button" onClick={onViewImage} aria-label={`View full-size image of ${item.name}`} className="group/image relative block h-full w-full cursor-zoom-in text-left">
-          <motion.img
-            src={imageUrl}
-            alt={item.name}
-            className="w-full h-full object-cover transition-transform duration-1000 group-hover/image:scale-105"
-          />
-          <span className="absolute bottom-3 right-3 grid h-9 w-9 place-items-center rounded-full bg-black/65 text-white opacity-0 transition group-hover/image:opacity-100 group-focus-visible/image:opacity-100">
-            <ZoomIn size={17} />
-          </span>
-        </button>
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-30" />
-        <div className="absolute top-4 left-4">
-           <div className="bg-yellow-500 text-black text-[8px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest">
-             <Sparkles size={8} /> {badge}
-           </div>
-        </div>
-        {hasPromotion && (
-          <div className="absolute right-4 top-4 rounded-full border border-white/80 bg-red-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg">
-            {savingsPercent > 0 ? `Save ${savingsPercent}%` : "Special price"}
-          </div>
-        )}
-      </div>
-      
-      <div className="flex flex-1 flex-col p-4">
-        <div>
-          <h4 className="h-10 overflow-hidden line-clamp-2 text-lg font-semibold leading-5 tracking-normal text-yellow-700 transition-colors group-hover:text-yellow-700">
-            {formatMenuName(item.name)}
-          </h4>
-          <p className="h-12 text-zinc-900 text-[14px] font-light leading-relaxed line-clamp-2">
-            {item.description || "Indulge in our masterfully crafted signature dish."}
-          </p>
-        </div>
-
-        <div className="mt-auto flex items-center justify-between border-t border-zinc-200 pt-3">
-          <motion.button 
-            whileTap={{ scale: 0.95 }}
-            onClick={() => onOrder(item)} 
-            className="group/btn flex items-center gap-1 px-4 py-3 bg-yellow-400 hover:bg-yellow-400 text-black text-[10px] uppercase tracking-[0.2em] rounded-2xl transition-all duration-300 shadow-md"
-          >
-            <Plus 
-              size={14} 
-              strokeWidth={3} 
-              className="transition-transform duration-500 group-hover/btn:rotate-90" 
-            />
-            <span>Order Now</span>
-          </motion.button>
-
-          <div className="text-right">
-            {hasPromotion && (
-                <span className="mb-1 block text-sm font-semibold text-zinc-700 dark:text-zinc-300 line-through decoration-red-600 decoration-2">
-                  UGX {originalPrice.toLocaleString()}
-                </span>
-              )}
-            <span className={`block text-xl tracking-tighter leading-none ${hasPromotion ? "text-red-600" : "text-zinc-900"}`}>
-              UGX {currentPrice.toLocaleString()}
-            </span>
-            {hasPromotion && (
-              <span className="text-[9px] font-bold uppercase tracking-widest text-red-600">
-                Limited-time offer
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
+    <motion.div variants={fadeInUp}>
+      <MenuCard
+        item={item}
+        onOrder={onOrder}
+        onViewImage={onViewImage}
+        isNew
+        badgeLabel={badge}
+      />
     </motion.div>
   );
 }

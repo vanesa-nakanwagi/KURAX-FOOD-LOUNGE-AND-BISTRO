@@ -9,6 +9,7 @@ import { getImageSrc } from "../../../utils/imageHelper.js";
 import { formatMenuName } from "../../../utils/menuName.js";
 import API_URL from "../../../config/api";
 import MenuImageViewer from "./MenuImageViewer.jsx";
+import ExpandableDescription from "./ExpandableDescription.jsx";
 
 /* =========================
    CONSISTENT MENU CARD COMPONENT
@@ -23,7 +24,7 @@ export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW"
   const savingsPercent = hasPromotion ? Math.round((originalPrice - currentPrice) / originalPrice * 100) : 0;
 
   return (
-    <div className="group relative font-outfit flex h-full flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
+    <div className="group relative font-outfit flex flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
       {isNew && (
         <div className="absolute top-4 left-4 z-30">
           <div className="bg-yellow-500 text-black text-[8px]  px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
@@ -62,9 +63,13 @@ export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW"
           <h4 className="h-10 overflow-hidden line-clamp-2 text-lg font-semibold leading-5 tracking-normal text-yellow-700 transition-colors group-hover:text-yellow-700 dark:text-yellow-300 dark:group-hover:text-yellow-200">
             {formatMenuName(item.name)}
           </h4>
-          <p className="h-12 text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed line-clamp-2">
-            {item.description || "A signature dish prepared fresh at Kurax Food Lounge."}
-          </p>
+          <ExpandableDescription
+            description={item.description}
+            fallback="A signature dish prepared fresh at Kurax Food Lounge."
+            className="min-h-12 text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed"
+            buttonClassName="text-xs font-semibold text-yellow-700 underline-offset-2 hover:underline dark:text-yellow-300"
+            moreBackgroundClassName="bg-white dark:bg-[#0A0A0A]"
+          />
         </div>
 
         <div className="mt-auto flex items-center justify-between border-t border-zinc-200 pt-3 dark:border-zinc-800/50">
@@ -337,7 +342,7 @@ export default function Menu() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 items-start gap-6 md:gap-8">
               {filteredMenus.map((item) => {
                 // NEW badge duration: 7 days (168 hours)
                 const createdDate = new Date(item.created_at);

@@ -16,6 +16,7 @@ import { useCart } from "../context/CartContext.jsx";
 import CartModal from "../menu/cart/CartModal.jsx";
 import BookingModal from "../events/BookingModal.jsx";
 import EventCard from "../events/EventCard.jsx";
+import ExpandableDescription from "../menu/ExpandableDescription.jsx";
 import FooterGlobal from "../common/footer.jsx";
 import VisitUs from "./visitUs.jsx";
 import About from "./about.jsx";
@@ -345,9 +346,15 @@ function HomeMenuCard({ item, onOrder }) {
           </div>
         </div>
         
-        <p className="text-xs text-zinc-500 line-clamp-2 mb-8 h-8 font-light leading-relaxed">
-          {item.description || "Exquisite flavors prepared with the finest ingredients by our master chefs."}
-        </p>
+        <div className="mb-8">
+          <ExpandableDescription
+            description={item.description}
+            fallback="Exquisite flavors prepared with the finest ingredients by our master chefs."
+            className="min-h-8 text-xs text-zinc-500 font-light leading-relaxed"
+            buttonClassName="text-xs font-semibold text-yellow-500 underline-offset-2 hover:underline"
+            moreBackgroundClassName="bg-[#0a0a0a]"
+          />
+        </div>
 
         <button
           onClick={() => onOrder(item)}

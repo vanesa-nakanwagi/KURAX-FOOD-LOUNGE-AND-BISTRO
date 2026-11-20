@@ -266,8 +266,8 @@ router.post('/monthly-expenses', async (req, res) => {
   const paymentMethod = String(req.body.payment_method || 'Cash').trim();
   const paymentAccounts = {
     Cash: '1001',
-    'Momo-MTN': '1003',
-    'Momo-Airtel': '1003',
+    'Momo-MTN': '1006',
+    'Momo-Airtel': '1007',
     Card: '1002',
   };
   if (!Object.hasOwn(paymentAccounts, paymentMethod)) {

@@ -9,6 +9,8 @@ export const DEFAULT_ACCOUNTS = [
   { code: '1003', name: 'Mobile Money', category: 'Asset', account_type: 'Mobile Money', normal_balance: 'Debit', description: 'Mobile money float' },
   { code: '1004', name: 'Card Settlement Clearing', category: 'Asset', account_type: 'Clearing', normal_balance: 'Debit', description: 'Card receipts awaiting settlement into the operating bank' },
   { code: '1005', name: 'Kurax Savings', category: 'Asset', account_type: 'Savings', normal_balance: 'Debit', description: 'Longer-term cash reserve account for Kurax savings and transfers' },
+  { code: '1006', name: 'MTN Mobile Money', category: 'Asset', account_type: 'Mobile Money', normal_balance: 'Debit', description: 'MTN mobile money receipts and payments' },
+  { code: '1007', name: 'Airtel Money', category: 'Asset', account_type: 'Mobile Money', normal_balance: 'Debit', description: 'Airtel Money receipts and payments' },
   { code: '1101', name: 'Accounts Receivable', category: 'Asset', account_type: 'Receivable', normal_balance: 'Debit', description: 'Customer credit balances' },
   { code: '1201', name: 'Inventory', category: 'Asset', account_type: 'Inventory', normal_balance: 'Debit', description: 'Stock on hand' },
   { code: '1501', name: 'Equipment', category: 'Asset', account_type: 'Fixed Asset', normal_balance: 'Debit', description: 'Equipment and machinery' },
@@ -103,13 +105,19 @@ export function resolvePaymentDebitAccountCode(paymentMethod = 'Cash', settlemen
 
   const accountByMethod = {
     cash: '1001',
-    mtn: '1003',
+    mtn: '1006',
     momo: '1003',
     mobile: '1003',
     mobilemoney: '1003',
-    airtel: '1003',
-    momomtn: '1003',
-    momoairtel: '1003',
+    airtel: '1007',
+    momomtn: '1006',
+    momomtnmobilemoney: '1006',
+    mtnmobilemoney: '1006',
+    momoairtel: '1007',
+    momoairtelmoney: '1007',
+    airtelmoney: '1007',
+    bank: '1002',
+    banktransfer: '1002',
     credit: '1101',
     receivable: '1101',
   };
@@ -198,6 +206,50 @@ export async function ensureAccountingDataModel() {
       details JSONB DEFAULT '{}',
       created_at TIMESTAMPTZ DEFAULT NOW()
     );`,
+    `CREATE TABLE IF NOT EXISTS public.cashbook_transactions (
+      id SERIAL PRIMARY KEY,
+      request_id TEXT NOT NULL UNIQUE,
+      reference_number TEXT NOT NULL UNIQUE,
+      external_reference TEXT,
+      transaction_date DATE NOT NULL,
+      transaction_type TEXT NOT NULL CHECK (transaction_type IN ('Receipt', 'Payment')),
+      category TEXT NOT NULL,
+      description TEXT NOT NULL,
+      cash_account_code TEXT NOT NULL REFERENCES public.chart_of_accounts(code),
+      counterpart_account_code TEXT NOT NULL REFERENCES public.chart_of_accounts(code),
+      payment_method TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+      status TEXT NOT NULL DEFAULT 'Posted'
+        CHECK (status IN ('Pending Approval', 'Approved', 'Posted', 'Rejected', 'Reversed')),
+      journal_entry_id INTEGER UNIQUE REFERENCES public.journal_entries(id),
+      created_by_staff_id INTEGER NOT NULL,
+      created_by TEXT NOT NULL,
+      approved_by_staff_id INTEGER,
+      approved_by TEXT,
+      approved_at TIMESTAMPTZ,
+      review_note TEXT,
+      reversed_by_staff_id INTEGER,
+      reversed_by TEXT,
+      reversed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`,
+    `CREATE INDEX IF NOT EXISTS cashbook_transactions_date_status_idx
+      ON public.cashbook_transactions (transaction_date DESC, status);`,
+    `CREATE TABLE IF NOT EXISTS public.cashbook_reconciliations (
+      id SERIAL PRIMARY KEY,
+      reconciliation_date DATE NOT NULL,
+      account_code TEXT NOT NULL REFERENCES public.chart_of_accounts(code),
+      expected_balance NUMERIC(12,2) NOT NULL,
+      counted_balance NUMERIC(12,2) NOT NULL CHECK (counted_balance >= 0),
+      discrepancy NUMERIC(12,2) NOT NULL,
+      note TEXT,
+      reconciled_by_staff_id INTEGER NOT NULL,
+      reconciled_by TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (reconciliation_date, account_code)
+    );`,
     `CREATE TABLE IF NOT EXISTS public.accounts_receivable (
       id SERIAL PRIMARY KEY,
       reference TEXT NOT NULL,
@@ -231,6 +283,13 @@ export async function ensureAccountingDataModel() {
     await pool.query(statement);
   }
 
+  await pool.query(`ALTER TABLE public.cashbook_transactions ALTER COLUMN status SET DEFAULT 'Posted'`);
+  await pool.query(
+    `ALTER TABLE public.cashbook_transactions
+     DROP CONSTRAINT IF EXISTS cashbook_transactions_status_check,
+     ADD CONSTRAINT cashbook_transactions_status_check
+     CHECK (status IN ('Pending Approval', 'Approved', 'Posted', 'Rejected', 'Reversed'))`
+  );
   await pool.query(`ALTER TABLE public.journal_entries ADD COLUMN IF NOT EXISTS reversal_of INTEGER REFERENCES public.journal_entries(id)`);
   await pool.query(`ALTER TABLE public.journal_entries ADD COLUMN IF NOT EXISTS reversal_reason TEXT`);
   await pool.query(`ALTER TABLE public.journal_entries ADD COLUMN IF NOT EXISTS system_type TEXT NOT NULL DEFAULT 'MAIN'`);
@@ -268,6 +327,7 @@ export async function ensureAccountingDataModel() {
        AND je.business_time IS NOT NULL`
   );
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS journal_entries_reversal_of_unique ON public.journal_entries (reversal_of) WHERE reversal_of IS NOT NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS journal_entries_cashbook_source_unique ON public.journal_entries (source_transaction) WHERE source_transaction LIKE 'cashbook:%'`);
 
   for (const account of DEFAULT_ACCOUNTS) {
     await pool.query(
@@ -798,7 +858,7 @@ export async function postBackdatedExpense({
   }
 }
 
-export async function reverseJournalEntry({ journalEntryId, reversalDate, reason, actor }) {
+export async function reverseJournalEntry({ journalEntryId, reversalDate, reason, actor, queryable = null }) {
   const normalizedReason = String(reason || '').trim();
   if (!normalizedReason) {
     throw Object.assign(new Error('A reason is required to reverse a journal entry.'), { statusCode: 400 });
@@ -815,9 +875,10 @@ export async function reverseJournalEntry({ journalEntryId, reversalDate, reason
     throw Object.assign(new Error('A valid reversal date is required.'), { statusCode: 400 });
   }
 
-  const client = await pool.connect();
+  const ownsClient = !queryable;
+  const client = queryable || await pool.connect();
   try {
-    await client.query('BEGIN');
+    if (ownsClient) await client.query('BEGIN');
 
     const originalResult = await client.query(
       `SELECT * FROM public.journal_entries WHERE id = $1 FOR UPDATE`,
@@ -917,13 +978,13 @@ export async function reverseJournalEntry({ journalEntryId, reversalDate, reason
       [reversal.id, finalActor, JSON.stringify({ original_id: original.id, original_reference: original.reference, reversal_date: effectiveDate, reason: normalizedReason })]
     );
 
-    await client.query('COMMIT');
+    if (ownsClient) await client.query('COMMIT');
     return { original: updatedOriginalResult.rows[0], reversal, effectiveDate };
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (ownsClient) await client.query('ROLLBACK');
     throw error;
   } finally {
-    client.release();
+    if (ownsClient) client.release();
   }
 }
 
@@ -1614,11 +1675,30 @@ export async function getBalanceSheet(asOfDate, startTime = null, endTime = null
   };
 }
 
+export function calculateCashFlowTotals({
+  periodCashDebits = 0,
+  periodCashCredits = 0,
+  openingCashDebits = 0,
+  openingCashCredits = 0,
+}) {
+  const cashIn = Number(periodCashDebits || 0);
+  const cashOut = Number(periodCashCredits || 0);
+  const openingCash = Number(openingCashDebits || 0) - Number(openingCashCredits || 0);
+  const netChangeInCash = cashIn - cashOut;
+  return {
+    cashIn,
+    cashOut,
+    openingCash,
+    netChangeInCash,
+    closingCash: openingCash + netChangeInCash,
+  };
+}
+
 export async function getCashFlowStatement(startDate, endDate, startTime = null, endTime = null) {
   const result = await pool.query(
     `SELECT
-       SUM(CASE WHEN gl.account_code = '1001' AND gl.credit > 0 THEN gl.credit ELSE 0 END) AS cash_in,
-       SUM(CASE WHEN gl.account_code = '1001' AND gl.debit > 0 THEN gl.debit ELSE 0 END) AS cash_out
+       SUM(CASE WHEN gl.account_code = '1001' AND gl.debit > 0 THEN gl.debit ELSE 0 END) AS period_cash_debits,
+       SUM(CASE WHEN gl.account_code = '1001' AND gl.credit > 0 THEN gl.credit ELSE 0 END) AS period_cash_credits
      FROM public.general_ledger gl
      JOIN public.journal_entries je ON je.id = gl.journal_entry_id AND je.system_type = 'MAIN'
      WHERE gl.entry_date BETWEEN $1 AND $2
@@ -1628,32 +1708,35 @@ export async function getCashFlowStatement(startDate, endDate, startTime = null,
     [startDate, endDate, startTime, endTime]
   );
 
-  const cashIn = Number(result.rows[0]?.cash_in || 0);
-  const cashOut = Number(result.rows[0]?.cash_out || 0);
-  const openingCash = Number((await pool.query(
-    `SELECT COALESCE(SUM(CASE WHEN gl.account_code = '1001' AND gl.credit > 0 THEN gl.credit ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN gl.account_code = '1001' AND gl.debit > 0 THEN gl.debit ELSE 0 END), 0) AS opening_cash
+  const openingResult = await pool.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN gl.account_code = '1001' AND gl.debit > 0 THEN gl.debit ELSE 0 END), 0) AS opening_cash_debits,
+       COALESCE(SUM(CASE WHEN gl.account_code = '1001' AND gl.credit > 0 THEN gl.credit ELSE 0 END), 0) AS opening_cash_credits
      FROM public.general_ledger gl
      JOIN public.journal_entries je ON je.id = gl.journal_entry_id AND je.system_type = 'MAIN'
      WHERE (gl.entry_date < $1 AND gl.account_code <> '4004')
         OR (gl.entry_date = $1 AND gl.account_code <> '4004' AND $2::time IS NOT NULL AND (gl.business_time < $2::time OR gl.business_time IS NULL))`,
     [startDate, startTime]
-  )).rows[0]?.opening_cash || 0);
-
-  const netChangeInCash = cashIn - cashOut;
-  const closingCash = openingCash + netChangeInCash;
+  );
+  const totals = calculateCashFlowTotals({
+    periodCashDebits: result.rows[0]?.period_cash_debits,
+    periodCashCredits: result.rows[0]?.period_cash_credits,
+    openingCashDebits: openingResult.rows[0]?.opening_cash_debits,
+    openingCashCredits: openingResult.rows[0]?.opening_cash_credits,
+  });
 
   return {
     startDate,
     endDate,
     operating_activities: {
-      cash_received_from_customers: cashIn,
-      cash_paid_for_expenses: cashOut,
+      cash_received_from_customers: totals.cashIn,
+      cash_paid_for_expenses: totals.cashOut,
     },
     investing_activities: { purchase_of_equipment: 0, other_investments: 0 },
     financing_activities: { owner_capital: 0, owner_withdrawals: 0, loans: 0 },
-    net_change_in_cash: netChangeInCash,
-    opening_cash: openingCash,
-    closing_cash: closingCash,
+    net_change_in_cash: totals.netChangeInCash,
+    opening_cash: totals.openingCash,
+    closing_cash: totals.closingCash,
   };
 }
 

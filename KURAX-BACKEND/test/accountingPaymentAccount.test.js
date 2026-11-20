@@ -6,6 +6,7 @@ import {
   buildAccountTransactionJournalLines,
   buildAccountTransferJournalLines,
   buildSalesRevenueBreakdown,
+  calculateCashFlowTotals,
   getAccountTransactionOptions,
   resolveAccountTransferTargets,
   resolveIncomeStatementRevenueCode,
@@ -59,9 +60,27 @@ test('all card receipts post directly to the bank account', () => {
 
 test('non-card receipts use their payment method account', () => {
   assert.equal(resolvePaymentDebitAccountCode('Cash', 'Settled'), '1001');
-  assert.equal(resolvePaymentDebitAccountCode('Momo-MTN'), '1003');
-  assert.equal(resolvePaymentDebitAccountCode('Airtel'), '1003');
+  assert.equal(resolvePaymentDebitAccountCode('Momo-MTN'), '1006');
+  assert.equal(resolvePaymentDebitAccountCode('MTN Mobile Money'), '1006');
+  assert.equal(resolvePaymentDebitAccountCode('Airtel'), '1007');
+  assert.equal(resolvePaymentDebitAccountCode('Airtel Money'), '1007');
+  assert.equal(resolvePaymentDebitAccountCode('Mobile Money'), '1003');
   assert.equal(resolvePaymentDebitAccountCode('Credit'), '1101');
+});
+
+test('cash credits from payments are outflows and reduce closing cash', () => {
+  assert.deepEqual(calculateCashFlowTotals({
+    periodCashDebits: 0,
+    periodCashCredits: 6000000,
+    openingCashDebits: 0,
+    openingCashCredits: 0,
+  }), {
+    cashIn: 0,
+    cashOut: 6000000,
+    openingCash: 0,
+    netChangeInCash: -6000000,
+    closingCash: -6000000,
+  });
 });
 
 test('unknown payment methods are rejected rather than posted to cash', () => {
