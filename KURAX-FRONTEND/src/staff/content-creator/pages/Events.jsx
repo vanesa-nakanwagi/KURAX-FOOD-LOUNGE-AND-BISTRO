@@ -9,6 +9,7 @@ export default function Events() {
   const [formVisible, setFormVisible] = useState(false)
   const [editingEvent, setEditingEvent] = useState(null)
   const [imagePreview, setImagePreview] = useState('')
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)   // 👈 Track which event is being deleted

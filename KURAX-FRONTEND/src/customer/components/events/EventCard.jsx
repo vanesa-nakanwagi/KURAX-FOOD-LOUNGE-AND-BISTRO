@@ -3,6 +3,7 @@ import { useState } from "react";
 import BookingModal from "./BookingModal.jsx";
 import API_URL from "../../../config/api";   // <-- add this import
 import { formatMenuName } from "../../../utils/menuName.js";
+import MenuImageViewer from "../menu/MenuImageViewer.jsx";
 
 const getParsedTags = (tags) => {
   if (!tags) return [];
@@ -13,6 +14,7 @@ const getParsedTags = (tags) => {
 export default function EventCard({ event = {}, onBook }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   if (!event || Object.keys(event).length === 0) {
     return <div className="h-64 bg-zinc-100 dark:bg-zinc-900 animate-pulse rounded-[2.5rem]" />;
@@ -45,21 +47,28 @@ export default function EventCard({ event = {}, onBook }) {
         
         <div className="relative h-64 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
           {!imgLoaded && (
-            <div className="absolute inset-0 bg-zinc-200 dark:bg-zinc-800 animate-pulse z-10" />
+            <div className="pointer-events-none absolute inset-0 z-10 animate-pulse bg-zinc-200 dark:bg-zinc-800" />
           )}
-          <img
-            src={imageUrl}
-            alt={displayTitle}
-            onLoad={() => setImgLoaded(true)}
-            onError={(e) => {
-              setImgLoaded(true);
-              e.target.src = 'https://via.placeholder.com/600x400?text=Image+Unavailable';
-            }}
-            className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 ${
-              imgLoaded ? 'opacity-100' : 'opacity-0'
-            }`}
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent opacity-60 z-10" />
+          <button
+            type="button"
+            onClick={() => setSelectedImage({ src: imageUrl, alt: displayTitle })}
+            aria-label={`View full-size image of ${displayTitle}`}
+            className="relative block h-full w-full min-h-0 min-w-0 cursor-zoom-in border-0 bg-transparent p-0 text-left"
+          >
+            <img
+              src={imageUrl}
+              alt={displayTitle}
+              onLoad={() => setImgLoaded(true)}
+              onError={(e) => {
+                setImgLoaded(true);
+                e.target.src = 'https://via.placeholder.com/600x400?text=Image+Unavailable';
+              }}
+              className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 ${
+                imgLoaded ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
+            <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-b from-black/60 via-transparent to-transparent opacity-60" />
+          </button>
 
           {/* Tags on top-left */}
           {tags.length > 0 && (
@@ -119,6 +128,13 @@ export default function EventCard({ event = {}, onBook }) {
           show={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           eventTitle={displayTitle}
+        />
+      )}
+      {selectedImage && (
+        <MenuImageViewer
+          src={selectedImage.src}
+          alt={selectedImage.alt}
+          onClose={() => setSelectedImage(null)}
         />
       )}
     </>

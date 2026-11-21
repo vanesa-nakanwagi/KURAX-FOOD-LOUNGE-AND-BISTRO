@@ -112,22 +112,22 @@ export default function FooterGlobal() {
               </div>
               <div className="space-y-4 pt-4">
                 <a href="mailto:kuraxfoodloungeandbistro@gmail.com" className="flex items-center gap-4 text-sm text-zinc-400 hover:text-yellow-500 transition-all group">
-                  <div className="w-8 h-8 bg-white/5 flex items-center justify-center group-hover:bg-yellow-600 group-hover:text-black transition-all">
+                  <div className="w-8 h-8 shrink-0 bg-white/5 flex items-center justify-center group-hover:bg-yellow-600 group-hover:text-black transition-all">
                     <Mail size={14} />
                   </div>
-                  kuraxfoodloungeandbistro@gmail.com
+                  <span className="min-w-0 break-words">kuraxfoodloungeandbistro@gmail.com</span>
                 </a>
                 <a href="tel:+256770322898" className="flex items-center gap-4 text-sm text-zinc-400 hover:text-yellow-500 transition-all group">
-                  <div className="w-8 h-8 bg-white/5 flex items-center justify-center group-hover:bg-yellow-600 group-hover:text-black transition-all">
+                  <div className="w-8 h-8 shrink-0 bg-white/5 flex items-center justify-center group-hover:bg-yellow-600 group-hover:text-black transition-all">
                     <Phone size={14} />
                   </div>
-                  +256 770 322 898
+                  <span className="min-w-0 break-words">+256 770 322 898</span>
                 </a>
                 <a href="tel:+256745763167" className="flex items-center gap-4 text-sm text-zinc-400 hover:text-yellow-500 transition-all group">
-                  <div className="w-8 h-8 bg-white/5 flex items-center justify-center group-hover:bg-yellow-600 group-hover:text-black transition-all">
+                  <div className="w-8 h-8 shrink-0 bg-white/5 flex items-center justify-center group-hover:bg-yellow-600 group-hover:text-black transition-all">
                     <Phone size={14} />
                   </div>
-                  +256 745 763 167
+                  <span className="min-w-0 break-words">+256 745 763 167</span>
                 </a>
               </div>
             </div>

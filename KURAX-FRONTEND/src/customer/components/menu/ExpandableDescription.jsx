@@ -42,7 +42,7 @@ export default function ExpandableDescription({
     <div className="relative">
       <p
         ref={paragraphRef}
-        className={`${className} ${expanded ? "whitespace-pre-line" : "line-clamp-2"} ${canExpand && !expanded ? "pr-12" : ""}`}
+        className={`${className} ${expanded ? "!h-auto whitespace-pre-line" : "line-clamp-2"} ${canExpand && !expanded ? "pr-12" : ""}`}
       >
         {content}
         {canExpand && expanded && (
@@ -57,11 +57,11 @@ export default function ExpandableDescription({
         )}
       </p>
       <p
-          ref={measurementRef}
-          aria-hidden="true"
-          className={`${className} invisible pointer-events-none absolute left-0 top-0 block w-full whitespace-normal`}
+        ref={measurementRef}
+        aria-hidden="true"
+        className={`${className} !h-auto invisible pointer-events-none absolute left-0 top-0 block w-full whitespace-normal`}
       >
-          {content}
+        {content}
       </p>
       {canExpand && !expanded && (
         <button

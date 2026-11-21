@@ -24,7 +24,7 @@ export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW"
   const savingsPercent = hasPromotion ? Math.round((originalPrice - currentPrice) / originalPrice * 100) : 0;
 
   return (
-    <div className="group relative font-outfit flex flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
+    <div className="group relative font-outfit flex h-full flex-col bg-white dark:bg-[#0A0A0A] rounded-[1rem] overflow-hidden shadow-[0_10px_30px_-15px_rgba(0,0,0,0.05)] hover:shadow-2xl border border-zinc-100 dark:border-zinc-800/40 transition-all duration-500 hover:-translate-y-2">
       {isNew && (
         <div className="absolute top-4 left-4 z-30">
           <div className="bg-yellow-500 text-black text-[8px]  px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
@@ -66,7 +66,7 @@ export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW"
           <ExpandableDescription
             description={item.description}
             fallback="A signature dish prepared fresh at Kurax Food Lounge."
-            className="min-h-12 text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-relaxed"
+            className="h-12 text-zinc-900 dark:text-zinc-400 text-[14px] font-light leading-6"
             buttonClassName="text-xs font-semibold text-yellow-700 underline-offset-2 hover:underline dark:text-yellow-300"
             moreBackgroundClassName="bg-white dark:bg-[#0A0A0A]"
           />
@@ -87,14 +87,10 @@ export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW"
                 UGX {originalPrice.toLocaleString()}
               </span>
             )}
+            {!hasPromotion && <span aria-hidden="true" className="mb-1 block h-5" />}
             <span className={`block text-xl tracking-tighter leading-none ${hasPromotion ? "text-red-600 dark:text-red-400" : "text-zinc-900 dark:text-white"}`}>
               UGX {currentPrice.toLocaleString()}
             </span>
-            {hasPromotion && (
-              <span className="text-[9px] font-bold uppercase tracking-widest leading-none text-red-600 dark:text-red-400">
-                Limited-time offer
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -342,7 +338,7 @@ export default function Menu() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 items-start gap-6 md:gap-8">
+            <div className="grid auto-rows-fr grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 items-stretch gap-6 md:gap-8">
               {filteredMenus.map((item) => {
                 // NEW badge duration: 7 days (168 hours)
                 const createdDate = new Date(item.created_at);
