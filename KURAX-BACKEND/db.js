@@ -265,7 +265,7 @@ export async function ensureDatabaseSchema() {
       name TEXT NOT NULL,
       description TEXT,
       price NUMERIC(12,2) NOT NULL DEFAULT 0,
-      category TEXT NOT NULL DEFAULT 'Starters',
+      category TEXT NOT NULL DEFAULT 'Fast Foods',
       station TEXT NOT NULL DEFAULT 'Kitchen',
       image_url TEXT,
       is_available BOOLEAN NOT NULL DEFAULT true,
@@ -982,7 +982,11 @@ export async function ensureDatabaseSchema() {
       paid_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
-    );`
+    );`,
+    `UPDATE public.menus SET category = 'Fast Foods'
+      WHERE LOWER(BTRIM(category)) = 'starters';`,
+    `UPDATE public.combos SET category = 'Fast Foods'
+      WHERE LOWER(BTRIM(category)) = 'starters';`
   ];
 
   for (const statement of statements) {

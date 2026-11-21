@@ -42,7 +42,7 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
   const [searchQuery, setSearchQuery]       = useState("");
   const [isCartOpen, setIsCartOpen]         = useState(false);
   const [showSuccess, setShowSuccess]       = useState(false);
-  const [activeCategory, setActiveCategory] = useState("Starters");
+  const [activeCategory, setActiveCategory] = useState("Fast Foods");
 
   useEffect(() => {
     setCart(readSavedCart(CART_KEY));

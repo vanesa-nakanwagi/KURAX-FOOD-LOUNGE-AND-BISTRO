@@ -13,7 +13,7 @@ import {
 
 const router = express.Router();
 const FINANCIAL_REPORT_ROLES = new Set(['DIRECTOR', 'MANAGER', 'ACCOUNTANT']);
-const DEFAULT_MENU_CATEGORIES = ['Starters', 'Local Foods', 'Drinks & Cocktails'];
+const DEFAULT_MENU_CATEGORIES = ['Fast Foods', 'Local Foods', 'Drinks & Cocktails'];
 
 function normalizeString(value) {
   return String(value ?? '').trim();

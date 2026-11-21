@@ -190,7 +190,7 @@ export default function ReportsPanel({ dark = false, initialDateRange, timeRange
   });
 
   const availableCategories = [...new Set([
-    'Starters',
+    'Fast Foods',
     'Local Foods',
     'Drinks & Cocktails',
     ...(menuProfitability?.categories || []),

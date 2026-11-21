@@ -242,7 +242,7 @@ export default function Combos() {
                     <span>Category</span>
                     <select value={form.category} onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))} className="w-full rounded-xl border px-3 py-2">
                       <option>Combos</option>
-                      <option>Starters</option>
+                      <option>Fast Foods</option>
                       <option>Local Foods</option>
                       <option>Drinks & Cocktails</option>
                     </select>

@@ -615,7 +615,7 @@ CREATE TABLE public.combos (
     name text NOT NULL,
     description text,
     price numeric(12,2) DEFAULT 0 NOT NULL,
-    category text DEFAULT 'Starters'::text NOT NULL,
+    category text DEFAULT 'Fast Foods'::text NOT NULL,
     station text DEFAULT 'Kitchen'::text NOT NULL,
     image_url text,
     is_available boolean DEFAULT true NOT NULL,

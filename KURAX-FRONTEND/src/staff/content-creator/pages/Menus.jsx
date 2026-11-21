@@ -31,7 +31,7 @@ function menuAuthHeaders() {
   }
 }
 
-const CATEGORIES = ["Starters", "Local Foods", "Drinks & Cocktails"];
+const CATEGORIES = ["Fast Foods", "Local Foods", "Drinks & Cocktails"];
 
 // Station routing options
 const STATIONS = [
@@ -63,7 +63,7 @@ export default function Menus() {
     promotion_starts_at: '',
     promotion_ends_at: '',
     website_extra_fee: '0',
-    category: 'Starters',
+    category: 'Fast Foods',
     station: 'Kitchen',
     image_file: null,
     published: false,
@@ -109,7 +109,7 @@ export default function Menus() {
       promotion_starts_at: '',
       promotion_ends_at: '',
       website_extra_fee: '0',
-      category: 'Starters',
+      category: 'Fast Foods',
       station: 'Kitchen',
       image_file: null,
       published: false,

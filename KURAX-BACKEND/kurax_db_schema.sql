@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS combos (
   name TEXT NOT NULL,
   description TEXT,
   price NUMERIC(12,2) NOT NULL DEFAULT 0,
-  category TEXT NOT NULL DEFAULT 'Starters',
+  category TEXT NOT NULL DEFAULT 'Fast Foods',
   station TEXT NOT NULL DEFAULT 'Kitchen',
   image_url TEXT,
   is_available BOOLEAN NOT NULL DEFAULT true,

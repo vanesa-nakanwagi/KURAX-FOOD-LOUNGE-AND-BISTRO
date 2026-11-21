@@ -13,17 +13,17 @@ export const getEffectiveCategory = (item) => {
   }
   // Otherwise use the original category (with fallback)
   const category = String(item.category ?? "").trim().toLowerCase();
-  if (category === "starters") return "Starters";
+  if (category === "fast foods") return "Fast Foods";
   if (category === "local foods") return "Local Foods";
   if (category === "drinks & cocktails") {
     return "Drinks & Cocktails";
   }
-  return "Starters";
+  return "Fast Foods";
 };
 
 export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = "", activeCategory, setActiveCategory }) {
   const { theme } = useTheme();
-  const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
+  const categories = ["Fast Foods", "Local Foods", "Drinks & Cocktails"];
 
   // --- DEBUG: collect raw station values from first few items ---
   const stationDebug = useMemo(() => {
@@ -34,7 +34,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
 
   // Count per effective category
   const categoryCounts = useMemo(() => {
-    const counts = { "Starters": 0, "Local Foods": 0, "Drinks & Cocktails": 0 };
+    const counts = { "Fast Foods": 0, "Local Foods": 0, "Drinks & Cocktails": 0 };
     items.forEach(item => {
       const effective = getEffectiveCategory(item);
       if (counts[effective] !== undefined) counts[effective]++;
@@ -91,7 +91,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
             <span className="font-mono">{stationDebug}</span>
           </div>
           <div className="text-[8px] text-zinc-500 mt-2">
-            (Category counts: Starters={categoryCounts.Starters}, Local={categoryCounts["Local Foods"]}, Drinks={categoryCounts["Drinks & Cocktails"]})
+            (Category counts: Fast Foods={categoryCounts["Fast Foods"]}, Local={categoryCounts["Local Foods"]}, Drinks={categoryCounts["Drinks & Cocktails"]})
           </div>
         </div>
       ) : (

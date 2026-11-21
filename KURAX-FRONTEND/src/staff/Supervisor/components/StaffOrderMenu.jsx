@@ -6,7 +6,7 @@ import { formatMenuName } from "../../../utils/menuName.js";
 
 export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = "", activeCategory, setActiveCategory }) {
   const { theme } = useTheme();
-  const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
+  const categories = ["Fast Foods", "Local Foods", "Drinks & Cocktails"];
 
   const filteredMenus = items.filter((item) => {
     const query = searchQuery.toLowerCase();

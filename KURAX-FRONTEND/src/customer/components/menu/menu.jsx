@@ -111,7 +111,7 @@ export default function Menu() {
   const [dbMenus, setDbMenus] = useState([]);
   const [filteredMenus, setFilteredMenus] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState("Starters");
+  const [selectedCategory, setSelectedCategory] = useState("Fast Foods");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
@@ -130,7 +130,7 @@ export default function Menu() {
     }
     const category = String(item.category ?? '').trim();
     const knownCategories = {
-      starters: 'Starters',
+      'fast foods': 'Fast Foods',
       'local foods': 'Local Foods',
       'drinks & cocktails': 'Drinks & Cocktails',
     };
@@ -185,7 +185,7 @@ export default function Menu() {
       } else {
         setSearchQuery("");
         setIsSearching(false);
-        setSelectedCategory("Starters");
+        setSelectedCategory("Fast Foods");
       }
     };
     window.addEventListener("search", handleGlobalSearch);
@@ -214,13 +214,13 @@ export default function Menu() {
       );
     } else {
       results = customerVisibleMenus.filter((item) =>
-        getEffectiveCategory(item).toLowerCase() === "starters"
+        getEffectiveCategory(item).toLowerCase() === "fast foods"
       );
     }
     setFilteredMenus(results);
   }, [dbMenus, selectedCategory, searchQuery, isSearching]);
 
-  const categories = ["Starters", "Local Foods", "Drinks & Cocktails"];
+  const categories = ["Fast Foods", "Local Foods", "Drinks & Cocktails"];
 
   const handleCategoryChange = (cat) => {
     setSelectedCategory(cat);
@@ -231,7 +231,7 @@ export default function Menu() {
   const clearSearch = () => {
     setIsSearching(false);
     setSearchQuery("");
-    setSelectedCategory("Starters");
+    setSelectedCategory("Fast Foods");
   };
 
   return (

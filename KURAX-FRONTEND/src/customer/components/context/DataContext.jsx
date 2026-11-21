@@ -184,7 +184,7 @@ export const DataProvider = ({ children }) => {
           price: Number(combo.price || 0),
           name: combo.name,
           description: combo.description || 'Combo offer',
-          category: combo.category || 'Starters',
+          category: combo.category || 'Fast Foods',
           station: combo.station || 'Kitchen',
           image_url: combo.image_url,
           published: combo.published === true,

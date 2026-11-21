@@ -1885,12 +1885,12 @@ COPY public.kitchen_tickets (id, order_id, table_name, staff_name, staff_role, i
 --
 
 COPY public.menus (id, name, description, price, category, station, image_url, is_available, created_at, updated_at, published, available) FROM stdin;
-2	BBQ CHICKEN PIZZA MEDIUM	Chicken cube,bbq sauce & Mozzarella cheese	25000	Starters	Kitchen	/uploads/image-1774617041681-581195808.jpeg	t	2026-03-27 16:10:41.685301+03	2026-03-27 16:10:41.685301+03	t	t
-3	CHICKEN TERIYAKI	Chicken Teriyaki, tomato onions, green Pepper & Mozzarella Cheese	25000	Starters	Kitchen	/uploads/image-1774617185336-868797932.jpeg	t	2026-03-27 16:13:05.338378+03	2026-03-27 16:13:05.338378+03	t	t
-4	CLASSIC KURAX T-BONE	A combination of strip & tender lion soft beef steak grilled to perfection	45000	Starters	Kitchen	/uploads/image-1774617302303-945627299.jpeg	t	2026-03-27 16:15:02.309538+03	2026-03-27 16:15:02.309538+03	t	t
-5	ORGANIC BEEF FILLET	Served with mashed potatoes toasted vegetables &pepper sauce	35000	Starters	Kitchen	/uploads/image-1774617785228-119073176.jpeg	t	2026-03-27 16:23:05.238489+03	2026-03-27 16:23:05.238489+03	t	t
-6	GRILLED HALF CHICKEN	Marinated with garlic & soy roasted on local charcoal grill	45000	Starters	Kitchen	/uploads/image-1774618016326-865598702.jpeg	t	2026-03-27 16:26:56.331787+03	2026-03-27 16:26:56.331787+03	t	t
-7	FRIED/BOILED/STEWED TILAPIA	A tasty white fish with a spiced fresh organic & Deep fried	45000	Starters	Kitchen	/uploads/image-1774618483319-582074325.jpeg	t	2026-03-27 16:34:43.324444+03	2026-03-27 16:34:43.324444+03	t	t
+2	BBQ CHICKEN PIZZA MEDIUM	Chicken cube,bbq sauce & Mozzarella cheese	25000	Fast Foods	Kitchen	/uploads/image-1774617041681-581195808.jpeg	t	2026-03-27 16:10:41.685301+03	2026-03-27 16:10:41.685301+03	t	t
+3	CHICKEN TERIYAKI	Chicken Teriyaki, tomato onions, green Pepper & Mozzarella Cheese	25000	Fast Foods	Kitchen	/uploads/image-1774617185336-868797932.jpeg	t	2026-03-27 16:13:05.338378+03	2026-03-27 16:13:05.338378+03	t	t
+4	CLASSIC KURAX T-BONE	A combination of strip & tender lion soft beef steak grilled to perfection	45000	Fast Foods	Kitchen	/uploads/image-1774617302303-945627299.jpeg	t	2026-03-27 16:15:02.309538+03	2026-03-27 16:15:02.309538+03	t	t
+5	ORGANIC BEEF FILLET	Served with mashed potatoes toasted vegetables &pepper sauce	35000	Fast Foods	Kitchen	/uploads/image-1774617785228-119073176.jpeg	t	2026-03-27 16:23:05.238489+03	2026-03-27 16:23:05.238489+03	t	t
+6	GRILLED HALF CHICKEN	Marinated with garlic & soy roasted on local charcoal grill	45000	Fast Foods	Kitchen	/uploads/image-1774618016326-865598702.jpeg	t	2026-03-27 16:26:56.331787+03	2026-03-27 16:26:56.331787+03	t	t
+7	FRIED/BOILED/STEWED TILAPIA	A tasty white fish with a spiced fresh organic & Deep fried	45000	Fast Foods	Kitchen	/uploads/image-1774618483319-582074325.jpeg	t	2026-03-27 16:34:43.324444+03	2026-03-27 16:34:43.324444+03	t	t
 \.
 
 

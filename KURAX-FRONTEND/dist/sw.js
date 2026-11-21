@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kurax-v5';
+const CACHE_NAME = 'kurax-v7';
 try {
   importScripts('/firebase-config.js');
   const config = self.KURAX_FIREBASE_CONFIG;
@@ -8,11 +8,12 @@ try {
     firebase.initializeApp(config);
     firebase.messaging().onBackgroundMessage((payload) => {
       const data = payload.data || {};
-      self.registration.showNotification(data.title || 'Kurax staff alert', {
-        body: data.body || 'A staff update needs your attention.',
+      const notification = payload.notification || {};
+      return self.registration.showNotification(data.title || notification.title || 'Kurax staff alert', {
+        body: data.body || notification.body || 'A staff update needs your attention.',
         icon: '/icons/icon-192x192.png',
         tag: `${data.type || 'staff'}-${data.referenceId || data.createdAt || Date.now()}`,
-        data: { link: data.link || '/' },
+        data: { link: data.link || payload.fcmOptions?.link || '/' },
       });
     });
   }
