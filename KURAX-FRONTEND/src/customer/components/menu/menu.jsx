@@ -3,6 +3,7 @@ import { Plus, Sparkles, X, ZoomIn } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import CartModal from "./cart/CartModal.jsx";
 import TopSection from "../common/topSection.jsx";
+import FooterGlobal from "../common/footer.jsx";
 import { useCart } from "../context/CartContext.jsx";
 import axios from "axios";
 import { getImageSrc } from "../../../utils/imageHelper.js";
@@ -87,9 +88,14 @@ export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW"
                 UGX {originalPrice.toLocaleString()}
               </span>
             )}
-            {!hasPromotion && <span aria-hidden="true" className="mb-1 block h-5" />}
+            {!hasPromotion && (
+              <span className="mb-1 block h-5 text-xs font-medium leading-5 text-zinc-900 dark:text-zinc-400">
+                UGX
+              </span>
+            )}
             <span className={`block text-xl tracking-tighter leading-none ${hasPromotion ? "text-red-600 dark:text-red-400" : "text-zinc-900 dark:text-white"}`}>
-              UGX {currentPrice.toLocaleString()}
+              {hasPromotion && "UGX "}
+              {currentPrice.toLocaleString()}
             </span>
           </div>
         </div>
@@ -366,6 +372,7 @@ export default function Menu() {
             </div>
           )}
         </main>
+        <FooterGlobal />
       </div>
 
       {/* CART MODAL */}

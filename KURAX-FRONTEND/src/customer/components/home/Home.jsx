@@ -286,7 +286,7 @@ export default function Home() {
 
       if (eventResult.status === 'fulfilled') {
         const events = Array.isArray(eventResult.value.data) ? eventResult.value.data : [];
-        setDbEvents(events.filter(event => event.status === 'live').slice(0, 3));
+        setDbEvents(events.filter(event => event.status === 'live').slice(0, 4));
       } else {
         console.error("❌ EVENT FETCH ERROR:", eventResult.reason);
       }
@@ -501,9 +501,9 @@ export default function Home() {
             </Link>
           </motion.header>
           
-          <motion.div variants={staggerContainer} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+          <motion.div variants={staggerContainer} className="grid auto-rows-fr grid-cols-1 xl:grid-cols-2 gap-10">
             {loadingEvents ? (
-              [1, 2, 3].map(n => (
+              [1, 2, 3, 4].map(n => (
                 <div key={n} className="h-96 bg-zinc-200/50 rounded-[2.5rem] animate-pulse" />
               ))
             ) : (

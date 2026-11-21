@@ -1,5 +1,4 @@
 
-import FooterGlobal from "../components/common/footer.jsx";
 import Menu from "../components/menu/menu.jsx";
 
 export default function MenusPage() {
@@ -7,7 +6,6 @@ export default function MenusPage() {
     <div className="bg-[#f4f3ef] font-[Outfit]">
       
       <Menu />
-      <FooterGlobal />
      
     </div>
   );

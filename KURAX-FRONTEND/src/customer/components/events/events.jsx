@@ -148,7 +148,7 @@ export default function Events() {
       {/* ──------- EVENTS GRID ── */}
       <section className="relative pt-0 pb-0 px-5 md:px-12 max-w-7xl mx-auto z-10">
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8">
             {[1, 2, 3].map((n) => (
               <div key={n} className="h-[500px] bg-zinc-100 dark:bg-zinc-900/50 rounded-[2rem] animate-pulse" />
             ))}
@@ -177,7 +177,7 @@ export default function Events() {
                 whileInView="visible"
                 viewport={{ once: true }}
                 variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8"
+                className="grid auto-rows-fr grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8"
               >
                 {filteredEvents.map((event) => (
                   <motion.div 

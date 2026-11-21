@@ -1,15 +1,9 @@
-import { Calendar, Clock, MapPin, Tag, Plus } from "lucide-react";
+import { Calendar, Clock, MapPin, Plus } from "lucide-react";
 import { useState } from "react";
 import BookingModal from "./BookingModal.jsx";
 import API_URL from "../../../config/api";   // <-- add this import
 import { formatMenuName } from "../../../utils/menuName.js";
 import MenuImageViewer from "../menu/MenuImageViewer.jsx";
-
-const getParsedTags = (tags) => {
-  if (!tags) return [];
-  if (Array.isArray(tags)) return tags;
-  try { return JSON.parse(tags); } catch (e) { return []; }
-};
 
 export default function EventCard({ event = {}, onBook }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -34,8 +28,6 @@ export default function EventCard({ event = {}, onBook }) {
     ? new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : "Date TBD";
 
-  const tags = getParsedTags(event.tags);
-
   const handleModalOpen = () => {
     setIsModalOpen(true);
     if (onBook) onBook();
@@ -43,9 +35,8 @@ export default function EventCard({ event = {}, onBook }) {
 
   return (
     <>
-      <div className="group font-['Outfit'] relative bg-white dark:bg-[#111111] rounded-[1rem] overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-2 border border-zinc-200 dark:border-white/5 shadow-sm hover:shadow-2xl h-full">
-        
-        <div className="relative h-64 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
+      <div className="group relative flex h-full min-h-[340px] flex-col overflow-hidden rounded-[1rem] border border-zinc-200 bg-white font-['Outfit'] shadow-sm transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl dark:border-white/5 dark:bg-[#111111] md:flex-row">
+        <div className="relative h-[280px] w-full shrink-0 overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a] sm:h-[320px] md:h-auto md:min-h-[340px] md:w-[42%]">
           {!imgLoaded && (
             <div className="pointer-events-none absolute inset-0 z-10 animate-pulse bg-zinc-200 dark:bg-zinc-800" />
           )}
@@ -53,7 +44,7 @@ export default function EventCard({ event = {}, onBook }) {
             type="button"
             onClick={() => setSelectedImage({ src: imageUrl, alt: displayTitle })}
             aria-label={`View full-size image of ${displayTitle}`}
-            className="relative block h-full w-full min-h-0 min-w-0 cursor-zoom-in border-0 bg-transparent p-0 text-left"
+            className="absolute inset-0 block min-h-0 min-w-0 cursor-zoom-in border-0 bg-transparent p-0 text-left"
           >
             <img
               src={imageUrl}
@@ -63,55 +54,41 @@ export default function EventCard({ event = {}, onBook }) {
                 setImgLoaded(true);
                 e.target.src = 'https://via.placeholder.com/600x400?text=Image+Unavailable';
               }}
-              className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 ${
+              className={`h-full w-full object-cover ${
                 imgLoaded ? 'opacity-100' : 'opacity-0'
               }`}
             />
-            <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-b from-black/60 via-transparent to-transparent opacity-60" />
           </button>
-
-          {/* Tags on top-left */}
-          {tags.length > 0 && (
-            <div className="absolute top-4 left-4 z-20 flex flex-wrap gap-2 max-w-[80%]">
-              {tags.map((tag, idx) => (
-                <span
-                  key={idx}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/90 backdrop-blur-sm text-black text-[10px] font-black uppercase tracking-wider rounded-full shadow-md border border-white/20"
-                >
-                  <Tag size={10} className="text-black" strokeWidth={2} />
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
-        <div className="p-8 flex flex-col flex-1 gap-4">
-          <div className="space-y-2">
-            <h3 className="font-[Outfit] text-2xl font-semibold text-yellow-700 transition-colors group-hover:text-yellow-700 dark:text-yellow-300 dark:group-hover:text-yellow-200">
-              {displayTitle}
-            </h3>
-            <p className="text-[13px] text-zinc-900 dark:text-zinc-400 leading-relaxed font-light line-clamp-3">
-              {event.description || "Join us for an exclusive experience at Kurax Food Lounge & Bistro."}
-            </p>
+        <div className="flex min-w-0 flex-1 flex-col p-6 sm:p-8">
+          <div className="flex flex-1 flex-col justify-center">
+            <div className="space-y-2">
+              <h3 className="font-[Outfit] text-2xl font-semibold text-yellow-700 transition-colors group-hover:text-yellow-700 dark:text-yellow-300 dark:group-hover:text-yellow-200">
+                {displayTitle}
+              </h3>
+              <p className="text-[13px] font-light leading-relaxed text-zinc-900 line-clamp-3 dark:text-zinc-400">
+                {event.description || "Join us for an exclusive experience at Kurax Food Lounge & Bistro."}
+              </p>
+            </div>
+
+            <div className="my-4 grid grid-cols-1 gap-2.5 border-y border-zinc-100 py-4 dark:border-white/5">
+              <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
+                <Calendar className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
+                <span className="font-medium">{formattedDate}</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
+                <Clock className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
+                <span className="font-medium">{event.time || "19:00 Onwards"}</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
+                <MapPin className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
+                <span className="font-medium">{event.location || "Kurax Rooftop"}</span>
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-2.5 py-4 border-y border-zinc-100 dark:border-white/5">
-            <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
-              <Calendar className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
-              <span className="font-medium">{formattedDate}</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
-              <Clock className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
-              <span className="font-medium">{event.time || "19:00 Onwards"}</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
-              <MapPin className="w-4 h-4 text-yellow-500" strokeWidth={1.5} />
-              <span className="font-medium">{event.location || "Kurax Rooftop"}</span>
-            </div>
-          </div>
-
-          <div className="mt-auto pt-2">
+          <div className="mt-auto pt-4">
             <button
               onClick={handleModalOpen}
               className="w-full py-4 bg-yellow-400 text-black rounded-2xl text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-95"
