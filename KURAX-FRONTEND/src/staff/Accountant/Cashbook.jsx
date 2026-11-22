@@ -72,6 +72,10 @@ function methodsForAccount(account) {
   return [];
 }
 
+function isPayableAccount(account) {
+  return account?.category === "Liability" && /payable/i.test(String(account.account_type || ""));
+}
+
 function eligibleCounterparts(accounts, type, category) {
   return accounts.filter((account) => {
     const accountType = String(account.account_type || "").toLowerCase();
@@ -84,10 +88,6 @@ function eligibleCounterparts(accounts, type, category) {
       if (category === "Deposit Received") return account.category === "Liability";
       if (category === "Other Income") return account.category === "Revenue";
       return ["Asset", "Liability", "Equity", "Revenue"].includes(account.category);
-    }
-
-    function isPayableAccount(account) {
-      return account?.category === "Liability" && /payable/i.test(String(account.account_type || ""));
     }
 
     if (category === "Expense") return account.category === "Expense";
