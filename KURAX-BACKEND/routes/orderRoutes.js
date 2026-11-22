@@ -1012,6 +1012,21 @@ router.patch('/:id/items/:itemIndex/complimentary', authenticateComplimentarySta
         reason: reason.trim() || null,
       },
     });
+    try {
+      const notification = await notificationService.sendToRoles(['CASHIER'], {
+        type: 'COMPLIMENTARY_REQUEST',
+        title: 'New complimentary request',
+        body: `${actor.name} requested a comp for ${item.name || 'an item'} at ${order.table_name || 'a table'} (Order #${orderId}).`,
+        referenceId: requestResult.rows[0].id,
+        referenceType: 'complimentary_correction',
+        link: '/cashier',
+      });
+      if (notification.error || notification.failed || notification.noRecipients) {
+        console.warn(`Cashier complimentary notification was not fully delivered for request ${requestResult.rows[0].id}:`, notification);
+      }
+    } catch (notificationError) {
+      console.error(`Cashier complimentary notification failed for request ${requestResult.rows[0].id}:`, notificationError.message);
+    }
     return res.status(202).json({
       correctionRequest: requestResult.rows[0],
       message: 'Complimentary request sent to the cashier. The cashier will choose the waived amount.',

@@ -179,7 +179,7 @@ export default function StaffNotificationControl({ isShisha = false }) {
               if (!registration) throw new Error('Firebase did not return a registered device.');
               if (!cancelled) {
                 setEnabled(true);
-                setMessage('Notifications are enabled and this device is registered with the server.');
+                setMessage('');
               }
             } catch (error) {
               if (!cancelled) {
@@ -252,7 +252,7 @@ export default function StaffNotificationControl({ isShisha = false }) {
       const result = await registerCurrentDevice(session, false, setMessage);
       if (!result?.device) throw new Error('Firebase did not confirm that this device was registered with the server.');
       setEnabled(true);
-      setMessage('Notifications are enabled and this device is registered with the server.');
+      setMessage('');
     } catch (error) {
       setMessage(error.message || 'Could not enable notifications.');
     } finally {

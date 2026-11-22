@@ -223,9 +223,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             ['Fully waived quantity', report.summary?.fully_waived_quantity ?? 0],
             ['Partially waived quantity', report.summary?.partially_waived_quantity ?? 0],
             ['Complimentary waived value', money(report.summary?.complimentary_waived_amount)],
-            ['Complimentary amount payable', money(report.summary?.complimentary_payable_amount)],
             ['Complimentary amount collected', money(report.summary?.complimentary_collected_amount)],
-            ['Complimentary outstanding', money(report.summary?.complimentary_outstanding_amount)],
             ['Voided', money(report.summary?.voided_total)],
             ['Voided quantity', report.summary?.voided_quantity ?? 0],
             ['Production voided items', report.summary?.production_voided_items ?? 0],
@@ -285,9 +283,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         ['Fully waived quantity', Number(report.summary?.fully_waived_quantity || 0)],
         ['Partially waived quantity', Number(report.summary?.partially_waived_quantity || 0)],
         ['Complimentary waived value (UGX)', Number(report.summary?.complimentary_waived_amount || 0)],
-        ['Complimentary amount payable (UGX)', Number(report.summary?.complimentary_payable_amount || 0)],
         ['Complimentary amount collected (UGX)', Number(report.summary?.complimentary_collected_amount || 0)],
-        ['Complimentary outstanding (UGX)', Number(report.summary?.complimentary_outstanding_amount || 0)],
         ['Voided quantity', Number(report.summary?.voided_quantity || 0)],
         ['Voided total (UGX)', Number(report.summary?.voided_total || 0)],
         ['Collected (UGX)', Number(report.summary?.amount_collected || 0)],
@@ -346,9 +342,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         fully_waived_quantity: result.fully_waived_quantity + Number(department.fully_waived_quantity || 0),
         partially_waived_quantity: result.partially_waived_quantity + Number(department.partially_waived_quantity || 0),
         complimentary_waived_amount: result.complimentary_waived_amount + Number(department.complimentary_waived_amount || 0),
-        complimentary_payable_amount: result.complimentary_payable_amount + Number(department.complimentary_payable_amount || 0),
         complimentary_collected_amount: result.complimentary_collected_amount + Number(department.complimentary_collected_amount || 0),
-        complimentary_outstanding_amount: result.complimentary_outstanding_amount + Number(department.complimentary_outstanding_amount || 0),
         voided_total: result.voided_total + Number(department.voided_total || 0),
         voided_quantity: result.voided_quantity + Number(department.voided_quantity || 0),
         production_voided_items: result.production_voided_items + Number(department.production_voided_items || 0),
@@ -366,7 +360,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         settled_credit_amount: result.settled_credit_amount + Number(department.settled_credit_amount || 0),
         outstanding_credit_count: result.outstanding_credit_count + Number(department.outstanding_credit_count || 0),
         outstanding_credit_balance: result.outstanding_credit_balance + Number(department.outstanding_credit_balance || 0),
-      }), { total_orders: 0, total_sales: 0, complimentary_quantity: 0, fully_waived_quantity: 0, partially_waived_quantity: 0, complimentary_waived_amount: 0, complimentary_payable_amount: 0, complimentary_collected_amount: 0, complimentary_outstanding_amount: 0, voided_total: 0, voided_quantity: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
+      }), { total_orders: 0, total_sales: 0, complimentary_quantity: 0, fully_waived_quantity: 0, partially_waived_quantity: 0, complimentary_waived_amount: 0, complimentary_collected_amount: 0, voided_total: 0, voided_quantity: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
       const staffPerformance = departments.flatMap(department => (department.staff_performance || []).map(person => [
         department.label,
         String(person.worker_role || '').replaceAll('_', ' '),
@@ -403,9 +397,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             ['Fully waived quantity', totals.fully_waived_quantity],
             ['Partially waived quantity', totals.partially_waived_quantity],
             ['Complimentary waived value', money(totals.complimentary_waived_amount)],
-            ['Complimentary amount payable', money(totals.complimentary_payable_amount)],
             ['Complimentary amount collected', money(totals.complimentary_collected_amount)],
-            ['Complimentary outstanding', money(totals.complimentary_outstanding_amount)],
             ['Voided', money(totals.voided_total)],
             ['Voided quantity', totals.voided_quantity],
             ['Production voided items', totals.production_voided_items],
@@ -422,10 +414,10 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         },
         {
           title: 'Main departments',
-          columns: ['Department', 'Orders', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Comp payable', 'Comp collected', 'Comp outstanding', 'Voided', 'Voided quantity', 'Collected', 'Outstanding', 'Partial credits', 'Settled credits', 'Credit balance'],
+          columns: ['Department', 'Orders', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Comp collected', 'Voided', 'Voided quantity', 'Collected', 'Outstanding', 'Partial credits', 'Settled credits', 'Credit balance'],
           rows: [
-            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), department.complimentary_quantity || 0, department.fully_waived_quantity || 0, department.partially_waived_quantity || 0, money(department.complimentary_waived_amount), money(department.complimentary_payable_amount), money(department.complimentary_collected_amount), money(department.complimentary_outstanding_amount), money(department.voided_total), department.voided_quantity || 0, money(department.amount_collected), money(department.outstanding_balance), money(department.partially_paid_credit_amount), money(department.settled_credit_amount), money(department.outstanding_credit_balance)]),
-            ['Total main departments', totals.total_orders, money(totals.total_sales), totals.complimentary_quantity, totals.fully_waived_quantity, totals.partially_waived_quantity, money(totals.complimentary_waived_amount), money(totals.complimentary_payable_amount), money(totals.complimentary_collected_amount), money(totals.complimentary_outstanding_amount), money(totals.voided_total), totals.voided_quantity, money(totals.amount_collected), money(totals.outstanding_balance), money(totals.partially_paid_credit_amount), money(totals.settled_credit_amount), money(totals.outstanding_credit_balance)],
+            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), department.complimentary_quantity || 0, department.fully_waived_quantity || 0, department.partially_waived_quantity || 0, money(department.complimentary_waived_amount), money(department.complimentary_collected_amount), money(department.voided_total), department.voided_quantity || 0, money(department.amount_collected), money(department.outstanding_balance), money(department.partially_paid_credit_amount), money(department.settled_credit_amount), money(department.outstanding_credit_balance)]),
+            ['Total main departments', totals.total_orders, money(totals.total_sales), totals.complimentary_quantity, totals.fully_waived_quantity, totals.partially_waived_quantity, money(totals.complimentary_waived_amount), money(totals.complimentary_collected_amount), money(totals.voided_total), totals.voided_quantity, money(totals.amount_collected), money(totals.outstanding_balance), money(totals.partially_paid_credit_amount), money(totals.settled_credit_amount), money(totals.outstanding_credit_balance)],
           ],
         },
         {
@@ -473,7 +465,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         ['KURAX DEPARTMENT SALES REPORT'],
         ['Period', fullReport.from, 'to', fullReport.to],
         [],
-        ['Department', 'Orders', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Comp payable (UGX)', 'Comp collected (UGX)', 'Comp outstanding (UGX)', 'Voided (UGX)', 'Voided quantity', 'Collected (UGX)', 'Outstanding (UGX)', 'Partial credits (UGX)', 'Settled credits (UGX)', 'Credit balance (UGX)'],
+        ['Department', 'Orders', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Comp collected (UGX)', 'Voided (UGX)', 'Voided quantity', 'Collected (UGX)', 'Outstanding (UGX)', 'Partial credits (UGX)', 'Settled credits (UGX)', 'Credit balance (UGX)'],
         ...departmentRows.map(row => [
           row.label,
           Number(row.total_orders || 0),
@@ -482,9 +474,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           Number(row.fully_waived_quantity || 0),
           Number(row.partially_waived_quantity || 0),
           Number(row.complimentary_waived_amount || 0),
-          Number(row.complimentary_payable_amount || 0),
           Number(row.complimentary_collected_amount || 0),
-          Number(row.complimentary_outstanding_amount || 0),
           Number(row.voided_total || 0),
           Number(row.voided_quantity || 0),
           Number(row.amount_collected || 0),
@@ -740,8 +730,8 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             <thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr>
               <th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th>
               <th className="p-3">Comp qty</th><th className="p-3">Fully waived qty</th>
-              <th className="p-3">Partially waived qty</th><th className="p-3">Comp waived</th><th className="p-3">Comp payable</th>
-              <th className="p-3">Comp collected</th><th className="p-3">Comp outstanding</th><th className="p-3">Voided</th>
+              <th className="p-3">Partially waived qty</th><th className="p-3">Comp waived</th>
+              <th className="p-3">Comp collected</th><th className="p-3">Voided</th>
               <th className="p-3">Collected</th><th className="p-3">Unpaid balance</th><th className="p-3">Partial credits</th>
               <th className="p-3">Settled credits</th><th className="p-3">Outstanding credits</th>
             </tr></thead>
@@ -750,9 +740,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
               <td className="p-3">{row.complimentary_quantity || 0}</td>
               <td className="p-3">{row.fully_waived_quantity || 0}</td><td className="p-3">{row.partially_waived_quantity || 0}</td>
               <td className="p-3">{money(row.complimentary_waived_amount)}</td>
-              <td className="p-3">{money(row.complimentary_payable_amount)}</td>
               <td className="p-3">{money(row.complimentary_collected_amount)}</td>
-              <td className="p-3">{money(row.complimentary_outstanding_amount)}</td>
               <td className="p-3">{money(row.voided_total)}</td>
               <td className="p-3">{money(row.amount_collected)}</td><td className="p-3">{money(row.outstanding_balance)}</td>
               <td className="p-3">{money(row.partially_paid_credit_amount)}</td><td className="p-3">{money(row.settled_credit_amount)}</td>
@@ -765,9 +753,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
               <td className="p-3">{departments.reduce((total, row) => total + Number(row.fully_waived_quantity || 0), 0)}</td>
               <td className="p-3">{departments.reduce((total, row) => total + Number(row.partially_waived_quantity || 0), 0)}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_waived_amount || 0), 0))}</td>
-              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_payable_amount || 0), 0))}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_collected_amount || 0), 0))}</td>
-              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_outstanding_amount || 0), 0))}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.voided_total || 0), 0))}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.amount_collected || 0), 0))}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_balance || 0), 0))}</td>
@@ -783,9 +769,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
               ['Fully waived quantity', summary.fully_waived_quantity || 0],
               ['Partially waived quantity', summary.partially_waived_quantity || 0],
               ['Complimentary waived value', money(summary.complimentary_waived_amount)],
-              ['Complimentary amount payable', money(summary.complimentary_payable_amount)],
               ['Complimentary amount collected', money(summary.complimentary_collected_amount)],
-              ['Complimentary outstanding', money(summary.complimentary_outstanding_amount)],
               ['Voided quantity', summary.voided_quantity || 0],
               ['Voided total', money(summary.voided_total)],
               ['Production voided items', summary.production_voided_items || 0],
