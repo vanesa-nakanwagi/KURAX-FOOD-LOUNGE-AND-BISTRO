@@ -834,19 +834,14 @@ function ReportsWorkflow({ records, onAction }) {
   const businessToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
   const [dateRange, setDateRange] = useState({ start: businessToday, end: businessToday });
   const [selectedPeriod, setSelectedPeriod] = useState('today');
-  const [report, setReport] = useState(records['reports/cogs'] || null);
   const [inventoryReport, setInventoryReport] = useState(records['reports/inventory-activity'] || null);
   const [loadingReport, setLoadingReport] = useState(false);
   const runReports = async (range = dateRange) => {
     setLoadingReport(true);
     try {
       const query = new URLSearchParams({ startDate: range.start, endDate: range.end });
-      const [activityResult, cogsResult] = await Promise.all([
-        onAction(`reports/inventory-activity?${query}`, {}, 'GET', 'Inventory report refreshed.'),
-        onAction(`reports/cogs?${query}`, {}, 'GET', 'Inventory profitability report refreshed.'),
-      ]);
+      const activityResult = await onAction(`reports/inventory-activity?${query}`, {}, 'GET', 'Inventory report refreshed.');
       if (activityResult) setInventoryReport(activityResult);
-      if (cogsResult) setReport(cogsResult);
     } finally {
       setLoadingReport(false);
     }
@@ -976,81 +971,11 @@ function ReportsWorkflow({ records, onAction }) {
           </div>
         </>}
       </Panel>
-      <Panel title="COGS and profitability" description={report ? `${report.startDate} to ${report.endDate} · Kampala business dates` : 'Select a business-date period to calculate COGS and profitability.'}>
-        {report && <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              ['Gross sales', report.grossSales],
-              ['Discounts', report.discounts],
-              ['Approved voids / refunds', report.refunds],
-              ['Net sales', report.netSales],
-              ['COGS', report.cogs],
-              ['Gross profit', report.grossProfit],
-              ['Waste cost (separate)', report.wasteCost],
-            ].map(([label, value]) => <div key={label} className="border-l-2 border-amber-500 bg-zinc-50 px-4 py-3"><p className="text-[10px] font-black uppercase text-zinc-500">{label}</p><p className="mt-1 text-lg font-black">UGX {Number(value || 0).toLocaleString()}</p></div>)}
-          </div>
-          {Number(report.costReviewCount || 0) > 0 && <p role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">{report.costReviewCount} consumption rows have missing ingredient costs and need review.</p>}
-          <div className="mt-5 grid gap-5 xl:grid-cols-2">
-            <History title="Menu-item profitability" rows={report.menuItems || []} empty="No paid sales or recorded consumption in this period." columns={[
-              { label: 'Department', key: 'department' },
-              { label: 'Menu item', key: 'menu_name' },
-              { label: 'Gross sales', render: (row) => `UGX ${Number(row.gross_sales || 0).toLocaleString()}` },
-              { label: 'Refunds', render: (row) => `UGX ${Number(row.refunds || 0).toLocaleString()}` },
-              { label: 'Net sales', render: (row) => `UGX ${Number(row.net_sales || 0).toLocaleString()}` },
-              { label: 'COGS', render: (row) => `UGX ${Number(row.cogs || 0).toLocaleString()}` },
-              { label: 'Gross profit', render: (row) => `UGX ${Number(row.gross_profit || 0).toLocaleString()} (${Number(row.gross_profit_margin || 0).toFixed(1)}%)` },
-            ]} />
-            <History title="Ingredient consumption cost" rows={report.ingredients || []} empty="No ingredient consumption recorded in this period." columns={[
-              { label: 'Ingredient', key: 'name' },
-              { label: 'COGS (UGX)', render: (row) => Number(row.value || 0).toLocaleString() },
-            ]} />
-          </div>
-          <div className="mt-5 grid gap-5 xl:grid-cols-2">
-            <History title="Net sales by department" rows={report.salesByDepartment || []} empty="No sales in this period." columns={[
-              { label: 'Department', key: 'name' },
-              { label: 'Net sales (UGX)', render: (row) => Number(row.value || 0).toLocaleString() },
-            ]} />
-            <History title="Daily COGS" rows={report.daily || []} empty="No consumption recorded." columns={[
-              { label: 'Business date', key: 'name' },
-              { label: 'COGS (UGX)', render: (row) => Number(row.value || 0).toLocaleString() },
-            ]} />
-          </div>
-          <div className="mt-5 grid gap-5 xl:grid-cols-2">
-            <History title="COGS by department" rows={report.departments || []} empty="No consumption recorded." columns={[
-              { label: 'Department', key: 'name' },
-              { label: 'COGS (UGX)', render: (row) => Number(row.value || 0).toLocaleString() },
-            ]} />
-            <History title="Waste cost by department" rows={report.wasteByDepartment || []} empty="No waste recorded." columns={[
-              { label: 'Department', key: 'name' },
-              { label: 'Waste cost (UGX)', render: (row) => Number(row.value || 0).toLocaleString() },
-            ]} />
-          </div>
-        </>}
-      </Panel>
-      <History title="Low-stock items" rows={records['reports/low-stock'] || []} empty="No items are currently below minimum stock." columns={[
-        { label: 'Item', key: 'item_name' },
-        { label: 'Location', key: 'location_name' },
-        { label: 'Current', render: (row) => `${row.current_quantity} ${row.unit}` },
-        { label: 'Minimum', render: (row) => `${row.minimum_stock_level} ${row.unit}` },
-      ]} />
       <History title="Menu items without active recipes" rows={records['reports/menu-items-without-recipes'] || []} empty="All published menu items have active recipes." columns={[
         { label: 'Menu item', key: 'name' },
         { label: 'Station', key: 'station' },
         { label: 'Category', key: 'category' },
         { label: 'Price', render: (row) => `UGX ${Number(row.price || 0).toLocaleString()}` },
-      ]} />
-      <History title="Menu items with active recipes" rows={(records.recipes || []).filter((recipe) => recipe.status === 'ACTIVE')} empty="No menu items currently have active recipes." columns={[
-        { label: 'Menu item', key: 'menu_name' },
-        { label: 'Station', key: 'station' },
-        { label: 'Status', key: 'status' },
-      ]} />
-      <History title="Recent inventory transactions" rows={records.transactions || []} empty="No inventory transactions found." columns={[
-        { label: 'Date', key: 'business_date' },
-        { label: 'Reference', key: 'reference_number' },
-        { label: 'Item', key: 'item_name' },
-        { label: 'Type', key: 'transaction_type' },
-        { label: 'Quantity', render: (row) => `${row.quantity} ${row.unit}` },
-        { label: 'Value', render: (row) => `UGX ${Number(row.total_value || 0).toLocaleString()}` },
       ]} />
     </div>
   );

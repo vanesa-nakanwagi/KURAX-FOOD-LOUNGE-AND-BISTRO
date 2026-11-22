@@ -128,7 +128,7 @@ export default function InventoryManagement() {
       waste: ['waste'],
       'stock-counts': ['stock-counts'],
       adjustments: ['adjustments'],
-      reports: ['reports/low-stock', 'reports/menu-items-without-recipes', 'reports/cogs', 'reports/inventory-activity', 'transactions', 'recipes?station=ALL'],
+      reports: ['reports/menu-items-without-recipes', 'reports/inventory-activity'],
     };
     const endpoints = endpointsBySection[currentSection.slug] || [];
     const entries = await Promise.all(endpoints.map(async (endpoint) => {
