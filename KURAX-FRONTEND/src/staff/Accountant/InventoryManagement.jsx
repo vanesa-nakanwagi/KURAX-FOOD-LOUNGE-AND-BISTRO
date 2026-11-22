@@ -24,6 +24,7 @@ const defaultForm = {
 const INVENTORY_SECTIONS = [
   { slug: '', label: 'Inventory Dashboard' },
   { slug: 'items', label: 'Inventory Items' },
+  { slug: 'recipe-costing', label: 'Recipe Costing' },
   { slug: 'main-store', label: 'Main Store' },
   { slug: 'kitchen', label: 'Kitchen' },
   { slug: 'bar', label: 'Bar' },
@@ -122,6 +123,7 @@ export default function InventoryManagement() {
       purchases: ['purchases'],
       transfers: ['transfers'],
       recipes: ['recipes?station=ALL', 'recipes/menu-items?station=ALL'],
+      'recipe-costing': ['recipes?station=ALL'],
       consumption: ['consumption'],
       waste: ['waste'],
       'stock-counts': ['stock-counts'],
@@ -185,7 +187,7 @@ export default function InventoryManagement() {
   );
   const isStockSection = ['', 'items', 'main-store', 'kitchen', 'bar', 'barista', 'valuation'].includes(currentSection.slug);
   const showPurchaseForm = currentSection.slug === '';
-  const workflowSections = ['purchases', 'transfers', 'recipes', 'consumption', 'waste', 'stock-counts', 'adjustments', 'reports'];
+  const workflowSections = ['purchases', 'transfers', 'recipes', 'recipe-costing', 'consumption', 'waste', 'stock-counts', 'adjustments', 'reports'];
 
   const handleSubmit = async (event) => {
     event.preventDefault();

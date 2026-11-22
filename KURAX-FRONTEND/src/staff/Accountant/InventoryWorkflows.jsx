@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { FileSpreadsheet, FileText, Printer, RotateCcw, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { downloadReportPdf } from '../reportExport';
+import Pagination from '../components/Pagination';
 import {
   defaultPurchaseConversionFactor,
   inventoryUnitsForStation,
@@ -66,7 +67,7 @@ function Panel({ title, description, children }) {
   );
 }
 
-function Input({ label, value, onChange, type = 'text', min, max, required = false }) {
+function Input({ label, value, onChange, type = 'text', min, max, required = false, placeholder }) {
   return (
     <label className="block">
       <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-zinc-500">{label}</span>
@@ -76,6 +77,7 @@ function Input({ label, value, onChange, type = 'text', min, max, required = fal
         value={value}
         min={min}
         max={max}
+        placeholder={placeholder}
         step={type === 'number' ? 'any' : undefined}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
@@ -144,6 +146,90 @@ function History({ title, columns, rows, empty }) {
   return (
     <Panel title={title}>
       <Table columns={columns} rows={Array.isArray(rows) ? rows : []} empty={empty} />
+    </Panel>
+  );
+}
+
+function RecipeCostingWorkflow({ items, records }) {
+  const [search, setSearch] = useState('');
+  const [stationFilter, setStationFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const itemById = useMemo(() => new Map(items.map((item) => [String(item.id), item])), [items]);
+  const recipeRows = useMemo(() => (records.recipes || []).map((recipe) => {
+    let totalCost = 0;
+    let missingCostItems = 0;
+    const ingredients = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+
+    for (const ingredient of ingredients) {
+      const item = itemById.get(String(ingredient.ingredient_item_id));
+      const quantity = Number(ingredient.quantity);
+      if (!item || !Number.isFinite(quantity) || quantity <= 0 || Number(item.unit_cost || 0) <= 0) {
+        missingCostItems += 1;
+        continue;
+      }
+
+      try {
+        const factor = recipeUnitConversionFactor(ingredient.unit || item.unit, item.unit, item);
+        const ingredientCost = Number((quantity * factor * Number(item.unit_cost)).toFixed(2));
+        if (!Number.isFinite(ingredientCost)) {
+          missingCostItems += 1;
+          continue;
+        }
+        totalCost = Number((totalCost + ingredientCost).toFixed(2));
+      } catch {
+        missingCostItems += 1;
+      }
+    }
+
+    return {
+      ...recipe,
+      station_label: normalizeStation(recipe.station) || recipe.station || '—',
+      prepared_by: recipe.created_by || recipe.updated_by || 'Not recorded',
+      ingredient_count: ingredients.length,
+      total_cost: totalCost,
+      missing_cost_items: missingCostItems,
+      cost_status: !ingredients.length || missingCostItems ? 'REVIEW_REQUIRED' : 'ESTIMATED',
+    };
+  }), [records.recipes, itemById]);
+  const filteredRecipes = recipeRows.filter((recipe) => {
+    const query = search.trim().toLowerCase();
+    const matchesSearch = !query ||
+      String(recipe.menu_name || '').toLowerCase().includes(query) ||
+      String(recipe.prepared_by || '').toLowerCase().includes(query);
+    return matchesSearch && (stationFilter === 'ALL' || recipe.station_label === stationFilter);
+  });
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(filteredRecipes.length / pageSize)));
+  const paginatedRecipes = filteredRecipes.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const currency = (value) => `UGX ${Number(value || 0).toLocaleString('en-UG', { maximumFractionDigits: 2 })}`;
+
+  return (
+    <Panel title="Recipe Costing" description="Estimated cost per serving, calculated from each recipe and current inventory item unit costs. Recipes needing missing or incompatible ingredient costs are flagged for review.">
+      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+        <Input label="Search recipe or HOD" value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Type a recipe or HOD name" />
+        <Select label="Department" value={stationFilter} onChange={(value) => { setStationFilter(value); setPage(1); }} options={[
+          { value: 'ALL', label: 'All departments' },
+          ...STATIONS.map((station) => ({ value: station, label: station })),
+        ]} />
+      </div>
+      <Table columns={[
+        { label: 'Recipe', render: (row) => <span className="font-bold text-zinc-900">{row.menu_name}</span> },
+        { label: 'Department', key: 'station_label' },
+        { label: 'Created by', key: 'prepared_by' },
+        { label: 'Ingredients', render: (row) => row.ingredient_count },
+        { label: 'Estimated cost / serving', render: (row) => <span className="font-bold">{currency(row.total_cost)}</span> },
+        { label: 'Cost status', render: (row) => row.cost_status === 'REVIEW_REQUIRED'
+          ? <span className="font-semibold text-amber-700">Review required{row.missing_cost_items ? ` (${row.missing_cost_items} item${row.missing_cost_items === 1 ? '' : 's'})` : ''}</span>
+          : <span className="font-semibold text-emerald-700">Estimated</span> },
+        { label: 'Recipe status', key: 'status' },
+      ]} rows={paginatedRecipes} empty="No recipes found across Kitchen, Bar, and Barista." />
+      {filteredRecipes.length > 0 && <Pagination
+        page={currentPage}
+        pageSize={pageSize}
+        totalRecords={filteredRecipes.length}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+      />}
     </Panel>
   );
 }
@@ -417,6 +503,8 @@ function TransferWorkflow({ items, locations, records, onAction }) {
 function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'ALL', canConfigureRecipes = false }) {
   const [search, setSearch] = useState('');
   const [stationFilter, setStationFilter] = useState(station);
+  const [menuPage, setMenuPage] = useState(1);
+  const [menuPageSize, setMenuPageSize] = useState(10);
   const [selectedMenuId, setSelectedMenuId] = useState('');
   const [ingredients, setIngredients] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -437,6 +525,11 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
     (stationFilter === 'ALL' || !String(menu.station || '').trim() || normalizeDepartment(menu.station) === normalizeDepartment(stationFilter)) &&
     menu.name.toLowerCase().includes(search.trim().toLowerCase())
   );
+  const currentMenuPage = Math.min(menuPage, Math.max(1, Math.ceil(filteredMenus.length / menuPageSize)));
+  const paginatedMenus = filteredMenus.slice(
+    (currentMenuPage - 1) * menuPageSize,
+    currentMenuPage * menuPageSize
+  );
   const recipeInventoryItems = items.filter((item) => menuStation && itemAssignedToStation(item.station, menuStation));
   const changeIngredient = (index, key, value) => setIngredients((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: value } : row));
   const selectMenu = (menu) => {
@@ -451,8 +544,9 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
         ingredient_item_id: String(ingredient.ingredient_item_id || ''),
         quantity: String(ingredient.quantity || ''),
         unit: normalizeInventoryUnit(ingredient.unit || 'g'),
+        ingredient_search: '',
       }))
-      : [{ ingredient_item_id: '', quantity: '', unit: 'g' }]);
+      : [{ ingredient_item_id: '', quantity: '', unit: 'g', ingredient_search: '' }]);
   };
 
   const submit = async (event) => {
@@ -481,8 +575,9 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
         ingredient_item_id: String(ingredient.ingredient_item_id || ''),
         quantity: String(ingredient.quantity || ''),
         unit: normalizeInventoryUnit(ingredient.unit || 'g'),
+        ingredient_search: '',
       }))
-      : [{ ingredient_item_id: '', quantity: '', unit: 'g' }]);
+      : [{ ingredient_item_id: '', quantity: '', unit: 'g', ingredient_search: '' }]);
   };
 
   const deleteRecipe = async (recipe) => {
@@ -496,11 +591,11 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
     <div className="space-y-6">
       <Panel title="Department menu items" description="Select an existing menu item to view or edit its recipe.">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
-          <Input label="Search menu items" value={search} onChange={setSearch} />
-          {station === 'ALL' && <Select label="Department" value={stationFilter} onChange={setStationFilter} options={[{ value: 'ALL', label: 'All departments' }, ...STATIONS.map((value) => ({ value, label: value }))]} />}
+          <Input label="Search menu items" value={search} onChange={(value) => { setSearch(value); setMenuPage(1); }} />
+          {station === 'ALL' && <Select label="Department" value={stationFilter} onChange={(value) => { setStationFilter(value); setMenuPage(1); }} options={[{ value: 'ALL', label: 'All departments' }, ...STATIONS.map((value) => ({ value, label: value }))]} />}
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredMenus.map((menu) => (
+          {paginatedMenus.map((menu) => (
             <button key={menu.id} type="button" onClick={() => selectMenu(menu)} className={`rounded-lg border p-3 text-left transition ${selectedMenuId === String(menu.id) ? 'border-amber-500 bg-amber-50' : 'border-zinc-200 hover:border-zinc-400'}`}>
               <span className="block font-bold text-zinc-900">{menu.name}</span>
               <span className="mt-1 block text-xs text-zinc-500">{menu.station} · {menu.recipe_status === 'ACTIVE' ? 'Active Recipe' : menu.recipe_status === 'NOT_CONFIGURED' ? 'Recipe Not Configured' : `${menu.recipe_status[0]}${menu.recipe_status.slice(1).toLowerCase()} Recipe`}</span>
@@ -508,6 +603,13 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
           ))}
           {!filteredMenus.length && <p className="py-5 text-sm text-zinc-500">No published menu items match this department and search.</p>}
         </div>
+        {filteredMenus.length > 0 && <Pagination
+          page={currentMenuPage}
+          pageSize={menuPageSize}
+          totalRecords={filteredMenus.length}
+          onPageChange={setMenuPage}
+          onPageSizeChange={(size) => { setMenuPageSize(size); setMenuPage(1); }}
+        />}
       </Panel>
       {selectedMenu && canConfigureRecipes && <Panel title={`${menuRecipes.length ? 'Update' : 'Configure'} ${selectedMenu.name}`} description="Recipe units follow each inventory item's stock unit. Set liquids to L, packets to pack, or sachets to sachet in Inventory Management; compatible recipe units will appear here.">
         <form onSubmit={submit} className="space-y-4">
@@ -515,19 +617,35 @@ function RecipeWorkflow({ items, menuItems = [], records, onAction, station = 'A
           {menuStation && !recipeInventoryItems.length && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">No inventory ingredients are assigned to {menuStation}. Assign ingredients to this station before configuring a recipe.</p>}
           {ingredients.map((ingredient, index) => {
             const stockItem = recipeInventoryItems.find((item) => String(item.id) === ingredient.ingredient_item_id);
+            const ingredientSearch = String(ingredient.ingredient_search || '').trim().toLowerCase();
+            const matchingIngredientItems = recipeInventoryItems.filter((item) =>
+              String(item.item_name || '').toLowerCase().includes(ingredientSearch) ||
+              String(item.id) === ingredient.ingredient_item_id
+            );
             return <div key={index} className="grid items-end gap-3 rounded-lg bg-zinc-50 p-3 md:grid-cols-[2fr_1fr_1fr_auto]">
+              <div className="md:col-span-4">
+                <Input
+                  label={`Find ingredient ${index + 1}`}
+                  value={ingredient.ingredient_search || ''}
+                  onChange={(value) => changeIngredient(index, 'ingredient_search', value)}
+                  placeholder="Type an ingredient name"
+                />
+              </div>
               <Select label={`Ingredient ${index + 1}`} value={ingredient.ingredient_item_id} onChange={(value) => {
                 const chosen = recipeInventoryItems.find((item) => String(item.id) === value);
-                setIngredients((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ingredient_item_id: value, unit: chosen?.unit || row.unit } : row));
-              }} options={recipeInventoryItems.map((item) => ({ value: String(item.id), label: `${item.item_name} · ${Number(item.current_quantity || 0)} ${item.unit}` }))} required />
+                setIngredients((current) => current.map((row, rowIndex) => rowIndex === index
+                  ? { ...row, ingredient_item_id: value, unit: chosen?.unit || row.unit, ingredient_search: '' }
+                  : row));
+              }} options={matchingIngredientItems.map((item) => ({ value: String(item.id), label: `${item.item_name} · ${Number(item.current_quantity || 0)} ${item.unit}` }))} required />
               <Input label="Quantity per serving" type="number" min="0.001" value={ingredient.quantity} onChange={(value) => changeIngredient(index, 'quantity', value)} required />
               <Select label="Unit" value={ingredient.unit} onChange={(value) => changeIngredient(index, 'unit', value)} options={(stockItem ? recipeUnitsForItem(stockItem) : []).map((value) => ({ value, label: value }))} />
               <button type="button" title="Remove ingredient" onClick={() => setIngredients((current) => current.filter((_, rowIndex) => rowIndex !== index))} disabled={ingredients.length === 1} className="h-10 rounded-lg border border-zinc-300 px-3 text-sm font-bold text-zinc-600 disabled:opacity-40">Remove</button>
+              {ingredientSearch && !matchingIngredientItems.some((item) => item.item_name?.toLowerCase().includes(ingredientSearch)) && <p className="text-xs text-zinc-500 md:col-span-4">No ingredients match “{ingredient.ingredient_search}”.</p>}
               <p className="text-xs text-zinc-500 md:col-span-4">Available: {stockItem ? `${Number(stockItem.current_quantity || 0)} ${stockItem.unit}` : 'Select an inventory item'}</p>
             </div>;
           })}
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" onClick={() => setIngredients((current) => [...current, { ingredient_item_id: '', quantity: '', unit: 'g' }])} disabled={!menuStation || !recipeInventoryItems.length} className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-bold text-zinc-700 disabled:opacity-40">Add ingredient</button>
+            <button type="button" onClick={() => setIngredients((current) => [...current, { ingredient_item_id: '', quantity: '', unit: 'g', ingredient_search: '' }])} disabled={!menuStation || !recipeInventoryItems.length} className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-bold text-zinc-700 disabled:opacity-40">Add ingredient</button>
             <SubmitButton disabled={saving || !menuStation || !recipeInventoryItems.length || !ingredients.length || ingredients.some((ingredient) => !recipeInventoryItems.some((item) => String(item.id) === ingredient.ingredient_item_id))}>{saving ? 'Saving…' : 'Save recipe'}</SubmitButton>
             {editingRecipeId && <span className="text-sm text-zinc-600">Changes update this recipe.</span>}
           </div>
@@ -942,6 +1060,7 @@ export default function InventoryWorkflows({ section, items, menuItems, location
   if (section === 'purchases') return <PurchaseWorkflow items={items} locations={locations} records={records} onAction={onAction} />;
   if (section === 'transfers') return <TransferWorkflow items={items} locations={locations} records={records} onAction={onAction} />;
   if (section === 'recipes') return <RecipeWorkflow items={items} menuItems={menuItems} records={records} onAction={onAction} station={station} canConfigureRecipes={canConfigureRecipes} />;
+  if (section === 'recipe-costing') return <RecipeCostingWorkflow items={items} records={records} />;
   if (section === 'consumption') return <ConsumptionWorkflow records={records} menuItems={menuItems} />;
   if (section === 'waste') return <WasteWorkflow items={items} records={records} onAction={onAction} station={station} />;
   if (section === 'stock-counts') return <CountWorkflow items={items} locations={locations} records={records} onAction={onAction} />;
