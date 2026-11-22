@@ -1,7 +1,7 @@
 // routes/orderRoutes.js
 import express from 'express';
 import pool from '../db.js';
-import { consumeSoldOrderItems, reverseConsumedOrderItem } from '../helpers/recipeConsumption.js';
+import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { buildOpenShiftOrderClause } from '../helpers/shiftVisibility.js';
 import { buildSalesRevenueBreakdown, createSalesJournalEntry } from '../helpers/accounting.js';
@@ -1624,13 +1624,6 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
       `UPDATE orders SET items = $1, total = $2 WHERE id = $3`,
       [JSON.stringify(updatedItems), newTotal, vr.order_id]
     );
-    const inventoryReversal = await reverseConsumedOrderItem({
-      queryable: client,
-      orderId: vr.order_id,
-      orderItemIndex: voidedItemIndex,
-      createdBy: approved_by || 'Accountant',
-    });
-    
     result = await client.query(
       `UPDATE void_requests 
        SET status = 'Approved', 
@@ -1648,7 +1641,7 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
       actor: approved_by || 'Accountant',
       role: 'ACCOUNTANT',
       message: `Approved void request for ${vr.item_name} (Order #${vr.order_id}) - Chef: ${vr.chef_name || 'Unknown'}`,
-      meta: { void_id: id, order_id: vr.order_id, item: vr.item_name, chef: vr.chef_name, inventory_reversal: inventoryReversal.status }
+      meta: { void_id: id, order_id: vr.order_id, item: vr.item_name, chef: vr.chef_name, inventory_treatment: 'not_restocked' }
     });
     await notifyWaiterOfVoidDecision(vr, 'Approved', approved_by || 'Accountant');
     

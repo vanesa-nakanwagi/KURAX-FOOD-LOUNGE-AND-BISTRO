@@ -45,6 +45,10 @@ function money(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
 }
 
+function salesAfterWaivedComps(sales, waivedComps) {
+  return Number(sales || 0) - Number(waivedComps || 0);
+}
+
 function isCompletedTicket(ticket) {
   return ['ready', 'served', 'paid', 'closed'].includes(String(ticket.status || '').trim().toLowerCase());
 }
@@ -219,6 +223,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           rows: [
             ['Orders', report.summary?.total_orders ?? 0],
             ['Sales', money(report.summary?.total_sales)],
+            ['Sales less waived comps', money(salesAfterWaivedComps(report.summary?.total_sales, report.summary?.complimentary_waived_amount))],
             ['Complimentary quantity', report.summary?.complimentary_quantity ?? 0],
             ['Fully waived quantity', report.summary?.fully_waived_quantity ?? 0],
             ['Partially waived quantity', report.summary?.partially_waived_quantity ?? 0],
@@ -279,6 +284,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         ['Metric', 'Value'],
         ['Orders', Number(report.summary?.total_orders || 0)],
         ['Sales (UGX)', Number(report.summary?.total_sales || 0)],
+        ['Sales less waived comps (UGX)', salesAfterWaivedComps(report.summary?.total_sales, report.summary?.complimentary_waived_amount)],
         ['Complimentary quantity', Number(report.summary?.complimentary_quantity || 0)],
         ['Fully waived quantity', Number(report.summary?.fully_waived_quantity || 0)],
         ['Partially waived quantity', Number(report.summary?.partially_waived_quantity || 0)],
@@ -393,6 +399,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           rows: [
             ['Orders', totals.total_orders],
             ['Sales', money(totals.total_sales)],
+            ['Sales less waived comps', money(salesAfterWaivedComps(totals.total_sales, totals.complimentary_waived_amount))],
             ['Complimentary quantity', totals.complimentary_quantity],
             ['Fully waived quantity', totals.fully_waived_quantity],
             ['Partially waived quantity', totals.partially_waived_quantity],
@@ -414,10 +421,10 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         },
         {
           title: 'Main departments',
-          columns: ['Department', 'Orders', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Comp collected', 'Voided', 'Voided quantity', 'Collected', 'Outstanding', 'Partial credits', 'Settled credits', 'Credit balance'],
+          columns: ['Department', 'Orders', 'Sales', 'Sales less waived comps', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Comp collected', 'Voided', 'Voided quantity', 'Collected', 'Outstanding', 'Partial credits', 'Settled credits', 'Credit balance'],
           rows: [
-            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), department.complimentary_quantity || 0, department.fully_waived_quantity || 0, department.partially_waived_quantity || 0, money(department.complimentary_waived_amount), money(department.complimentary_collected_amount), money(department.voided_total), department.voided_quantity || 0, money(department.amount_collected), money(department.outstanding_balance), money(department.partially_paid_credit_amount), money(department.settled_credit_amount), money(department.outstanding_credit_balance)]),
-            ['Total main departments', totals.total_orders, money(totals.total_sales), totals.complimentary_quantity, totals.fully_waived_quantity, totals.partially_waived_quantity, money(totals.complimentary_waived_amount), money(totals.complimentary_collected_amount), money(totals.voided_total), totals.voided_quantity, money(totals.amount_collected), money(totals.outstanding_balance), money(totals.partially_paid_credit_amount), money(totals.settled_credit_amount), money(totals.outstanding_credit_balance)],
+            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), money(salesAfterWaivedComps(department.total_sales, department.complimentary_waived_amount)), department.complimentary_quantity || 0, department.fully_waived_quantity || 0, department.partially_waived_quantity || 0, money(department.complimentary_waived_amount), money(department.complimentary_collected_amount), money(department.voided_total), department.voided_quantity || 0, money(department.amount_collected), money(department.outstanding_balance), money(department.partially_paid_credit_amount), money(department.settled_credit_amount), money(department.outstanding_credit_balance)]),
+            ['Total main departments', totals.total_orders, money(totals.total_sales), money(salesAfterWaivedComps(totals.total_sales, totals.complimentary_waived_amount)), totals.complimentary_quantity, totals.fully_waived_quantity, totals.partially_waived_quantity, money(totals.complimentary_waived_amount), money(totals.complimentary_collected_amount), money(totals.voided_total), totals.voided_quantity, money(totals.amount_collected), money(totals.outstanding_balance), money(totals.partially_paid_credit_amount), money(totals.settled_credit_amount), money(totals.outstanding_credit_balance)],
           ],
         },
         {
@@ -465,11 +472,12 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         ['KURAX DEPARTMENT SALES REPORT'],
         ['Period', fullReport.from, 'to', fullReport.to],
         [],
-        ['Department', 'Orders', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Comp collected (UGX)', 'Voided (UGX)', 'Voided quantity', 'Collected (UGX)', 'Outstanding (UGX)', 'Partial credits (UGX)', 'Settled credits (UGX)', 'Credit balance (UGX)'],
+        ['Department', 'Orders', 'Sales (UGX)', 'Sales less waived comps (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Comp collected (UGX)', 'Voided (UGX)', 'Voided quantity', 'Collected (UGX)', 'Outstanding (UGX)', 'Partial credits (UGX)', 'Settled credits (UGX)', 'Credit balance (UGX)'],
         ...departmentRows.map(row => [
           row.label,
           Number(row.total_orders || 0),
           Number(row.total_sales || 0),
+          salesAfterWaivedComps(row.total_sales, row.complimentary_waived_amount),
           Number(row.complimentary_quantity || 0),
           Number(row.fully_waived_quantity || 0),
           Number(row.partially_waived_quantity || 0),
@@ -729,6 +737,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[1720px] text-left text-sm">
             <thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr>
               <th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th>
+              <th className="p-3">Sales less waived comps</th>
               <th className="p-3">Comp qty</th><th className="p-3">Fully waived qty</th>
               <th className="p-3">Partially waived qty</th><th className="p-3">Comp waived</th>
               <th className="p-3">Comp collected</th><th className="p-3">Voided</th>
@@ -737,6 +746,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             </tr></thead>
             <tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200">
               <td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td>
+              <td className="p-3">{money(salesAfterWaivedComps(row.total_sales, row.complimentary_waived_amount))}</td>
               <td className="p-3">{row.complimentary_quantity || 0}</td>
               <td className="p-3">{row.fully_waived_quantity || 0}</td><td className="p-3">{row.partially_waived_quantity || 0}</td>
               <td className="p-3">{money(row.complimentary_waived_amount)}</td>
@@ -749,6 +759,10 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             <tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr>
               <td className="p-3">All departments</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.total_orders || 0), 0)}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.total_sales || 0), 0))}</td>
+              <td className="p-3">{money(salesAfterWaivedComps(
+                departments.reduce((total, row) => total + Number(row.total_sales || 0), 0),
+                departments.reduce((total, row) => total + Number(row.complimentary_waived_amount || 0), 0),
+              ))}</td>
               <td className="p-3">{departments.reduce((total, row) => total + Number(row.complimentary_quantity || 0), 0)}</td>
               <td className="p-3">{departments.reduce((total, row) => total + Number(row.fully_waived_quantity || 0), 0)}</td>
               <td className="p-3">{departments.reduce((total, row) => total + Number(row.partially_waived_quantity || 0), 0)}</td>
@@ -765,6 +779,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[
               ['Orders', summary.total_orders],
               ['Sales', money(summary.total_sales)],
+              ['Sales less waived comps', money(salesAfterWaivedComps(summary.total_sales, summary.complimentary_waived_amount))],
               ['Complimentary quantity', summary.complimentary_quantity || 0],
               ['Fully waived quantity', summary.fully_waived_quantity || 0],
               ['Partially waived quantity', summary.partially_waived_quantity || 0],
