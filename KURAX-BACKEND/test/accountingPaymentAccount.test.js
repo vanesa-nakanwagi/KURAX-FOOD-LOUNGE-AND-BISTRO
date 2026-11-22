@@ -8,12 +8,21 @@ import {
   buildAccountTransferJournalLines,
   buildSalesRevenueBreakdown,
   calculateCashFlowTotals,
+  DEFAULT_ACCOUNTS,
   getAccountTransactionOptions,
   resolveAccountTransferTargets,
   resolveIncomeStatementRevenueCode,
   resolvePaymentDebitAccountCode,
   resolveRevenueAccountCode,
 } from '../helpers/accounting.js';
+
+test('default chart of accounts keeps MTN and Airtel without the generic mobile-money account', () => {
+  const accountCodes = DEFAULT_ACCOUNTS.map(({ code }) => code);
+
+  assert.equal(accountCodes.includes('1003'), false);
+  assert.equal(accountCodes.includes('1006'), true);
+  assert.equal(accountCodes.includes('1007'), true);
+});
 
 test('accounting entry groups distinguish COGS journals, sales journals, and other entries', () => {
   const entryTypeSql = accountingEntryTypeSql();
@@ -73,7 +82,9 @@ test('non-card receipts use their payment method account', () => {
   assert.equal(resolvePaymentDebitAccountCode('MTN Mobile Money'), '1006');
   assert.equal(resolvePaymentDebitAccountCode('Airtel'), '1007');
   assert.equal(resolvePaymentDebitAccountCode('Airtel Money'), '1007');
-  assert.equal(resolvePaymentDebitAccountCode('Mobile Money'), '1003');
+  assert.throws(() => resolvePaymentDebitAccountCode('Mobile Money'), {
+    message: 'Unsupported payment method: Mobile Money',
+  });
   assert.equal(resolvePaymentDebitAccountCode('Credit'), '1101');
 });
 

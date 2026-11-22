@@ -6,7 +6,6 @@ import { getOrderItemPayableAmount } from './complimentaryItems.js';
 export const DEFAULT_ACCOUNTS = [
   { code: '1001', name: 'Counter Cash', category: 'Asset', account_type: 'Cash', normal_balance: 'Debit', description: 'Cash on hand' },
   { code: '1002', name: 'Bank', category: 'Asset', account_type: 'Bank', normal_balance: 'Debit', description: 'Operating bank account' },
-  { code: '1003', name: 'Mobile Money', category: 'Asset', account_type: 'Mobile Money', normal_balance: 'Debit', description: 'Mobile money float' },
   { code: '1004', name: 'Card Settlement Clearing', category: 'Asset', account_type: 'Clearing', normal_balance: 'Debit', description: 'Card receipts awaiting settlement into the operating bank' },
   { code: '1005', name: 'Kurax Savings', category: 'Asset', account_type: 'Savings', normal_balance: 'Debit', description: 'Longer-term cash reserve account for Kurax savings and transfers' },
   { code: '1006', name: 'MTN Mobile Money', category: 'Asset', account_type: 'Mobile Money', normal_balance: 'Debit', description: 'MTN mobile money receipts and payments' },
@@ -122,9 +121,6 @@ export function resolvePaymentDebitAccountCode(paymentMethod = 'Cash', settlemen
   const accountByMethod = {
     cash: '1001',
     mtn: '1006',
-    momo: '1003',
-    mobile: '1003',
-    mobilemoney: '1003',
     airtel: '1007',
     momomtn: '1006',
     momomtnmobilemoney: '1006',

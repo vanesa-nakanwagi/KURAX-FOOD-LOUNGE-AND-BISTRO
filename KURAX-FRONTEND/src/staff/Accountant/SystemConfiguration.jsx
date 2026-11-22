@@ -200,7 +200,7 @@ export default function SystemConfiguration({
           <label className={fieldLabelClass}>
             Payment account
             <select value={paymentAccountCode} onChange={(event) => setPaymentAccountCode(event.target.value)} className={fieldClass}>
-              <option value="1001">Counter Cash</option><option value="1002">Bank</option><option value="1003">Mobile Money</option>
+              <option value="1001">Counter Cash</option><option value="1002">Bank</option><option value="1006">MTN Mobile Money</option><option value="1007">Airtel Money</option>
             </select>
           </label>
           <label className={fieldLabelClass}>

@@ -211,7 +211,6 @@ function getPaymentAccount(paymentMethod) {
   if (method.includes('bank')) return '1002';
   if (method.includes('mtn')) return '1006';
   if (method.includes('airtel')) return '1007';
-  if (method.includes('momo') || method.includes('mobile')) return '1003';
   if (method.includes('payable') || method.includes('supplier') || method.includes('credit')) return '2001';
   return '1001';
 }
@@ -732,6 +731,13 @@ router.post('/purchases', async (req, res) => {
   const supplierName = payload.supplier_name || payload.supplier || 'KURAX PRIMARY SUPPLIER';
   const businessDate = payload.business_date || currentBusinessDate();
   const actor = req.user?.name || payload.posted_by || 'Accountant';
+  const normalizedPaymentMethod = String(paymentMethod).toLowerCase();
+
+  if ((normalizedPaymentMethod.includes('momo') || normalizedPaymentMethod.includes('mobile'))
+    && !normalizedPaymentMethod.includes('mtn')
+    && !normalizedPaymentMethod.includes('airtel')) {
+    return res.status(400).json({ error: 'Choose MTN or Airtel for a mobile-money payment.' });
+  }
 
   if (!items.length || items.some((item) => !item || typeof item !== 'object')) {
     return res.status(400).json({ error: 'At least one item is required.' });

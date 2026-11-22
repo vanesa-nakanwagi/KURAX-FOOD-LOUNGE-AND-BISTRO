@@ -215,10 +215,14 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
   useEffect(() => { loadAudit(); }, [loadAudit]);
 
   const cashAccounts = data?.accounts || [];
+  const entryCashAccounts = cashAccounts.filter((account) => account.code !== "1003");
   const counterpartAccounts = data?.counterpart_accounts || [];
   const capabilities = data?.capabilities || {};
   const transactionCategories = data?.categories?.[form?.transaction_type] || [];
   const formCashAccount = cashAccounts.find((account) => account.code === form?.cash_account_code);
+  const selectableCashAccounts = form?.id && formCashAccount?.code === "1003"
+    ? [formCashAccount, ...entryCashAccounts]
+    : entryCashAccounts;
   const paymentMethods = methodsForAccount(formCashAccount);
   const filteredCounterparts = useMemo(
     () => eligibleCounterparts(counterpartAccounts, form?.transaction_type, form?.category),
@@ -237,8 +241,8 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
 
   useEffect(() => {
     if (!form) return;
-    if (!cashAccounts.some((account) => account.code === form.cash_account_code) && cashAccounts.length) {
-      const defaultAccount = cashAccounts[0];
+    if (!selectableCashAccounts.some((account) => account.code === form.cash_account_code) && selectableCashAccounts.length) {
+      const defaultAccount = selectableCashAccounts[0];
       setForm((current) => ({
         ...current,
         cash_account_code: defaultAccount.code,
@@ -249,7 +253,7 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
     if (!paymentMethods.includes(form.payment_method) && paymentMethods.length) {
       setForm((current) => ({ ...current, payment_method: paymentMethods[0] }));
     }
-  }, [cashAccounts, form, paymentMethods]);
+  }, [form, paymentMethods, selectableCashAccounts]);
 
   useEffect(() => {
     if (!form || !filteredCounterparts.length) return;
@@ -284,7 +288,7 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
 
   const startNewTransaction = (type) => {
     const initial = emptyTransaction(type);
-    const defaultCashAccount = cashAccounts.find((account) => account.code === "1001") || cashAccounts[0];
+    const defaultCashAccount = entryCashAccounts.find((account) => account.code === "1001") || entryCashAccounts[0];
     if (defaultCashAccount) {
       initial.cash_account_code = defaultCashAccount.code;
       initial.payment_method = methodsForAccount(defaultCashAccount)[0] || "";
@@ -609,7 +613,7 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
                   payment_method: methodsForAccount(account)[0] || "",
                 }));
               }} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case text-gray-900">
-                {cashAccounts.map((account) => <option key={account.code} value={account.code}>{account.name}</option>)}
+                {selectableCashAccounts.map((account) => <option key={account.code} value={account.code}>{account.name}</option>)}
               </select>
             </label>
             <label className="text-[10px] font-bold uppercase text-gray-500">Category account
