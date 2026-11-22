@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import pool from '../db.js';
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, character => ({
@@ -32,14 +33,57 @@ export function getSmtpSettings(env = process.env) {
   return { host, port, secure: port === 465, auth: { user, pass }, from };
 }
 
+export async function ensureSmtpSettingsTable(env = process.env) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.smtp_settings (
+      id SMALLINT PRIMARY KEY CHECK (id = 1),
+      smtp_host TEXT NOT NULL,
+      smtp_port INTEGER NOT NULL,
+      smtp_user TEXT NOT NULL,
+      smtp_pass TEXT NOT NULL,
+      smtp_from TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    INSERT INTO public.smtp_settings
+      (id, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from)
+    VALUES (1, $1, $2, $3, $4, $5)
+    ON CONFLICT (id) DO NOTHING
+  `, [
+    String(env.SMTP_HOST || '').trim(),
+    Number(env.SMTP_PORT || 587),
+    String(env.SMTP_USER || '').trim(),
+    String(env.SMTP_PASS || ''),
+    String(env.SMTP_FROM || 'Kurax Food Lounge & Bistro').replace(/[\r\n]/g, '').trim(),
+  ]);
+}
+
+export async function getDatabaseSmtpSettings(env = process.env) {
+  const result = await pool.query(
+    `SELECT smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from
+     FROM public.smtp_settings
+     WHERE id = 1`
+  );
+  if (!result.rows[0]) return getSmtpSettings(env);
+  return getSmtpSettings({
+    SMTP_HOST: result.rows[0].smtp_host,
+    SMTP_PORT: result.rows[0].smtp_port,
+    SMTP_USER: result.rows[0].smtp_user,
+    SMTP_PASS: result.rows[0].smtp_pass,
+    SMTP_FROM: result.rows[0].smtp_from,
+  });
+}
+
 export async function sendAccountPinEmail({
   name,
   email,
   role,
   pin,
   department = 'Kurax staff',
-}, { env = process.env, transporter } = {}) {
-  const settings = getSmtpSettings(env);
+}, { env = process.env, transporter, smtpSettings } = {}) {
+  const settings = smtpSettings
+    || (env === process.env ? await getDatabaseSmtpSettings(env) : getSmtpSettings(env));
   const mailTransport = transporter || nodemailer.createTransport({
     host: settings.host,
     port: settings.port,

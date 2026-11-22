@@ -897,3 +897,13 @@ CREATE TABLE IF NOT EXISTS restaurant_production_pin_attempts (
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- DONE
 -- ═══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS public.smtp_settings (
+  id SMALLINT PRIMARY KEY CHECK (id = 1),
+  smtp_host TEXT NOT NULL,
+  smtp_port INTEGER NOT NULL,
+  smtp_user TEXT NOT NULL,
+  smtp_pass TEXT NOT NULL,
+  smtp_from TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+

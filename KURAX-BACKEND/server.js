@@ -35,6 +35,8 @@ import reportRoutes from './routes/reportRoutes.js';
 import comboRoutes from './routes/comboRoutes.js';
 import publicOrderRoutes from './routes/publicOrderRoutes.js';
 import productionRoutes, { initProductionTables } from './routes/productionRoutes.js';
+import smtpRoutes from './routes/smtpRoutes.js';
+import { ensureSmtpSettingsTable } from './helpers/smtp.js';
 
 if (!isValidShishaPinEncryptionKey()) {
   console.warn('Shisha PIN encryption is disabled: configure SHISHA_PIN_ENCRYPTION_KEY as 64 hexadecimal characters.');
@@ -129,6 +131,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/combos', comboRoutes);
 app.use('/api/public-orders', publicOrderRoutes);
 app.use('/api/production', productionRoutes);
+app.use('/api/settings/smtp', smtpRoutes);
 
 // 6. HEALTH CHECK
 app.get('/api/health', (req, res) => {
@@ -160,9 +163,8 @@ async function startServer() {
   console.log('Accounting schema verified/initialized');
   await initComplimentaryTables();
   console.log('Complimentary item correction schema verified/initialized');
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('Staff and Shisha PIN emails are unavailable: configure SMTP_HOST, SMTP_USER, and SMTP_PASS in the backend environment.');
-  }
+  await ensureSmtpSettingsTable();
+  console.log('SMTP settings table verified and initialized');
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT} on 0.0.0.0`);
   });

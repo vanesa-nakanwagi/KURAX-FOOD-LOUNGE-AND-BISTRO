@@ -101,22 +101,28 @@ async function inventoryReport(station, from, to) {
 }
 
 async function menuItemReport(department, from, to) {
-  const [salesResult, voidedResult] = await Promise.all([pool.query(
-    `SELECT item->>'name' AS menu_item,
+  const complimentaryOriginalAmount = `COALESCE(
+    NULLIF(source_item.item->>'originalLineAmount','')::numeric,
+    COALESCE(NULLIF(source_item.item->>'originalUnitPrice','')::numeric,
+      NULLIF(source_item.item->>'price','')::numeric, NULLIF(source_item.item->>'unit_price','')::numeric,0)
+      * COALESCE(NULLIF(source_item.item->>'quantity','')::numeric,1)
+  )`;
+  const [salesResult, voidedResult, complimentaryResult] = await Promise.all([pool.query(
+    `SELECT ticket_items.item->>'name' AS menu_item,
             COALESCE(SUM(COALESCE(
-              NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
-              COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
-                * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
+              NULLIF(ticket_items.item->>'line_total','')::numeric, NULLIF(ticket_items.item->>'lineTotal','')::numeric,
+              COALESCE(NULLIF(ticket_items.item->>'price','')::numeric, NULLIF(ticket_items.item->>'unit_price','')::numeric)
+                * COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)
             )),0) AS sales,
-            COALESCE(SUM(COALESCE(NULLIF(item->>'quantity','')::numeric,1)),0) AS quantity
+            COALESCE(SUM(COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)),0) AS quantity
      FROM public.${department.table} t
      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
      WHERE t.ticket_date BETWEEN $1::date AND $2::date
-       AND COALESCE(item->>'voidProcessed','false') <> 'true'
-       AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
-       AND ${approvedVoidExclusion('t.order_id')}
-       AND ${department.paidItemFilter}
-     GROUP BY item->>'name'
+       AND COALESCE(ticket_items.item->>'voidProcessed','false') <> 'true'
+       AND UPPER(COALESCE(ticket_items.item->>'status','')) <> 'VOIDED'
+       AND ${approvedVoidExclusion('t.order_id', 'ticket_items.item')}
+       AND ${department.paidItemFilter.replaceAll('item->>', 'ticket_items.item->>')}
+     GROUP BY ticket_items.item->>'name'
      ORDER BY sales DESC, menu_item`,
     [from, to]
   ), pool.query(
@@ -136,6 +142,45 @@ async function menuItemReport(department, from, to) {
        )
      GROUP BY vr.item_name`,
     [from, to]
+  ), pool.query(
+   `SELECT ticket_items.item->>'name' AS menu_item,
+           COALESCE(SUM(COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)) FILTER (
+              WHERE COALESCE(source_item.item->>'complimentary','false') = 'true'
+            ),0) AS complimentary_quantity,
+           COALESCE(SUM(COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)) FILTER (
+              WHERE COALESCE(source_item.item->>'complimentary','false') = 'true'
+                AND COALESCE(NULLIF(source_item.item->>'complimentaryWaivedAmount','')::numeric,0)
+                  >= ${complimentaryOriginalAmount}
+            ),0) AS fully_waived_quantity,
+           COALESCE(SUM(COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)) FILTER (
+              WHERE COALESCE(source_item.item->>'complimentary','false') = 'true'
+                AND COALESCE(NULLIF(source_item.item->>'complimentaryWaivedAmount','')::numeric,0)
+                  < ${complimentaryOriginalAmount}
+            ),0) AS partially_waived_quantity,
+            COALESCE(SUM(COALESCE(NULLIF(source_item.item->>'complimentaryWaivedAmount','')::numeric,0))
+              FILTER (WHERE COALESCE(source_item.item->>'complimentary','false') = 'true'),0) AS waived_amount
+     FROM public.${department.table} t
+     LEFT JOIN public.orders o ON o.id=t.order_id
+     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb))
+       WITH ORDINALITY AS ticket_items(item, ordinality)
+     LEFT JOIN LATERAL (
+       SELECT order_items.item
+       FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb))
+         WITH ORDINALITY AS order_items(item, ordinality)
+       WHERE order_items.ordinality - 1 = COALESCE(
+         NULLIF(ticket_items.item->>'_orderItemIndex','')::int,
+         ticket_items.ordinality - 1
+       )
+       LIMIT 1
+     ) source_item ON true
+     WHERE t.ticket_date BETWEEN $1::date AND $2::date
+       AND COALESCE(ticket_items.item->>'voidProcessed','false') <> 'true'
+       AND UPPER(COALESCE(ticket_items.item->>'status','')) <> 'VOIDED'
+       AND ${approvedVoidExclusion('t.order_id', 'ticket_items.item')}
+       AND ${department.paidItemFilter.replaceAll('item->>', 'ticket_items.item->>')}
+       AND COALESCE(source_item.item->>'complimentary','false') = 'true'
+     GROUP BY ticket_items.item->>'name'`,
+    [from, to]
   )]);
   const rows = new Map();
   for (const row of salesResult.rows) {
@@ -145,6 +190,10 @@ async function menuItemReport(department, from, to) {
       quantity: Number(row.quantity || 0),
       voided_total: 0,
       voided_quantity: 0,
+      complimentary_quantity: 0,
+      fully_waived_quantity: 0,
+      partially_waived_quantity: 0,
+      complimentary_waived_amount: 0,
     });
   }
   for (const row of voidedResult.rows) {
@@ -154,9 +203,27 @@ async function menuItemReport(department, from, to) {
       quantity: 0,
       voided_total: 0,
       voided_quantity: 0,
+      complimentary_quantity: 0,
+      fully_waived_quantity: 0,
+      partially_waived_quantity: 0,
+      complimentary_waived_amount: 0,
     };
     menuItem.voided_total = Number(row.voided_total || 0);
     menuItem.voided_quantity = Number(row.voided_quantity || 0);
+    rows.set(row.menu_item, menuItem);
+  }
+  for (const row of complimentaryResult.rows) {
+    const menuItem = rows.get(row.menu_item) || {
+      menu_item: row.menu_item,
+      sales: 0,
+      quantity: 0,
+      voided_total: 0,
+      voided_quantity: 0,
+    };
+    menuItem.complimentary_quantity = Number(row.complimentary_quantity || 0);
+    menuItem.fully_waived_quantity = Number(row.fully_waived_quantity || 0);
+    menuItem.partially_waived_quantity = Number(row.partially_waived_quantity || 0);
+    menuItem.complimentary_waived_amount = Number(row.waived_amount || 0);
     rows.set(row.menu_item, menuItem);
   }
   return [...rows.values()].sort((a, b) => b.sales - a.sales || a.menu_item.localeCompare(b.menu_item));
@@ -174,8 +241,8 @@ async function departmentVoidedTotals(department, from, to) {
          FROM public.${department.table} t
          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
          WHERE t.order_id = vr.order_id
-           AND LOWER(BTRIM(COALESCE(item->>'name',''))) = LOWER(BTRIM(vr.item_name))
-           AND ${department.paidItemFilter}
+           AND LOWER(BTRIM(COALESCE(ticket_items.item->>'name',''))) = LOWER(BTRIM(vr.item_name))
+           AND ${department.paidItemFilter.replaceAll('item->>', 'ticket_items.item->>')}
        )`,
     [from, to]
   );
@@ -252,22 +319,22 @@ async function departmentCreditReport(department, from, to) {
 
 function departmentPaymentJoin(department) {
   const itemAmount = `COALESCE(
-    NULLIF(item->>'line_total','')::numeric,
-    NULLIF(item->>'lineTotal','')::numeric,
-    COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
-      * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
+    NULLIF(source_items.item->>'line_total','')::numeric,
+    NULLIF(source_items.item->>'lineTotal','')::numeric,
+    COALESCE(NULLIF(source_items.item->>'price','')::numeric, NULLIF(source_items.item->>'unit_price','')::numeric)
+      * COALESCE(NULLIF(source_items.item->>'quantity','')::numeric,1)
   )`;
   const payableItemAmount = `CASE
-    WHEN COALESCE(item->>'complimentary','false') = 'true' THEN COALESCE(
-      NULLIF(item->>'payableAmount','')::numeric,
+    WHEN COALESCE(source_items.item->>'complimentary','false') = 'true' THEN COALESCE(
+      NULLIF(source_items.item->>'payableAmount','')::numeric,
       GREATEST(
         0,
         COALESCE(
-          NULLIF(item->>'originalLineAmount','')::numeric,
-          COALESCE(NULLIF(item->>'originalUnitPrice','')::numeric,
-            NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric, 0)
-            * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
-        ) - COALESCE(NULLIF(item->>'complimentaryWaivedAmount','')::numeric,0)
+          NULLIF(source_items.item->>'originalLineAmount','')::numeric,
+          COALESCE(NULLIF(source_items.item->>'originalUnitPrice','')::numeric,
+            NULLIF(source_items.item->>'price','')::numeric, NULLIF(source_items.item->>'unit_price','')::numeric, 0)
+            * COALESCE(NULLIF(source_items.item->>'quantity','')::numeric,1)
+        ) - COALESCE(NULLIF(source_items.item->>'complimentaryWaivedAmount','')::numeric,0)
       )
     )
     ELSE ${itemAmount}
@@ -275,31 +342,32 @@ function departmentPaymentJoin(department) {
   const hasCredit = `EXISTS (
     SELECT 1 FROM public.credits credit
     WHERE credit.order_id = o.id
-      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(item->>'name','')))
+      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(source_items.item->>'name','')))
   )`;
   const creditPaid = `COALESCE((
     SELECT SUM(credit.amount_paid) FROM public.credits credit
     WHERE credit.order_id = o.id
-      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(item->>'name','')))
+      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(source_items.item->>'name','')))
   ),0)`;
+  const itemFilter = department.paidItemFilter.replaceAll('item->>', 'source_items.item->>');
 
   return `LEFT JOIN LATERAL (
     SELECT COALESCE(SUM(CASE
       WHEN ${hasCredit} THEN LEAST(${payableItemAmount}, ${creditPaid})
-      WHEN item->>'_rowPaid'='true' THEN ${payableItemAmount}
+      WHEN source_items.item->>'_rowPaid'='true' THEN ${payableItemAmount}
       ELSE LEAST(${payableItemAmount}, COALESCE(
-        NULLIF(item->>'paidAmount','')::numeric,
-        NULLIF(item->>'partial_amount_paid','')::numeric,
+        NULLIF(source_items.item->>'paidAmount','')::numeric,
+        NULLIF(source_items.item->>'partial_amount_paid','')::numeric,
         0
       ))
     END),0) AS collected_amount
     FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb)) AS source_items(item)
-    WHERE (item->>'_rowPaid'='true' OR item->>'is_partially_paid'='true'
-      OR item->>'creditRequested'='true' OR ${hasCredit})
-      AND COALESCE(item->>'voidProcessed','false') <> 'true'
-      AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
-      AND ${approvedVoidExclusion('o.id')}
-      AND ${department.paidItemFilter}
+    WHERE (source_items.item->>'_rowPaid'='true' OR source_items.item->>'is_partially_paid'='true'
+      OR source_items.item->>'creditRequested'='true' OR ${hasCredit})
+      AND COALESCE(source_items.item->>'voidProcessed','false') <> 'true'
+      AND UPPER(COALESCE(source_items.item->>'status','')) <> 'VOIDED'
+      AND ${approvedVoidExclusion('o.id', 'source_items.item')}
+      AND ${itemFilter}
   ) paid ON true`;
 }
 
@@ -311,14 +379,60 @@ function departmentSalesJoin(department) {
     COALESCE(NULLIF(${ticketItem}->>'price','')::numeric, NULLIF(${ticketItem}->>'unit_price','')::numeric)
       * COALESCE(NULLIF(${ticketItem}->>'quantity','')::numeric,1)
   )`;
+  const complimentaryOriginalAmount = `COALESCE(
+    NULLIF(source_item.item->>'originalLineAmount','')::numeric,
+    COALESCE(NULLIF(source_item.item->>'originalUnitPrice','')::numeric,
+      NULLIF(source_item.item->>'price','')::numeric, NULLIF(source_item.item->>'unit_price','')::numeric,0)
+      * COALESCE(NULLIF(source_item.item->>'quantity','')::numeric,1)
+  )`;
+  const complimentaryWaiver = `COALESCE(NULLIF(source_item.item->>'complimentaryWaivedAmount','')::numeric,0)`;
+  const complimentaryPayable = `GREATEST(${complimentaryOriginalAmount} - ${complimentaryWaiver},0)`;
+  const hasComplimentaryCredit = `EXISTS (
+    SELECT 1 FROM public.credits credit
+    WHERE credit.order_id = o.id
+      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(source_item.item->>'name','')))
+  )`;
+  const complimentaryCreditPaid = `COALESCE((
+    SELECT SUM(credit.amount_paid) FROM public.credits credit
+    WHERE credit.order_id = o.id
+      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(source_item.item->>'name','')))
+  ),0)`;
+  const complimentaryCollected = `CASE
+    WHEN ${hasComplimentaryCredit} THEN LEAST(${complimentaryPayable}, ${complimentaryCreditPaid})
+    WHEN source_item.item->>'_rowPaid'='true' THEN ${complimentaryPayable}
+    ELSE LEAST(${complimentaryPayable}, COALESCE(
+      NULLIF(source_item.item->>'paidAmount','')::numeric,
+      NULLIF(source_item.item->>'partial_amount_paid','')::numeric,
+      0
+    ))
+  END`;
   const itemFilter = department.paidItemFilter.replaceAll('item->>', `${ticketItem}->>`);
   return `LEFT JOIN LATERAL (
     SELECT COALESCE(SUM(${ticketAmount}),0) AS sales_amount,
+      COALESCE(SUM(COALESCE(NULLIF(${ticketItem}->>'quantity','')::numeric,1)) FILTER (
+        WHERE COALESCE(source_item.item->>'complimentary','false') = 'true'
+      ),0) AS complimentary_quantity,
+      COALESCE(SUM(COALESCE(NULLIF(${ticketItem}->>'quantity','')::numeric,1)) FILTER (
+        WHERE COALESCE(source_item.item->>'complimentary','false') = 'true'
+          AND ${complimentaryWaiver} >= ${complimentaryOriginalAmount}
+      ),0) AS fully_waived_quantity,
+      COALESCE(SUM(COALESCE(NULLIF(${ticketItem}->>'quantity','')::numeric,1)) FILTER (
+        WHERE COALESCE(source_item.item->>'complimentary','false') = 'true'
+          AND ${complimentaryWaiver} < ${complimentaryOriginalAmount}
+      ),0) AS partially_waived_quantity,
       COALESCE(SUM(CASE
         WHEN COALESCE(source_item.item->>'complimentary','false') = 'true'
         THEN COALESCE(NULLIF(source_item.item->>'complimentaryWaivedAmount','')::numeric,0)
         ELSE 0
-      END),0) AS waived_amount
+      END),0) AS waived_amount,
+      COALESCE(SUM(CASE
+        WHEN COALESCE(source_item.item->>'complimentary','false') = 'true' THEN ${complimentaryPayable}
+        ELSE 0
+      END),0) AS complimentary_payable_amount,
+      COALESCE(SUM(CASE
+        WHEN COALESCE(source_item.item->>'complimentary','false') = 'true' THEN ${complimentaryCollected}
+        ELSE 0
+      END),0) AS complimentary_collected_amount
     FROM jsonb_array_elements(COALESCE(t.items,'[]'::jsonb))
       WITH ORDINALITY AS ticket_items(item, ordinality)
     LEFT JOIN LATERAL (
@@ -645,6 +759,13 @@ router.get('/reports/consolidated', async (req, res) => {
       const [result, performance, menuItems, inventory, creditSummary, voidedTotals, productionPerformance] = await Promise.all([
         pool.query(
         `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(sales.sales_amount),0) AS total_sales,
+          COALESCE(SUM(sales.complimentary_quantity),0) AS complimentary_quantity,
+          COALESCE(SUM(sales.fully_waived_quantity),0) AS fully_waived_quantity,
+          COALESCE(SUM(sales.partially_waived_quantity),0) AS partially_waived_quantity,
+          COALESCE(SUM(sales.waived_amount),0) AS complimentary_waived_amount,
+          COALESCE(SUM(sales.complimentary_payable_amount),0) AS complimentary_payable_amount,
+          COALESCE(SUM(sales.complimentary_collected_amount),0) AS complimentary_collected_amount,
+          COALESCE(SUM(GREATEST(sales.complimentary_payable_amount - sales.complimentary_collected_amount,0)),0) AS complimentary_outstanding_amount,
           COALESCE(SUM(LEAST(GREATEST(sales.sales_amount - sales.waived_amount,0), paid.collected_amount)),0) AS amount_collected,
           COALESCE(SUM(GREATEST(sales.sales_amount - sales.waived_amount
             - LEAST(GREATEST(sales.sales_amount - sales.waived_amount,0), paid.collected_amount),0)),0) AS outstanding_balance
@@ -655,23 +776,23 @@ router.get('/reports/consolidated', async (req, res) => {
         [range.from, range.to]
         ),
         pool.query(
-          `SELECT COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) AS staff_name,
+          `SELECT COALESCE(NULLIF(ticket_items.item->>'assignedTo',''), NULLIF(ticket_items.item->>'assigned_to','')) AS staff_name,
             COUNT(*)::int AS items_assigned,
             COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(t.status,''))) IN ('ready','served','paid','closed'))::int AS completed_items,
             COALESCE(SUM(COALESCE(
-              NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
-              COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
-                * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
+              NULLIF(ticket_items.item->>'line_total','')::numeric, NULLIF(ticket_items.item->>'lineTotal','')::numeric,
+              COALESCE(NULLIF(ticket_items.item->>'price','')::numeric, NULLIF(ticket_items.item->>'unit_price','')::numeric)
+                * COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)
             )),0) AS total_sales
            FROM public.${department.table} t
            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
            WHERE t.ticket_date BETWEEN $1::date AND $2::date
-             AND COALESCE(item->>'voidProcessed','false') <> 'true'
-             AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
-             AND ${approvedVoidExclusion('t.order_id')}
-             AND COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) IS NOT NULL
-             AND ${department.paidItemFilter}
-           GROUP BY COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to',''))
+             AND COALESCE(ticket_items.item->>'voidProcessed','false') <> 'true'
+             AND UPPER(COALESCE(ticket_items.item->>'status','')) <> 'VOIDED'
+             AND ${approvedVoidExclusion('t.order_id', 'ticket_items.item')}
+             AND COALESCE(NULLIF(ticket_items.item->>'assignedTo',''), NULLIF(ticket_items.item->>'assigned_to','')) IS NOT NULL
+             AND ${department.paidItemFilter.replaceAll('item->>', 'ticket_items.item->>')}
+           GROUP BY COALESCE(NULLIF(ticket_items.item->>'assignedTo',''), NULLIF(ticket_items.item->>'assigned_to',''))
            ORDER BY total_sales DESC, 1`,
           [range.from, range.to]
         ),
@@ -693,6 +814,13 @@ router.get('/reports/consolidated', async (req, res) => {
         label: department.label,
         ...summary,
         total_sales: Number(summary.total_sales || 0),
+        complimentary_quantity: Number(summary.complimentary_quantity || 0),
+        fully_waived_quantity: Number(summary.fully_waived_quantity || 0),
+        partially_waived_quantity: Number(summary.partially_waived_quantity || 0),
+        complimentary_waived_amount: Number(summary.complimentary_waived_amount || 0),
+        complimentary_payable_amount: Number(summary.complimentary_payable_amount || 0),
+        complimentary_collected_amount: Number(summary.complimentary_collected_amount || 0),
+        complimentary_outstanding_amount: Number(summary.complimentary_outstanding_amount || 0),
         ...inventoryData,
         ...creditSummary,
         ...voidedTotals,
@@ -739,6 +867,13 @@ router.get('/reports/consolidated', async (req, res) => {
     const totals = reports.reduce((total, row) => ({
       total_orders: total.total_orders + Number(row.total_orders || 0),
       total_sales: total.total_sales + Number(row.total_sales || 0),
+      complimentary_quantity: total.complimentary_quantity + Number(row.complimentary_quantity || 0),
+      fully_waived_quantity: total.fully_waived_quantity + Number(row.fully_waived_quantity || 0),
+      partially_waived_quantity: total.partially_waived_quantity + Number(row.partially_waived_quantity || 0),
+      complimentary_waived_amount: total.complimentary_waived_amount + Number(row.complimentary_waived_amount || 0),
+      complimentary_payable_amount: total.complimentary_payable_amount + Number(row.complimentary_payable_amount || 0),
+      complimentary_collected_amount: total.complimentary_collected_amount + Number(row.complimentary_collected_amount || 0),
+      complimentary_outstanding_amount: total.complimentary_outstanding_amount + Number(row.complimentary_outstanding_amount || 0),
       voided_total: total.voided_total + Number(row.voided_total || 0),
       voided_quantity: total.voided_quantity + Number(row.voided_quantity || 0),
       production_voided_items: total.production_voided_items + Number(row.production_voided_items || 0),
@@ -757,7 +892,7 @@ router.get('/reports/consolidated', async (req, res) => {
       settled_credit_amount: total.settled_credit_amount + Number(row.settled_credit_amount || 0),
       outstanding_credit_count: total.outstanding_credit_count + Number(row.outstanding_credit_count || 0),
       outstanding_credit_balance: total.outstanding_credit_balance + Number(row.outstanding_credit_balance || 0),
-    }), { total_orders: 0, total_sales: 0, voided_total: 0, voided_quantity: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, partially_paid_credit_balance: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
+    }), { total_orders: 0, total_sales: 0, complimentary_quantity: 0, fully_waived_quantity: 0, partially_waived_quantity: 0, complimentary_waived_amount: 0, complimentary_payable_amount: 0, complimentary_collected_amount: 0, complimentary_outstanding_amount: 0, voided_total: 0, voided_quantity: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, partially_paid_credit_balance: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
     const response = {
       ...range,
       departments: reports,
@@ -770,7 +905,7 @@ router.get('/reports/consolidated', async (req, res) => {
     }
     return res.json(response);
   } catch (error) {
-    console.error('Consolidated department report error:', error.message);
+    console.error('Consolidated department report error:', error.message, error.detail || '', error.where || '');
     return fail(res, 500, 'Could not load consolidated department reports.');
   }
 });
@@ -789,6 +924,13 @@ router.get('/:department/reports', async (req, res) => {
       pool.query(
         `SELECT COUNT(*)::int AS total_orders,
           COALESCE(SUM(sales.sales_amount),0) AS total_sales,
+          COALESCE(SUM(sales.complimentary_quantity),0) AS complimentary_quantity,
+          COALESCE(SUM(sales.fully_waived_quantity),0) AS fully_waived_quantity,
+          COALESCE(SUM(sales.partially_waived_quantity),0) AS partially_waived_quantity,
+          COALESCE(SUM(sales.waived_amount),0) AS complimentary_waived_amount,
+          COALESCE(SUM(sales.complimentary_payable_amount),0) AS complimentary_payable_amount,
+          COALESCE(SUM(sales.complimentary_collected_amount),0) AS complimentary_collected_amount,
+          COALESCE(SUM(GREATEST(sales.complimentary_payable_amount - sales.complimentary_collected_amount,0)),0) AS complimentary_outstanding_amount,
           COALESCE(SUM(LEAST(GREATEST(sales.sales_amount - sales.waived_amount,0), paid.collected_amount)),0) AS amount_collected,
           COALESCE(SUM(GREATEST(sales.sales_amount - sales.waived_amount
             - LEAST(GREATEST(sales.sales_amount - sales.waived_amount,0), paid.collected_amount),0)),0) AS outstanding_balance,
@@ -803,23 +945,23 @@ router.get('/:department/reports', async (req, res) => {
         [range.from, range.to]
       ),
       pool.query(
-        `SELECT COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) AS staff_name,
+        `SELECT COALESCE(NULLIF(ticket_items.item->>'assignedTo',''), NULLIF(ticket_items.item->>'assigned_to','')) AS staff_name,
           COUNT(*)::int AS items_assigned,
           COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(t.status,''))) IN ('ready','served','paid','closed'))::int AS completed_items,
           COALESCE(SUM(COALESCE(
-            NULLIF(item->>'line_total','')::numeric, NULLIF(item->>'lineTotal','')::numeric,
-            COALESCE(NULLIF(item->>'price','')::numeric, NULLIF(item->>'unit_price','')::numeric)
-              * COALESCE(NULLIF(item->>'quantity','')::numeric,1)
+            NULLIF(ticket_items.item->>'line_total','')::numeric, NULLIF(ticket_items.item->>'lineTotal','')::numeric,
+            COALESCE(NULLIF(ticket_items.item->>'price','')::numeric, NULLIF(ticket_items.item->>'unit_price','')::numeric)
+              * COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)
           )),0) AS total_sales
          FROM public.${department.table} t
          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
          WHERE t.ticket_date BETWEEN $1::date AND $2::date
-           AND COALESCE(item->>'voidProcessed','false') <> 'true'
-           AND UPPER(COALESCE(item->>'status','')) <> 'VOIDED'
-           AND ${approvedVoidExclusion('t.order_id')}
-           AND COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to','')) IS NOT NULL
-           AND ${department.paidItemFilter}
-         GROUP BY COALESCE(NULLIF(item->>'assignedTo',''), NULLIF(item->>'assigned_to',''))
+           AND COALESCE(ticket_items.item->>'voidProcessed','false') <> 'true'
+           AND UPPER(COALESCE(ticket_items.item->>'status','')) <> 'VOIDED'
+           AND ${approvedVoidExclusion('t.order_id', 'ticket_items.item')}
+           AND COALESCE(NULLIF(ticket_items.item->>'assignedTo',''), NULLIF(ticket_items.item->>'assigned_to','')) IS NOT NULL
+           AND ${department.paidItemFilter.replaceAll('item->>', 'ticket_items.item->>')}
+         GROUP BY COALESCE(NULLIF(ticket_items.item->>'assignedTo',''), NULLIF(ticket_items.item->>'assigned_to',''))
          ORDER BY total_sales DESC, 1`,
         [range.from, range.to]
       ),
@@ -840,6 +982,13 @@ router.get('/:department/reports', async (req, res) => {
       summary: {
         ...departmentSummary,
         total_sales: Number(departmentSummary.total_sales || 0),
+        complimentary_quantity: Number(departmentSummary.complimentary_quantity || 0),
+        fully_waived_quantity: Number(departmentSummary.fully_waived_quantity || 0),
+        partially_waived_quantity: Number(departmentSummary.partially_waived_quantity || 0),
+        complimentary_waived_amount: Number(departmentSummary.complimentary_waived_amount || 0),
+        complimentary_payable_amount: Number(departmentSummary.complimentary_payable_amount || 0),
+        complimentary_collected_amount: Number(departmentSummary.complimentary_collected_amount || 0),
+        complimentary_outstanding_amount: Number(departmentSummary.complimentary_outstanding_amount || 0),
         ...inventoryData,
         ...creditSummary,
         ...voidedTotals,

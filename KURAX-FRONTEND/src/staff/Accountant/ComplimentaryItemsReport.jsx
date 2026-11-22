@@ -153,7 +153,6 @@ export default function ComplimentaryItemsReport() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {[
-          ["Complimentary item lines", totals.items || 0],
           ["Complimentary quantity", totals.quantity || 0],
           ["Waived sales value", formatMoney(totals.waived_amount)],
           ["Original selling value", formatMoney(totals.original_amount)],

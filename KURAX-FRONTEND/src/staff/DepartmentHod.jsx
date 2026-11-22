@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LogoutConfirmDialog from './components/LogoutConfirmDialog';
-import { ArrowRight, BellRing, Boxes, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, LogOut, RefreshCw, Search, Wine } from 'lucide-react';
+import { ArrowRight, BellRing, Boxes, ChefHat, ClipboardList, CircleDollarSign, Coffee, Download, FileSpreadsheet, LogOut, RefreshCw, Search, Wine } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import ProductionPanel from './components/ProductionPanel';
 import API_URL from '../config/api';
 import { downloadReportPdf } from './reportExport';
@@ -95,6 +96,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
   const [error, setError] = useState('');
   const [reportLoading, setReportLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [claimingWorkId, setClaimingWorkId] = useState(null);
@@ -217,6 +219,13 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           rows: [
             ['Orders', report.summary?.total_orders ?? 0],
             ['Sales', money(report.summary?.total_sales)],
+            ['Complimentary quantity', report.summary?.complimentary_quantity ?? 0],
+            ['Fully waived quantity', report.summary?.fully_waived_quantity ?? 0],
+            ['Partially waived quantity', report.summary?.partially_waived_quantity ?? 0],
+            ['Complimentary waived value', money(report.summary?.complimentary_waived_amount)],
+            ['Complimentary amount payable', money(report.summary?.complimentary_payable_amount)],
+            ['Complimentary amount collected', money(report.summary?.complimentary_collected_amount)],
+            ['Complimentary outstanding', money(report.summary?.complimentary_outstanding_amount)],
             ['Voided', money(report.summary?.voided_total)],
             ['Voided quantity', report.summary?.voided_quantity ?? 0],
             ['Production voided items', report.summary?.production_voided_items ?? 0],
@@ -232,8 +241,12 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         },
         {
           title: 'Menu items',
-          columns: ['Menu item', 'Quantity', 'Sales', 'Voided quantity', 'Voided total'],
-          rows: (report.menu_items || []).map(item => [item.menu_item, item.quantity, money(item.sales), item.voided_quantity || 0, money(item.voided_total)]),
+          columns: ['Menu item', 'Quantity', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Voided quantity', 'Voided total'],
+          rows: (report.menu_items || []).map(item => [
+            item.menu_item, item.quantity, money(item.sales), item.complimentary_quantity || 0, item.fully_waived_quantity || 0,
+            item.partially_waived_quantity || 0, money(item.complimentary_waived_amount),
+            item.voided_quantity || 0, money(item.voided_total),
+          ]),
         },
         {
           title: 'Claimed production and voided items',
@@ -257,6 +270,67 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
     });
   }
 
+  function downloadDepartmentExcel() {
+    if (!report || report.from !== from || report.to !== to) return;
+    setDownloadingExcel(true);
+    try {
+      const summaryRows = [
+        ['KURAX DEPARTMENT REPORT'],
+        ['Period', report.from, 'to', report.to],
+        [],
+        ['Metric', 'Value'],
+        ['Orders', Number(report.summary?.total_orders || 0)],
+        ['Sales (UGX)', Number(report.summary?.total_sales || 0)],
+        ['Complimentary quantity', Number(report.summary?.complimentary_quantity || 0)],
+        ['Fully waived quantity', Number(report.summary?.fully_waived_quantity || 0)],
+        ['Partially waived quantity', Number(report.summary?.partially_waived_quantity || 0)],
+        ['Complimentary waived value (UGX)', Number(report.summary?.complimentary_waived_amount || 0)],
+        ['Complimentary amount payable (UGX)', Number(report.summary?.complimentary_payable_amount || 0)],
+        ['Complimentary amount collected (UGX)', Number(report.summary?.complimentary_collected_amount || 0)],
+        ['Complimentary outstanding (UGX)', Number(report.summary?.complimentary_outstanding_amount || 0)],
+        ['Voided quantity', Number(report.summary?.voided_quantity || 0)],
+        ['Voided total (UGX)', Number(report.summary?.voided_total || 0)],
+        ['Collected (UGX)', Number(report.summary?.amount_collected || 0)],
+        ['Outstanding (UGX)', Number(report.summary?.outstanding_balance || 0)],
+      ];
+      const menuRows = [
+        ['Menu item', 'Quantity', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Voided quantity', 'Voided total (UGX)'],
+        ...(report.menu_items || []).map(item => [
+          item.menu_item,
+          Number(item.quantity || 0),
+          Number(item.sales || 0),
+          Number(item.complimentary_quantity || 0),
+          Number(item.fully_waived_quantity || 0),
+          Number(item.partially_waived_quantity || 0),
+          Number(item.complimentary_waived_amount || 0),
+          Number(item.voided_quantity || 0),
+          Number(item.voided_total || 0),
+        ]),
+      ];
+      const productionRows = [
+        ['Claimed by', 'Items claimed', 'Completed', 'Production value (UGX)', 'Voided items', 'Voided quantity', 'Voided total (UGX)'],
+        ...(report.production_performance || []).map(person => [
+          person.claimed_by,
+          Number(person.items_claimed || 0),
+          Number(person.completed_items || 0),
+          Number(person.production_value || 0),
+          Number(person.voided_items || 0),
+          Number(person.voided_quantity || 0),
+          Number(person.voided_total || 0),
+        ]),
+      ];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Summary');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(menuRows), 'Menu Items');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(productionRows), 'Production');
+      XLSX.writeFile(workbook, `${departmentKey}-report-${report.from}-to-${report.to}.xlsx`);
+    } catch (downloadError) {
+      setError(downloadError.message || 'Could not download department Excel report.');
+    } finally {
+      setDownloadingExcel(false);
+    }
+  }
+
   async function downloadConsolidatedReport() {
     if (!report || report.from !== from || report.to !== to) return;
     setDownloadingPdf(true);
@@ -268,6 +342,13 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
       const totals = fullReport.main_totals || departments.reduce((result, department) => ({
         total_orders: result.total_orders + Number(department.total_orders || 0),
         total_sales: result.total_sales + Number(department.total_sales || 0),
+        complimentary_quantity: result.complimentary_quantity + Number(department.complimentary_quantity || 0),
+        fully_waived_quantity: result.fully_waived_quantity + Number(department.fully_waived_quantity || 0),
+        partially_waived_quantity: result.partially_waived_quantity + Number(department.partially_waived_quantity || 0),
+        complimentary_waived_amount: result.complimentary_waived_amount + Number(department.complimentary_waived_amount || 0),
+        complimentary_payable_amount: result.complimentary_payable_amount + Number(department.complimentary_payable_amount || 0),
+        complimentary_collected_amount: result.complimentary_collected_amount + Number(department.complimentary_collected_amount || 0),
+        complimentary_outstanding_amount: result.complimentary_outstanding_amount + Number(department.complimentary_outstanding_amount || 0),
         voided_total: result.voided_total + Number(department.voided_total || 0),
         voided_quantity: result.voided_quantity + Number(department.voided_quantity || 0),
         production_voided_items: result.production_voided_items + Number(department.production_voided_items || 0),
@@ -285,7 +366,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         settled_credit_amount: result.settled_credit_amount + Number(department.settled_credit_amount || 0),
         outstanding_credit_count: result.outstanding_credit_count + Number(department.outstanding_credit_count || 0),
         outstanding_credit_balance: result.outstanding_credit_balance + Number(department.outstanding_credit_balance || 0),
-      }), { total_orders: 0, total_sales: 0, voided_total: 0, voided_quantity: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
+      }), { total_orders: 0, total_sales: 0, complimentary_quantity: 0, fully_waived_quantity: 0, partially_waived_quantity: 0, complimentary_waived_amount: 0, complimentary_payable_amount: 0, complimentary_collected_amount: 0, complimentary_outstanding_amount: 0, voided_total: 0, voided_quantity: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
       const staffPerformance = departments.flatMap(department => (department.staff_performance || []).map(person => [
         department.label,
         String(person.worker_role || '').replaceAll('_', ' '),
@@ -318,6 +399,13 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           rows: [
             ['Orders', totals.total_orders],
             ['Sales', money(totals.total_sales)],
+            ['Complimentary quantity', totals.complimentary_quantity],
+            ['Fully waived quantity', totals.fully_waived_quantity],
+            ['Partially waived quantity', totals.partially_waived_quantity],
+            ['Complimentary waived value', money(totals.complimentary_waived_amount)],
+            ['Complimentary amount payable', money(totals.complimentary_payable_amount)],
+            ['Complimentary amount collected', money(totals.complimentary_collected_amount)],
+            ['Complimentary outstanding', money(totals.complimentary_outstanding_amount)],
             ['Voided', money(totals.voided_total)],
             ['Voided quantity', totals.voided_quantity],
             ['Production voided items', totals.production_voided_items],
@@ -334,16 +422,20 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         },
         {
           title: 'Main departments',
-          columns: ['Department', 'Orders', 'Sales', 'Voided', 'Voided quantity', 'Collected', 'Outstanding', 'Partial credits', 'Settled credits', 'Credit balance'],
+          columns: ['Department', 'Orders', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Comp payable', 'Comp collected', 'Comp outstanding', 'Voided', 'Voided quantity', 'Collected', 'Outstanding', 'Partial credits', 'Settled credits', 'Credit balance'],
           rows: [
-            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), money(department.voided_total), department.voided_quantity || 0, money(department.amount_collected), money(department.outstanding_balance), money(department.partially_paid_credit_amount), money(department.settled_credit_amount), money(department.outstanding_credit_balance)]),
-            ['Total main departments', totals.total_orders, money(totals.total_sales), money(totals.voided_total), totals.voided_quantity, money(totals.amount_collected), money(totals.outstanding_balance), money(totals.partially_paid_credit_amount), money(totals.settled_credit_amount), money(totals.outstanding_credit_balance)],
+            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), department.complimentary_quantity || 0, department.fully_waived_quantity || 0, department.partially_waived_quantity || 0, money(department.complimentary_waived_amount), money(department.complimentary_payable_amount), money(department.complimentary_collected_amount), money(department.complimentary_outstanding_amount), money(department.voided_total), department.voided_quantity || 0, money(department.amount_collected), money(department.outstanding_balance), money(department.partially_paid_credit_amount), money(department.settled_credit_amount), money(department.outstanding_credit_balance)]),
+            ['Total main departments', totals.total_orders, money(totals.total_sales), totals.complimentary_quantity, totals.fully_waived_quantity, totals.partially_waived_quantity, money(totals.complimentary_waived_amount), money(totals.complimentary_payable_amount), money(totals.complimentary_collected_amount), money(totals.complimentary_outstanding_amount), money(totals.voided_total), totals.voided_quantity, money(totals.amount_collected), money(totals.outstanding_balance), money(totals.partially_paid_credit_amount), money(totals.settled_credit_amount), money(totals.outstanding_credit_balance)],
           ],
         },
         {
           title: 'Menu items by department',
-          columns: ['Department', 'Menu item', 'Quantity', 'Sales', 'Voided quantity', 'Voided total'],
-          rows: departments.flatMap(department => (department.menu_items || []).map(item => [department.label, item.menu_item, item.quantity, money(item.sales), item.voided_quantity || 0, money(item.voided_total)])),
+          columns: ['Department', 'Menu item', 'Quantity', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Voided quantity', 'Voided total'],
+          rows: departments.flatMap(department => (department.menu_items || []).map(item => [
+            department.label, item.menu_item, item.quantity, money(item.sales), item.complimentary_quantity || 0, item.fully_waived_quantity || 0,
+            item.partially_waived_quantity || 0, money(item.complimentary_waived_amount),
+            item.voided_quantity || 0, money(item.voided_total),
+          ])),
         },
         {
           title: 'Inventory usage by department',
@@ -366,6 +458,103 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
       setError(downloadError.message || 'Could not download department report.');
     } finally {
       setDownloadingPdf(false);
+    }
+  }
+
+  async function downloadConsolidatedExcel() {
+    if (!report || report.from !== from || report.to !== to) return;
+    setDownloadingExcel(true);
+    setError('');
+    try {
+      const query = new URLSearchParams({ from, to });
+      const fullReport = await request(`/api/departments/reports/consolidated?${query}`, session.token);
+      const departmentRows = fullReport.departments || [];
+      const summarySheet = [
+        ['KURAX DEPARTMENT SALES REPORT'],
+        ['Period', fullReport.from, 'to', fullReport.to],
+        [],
+        ['Department', 'Orders', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Comp payable (UGX)', 'Comp collected (UGX)', 'Comp outstanding (UGX)', 'Voided (UGX)', 'Voided quantity', 'Collected (UGX)', 'Outstanding (UGX)', 'Partial credits (UGX)', 'Settled credits (UGX)', 'Credit balance (UGX)'],
+        ...departmentRows.map(row => [
+          row.label,
+          Number(row.total_orders || 0),
+          Number(row.total_sales || 0),
+          Number(row.complimentary_quantity || 0),
+          Number(row.fully_waived_quantity || 0),
+          Number(row.partially_waived_quantity || 0),
+          Number(row.complimentary_waived_amount || 0),
+          Number(row.complimentary_payable_amount || 0),
+          Number(row.complimentary_collected_amount || 0),
+          Number(row.complimentary_outstanding_amount || 0),
+          Number(row.voided_total || 0),
+          Number(row.voided_quantity || 0),
+          Number(row.amount_collected || 0),
+          Number(row.outstanding_balance || 0),
+          Number(row.partially_paid_credit_amount || 0),
+          Number(row.settled_credit_amount || 0),
+          Number(row.outstanding_credit_balance || 0),
+        ]),
+      ];
+      const menuSheet = [
+        ['Department', 'Menu item', 'Quantity', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Voided quantity', 'Voided total (UGX)'],
+        ...departmentRows.flatMap(department => (department.menu_items || []).map(item => [
+          department.label,
+          item.menu_item,
+          Number(item.quantity || 0),
+          Number(item.sales || 0),
+          Number(item.complimentary_quantity || 0),
+          Number(item.fully_waived_quantity || 0),
+          Number(item.partially_waived_quantity || 0),
+          Number(item.complimentary_waived_amount || 0),
+          Number(item.voided_quantity || 0),
+          Number(item.voided_total || 0),
+        ])),
+      ];
+      const staffSheet = [
+        ['Department', 'Role', 'Staff member', 'Handled', 'Completed', 'Sales (UGX)'],
+        ...departmentRows.flatMap(department => (department.staff_performance || []).map(person => [
+          department.label,
+          String(person.worker_role || '').replaceAll('_', ' '),
+          person.staff_name,
+          Number(person.items_assigned || 0),
+          Number(person.completed_items || 0),
+          Number(person.total_sales || 0),
+        ])),
+      ];
+      const productionSheet = [
+        ['Department', 'Role', 'Claimed by', 'Items claimed', 'Completed', 'Production value (UGX)', 'Voided items', 'Voided quantity', 'Voided total (UGX)'],
+        ...departmentRows.flatMap(department => (department.production_performance || []).map(person => [
+          department.label,
+          String(person.worker_role || '').replaceAll('_', ' '),
+          person.claimed_by,
+          Number(person.items_claimed || 0),
+          Number(person.completed_items || 0),
+          Number(person.production_value || 0),
+          Number(person.voided_items || 0),
+          Number(person.voided_quantity || 0),
+          Number(person.voided_total || 0),
+        ])),
+      ];
+      const inventorySheet = [
+        ['Department', 'Ingredient', 'Quantity', 'Unit', 'Value (UGX)'],
+        ...departmentRows.flatMap(department => (department.inventory_usage || []).map(item => [
+          department.label,
+          item.item_name,
+          Number(item.quantity || 0),
+          item.unit || '',
+          Number(item.value || 0),
+        ])),
+      ];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summarySheet), 'Departments');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(menuSheet), 'Menu Items');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(staffSheet), 'Staff Sales');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(productionSheet), 'Production');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(inventorySheet), 'Inventory');
+      XLSX.writeFile(workbook, `department-report-${from}-to-${to}.xlsx`);
+    } catch (downloadError) {
+      setError(downloadError.message || 'Could not download department Excel report.');
+    } finally {
+      setDownloadingExcel(false);
     }
   }
 
@@ -542,10 +731,71 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             {PRESETS.map(option => <button key={option} onClick={() => choosePreset(option)} className={`rounded-lg px-3 py-2 text-xs font-bold ${preset === option ? (isManagement ? 'bg-yellow-500 text-black' : 'bg-zinc-900 text-white') : 'border border-zinc-200 bg-white text-zinc-600'}`}>{option}</button>)}
             {preset === 'Select Month' && <input aria-label="Report month" type="month" value={reportMonth} onChange={event => { if (!event.target.value) return; setReportMonth(event.target.value); setRange(datesForMonth(event.target.value)); }} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" />}
             {preset === 'Custom' && <><input aria-label="From date" type="date" value={from} onChange={event => setRange([event.target.value, to])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /><input aria-label="To date" type="date" value={to} onChange={event => setRange([from, event.target.value])} className="rounded-md border border-stone-300 bg-white px-2 py-2 text-sm" /></>}
+            <button type="button" onClick={isManagement ? downloadConsolidatedExcel : downloadDepartmentExcel} disabled={!report || report.from !== from || report.to !== to || downloadingExcel} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
+              <FileSpreadsheet size={15} /> {downloadingExcel ? 'Preparing Excel...' : 'Download Excel'}
+            </button>
             <button type="button" onClick={isManagement ? downloadConsolidatedReport : downloadDepartmentReport} disabled={!report || report.from !== from || report.to !== to || downloadingPdf} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 ${isManagement ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-amber-400 hover:bg-amber-300'}`}><Download size={15} /> {downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}</button>
           </div></div>
-          {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[1380px] text-left text-sm"><thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr><th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th><th className="p-3">Voided</th><th className="p-3">Collected</th><th className="p-3">Unpaid balance</th><th className="p-3">Partial credits</th><th className="p-3">Settled credits</th><th className="p-3">Outstanding credits</th></tr></thead><tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200"><td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td><td className="p-3">{money(row.voided_total)}</td><td className="p-3">{money(row.amount_collected)}</td><td className="p-3">{money(row.outstanding_balance)}</td><td className="p-3">{money(row.partially_paid_credit_amount)}</td><td className="p-3">{money(row.settled_credit_amount)}</td><td className="p-3">{money(row.outstanding_credit_balance)}</td></tr>)}</tbody><tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr><td className="p-3">All departments</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.total_orders || 0), 0)}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.total_sales || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.voided_total || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.amount_collected || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_balance || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.partially_paid_credit_amount || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.settled_credit_amount || 0), 0))}</td><td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_credit_balance || 0), 0))}</td></tr></tfoot></table></div> : <>
-            <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Orders', summary.total_orders], ['Sales', money(summary.total_sales)], ['Voided quantity', summary.voided_quantity || 0], ['Voided total', money(summary.voided_total)], ['Production voided items', summary.production_voided_items || 0], ['Production voided quantity / total', `${summary.production_voided_quantity || 0} · ${money(summary.production_voided_total)}`], ['Collected', money(summary.amount_collected)], ['Outstanding', money(summary.outstanding_balance)], ['Partially paid credits', money(summary.partially_paid_credit_amount)], ['Settled credits', money(summary.settled_credit_amount)], ['Outstanding credits', money(summary.outstanding_credit_balance)]].map(([label, value]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-3 text-2xl font-black">{value}</p></article>)}</div>
+          {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[1720px] text-left text-sm">
+            <thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr>
+              <th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th>
+              <th className="p-3">Comp qty</th><th className="p-3">Fully waived qty</th>
+              <th className="p-3">Partially waived qty</th><th className="p-3">Comp waived</th><th className="p-3">Comp payable</th>
+              <th className="p-3">Comp collected</th><th className="p-3">Comp outstanding</th><th className="p-3">Voided</th>
+              <th className="p-3">Collected</th><th className="p-3">Unpaid balance</th><th className="p-3">Partial credits</th>
+              <th className="p-3">Settled credits</th><th className="p-3">Outstanding credits</th>
+            </tr></thead>
+            <tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200">
+              <td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td>
+              <td className="p-3">{row.complimentary_quantity || 0}</td>
+              <td className="p-3">{row.fully_waived_quantity || 0}</td><td className="p-3">{row.partially_waived_quantity || 0}</td>
+              <td className="p-3">{money(row.complimentary_waived_amount)}</td>
+              <td className="p-3">{money(row.complimentary_payable_amount)}</td>
+              <td className="p-3">{money(row.complimentary_collected_amount)}</td>
+              <td className="p-3">{money(row.complimentary_outstanding_amount)}</td>
+              <td className="p-3">{money(row.voided_total)}</td>
+              <td className="p-3">{money(row.amount_collected)}</td><td className="p-3">{money(row.outstanding_balance)}</td>
+              <td className="p-3">{money(row.partially_paid_credit_amount)}</td><td className="p-3">{money(row.settled_credit_amount)}</td>
+              <td className="p-3">{money(row.outstanding_credit_balance)}</td>
+            </tr>)}</tbody>
+            <tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr>
+              <td className="p-3">All departments</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.total_orders || 0), 0)}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.total_sales || 0), 0))}</td>
+              <td className="p-3">{departments.reduce((total, row) => total + Number(row.complimentary_quantity || 0), 0)}</td>
+              <td className="p-3">{departments.reduce((total, row) => total + Number(row.fully_waived_quantity || 0), 0)}</td>
+              <td className="p-3">{departments.reduce((total, row) => total + Number(row.partially_waived_quantity || 0), 0)}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_waived_amount || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_payable_amount || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_collected_amount || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_outstanding_amount || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.voided_total || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.amount_collected || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_balance || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.partially_paid_credit_amount || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.settled_credit_amount || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_credit_balance || 0), 0))}</td>
+            </tr></tfoot>
+          </table></div> : <>
+            <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[
+              ['Orders', summary.total_orders],
+              ['Sales', money(summary.total_sales)],
+              ['Complimentary quantity', summary.complimentary_quantity || 0],
+              ['Fully waived quantity', summary.fully_waived_quantity || 0],
+              ['Partially waived quantity', summary.partially_waived_quantity || 0],
+              ['Complimentary waived value', money(summary.complimentary_waived_amount)],
+              ['Complimentary amount payable', money(summary.complimentary_payable_amount)],
+              ['Complimentary amount collected', money(summary.complimentary_collected_amount)],
+              ['Complimentary outstanding', money(summary.complimentary_outstanding_amount)],
+              ['Voided quantity', summary.voided_quantity || 0],
+              ['Voided total', money(summary.voided_total)],
+              ['Production voided items', summary.production_voided_items || 0],
+              ['Production voided quantity / total', `${summary.production_voided_quantity || 0} · ${money(summary.production_voided_total)}`],
+              ['Collected', money(summary.amount_collected)],
+              ['Outstanding', money(summary.outstanding_balance)],
+              ['Partially paid credits', money(summary.partially_paid_credit_amount)],
+              ['Settled credits', money(summary.settled_credit_amount)],
+              ['Outstanding credits', money(summary.outstanding_credit_balance)],
+            ].map(([label, value]) => <article key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-3 text-2xl font-black">{value}</p></article>)}</div>
             <h3 className="mb-3 text-lg font-black">Claimed production and voided items</h3>
             <div className="mb-6 overflow-x-auto rounded-xl border border-zinc-200 bg-white">
               <table className="w-full min-w-[900px] text-left text-sm">
