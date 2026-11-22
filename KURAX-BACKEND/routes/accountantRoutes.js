@@ -1034,6 +1034,8 @@ router.get('/accounting/general-ledger', async (req, res) => {
   }
 });
 
+// ─── 21. ACCOUNTING JOURNAL ENTRIES ─────────────────────────────────────────
+
 router.get('/accounting/journal-entries', async (req, res) => {
   const { startDate, endDate, startTime, endTime, limit } = req.query;
   let pagination;
