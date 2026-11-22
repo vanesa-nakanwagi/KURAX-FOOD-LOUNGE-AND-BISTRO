@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db.js';
 import { createJournalEntry } from '../helpers/accounting.js';
 import { shishaInventoryFilterSql } from '../helpers/inventoryFilters.js';
+import { excludeReversedPurchaseActivity } from '../helpers/inventoryActivity.js';
 import { itemAssignedToStation } from '../helpers/inventoryStations.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
@@ -2201,7 +2202,44 @@ router.get('/reports/inventory-activity', async (req, res) => {
                 it.transaction_type, it.quantity, it.unit, it.unit_cost, it.total_value,
                 UPPER(COALESCE(it.station, 'KITCHEN')) AS station,
                 sl.name AS source_location, dl.name AS destination_location,
-                s.name AS supplier_name, it.notes
+                s.name AS supplier_name, it.notes,
+                CASE
+                  WHEN it.transaction_type = 'PURCHASE' THEN EXISTS (
+                    SELECT 1
+                    FROM public.purchase_receipt_items pri
+                    JOIN public.journal_entries purchase_je
+                      ON purchase_je.reference = 'INV-PUR-' || pri.purchase_id::text
+                    WHERE (
+                      pri.transaction_reference = it.reference_number
+                      OR (
+                        pri.transaction_reference IS NULL
+                        AND it.reference_number LIKE 'PUR-' || pri.purchase_id::text || '-' || pri.item_id::text || '-%'
+                      )
+                    )
+                    AND (
+                      purchase_je.status = 'Reversed'
+                      OR EXISTS (
+                        SELECT 1 FROM public.journal_entries reversal
+                        WHERE reversal.reversal_of = purchase_je.id
+                      )
+                    )
+                  )
+                  WHEN it.transaction_type = 'RETURN_TO_SUPPLIER' THEN EXISTS (
+                    SELECT 1
+                    FROM public.purchase_receipts pr
+                    JOIN public.journal_entries purchase_je
+                      ON purchase_je.reference = 'INV-PUR-' || pr.id::text
+                    WHERE it.reference_number LIKE 'REV-PUR-' || pr.id::text || '-%'
+                      AND (
+                        purchase_je.status = 'Reversed'
+                        OR EXISTS (
+                          SELECT 1 FROM public.journal_entries reversal
+                          WHERE reversal.reversal_of = purchase_je.id
+                        )
+                      )
+                  )
+                  ELSE false
+                END AS is_reversed_purchase_activity
          FROM public.inventory_transactions it
          LEFT JOIN public.inventory_items ii ON ii.id = it.item_id
          LEFT JOIN public.inventory_locations sl ON sl.id = it.source_location_id
@@ -2228,7 +2266,10 @@ router.get('/reports/inventory-activity', async (req, res) => {
       ),
     ]);
 
-    const transactions = transactionsResult.rows.map((row) => ({
+    const transactions = excludeReversedPurchaseActivity(transactionsResult.rows).map(({
+      is_reversed_purchase_activity,
+      ...row
+    }) => ({
       ...row,
       quantity: Number(row.quantity || 0),
       unit_cost: Number(row.unit_cost || 0),
