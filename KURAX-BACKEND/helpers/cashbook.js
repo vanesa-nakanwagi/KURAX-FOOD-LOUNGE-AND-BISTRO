@@ -232,7 +232,8 @@ export async function getCashbookData({ startDate, endDate, accountCode = '', se
     JOIN public.journal_entries je ON je.id = gl.journal_entry_id
     JOIN public.chart_of_accounts coa ON coa.code = gl.account_code
     WHERE je.system_type = 'MAIN'
-      AND je.status IN ('Posted', 'Reversed')
+      AND je.status = 'Posted'
+      AND je.reversal_of IS NULL
       AND coa.is_active = true
       AND ${accountTypeFilter()}
       AND ($3::text IS NULL OR gl.account_code = $3)`;
@@ -252,7 +253,9 @@ export async function getCashbookData({ startDate, endDate, accountCode = '', se
       FROM public.general_ledger gl
       JOIN public.journal_entries je ON je.id = gl.journal_entry_id
       JOIN cash_accounts ca ON ca.code = gl.account_code
-      WHERE je.system_type = 'MAIN' AND je.status IN ('Posted', 'Reversed')
+      WHERE je.system_type = 'MAIN'
+        AND je.status = 'Posted'
+        AND je.reversal_of IS NULL
         AND gl.entry_date < $1::date
       GROUP BY gl.account_code
     ),
