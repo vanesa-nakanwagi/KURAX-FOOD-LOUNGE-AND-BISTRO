@@ -30,6 +30,23 @@ test('cashbook normalizes a valid mobile-money receipt and preserves unique requ
   });
 });
 
+test('cashbook supplier payments can identify a purchase receipt for invoice settlement', () => {
+  const payment = normalizeCashbookTransaction({
+    ...receipt,
+    transaction_type: 'Payment',
+    category: 'Supplier Payment',
+    counterpart_account_code: '2001',
+    amount: '20000',
+    purchase_receipt_id: '20',
+  });
+
+  assert.equal(payment.purchase_receipt_id, 20);
+  assert.throws(
+    () => normalizeCashbookTransaction({ ...receipt, purchase_receipt_id: 20 }),
+    { statusCode: 400, message: 'Choose a valid purchase receipt for a supplier payment.' }
+  );
+});
+
 test('cashbook normalizes database Date values before journal posting', () => {
   assert.equal(normalizeCashbookDate(new Date('2026-11-15T00:00:00.000Z')), '2026-11-15');
   assert.equal(normalizeCashbookDate('2026-11-15'), '2026-11-15');

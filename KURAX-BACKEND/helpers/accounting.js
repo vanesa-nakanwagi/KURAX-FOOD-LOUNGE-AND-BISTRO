@@ -39,6 +39,22 @@ export const DEFAULT_ACCOUNTS = [
 
 const CARD_PAYMENT_METHODS = new Set(['card', 'bankcard', 'creditcard', 'debitcard', 'visa', 'mastercard', 'pos']);
 
+export function accountingEntryTypeSql() {
+  return `CASE
+    WHEN EXISTS (
+      SELECT 1 FROM public.general_ledger cogs_line
+      WHERE cogs_line.journal_entry_id = je.id AND cogs_line.account_code = '5010'
+    ) THEN 'cogs'
+    WHEN EXISTS (
+      SELECT 1
+      FROM public.general_ledger sales_line
+      JOIN public.chart_of_accounts sales_account ON sales_account.code = sales_line.account_code
+      WHERE sales_line.journal_entry_id = je.id AND sales_account.category = 'Revenue'
+    ) THEN 'sales'
+    ELSE 'other'
+  END`;
+}
+
 export function resolveRevenueAccountCode(department = '') {
   const normalized = String(department || '').trim().toLowerCase();
   const accountByDepartment = {
@@ -283,6 +299,11 @@ export async function ensureAccountingDataModel() {
     await pool.query(statement);
   }
 
+  await pool.query(
+    `ALTER TABLE public.cashbook_transactions
+     ADD COLUMN IF NOT EXISTS purchase_receipt_id INTEGER
+     REFERENCES public.purchase_receipts(id) ON DELETE RESTRICT`
+  );
   await pool.query(`ALTER TABLE public.cashbook_transactions ALTER COLUMN status SET DEFAULT 'Posted'`);
   await pool.query(
     `ALTER TABLE public.cashbook_transactions
@@ -1740,8 +1761,10 @@ export async function getCashFlowStatement(startDate, endDate, startTime = null,
   };
 }
 
-export async function getJournalEntries({ startDate, endDate, startTime, endTime, limit, offset = 0, search, sortBy = 'entry_date', sortOrder = 'desc' } = {}) {
+export async function getJournalEntries({ startDate, endDate, startTime, endTime, limit, offset = 0, search, entryType = 'all', sortBy = 'entry_date', sortOrder = 'desc' } = {}) {
+  const entryTypeSql = accountingEntryTypeSql();
   let query = `SELECT je.*,
+                      ${entryTypeSql} AS entry_type,
                       original.reference AS reversal_of_reference,
                       (SELECT reversal.reference FROM public.journal_entries reversal WHERE reversal.reversal_of = je.id LIMIT 1) AS reversed_by_reference,
                       COALESCE(json_agg(gl ORDER BY gl.id) FILTER (WHERE gl.id IS NOT NULL), '[]'::json) AS lines
@@ -1763,6 +1786,11 @@ export async function getJournalEntries({ startDate, endDate, startTime, endTime
     query += ` AND (je.reference ILIKE $${params.length} ESCAPE '!' OR je.description ILIKE $${params.length} ESCAPE '!' OR je.source_transaction ILIKE $${params.length} ESCAPE '!')`;
   }
 
+  if (entryType !== 'all') {
+    params.push(entryType);
+    query += ` AND (${entryTypeSql}) = $${params.length}`;
+  }
+
   query += ` GROUP BY je.id, original.reference`;
 
   const sortColumns = { entry_date: 'je.entry_date', posted_at: 'je.posted_at', reference: 'je.reference' };
@@ -1781,7 +1809,9 @@ export async function getJournalEntries({ startDate, endDate, startTime, endTime
 }
 
 export async function getGeneralLedger(startDate, endDate, startTime = null, endTime = null, options = {}) {
-  let query = `SELECT gl.* FROM public.general_ledger gl
+  const entryTypeSql = accountingEntryTypeSql();
+  let query = `SELECT gl.*, je.reference AS journal_reference, ${entryTypeSql} AS entry_type
+               FROM public.general_ledger gl
                JOIN public.journal_entries je ON je.id = gl.journal_entry_id
                WHERE je.system_type = 'MAIN' AND gl.account_code <> '4004'`;
   const params = [];
@@ -1796,6 +1826,11 @@ export async function getGeneralLedger(startDate, endDate, startTime = null, end
   if (options.search) {
     params.push(toSearchPattern(options.search));
     query += ` AND (gl.account_name ILIKE $${params.length} ESCAPE '!' OR gl.account_code ILIKE $${params.length} ESCAPE '!' OR gl.description ILIKE $${params.length} ESCAPE '!' OR gl.source_transaction ILIKE $${params.length} ESCAPE '!')`;
+  }
+
+  if (options.entryType && options.entryType !== 'all') {
+    params.push(options.entryType);
+    query += ` AND (${entryTypeSql}) = $${params.length}`;
   }
 
   const sortColumns = { entry_date: 'gl.entry_date', created_at: 'gl.created_at', account_code: 'gl.account_code', debit: 'gl.debit', credit: 'gl.credit' };

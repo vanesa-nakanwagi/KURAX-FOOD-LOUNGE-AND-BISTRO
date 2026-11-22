@@ -381,7 +381,7 @@ function PurchaseWorkflow({ items, locations, records, onAction }) {
           <Input label="Unit cost per purchase unit (UGX)" type="number" min="0.01" value={form.unit_cost} onChange={(value) => set('unit_cost', value)} required />
           <Input label="Supplier" value={form.supplier_name} onChange={(value) => set('supplier_name', value)} required />
           <Select label="Location" value={form.location_id} onChange={(value) => set('location_id', value)} options={locations.map((location) => ({ value: String(location.id), label: location.name }))} required />
-          <Select label="Payment method" value={form.payment_method} onChange={(value) => set('payment_method', value)} options={['Cash', 'Bank', 'Mobile Money', 'Supplier Credit'].map((value) => ({ value, label: value }))} />
+          <Select label="Payment method" value={form.payment_method} onChange={(value) => set('payment_method', value)} options={['Cash', 'Bank', 'MTN Mobile Money', 'Airtel Money', 'Supplier Credit'].map((value) => ({ value, label: value }))} />
           <Input label="Minimum stock" type="number" min="0" value={form.minimum_stock_level} onChange={(value) => set('minimum_stock_level', value)} />
           <Input label="Receipt number" value={form.receipt_number} onChange={(value) => set('receipt_number', value)} />
           <Input label="Category" value={form.category} onChange={(value) => set('category', value)} />

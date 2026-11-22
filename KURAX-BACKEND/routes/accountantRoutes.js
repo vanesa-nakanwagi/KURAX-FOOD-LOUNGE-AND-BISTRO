@@ -6,6 +6,7 @@ import { createPettyExpense, getCounterCash } from '../helpers/pettyCash.js';
 import { getPageWindow, parsePagination, toSearchPattern } from '../helpers/pagination.js';
 import {
   createCashbookTransaction,
+  allocateCashbookSupplierReceipt,
   getCashbookActorCapabilities,
   getCashbookAuditTrail,
   getCashbookData,
@@ -15,6 +16,7 @@ import {
   updateCashbookTransaction,
 } from '../helpers/cashbook.js';
 import {
+  accountingEntryTypeSql,
   createExpenseJournalEntry,
   createSalesJournalEntry,
   ensureAccountingDataModel,
@@ -34,6 +36,12 @@ import {
 } from '../helpers/accounting.js';
 
 const router = express.Router();
+const ACCOUNTING_ENTRY_TYPES = new Set(['all', 'sales', 'cogs', 'other']);
+
+function parseAccountingEntryType(value) {
+  const entryType = String(value || 'all').trim().toLowerCase();
+  return ACCOUNTING_ENTRY_TYPES.has(entryType) ? entryType : null;
+}
 
 async function authenticateCashbookActor(req, res, next) {
   const token = req.headers.authorization?.startsWith('Bearer ')
@@ -838,6 +846,24 @@ router.post('/accounting/cashbook', async (req, res) => {
   }
 });
 
+router.post('/accounting/cashbook/:id/allocate-supplier-invoice', async (req, res) => {
+  if (!getCashbookActorCapabilities(req.cashbookActor).can_create) {
+    return res.status(403).json({ error: 'You do not have permission to allocate supplier payments.' });
+  }
+  const id = cashbookTransactionId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'A valid cashbook transaction is required.' });
+  try {
+    const result = await allocateCashbookSupplierReceipt(
+      id,
+      req.body?.purchase_receipt_id,
+      req.cashbookActor
+    );
+    res.json(result);
+  } catch (error) {
+    sendCashbookError(res, error, 'Could not allocate the supplier payment.');
+  }
+});
+
 router.put('/accounting/cashbook/:id', async (req, res) => {
   const id = cashbookTransactionId(req.params.id);
   if (!id) return res.status(400).json({ error: 'A valid cashbook transaction is required.' });
@@ -985,6 +1011,8 @@ router.post('/accounting/chart-of-accounts', async (req, res) => {
 
 router.get('/accounting/general-ledger', async (req, res) => {
   const { startDate, endDate, startTime, endTime } = req.query;
+  const entryType = parseAccountingEntryType(req.query.entryType);
+  if (!entryType) return res.status(400).json({ error: 'Select a valid accounting entry type.' });
   let pagination;
   try {
     pagination = parsePagination(req.query);
@@ -998,6 +1026,10 @@ router.get('/accounting/general-ledger', async (req, res) => {
     if (startDate && endDate) {
       params.push(startDate, endDate, startTime || null, endTime || null);
       conditions.push(`gl.entry_date BETWEEN $1 AND $2 AND ($3::time IS NULL OR gl.business_time >= $3::time) AND ($4::time IS NULL OR gl.business_time <= $4::time)`);
+    }
+    if (entryType !== 'all') {
+      params.push(entryType);
+      conditions.push(`(${accountingEntryTypeSql()}) = $${params.length}`);
     }
     if (pagination?.search) {
       params.push(toSearchPattern(pagination.search));
@@ -1017,7 +1049,9 @@ router.get('/accounting/general-ledger', async (req, res) => {
       endDate || null,
       startTime || null,
       endTime || null,
-      pagination ? { ...pagination, limit: pageWindow.pageSize, offset: pageWindow.offset } : {}
+      pagination
+        ? { ...pagination, entryType, limit: pageWindow.pageSize, offset: pageWindow.offset }
+        : { entryType }
     );
     res.json({
       entries,
@@ -1038,6 +1072,8 @@ router.get('/accounting/general-ledger', async (req, res) => {
 
 router.get('/accounting/journal-entries', async (req, res) => {
   const { startDate, endDate, startTime, endTime, limit } = req.query;
+  const entryType = parseAccountingEntryType(req.query.entryType);
+  if (!entryType) return res.status(400).json({ error: 'Select a valid accounting entry type.' });
   let pagination;
   try {
     pagination = parsePagination(req.query);
@@ -1055,6 +1091,10 @@ router.get('/accounting/journal-entries', async (req, res) => {
         params.push(startDate, endDate, startTime || null, endTime || null);
         conditions.push(`je.entry_date BETWEEN $1 AND $2 AND ($3::time IS NULL OR je.business_time >= $3::time) AND ($4::time IS NULL OR je.business_time <= $4::time)`);
       }
+      if (entryType !== 'all') {
+        params.push(entryType);
+        conditions.push(`(${accountingEntryTypeSql()}) = $${params.length}`);
+      }
       if (pagination.search) {
         params.push(toSearchPattern(pagination.search));
         conditions.push(`(je.reference ILIKE $${params.length} ESCAPE '!' OR je.description ILIKE $${params.length} ESCAPE '!' OR je.source_transaction ILIKE $${params.length} ESCAPE '!')`);
@@ -1067,13 +1107,14 @@ router.get('/accounting/journal-entries', async (req, res) => {
         startTime: startTime || null,
         endTime: endTime || null,
         search: pagination.search,
+        entryType,
         sortBy: pagination.sortBy || 'entry_date',
         sortOrder: pagination.sortOrder,
         limit: pageWindow.pageSize,
         offset: pageWindow.offset,
       });
     } else {
-      journal = await getJournalEntries({ startDate: startDate || null, endDate: endDate || null, startTime: startTime || null, endTime: endTime || null, limit: limit ? Number(limit) : null });
+      journal = await getJournalEntries({ startDate: startDate || null, endDate: endDate || null, startTime: startTime || null, endTime: endTime || null, entryType, limit: limit ? Number(limit) : null });
     }
     res.json({
       entries: journal,

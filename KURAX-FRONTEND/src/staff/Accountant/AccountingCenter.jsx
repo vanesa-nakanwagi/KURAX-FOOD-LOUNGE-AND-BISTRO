@@ -94,6 +94,12 @@ function formatSourceReference(source) {
   return value;
 }
 
+function formatEntryType(entryType) {
+  if (entryType === "sales") return "Sales";
+  if (entryType === "cogs") return "Cost of Goods Sold";
+  return "Other";
+}
+
 function formatAuditDetails(details) {
   let value = details;
   if (typeof value === "string") {
@@ -184,6 +190,7 @@ function getTableModel(view, data) {
       entry.business_time?.slice(0, 5),
       entry.posted_at ? new Date(entry.posted_at).toLocaleString("en-GB", { timeZone: "Africa/Kampala" }) : "",
       entry.description,
+      formatEntryType(entry.entry_type),
       totalDebit,
       totalCredit,
       entry.status,
@@ -192,13 +199,13 @@ function getTableModel(view, data) {
       entry.posted_by || "",
       ];
     });
-    return { columns: ["Journal Ref", "Transaction Date", "Business Time", "Posted On", "Description", "Debit Total (UGX)", "Credit Total (UGX)", "Status", "Linked Entry", "Reversal Reason", "Posted By"], rows };
+    return { columns: ["Journal Ref", "Transaction Date", "Business Time", "Posted On", "Description", "Entry Type", "Debit Total (UGX)", "Credit Total (UGX)", "Status", "Linked Entry", "Reversal Reason", "Posted By"], rows };
   }
 
   if (view === "ledger") {
     return {
-      columns: ["Transaction Date", "Business Time", "Posted On", "Account Code", "Account", "Description", "Source / Reference", "Debit (UGX)", "Credit (UGX)", "Posted By"],
-      rows: (data.entries || []).map((entry) => [entry.entry_date?.slice(0, 10), entry.business_time?.slice(0, 5) || "-", entry.created_at ? new Date(entry.created_at).toLocaleString("en-GB", { timeZone: "Africa/Kampala" }) : "", entry.account_code, entry.account_name, entry.description, formatSourceReference(entry.source_transaction), Number(entry.debit || 0), Number(entry.credit || 0), entry.posted_by]),
+      columns: ["Transaction Date", "Business Time", "Posted On", "Account Code", "Account", "Description", "Entry Type", "Source / Reference", "Debit (UGX)", "Credit (UGX)", "Posted By"],
+      rows: (data.entries || []).map((entry) => [entry.entry_date?.slice(0, 10), entry.business_time?.slice(0, 5) || "-", entry.created_at ? new Date(entry.created_at).toLocaleString("en-GB", { timeZone: "Africa/Kampala" }) : "", entry.account_code, entry.account_name, entry.description, formatEntryType(entry.entry_type), formatSourceReference(entry.source_transaction), Number(entry.debit || 0), Number(entry.credit || 0), entry.posted_by]),
     };
   }
 
@@ -260,6 +267,7 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
   const [pageSize, setPageSize] = useState(20);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [entryType, setEntryType] = useState("all");
   const [periodForm, setPeriodForm] = useState({ period_name: today.slice(0, 7), start_date: monthStart, end_date: today });
   const [savingPeriod, setSavingPeriod] = useState(false);
   const [reversalForm, setReversalForm] = useState(null);
@@ -299,6 +307,9 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
       query.set("limit", String(pageSize));
       if (search) query.set("search", search);
     }
+    if (["journals", "ledger"].includes(targetView) && entryType !== "all") {
+      query.set("entryType", entryType);
+    }
     const asOfQuery = new URLSearchParams({ asOfDate: dateRange.end });
     if (timeRange?.start) asOfQuery.set("startTime", timeRange.start);
     if (timeRange?.end) asOfQuery.set("endTime", timeRange.end);
@@ -328,7 +339,7 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
     } finally {
       setLoading(false);
     }
-  }, [dateRange, timeRange, view, page, pageSize, search]);
+  }, [dateRange, timeRange, view, page, pageSize, search, entryType]);
 
   useEffect(() => {
     loadView(view);
@@ -365,6 +376,7 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
       if (timeRange?.start) query.set("startTime", timeRange.start);
       if (timeRange?.end) query.set("endTime", timeRange.end);
       if (search) query.set("search", search);
+      if (["journals", "ledger"].includes(view) && entryType !== "all") query.set("entryType", entryType);
       const result = await requestJSON(`${API_URL}/api/accountant/accounting/${endpoint}?${query}`);
       allEntries.push(...(result.entries || []));
     }
@@ -512,6 +524,24 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
               <button onClick={() => loadView()} disabled={loading} className="inline-flex items-center gap-2 rounded-md bg-yellow-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Load data
               </button>
+              {["journals", "ledger"].includes(view) && (
+                <label className="text-[10px] font-bold uppercase text-gray-500">
+                  Entry group
+                  <select
+                    value={entryType}
+                    onChange={(event) => {
+                      setEntryType(event.target.value);
+                      setPage(1);
+                    }}
+                    className="mt-1 block rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case text-gray-900"
+                  >
+                    <option value="all">All entries</option>
+                    <option value="sales">Sales</option>
+                    <option value="cogs">Cost of Goods Sold</option>
+                    <option value="other">Other entries</option>
+                  </select>
+                </label>
+              )}
               {["journals", "ledger", "audit"].includes(view) && (
                 <label className="text-[10px] font-bold uppercase text-gray-500">
                   Search records

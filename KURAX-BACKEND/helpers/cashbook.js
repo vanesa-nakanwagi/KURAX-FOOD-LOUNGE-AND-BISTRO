@@ -96,6 +96,9 @@ export function normalizeCashbookTransaction(input = {}) {
   const requestId = String(input.request_id || '').trim();
   const transactionDate = assertValidDate(input.transaction_date, 'transaction date');
   const externalReference = String(input.external_reference || '').trim();
+  const purchaseReceiptId = input.purchase_receipt_id === undefined || input.purchase_receipt_id === null || String(input.purchase_receipt_id).trim() === ''
+    ? null
+    : Number(input.purchase_receipt_id);
 
   if (!CASHBOOK_CATEGORIES[transactionType]?.includes(category)) {
     throw Object.assign(new Error('Choose a valid cashbook transaction category.'), { statusCode: 400 });
@@ -117,6 +120,11 @@ export function normalizeCashbookTransaction(input = {}) {
   }
   if (externalReference.length > 100) {
     throw Object.assign(new Error('The external reference must be 100 characters or fewer.'), { statusCode: 400 });
+  }
+  if (purchaseReceiptId !== null
+    && (!Number.isInteger(purchaseReceiptId) || purchaseReceiptId <= 0
+      || transactionType !== 'Payment' || category !== 'Supplier Payment')) {
+    throw Object.assign(new Error('Choose a valid purchase receipt for a supplier payment.'), { statusCode: 400 });
   }
 
   let methodAccountCode;
@@ -140,6 +148,7 @@ export function normalizeCashbookTransaction(input = {}) {
     payment_method: paymentMethod,
     amount: Math.round(amount * 100) / 100,
     external_reference: externalReference || null,
+    ...(purchaseReceiptId === null ? {} : { purchase_receipt_id: purchaseReceiptId }),
   };
 }
 
@@ -176,6 +185,105 @@ async function validateAccounts(transaction) {
   }
   validateCashbookCounterpart(transaction.category, transaction.transaction_type, counterpartAccount);
   return { cashAccount, counterpartAccount };
+}
+
+function isSupplierPayableAccount(account) {
+  return account?.category === 'Liability' && /payable/i.test(String(account.account_type || ''));
+}
+
+async function applyPurchaseReceiptPayment(queryable, transaction) {
+  if (!transaction.purchase_receipt_id) return null;
+  const receiptResult = await queryable.query(
+    `SELECT pr.id, pr.total_amount, pr.amount_paid, pr.payment_method,
+            pr.receipt_number, supplier.name AS supplier_name
+     FROM public.purchase_receipts pr
+     LEFT JOIN public.suppliers supplier ON supplier.id = pr.supplier_id
+     LEFT JOIN public.journal_entries purchase_entry ON purchase_entry.reference = 'INV-PUR-' || pr.id::text
+     WHERE pr.id = $1 AND pr.total_amount > 0
+       AND purchase_entry.status IS DISTINCT FROM 'Reversed'
+       AND (
+         LOWER(COALESCE(pr.payment_method, '')) LIKE '%credit%'
+         OR LOWER(COALESCE(pr.payment_method, '')) LIKE '%payable%'
+         OR LOWER(COALESCE(pr.payment_method, '')) LIKE '%supplier%'
+       )
+     FOR UPDATE OF pr`,
+    [transaction.purchase_receipt_id]
+  );
+  const receipt = receiptResult.rows[0];
+  if (!receipt) {
+    throw Object.assign(new Error('The selected supplier invoice is not an open purchase receipt.'), { statusCode: 400 });
+  }
+  const outstanding = Number(receipt.total_amount) - Number(receipt.amount_paid || 0);
+  if (transaction.amount > outstanding + 0.001) {
+    throw Object.assign(new Error(`Payment exceeds the invoice balance of UGX ${Math.max(0, outstanding).toLocaleString()}.`), { statusCode: 400 });
+  }
+  await queryable.query(
+    `UPDATE public.purchase_receipts
+     SET amount_paid = amount_paid + $2
+     WHERE id = $1`,
+    [receipt.id, transaction.amount]
+  );
+  return {
+    id: receipt.id,
+    reference: `INV-PUR-${receipt.id}`,
+    supplier_name: receipt.supplier_name,
+    amount: transaction.amount,
+  };
+}
+
+export async function allocateCashbookSupplierReceipt(transactionId, purchaseReceiptId, actor) {
+  const receiptId = Number(purchaseReceiptId);
+  if (!Number.isInteger(receiptId) || receiptId <= 0) {
+    throw Object.assign(new Error('Choose a valid purchase receipt.'), { statusCode: 400 });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const transactionResult = await client.query(
+      'SELECT * FROM public.cashbook_transactions WHERE id = $1 FOR UPDATE',
+      [transactionId]
+    );
+    const transaction = transactionResult.rows[0];
+    if (!transaction) throw Object.assign(new Error('Cashbook transaction not found.'), { statusCode: 404 });
+    if (transaction.status !== 'Posted' || transaction.transaction_type !== 'Payment'
+      || transaction.category !== 'Supplier Payment') {
+      throw Object.assign(new Error('Only posted supplier payments can be allocated to an invoice.'), { statusCode: 409 });
+    }
+    if (transaction.purchase_receipt_id) {
+      if (Number(transaction.purchase_receipt_id) === receiptId) {
+        await client.query('COMMIT');
+        return { transaction, duplicate: true };
+      }
+      throw Object.assign(new Error('This supplier payment is already allocated to an invoice.'), { statusCode: 409 });
+    }
+    const account = await getAccountByCode(transaction.counterpart_account_code);
+    if (!isSupplierPayableAccount(account)) {
+      throw Object.assign(new Error('This payment was not posted to Accounts Payable.'), { statusCode: 409 });
+    }
+    const allocation = await applyPurchaseReceiptPayment(client, {
+      ...transaction,
+      purchase_receipt_id: receiptId,
+      amount: Number(transaction.amount),
+    });
+    const updatedResult = await client.query(
+      `UPDATE public.cashbook_transactions SET purchase_receipt_id = $2, updated_at = NOW()
+       WHERE id = $1 RETURNING *`,
+      [transactionId, receiptId]
+    );
+    await writeAudit(client, 'cashbook_transaction', transactionId, 'supplier_invoice_allocated', actor, {
+      reference: transaction.reference_number,
+      purchase_receipt_id: receiptId,
+      purchase_reference: allocation.reference,
+      amount: Number(transaction.amount),
+    });
+    await client.query('COMMIT');
+    return { transaction: updatedResult.rows[0], allocation, duplicate: false };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function postCashbookTransaction(queryable, transaction, cashAccount, counterpartAccount, actor) {
@@ -282,6 +390,9 @@ export async function getCashbookData({ startDate, endDate, accountCode = '', se
         gl.account_code,
         gl.account_name,
         cb.counterpart_account_code,
+        cb.purchase_receipt_id,
+        CASE WHEN cb.purchase_receipt_id IS NOT NULL
+          THEN 'INV-PUR-' || cb.purchase_receipt_id::text ELSE NULL END AS purchase_reference,
         COALESCE(cb.payment_method, cq.method,
           CASE gl.account_code
             WHEN '1001' THEN 'Cash'
@@ -331,6 +442,8 @@ export async function getCashbookData({ startDate, endDate, accountCode = '', se
         cb.cash_account_code AS account_code,
         coa.name AS account_name,
         cb.counterpart_account_code,
+        NULL::integer AS purchase_receipt_id,
+        NULL::text AS purchase_reference,
         cb.payment_method,
         COALESCE(cb.external_reference, '') AS external_reference,
         CASE WHEN cb.transaction_type = 'Receipt' THEN cb.amount ELSE 0 END::numeric AS debit,
@@ -385,12 +498,31 @@ export async function getCashbookData({ startDate, endDate, accountCode = '', se
      LIMIT $5 OFFSET $6`,
     [startDate, endDate, accountFilter, searchPattern, safeLimit, offset]
   );
+  const supplierPayablesResult = await pool.query(
+    `SELECT pr.id, 'INV-PUR-' || pr.id::text AS reference,
+            COALESCE(s.name, 'Unknown supplier') AS supplier_name,
+            pr.total_amount, pr.amount_paid,
+            GREATEST(pr.total_amount - pr.amount_paid, 0) AS outstanding_balance,
+            pr.business_date
+     FROM public.purchase_receipts pr
+     LEFT JOIN public.suppliers s ON s.id = pr.supplier_id
+     LEFT JOIN public.journal_entries purchase_entry ON purchase_entry.reference = 'INV-PUR-' || pr.id::text
+     WHERE pr.total_amount > pr.amount_paid
+       AND purchase_entry.status IS DISTINCT FROM 'Reversed'
+       AND (
+         LOWER(COALESCE(pr.payment_method, '')) LIKE '%credit%'
+         OR LOWER(COALESCE(pr.payment_method, '')) LIKE '%payable%'
+         OR LOWER(COALESCE(pr.payment_method, '')) LIKE '%supplier%'
+       )
+     ORDER BY pr.business_date, pr.id`
+  );
 
   return {
     accounts: cashAccounts,
     counterpart_accounts: accounts.filter((account) => !isEligibleInternalTransferAccount(account)),
     categories: CASHBOOK_CATEGORIES,
     entries: entriesResult.rows,
+    supplier_payables: supplierPayablesResult.rows,
     summary: {
       opening_balance: openingBalance,
       total_received: totalReceived,
@@ -412,6 +544,13 @@ export async function createCashbookTransaction(input, actor) {
     throw Object.assign(new Error('A transaction cannot be dated in the future.'), { statusCode: 400 });
   }
   const { cashAccount, counterpartAccount } = await validateAccounts(transaction);
+  if (transaction.purchase_receipt_id && !isSupplierPayableAccount(counterpartAccount)) {
+    throw Object.assign(new Error('Allocate purchase receipts only to an Accounts Payable payment.'), { statusCode: 400 });
+  }
+  if (transaction.category === 'Supplier Payment' && isSupplierPayableAccount(counterpartAccount)
+    && !transaction.purchase_receipt_id) {
+    throw Object.assign(new Error('Select the supplier invoice being paid.'), { statusCode: 400 });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -430,7 +569,8 @@ export async function createCashbookTransaction(input, actor) {
         && current.counterpart_account_code === transaction.counterpart_account_code
         && current.payment_method === transaction.payment_method
         && Number(current.amount) === transaction.amount
-        && (current.external_reference || null) === transaction.external_reference;
+        && (current.external_reference || null) === transaction.external_reference
+        && Number(current.purchase_receipt_id || 0) === Number(transaction.purchase_receipt_id || 0);
       if (!samePayload) {
         throw Object.assign(new Error('This request ID was already used for a different transaction.'), { statusCode: 409 });
       }
@@ -453,17 +593,18 @@ export async function createCashbookTransaction(input, actor) {
       `INSERT INTO public.cashbook_transactions (
          request_id, reference_number, external_reference, transaction_date, transaction_type,
          category, description, cash_account_code, counterpart_account_code, payment_method,
-         amount, status, created_by_staff_id, created_by
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Posted', $12, $13)
+         amount, purchase_receipt_id, status, created_by_staff_id, created_by
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'Posted', $13, $14)
        RETURNING *`,
       [
         transaction.request_id, reference, transaction.external_reference, transaction.transaction_date,
         transaction.transaction_type, transaction.category, transaction.description,
         transaction.cash_account_code, transaction.counterpart_account_code, transaction.payment_method,
-        transaction.amount, actor.id, actor.name,
+        transaction.amount, transaction.purchase_receipt_id || null, actor.id, actor.name,
       ]
     );
     const created = result.rows[0];
+    if (transaction.purchase_receipt_id) await applyPurchaseReceiptPayment(client, transaction);
     const posted = await postCashbookTransaction(client, created, cashAccount, counterpartAccount, actor);
     await writeAudit(client, 'cashbook_transaction', created.id, 'created', actor, {
       reference,
@@ -474,6 +615,7 @@ export async function createCashbookTransaction(input, actor) {
       cash_account_code: created.cash_account_code,
       counterpart_account_code: created.counterpart_account_code,
       status: 'Posted',
+      purchase_receipt_id: transaction.purchase_receipt_id || null,
       journal_reference: posted.journal.reference,
       journal_entry_id: posted.journal.id,
     });
@@ -493,6 +635,13 @@ export async function updateCashbookTransaction(transactionId, input, actor) {
     throw Object.assign(new Error('A transaction cannot be dated in the future.'), { statusCode: 400 });
   }
   const { cashAccount, counterpartAccount } = await validateAccounts(transaction);
+  if (transaction.purchase_receipt_id && !isSupplierPayableAccount(counterpartAccount)) {
+    throw Object.assign(new Error('Allocate purchase receipts only to an Accounts Payable payment.'), { statusCode: 400 });
+  }
+  if (transaction.category === 'Supplier Payment' && isSupplierPayableAccount(counterpartAccount)
+    && !transaction.purchase_receipt_id) {
+    throw Object.assign(new Error('Select the supplier invoice being paid.'), { statusCode: 400 });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -521,16 +670,18 @@ export async function updateCashbookTransaction(transactionId, input, actor) {
       `UPDATE public.cashbook_transactions
        SET external_reference = $2, transaction_date = $3, transaction_type = $4, category = $5,
            description = $6, cash_account_code = $7, counterpart_account_code = $8,
-           payment_method = $9, amount = $10, updated_at = NOW()
+           payment_method = $9, amount = $10, purchase_receipt_id = $11, updated_at = NOW()
        WHERE id = $1 RETURNING *`,
       [
         transactionId, transaction.external_reference, transaction.transaction_date,
         transaction.transaction_type, transaction.category, transaction.description,
         transaction.cash_account_code, transaction.counterpart_account_code,
         transaction.payment_method, transaction.amount,
+        transaction.purchase_receipt_id || null,
       ]
     );
     const updated = updatedResult.rows[0];
+    if (transaction.purchase_receipt_id) await applyPurchaseReceiptPayment(client, transaction);
     const posted = await postCashbookTransaction(client, updated, cashAccount, counterpartAccount, actor);
     await writeAudit(client, 'cashbook_transaction', transactionId, 'edited_and_posted', actor, {
       reference: current.reference_number,
@@ -543,6 +694,7 @@ export async function updateCashbookTransaction(transactionId, input, actor) {
         counterpart_account_code: current.counterpart_account_code,
         payment_method: current.payment_method,
         amount: Number(current.amount),
+        purchase_receipt_id: current.purchase_receipt_id || null,
       },
       after: transaction,
       journal_reference: posted.journal.reference,
@@ -570,6 +722,20 @@ export async function reverseCashbookTransaction(transactionId, reversalDate, re
     if (!transaction) throw Object.assign(new Error('Cashbook transaction not found.'), { statusCode: 404 });
     if (!['Posted', 'Approved'].includes(transaction.status) || !transaction.journal_entry_id) {
       throw Object.assign(new Error('Only posted cashbook transactions can be reversed.'), { statusCode: 409 });
+    }
+    if (transaction.purchase_receipt_id) {
+      const receiptResult = await client.query(
+        'SELECT id, amount_paid FROM public.purchase_receipts WHERE id = $1 FOR UPDATE',
+        [transaction.purchase_receipt_id]
+      );
+      const receipt = receiptResult.rows[0];
+      if (!receipt || Number(receipt.amount_paid || 0) < Number(transaction.amount)) {
+        throw Object.assign(new Error('The linked supplier invoice payment no longer matches its recorded paid amount; reconcile it before reversing.'), { statusCode: 409 });
+      }
+      await client.query(
+        `UPDATE public.purchase_receipts SET amount_paid = amount_paid - $2 WHERE id = $1`,
+        [receipt.id, transaction.amount]
+      );
     }
     const reversal = await reverseJournalEntry({
       journalEntryId: transaction.journal_entry_id,

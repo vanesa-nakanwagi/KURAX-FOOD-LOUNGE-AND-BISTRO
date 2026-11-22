@@ -381,7 +381,7 @@ export default function InventoryManagement() {
                 label="Payment method"
                 value={form.payment_method}
                 onChange={(value) => setForm((current) => ({ ...current, payment_method: value }))}
-                options={['Cash', 'Bank', 'Mobile Money', 'Supplier Credit'].map((value) => ({ value, label: value }))}
+                options={['Cash', 'Bank', 'MTN Mobile Money', 'Airtel Money', 'Supplier Credit'].map((value) => ({ value, label: value }))}
               />
               <div className="grid grid-cols-2 gap-3">
                 <Select label="Location" value={form.location_name} onChange={(value) => setForm((current) => ({ ...current, location_name: value }))} options={['MAIN STORE', 'KITCHEN', 'BAR', 'BARISTA']} />

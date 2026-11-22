@@ -34,6 +34,7 @@ function emptyTransaction(type = "Receipt") {
     payment_method: "Cash",
     amount: "",
     external_reference: "",
+    purchase_receipt_id: "",
   };
 }
 
@@ -85,6 +86,10 @@ function eligibleCounterparts(accounts, type, category) {
       return ["Asset", "Liability", "Equity", "Revenue"].includes(account.category);
     }
 
+    function isPayableAccount(account) {
+      return account?.category === "Liability" && /payable/i.test(String(account.account_type || ""));
+    }
+
     if (category === "Expense") return account.category === "Expense";
     if (category === "Supplier Payment") {
       return (account.category === "Liability" && accountType.includes("payable")) || account.category === "Expense";
@@ -127,6 +132,8 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState(null);
+  const [allocatingEntry, setAllocatingEntry] = useState(null);
+  const [allocationReceiptId, setAllocationReceiptId] = useState("");
   const [saving, setSaving] = useState(false);
   const [rowActionId, setRowActionId] = useState(null);
   const [reconciliationDate, setReconciliationDate] = useState(today);
@@ -217,6 +224,10 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
     () => eligibleCounterparts(counterpartAccounts, form?.transaction_type, form?.category),
     [counterpartAccounts, form?.category, form?.transaction_type]
   );
+  const selectedCounterpart = counterpartAccounts.find((account) => account.code === form?.counterpart_account_code);
+  const needsSupplierInvoice = form?.transaction_type === "Payment"
+    && form.category === "Supplier Payment"
+    && isPayableAccount(selectedCounterpart);
   const selectedReconciliation = reconciliationData?.reconciliations?.find(
     (item) => item.code === reconciliationAccount
   );
@@ -263,7 +274,13 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
     onDateRangeChange?.(nextRange);
   };
 
-  const updateForm = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const updateForm = (key, value) => setForm((current) => ({
+    ...current,
+    [key]: value,
+    ...(["category", "counterpart_account_code", "transaction_type"].includes(key)
+      ? { purchase_receipt_id: "" }
+      : {}),
+  }));
 
   const startNewTransaction = (type) => {
     const initial = emptyTransaction(type);
@@ -289,10 +306,36 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
       payment_method: entry.payment_method,
       amount: String(entry.transaction_type === "Receipt" ? entry.debit : entry.credit),
       external_reference: entry.external_reference || "",
+      purchase_receipt_id: entry.purchase_receipt_id ? String(entry.purchase_receipt_id) : "",
       id: entry.cashbook_id,
     });
     setError("");
     setNotice("");
+  };
+
+  const allocateSupplierInvoice = async (event) => {
+    event.preventDefault();
+    if (!allocatingEntry || !allocationReceiptId) return;
+    setRowActionId(allocatingEntry.cashbook_id);
+    setError("");
+    setNotice("");
+    try {
+      const result = await requestJSON(`${cashbookUrl}/${allocatingEntry.cashbook_id}/allocate-supplier-invoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ purchase_receipt_id: Number(allocationReceiptId) }),
+      });
+      setNotice(result.duplicate
+        ? `${allocatingEntry.reference} is already allocated to that invoice.`
+        : `${allocatingEntry.reference} allocated to invoice ${result.allocation.reference}.`);
+      setAllocatingEntry(null);
+      setAllocationReceiptId("");
+      await Promise.all([loadCashbook(), loadAudit()]);
+    } catch (allocationError) {
+      setError(allocationError.message);
+    } finally {
+      setRowActionId(null);
+    }
   };
 
   const submitTransaction = async (event) => {
@@ -481,6 +524,36 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
       {error && <p role="alert" className="border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
       {notice && <p role="status" className="border-l-4 border-green-600 bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</p>}
 
+      {allocatingEntry && (
+        <section className="border border-amber-300 bg-amber-50 p-4">
+          <h4 className="font-bold text-gray-900">Allocate {formatUGX(allocatingEntry.credit)} supplier payment</h4>
+          <p className="mt-1 text-xs text-gray-600">{allocatingEntry.reference} has already been posted to the General Ledger. Choose the invoice it paid to update its Accounts Payable balance.</p>
+          <form onSubmit={allocateSupplierInvoice} className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="min-w-[280px] flex-1 text-[10px] font-bold uppercase text-gray-500">
+              Open supplier invoice
+              <select
+                required
+                value={allocationReceiptId}
+                onChange={(event) => setAllocationReceiptId(event.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case text-gray-900"
+              >
+                <option value="">Select an invoice</option>
+                {(data?.supplier_payables || []).map((invoice) => (
+                  <option key={invoice.id} value={invoice.id}>
+                    {invoice.reference} · {invoice.supplier_name} · Due {formatUGX(invoice.outstanding_balance)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={() => setAllocatingEntry(null)} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">Cancel</button>
+            <button type="submit" disabled={!allocationReceiptId || rowActionId === allocatingEntry.cashbook_id} className="rounded-md bg-yellow-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">
+              {rowActionId === allocatingEntry.cashbook_id ? "Allocating..." : "Allocate payment"}
+            </button>
+          </form>
+          {!data?.supplier_payables?.length && <p className="mt-2 text-sm text-red-700">There are no open supplier invoices available for this payment.</p>}
+        </section>
+      )}
+
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           ["Opening Balance", data?.summary?.opening_balance],
@@ -523,7 +596,7 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
               <input required type="date" max={today} value={form.transaction_date} onChange={(event) => updateForm("transaction_date", event.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal normal-case text-gray-900" />
             </label>
             <label className="text-[10px] font-bold uppercase text-gray-500">Category
-              <select required value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value, counterpart_account_code: "" }))} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case text-gray-900">
+              <select required value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value, counterpart_account_code: "", purchase_receipt_id: "" }))} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case text-gray-900">
                 {transactionCategories.map((category) => <option key={category} value={category}>{category}</option>)}
               </select>
             </label>
@@ -544,6 +617,25 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
                 {filteredCounterparts.map((account) => <option key={account.code} value={account.code}>{account.code} · {account.name}</option>)}
               </select>
             </label>
+            {needsSupplierInvoice && (
+              <label className="text-[10px] font-bold uppercase text-gray-500">
+                Supplier invoice
+                <select
+                  required
+                  value={form.purchase_receipt_id || ""}
+                  onChange={(event) => updateForm("purchase_receipt_id", event.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case text-gray-900"
+                >
+                  <option value="">Select an unpaid invoice</option>
+                  {(data?.supplier_payables || []).map((invoice) => (
+                    <option key={invoice.id} value={invoice.id}>
+                      {invoice.reference} · {invoice.supplier_name} · Due {formatUGX(invoice.outstanding_balance)}
+                    </option>
+                  ))}
+                </select>
+                {!data?.supplier_payables?.length && <span className="mt-1 block font-normal normal-case text-amber-700">No open supplier invoices are available to allocate.</span>}
+              </label>
+            )}
             <label className="text-[10px] font-bold uppercase text-gray-500">Payment method
               <select required value={form.payment_method} onChange={(event) => updateForm("payment_method", event.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal normal-case text-gray-900">
                 {paymentMethods.map((method) => <option key={method} value={method}>{method}</option>)}
@@ -595,6 +687,12 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
                   const isLegacyUnposted = entry.status === "Pending Approval";
                   const createdByActor = Number(entry.created_by_staff_id) === Number(capabilities.actor_id);
                   const rowBusy = rowActionId === entry.cashbook_id;
+                  const canAllocateInvoice = entry.status === "Posted"
+                    && entry.transaction_type === "Payment"
+                    && entry.category === "Supplier Payment"
+                    && !entry.purchase_receipt_id
+                    && isPayableAccount(counterpartAccounts.find((account) => account.code === entry.counterpart_account_code))
+                    && capabilities.can_create;
                   return (
                     <tr key={entry.row_id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="whitespace-nowrap px-3 py-3 text-gray-800">{entry.transaction_date?.slice(0, 10)}</td>
@@ -609,6 +707,20 @@ export default function Cashbook({ initialDateRange, onDateRangeChange }) {
                       <td className="whitespace-nowrap px-3 py-3 text-gray-800">{isLegacyUnposted ? "Unposted" : entry.status}</td>
                       <td className="whitespace-nowrap px-3 py-3">
                         <div className="flex items-center gap-2">
+                          {entry.purchase_reference && <span className="text-xs text-gray-600">{entry.purchase_reference}</span>}
+                          {canAllocateInvoice && (
+                            <button
+                              type="button"
+                              disabled={rowBusy}
+                              onClick={() => {
+                                setAllocatingEntry(entry);
+                                setAllocationReceiptId("");
+                              }}
+                              className="text-xs font-bold text-amber-700 hover:text-amber-900 disabled:opacity-50"
+                            >
+                              Allocate invoice
+                            </button>
+                          )}
                           {isLegacyUnposted && capabilities.can_edit && (createdByActor || capabilities.actor_role === "MANAGER" || capabilities.actor_role === "DIRECTOR") && (
                             <button type="button" onClick={() => editTransaction(entry)} className="text-xs font-bold text-gray-700 hover:text-black">Edit</button>
                           )}

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  accountingEntryTypeSql,
   aggregateIncomeStatementRevenue,
   buildAccountTransactionJournalLines,
   buildAccountTransferJournalLines,
@@ -13,6 +14,14 @@ import {
   resolvePaymentDebitAccountCode,
   resolveRevenueAccountCode,
 } from '../helpers/accounting.js';
+
+test('accounting entry groups distinguish COGS journals, sales journals, and other entries', () => {
+  const entryTypeSql = accountingEntryTypeSql();
+
+  assert.match(entryTypeSql, /account_code = '5010'/);
+  assert.match(entryTypeSql, /sales_account\.category = 'Revenue'/);
+  assert.match(entryTypeSql, /ELSE 'other'/);
+});
 
 test('sales are posted to the revenue account for their department', () => {
   assert.equal(resolveRevenueAccountCode('Kitchen'), '4001');
