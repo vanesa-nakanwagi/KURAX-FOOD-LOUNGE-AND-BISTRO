@@ -407,10 +407,20 @@ router.post('/items', async (req, res) => {
       purchase_conversion_factor,
       { unit: finalUnit, purchase_unit: finalPurchaseUnit }
     );
+    if (!isValidDecimal(current_quantity ?? 0, true)
+        || !isValidDecimal(minimum_stock_level ?? 0, true)
+        || (unit_cost !== undefined && unit_cost !== null && String(unit_cost).trim() !== ''
+          && !isValidDecimal(unit_cost, true, 2))) {
+      return res.status(400).json({ error: 'Stock quantity, minimum stock, and unit cost must be valid non-negative amounts.' });
+    }
+    const openingQuantity = Number(current_quantity || 0);
+    if (openingQuantity > 0 && !isValidDecimal(unit_cost, false, 2)) {
+      return res.status(400).json({ error: 'Enter a positive unit cost before adding opening stock.' });
+    }
     const resolvedSupplierId = await resolveSupplierId(supplier_id || null, supplier_name || null);
     const resolvedLocationId = await resolveLocationId(location_id || null, location_name || 'MAIN STORE');
     const finalBaseUnit = normalizeUnit(base_unit || finalUnit);
-    const quantity = Number(current_quantity || 0);
+    const quantity = openingQuantity;
     const unitPrice = Number(unit_cost || 0);
     const inventoryValue = quantity * unitPrice;
 
@@ -478,8 +488,9 @@ router.patch('/items/:id', authenticateAccountant, async (req, res) => {
   if (!isValidDecimal(current_quantity, true) || !isValidDecimal(minimum_stock_level, true)) {
     return res.status(400).json({ error: 'Stock quantity and minimum stock must be valid non-negative numbers.' });
   }
-  if (!isValidDecimal(unit_cost, true, 2)) {
-    return res.status(400).json({ error: 'Unit cost must be a valid non-negative amount.' });
+  if (!isValidDecimal(unit_cost, true, 2)
+      || (Number(current_quantity) > 0 && !isValidDecimal(unit_cost, false, 2))) {
+    return res.status(400).json({ error: 'Stocked inventory must have a positive unit cost.' });
   }
 
   let conversionFactor;
@@ -831,8 +842,8 @@ router.post('/purchases', async (req, res) => {
       const providedUnitCost = row.unit_cost === undefined || row.unit_cost === null || String(row.unit_cost).trim() === ''
         ? null
         : String(row.unit_cost);
-      if (!isValidDecimal(quantity) || (providedUnitCost !== null && !isValidDecimal(providedUnitCost, true, 2))) {
-        throw new UnitConversionError('Purchase quantity must be positive and unit cost cannot be negative.');
+      if (!isValidDecimal(quantity) || (providedUnitCost !== null && !isValidDecimal(providedUnitCost, false, 2))) {
+        throw new UnitConversionError('Purchase quantity and unit cost must be positive amounts.');
       }
 
       const station = normalizeInventoryStation(item.station || row.station || 'KITCHEN');
@@ -868,6 +879,9 @@ router.post('/purchases', async (req, res) => {
       const lineTotal = amountResult.rows[0].line_total;
       const unitCostInput = amountResult.rows[0].purchase_unit_cost;
       const normalizedUnitCost = amountResult.rows[0].normalized_unit_cost;
+      if (Number(unitCostInput) <= 0) {
+        throw new UnitConversionError('Enter a positive unit cost for this purchase or set a valid cost on the existing inventory item.');
+      }
       if (Number(normalizedQuantity) <= 0) {
         throw new UnitConversionError('The converted stock quantity is below the supported precision.');
       }

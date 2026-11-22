@@ -378,7 +378,7 @@ function PurchaseWorkflow({ items, locations, records, onAction }) {
             }));
           }} options={stationUnits.map((value) => ({ value, label: value }))} />
           <Input label={`Stock units per ${form.purchase_unit}`} type="number" min="0.000001" value={form.purchase_conversion_factor} onChange={(value) => set('purchase_conversion_factor', value)} required />
-          <Input label="Unit cost (UGX)" type="number" min="0" value={form.unit_cost} onChange={(value) => set('unit_cost', value)} required />
+          <Input label="Unit cost per purchase unit (UGX)" type="number" min="0.01" value={form.unit_cost} onChange={(value) => set('unit_cost', value)} required />
           <Input label="Supplier" value={form.supplier_name} onChange={(value) => set('supplier_name', value)} required />
           <Select label="Location" value={form.location_id} onChange={(value) => set('location_id', value)} options={locations.map((location) => ({ value: String(location.id), label: location.name }))} required />
           <Select label="Payment method" value={form.payment_method} onChange={(value) => set('payment_method', value)} options={['Cash', 'Bank', 'Mobile Money', 'Supplier Credit'].map((value) => ({ value, label: value }))} />

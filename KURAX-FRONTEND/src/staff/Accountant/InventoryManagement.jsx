@@ -8,11 +8,11 @@ import { defaultPurchaseConversionFactor, inventoryUnitsForStation } from './inv
 
 const defaultForm = {
   item_name: '',
-  quantity: '0',
+  quantity: '',
   unit: 'kg',
   purchase_unit: 'kg',
   purchase_conversion_factor: '1',
-  unit_cost: '0',
+  unit_cost: '',
   supplier_name: 'KURAX PRIMARY SUPPLIER',
   payment_method: 'Cash',
   location_name: 'MAIN STORE',
@@ -201,7 +201,7 @@ export default function InventoryManagement() {
           item_name: form.item_name,
           quantity: Number(form.quantity || 0),
           unit: form.unit,
-          unit_cost: Number(form.unit_cost || 0),
+          unit_cost: form.unit_cost,
           category: form.category,
           minimum_stock_level: Number(form.minimum_stock_level || 0),
           location_name: form.location_name,
@@ -364,16 +364,16 @@ export default function InventoryManagement() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3">
-              <Input label="Item name" value={form.item_name} onChange={(value) => setForm((current) => ({ ...current, item_name: value }))} />
+              <Input label="Item name" value={form.item_name} onChange={(value) => setForm((current) => ({ ...current, item_name: value }))} required />
               <div className="grid grid-cols-2 gap-3">
-                <Input label="Quantity" type="number" value={form.quantity} onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} />
+                <Input label="Quantity" type="number" min="0.001" value={form.quantity} onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} required />
                 <Select label="Stock unit" value={form.unit} onChange={(value) => setForm((current) => {
                   const factor = defaultPurchaseConversionFactor(value, current.purchase_unit);
                   return { ...current, unit: value, purchase_unit: factor === '' ? value : current.purchase_unit, purchase_conversion_factor: factor === '' ? '1' : String(factor) };
                 })} options={inventoryUnitsForStation(form.station)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Input label="Unit cost" type="number" value={form.unit_cost} onChange={(value) => setForm((current) => ({ ...current, unit_cost: value }))} />
+                <Input label="Unit cost per purchase unit (UGX)" type="number" min="0.01" value={form.unit_cost} onChange={(value) => setForm((current) => ({ ...current, unit_cost: value }))} required />
                 <Input label="Min stock" type="number" value={form.minimum_stock_level} onChange={(value) => setForm((current) => ({ ...current, minimum_stock_level: value }))} />
               </div>
               <Input label="Supplier" value={form.supplier_name} onChange={(value) => setForm((current) => ({ ...current, supplier_name: value }))} />
@@ -462,12 +462,14 @@ function SummaryRow({ label, value }) {
   );
 }
 
-function Input({ label, value, onChange, type = 'text' }) {
+function Input({ label, value, onChange, type = 'text', min, required = false }) {
   return (
     <label className="block">
       <span className="mb-1 block text-[9px] font-black uppercase tracking-[0.18em] text-zinc-500">{label}</span>
       <input
         type={type}
+        min={min}
+        required={required}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 outline-none ring-0 transition focus:border-zinc-500"
