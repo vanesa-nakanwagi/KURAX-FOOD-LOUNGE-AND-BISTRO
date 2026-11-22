@@ -224,6 +224,11 @@ async function getCogsRows(startDate, endDate, menuName, category, salesRows = [
              COALESCE(item->>'_rowPaid', 'false') = 'true'
              OR (o.public_order_ref IS NOT NULL AND o.payment_confirmed = true)
            )
+           AND NOT EXISTS (
+             SELECT 1 FROM public.orders o2
+             WHERE o2.original_order_ids IS NOT NULL
+               AND o2.original_order_ids::text LIKE '%' || o.id::text || '%'
+           )
            AND COALESCE(item->>'voidProcessed', 'false') <> 'true'
            AND UPPER(COALESCE(item->>'status', '')) <> 'VOIDED'
            AND (

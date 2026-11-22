@@ -469,6 +469,7 @@ function Input({ label, value, onChange, type = 'text', min, required = false })
       <input
         type={type}
         min={min}
+        step={type === 'number' ? 'any' : undefined}
         required={required}
         value={value}
         onChange={(event) => onChange(event.target.value)}

@@ -77,8 +77,8 @@ function Input({ label, value, onChange, type = 'text', min, max, required = fal
         value={value}
         min={min}
         max={max}
-        placeholder={placeholder}
         step={type === 'number' ? 'any' : undefined}
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
       />
