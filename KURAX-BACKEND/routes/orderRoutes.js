@@ -1,7 +1,12 @@
 // routes/orderRoutes.js
 import express from 'express';
 import pool from '../db.js';
-import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
+import {
+  consumeSoldOrderItems,
+  getPreparedVoidQuantity,
+  getUnpreparedQuantityRatio,
+  reverseConsumedOrderItem,
+} from '../helpers/recipeConsumption.js';
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { buildOpenShiftOrderClause } from '../helpers/shiftVisibility.js';
 import { buildSalesRevenueBreakdown, createSalesJournalEntry } from '../helpers/accounting.js';
@@ -1610,6 +1615,98 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'The requested order item was already voided or no longer exists.' });
     }
+    const preparedResult = await client.query(
+      `SELECT COALESCE(MAX(
+                CASE WHEN status = 'Completed'
+                       OR (started_at IS NOT NULL AND completed_quantity = 0)
+                     THEN GREATEST(completed_quantity, quantity)
+                     ELSE completed_quantity END
+              ), 0)::numeric AS completed_quantity,
+              COALESCE(BOOL_OR(status = 'Completed'), false) AS production_completed
+       FROM public.restaurant_production_work
+       WHERE order_id = $1 AND item_index = $2`,
+      [vr.order_id, voidedItemIndex]
+    );
+    const itemStation = String(items[voidedItemIndex].station || '').trim().toLowerCase();
+    const ticketTable = itemStation === 'barista'
+      ? 'barista_tickets'
+      : ['bar', 'barman'].includes(itemStation)
+        ? 'barman_tickets'
+        : 'kitchen_tickets';
+    const ticketResult = await client.query(
+      `SELECT status FROM public.${ticketTable}
+       WHERE order_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [vr.order_id]
+    );
+    const preparedItem = {
+      ...items[voidedItemIndex],
+      readyForService: items[voidedItemIndex].readyForService === true
+        || preparedResult.rows[0]?.production_completed === true
+        || ticketResult.rows[0]?.status === 'Ready',
+    };
+    const preparedQuantity = getPreparedVoidQuantity(
+      preparedItem,
+      preparedResult.rows[0]?.completed_quantity
+    );
+
+    const voidedItem = items[voidedItemIndex];
+    let inventoryTreatment = 'NOT_PREPARED';
+    if (preparedQuantity > 0) {
+      const wasteItems = items.map((item, index) => index === voidedItemIndex ? {
+        ...item,
+        status: 'VOIDED',
+        voidProcessed: true,
+        _approvedPreparedVoid: true,
+        _wasteQuantity: preparedQuantity,
+        _voidRequestId: Number(id),
+        _voidWasteReason: { requestId: Number(id), reason: vr.reason },
+      } : item);
+      const wasteResult = await consumeSoldOrderItems({
+        orderId: vr.order_id,
+        items: wasteItems,
+        createdBy: approved_by || 'Accountant',
+        queryable: client,
+        onlyOrderItemIndex: voidedItemIndex,
+      });
+      const wasteOutcome = wasteResult[0];
+      if (!wasteOutcome || !['WASTED', 'WASTED_COST_REVIEW', 'ALREADY_CONSUMED', 'ALREADY_WASTED'].includes(wasteOutcome.status)) {
+        const error = new Error(
+          `Could not record prepared void as inventory waste${wasteOutcome?.message ? `: ${wasteOutcome.message}` : '.'}`
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+      if (wasteOutcome.status === 'ALREADY_CONSUMED') {
+        const unpreparedRatio = getUnpreparedQuantityRatio(voidedItem.quantity || 1, preparedQuantity);
+        if (unpreparedRatio > 0) {
+          await reverseConsumedOrderItem({
+            orderId: vr.order_id,
+            orderItemIndex: voidedItemIndex,
+            createdBy: approved_by || 'Accountant',
+            queryable: client,
+            quantityRatio: unpreparedRatio,
+          });
+          inventoryTreatment = 'PREPARED_WASTE_RESTOCKED_UNPREPARED';
+        } else {
+          inventoryTreatment = 'ALREADY_CONSUMED';
+        }
+      } else {
+        inventoryTreatment = wasteOutcome.status;
+      }
+    } else {
+      const reversal = await reverseConsumedOrderItem({
+        orderId: vr.order_id,
+        orderItemIndex: voidedItemIndex,
+        createdBy: approved_by || 'Accountant',
+        queryable: client,
+      });
+      inventoryTreatment = reversal.status === 'REVERSED' || reversal.status === 'ALREADY_REVERSED'
+        ? 'RESTOCKED_UNPREPARED'
+        : 'NOT_PREPARED_NO_STOCK_DEDUCTION';
+    }
+
     const updatedItems = items.map((item, index) => index === voidedItemIndex ? {
       ...item,
       status: 'VOIDED',
@@ -1617,8 +1714,24 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
       voidApprovedBy: approved_by || 'Accountant',
       voidApprovedAt: new Date().toISOString(),
       voidReason: vr.reason,
+      voidPreparedQuantity: preparedQuantity,
+      voidInventoryTreatment: inventoryTreatment,
     } : item);
     const newTotal = getOrderPayableTotal(updatedItems);
+
+    await client.query(
+      `WITH voided_work AS (
+         UPDATE public.restaurant_production_work
+         SET status = 'Voided', completed_quantity = 0, updated_at = NOW()
+         WHERE order_id = $1 AND item_index = $2
+           AND status NOT IN ('Cancelled', 'Voided')
+         RETURNING id
+       )
+       INSERT INTO public.restaurant_production_events (work_id, event_type, to_status, reason)
+       SELECT id, 'VOIDED', 'Voided', $3 FROM voided_work
+       ON CONFLICT (work_id) WHERE event_type IN ('VOIDED', 'CANCELLED') DO NOTHING`,
+      [vr.order_id, voidedItemIndex, `Approved void request #${id}`]
+    );
 
     await client.query(
       `UPDATE orders SET items = $1, total = $2 WHERE id = $3`,
@@ -1641,7 +1754,14 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
       actor: approved_by || 'Accountant',
       role: 'ACCOUNTANT',
       message: `Approved void request for ${vr.item_name} (Order #${vr.order_id}) - Chef: ${vr.chef_name || 'Unknown'}`,
-      meta: { void_id: id, order_id: vr.order_id, item: vr.item_name, chef: vr.chef_name, inventory_treatment: 'not_restocked' }
+      meta: {
+        void_id: id,
+        order_id: vr.order_id,
+        item: vr.item_name,
+        chef: vr.chef_name,
+        inventory_treatment: inventoryTreatment,
+        prepared_quantity: preparedQuantity,
+      }
     });
     await notifyWaiterOfVoidDecision(vr, 'Approved', approved_by || 'Accountant');
     
@@ -1649,7 +1769,7 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('Approve void error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   } finally {
     client.release();
   }

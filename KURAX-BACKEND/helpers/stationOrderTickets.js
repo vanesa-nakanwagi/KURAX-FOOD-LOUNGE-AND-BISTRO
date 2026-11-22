@@ -35,6 +35,7 @@ export function getRoutableItemsForStation(items, stationKey, { publicOrder = fa
 
   return parseItems(items)
     .map((item, index) => ({ ...item, _orderItemIndex: index }))
+    .filter((item) => item.voidProcessed !== true && String(item.status || '').toUpperCase() !== 'VOIDED')
     .filter((item) => !publicOrder || item.payment_confirmed === true)
     .filter((item) => item.payment_confirmed === true || item.station_routing_requested === true)
     .filter((item) => station.matches(String(item.station || (stationKey === 'kitchen' ? 'kitchen' : '')).trim().toLowerCase()));
@@ -64,6 +65,7 @@ export async function syncRoutableStationTickets(queryable, stationKey) {
      WHERE LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided', 'closed', 'served')
        AND COALESCE(o.day_cleared, false) = false
        AND COALESCE(o.shift_cleared, false) = false
+       AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
        AND (o.public_order_ref IS NULL OR o.payment_confirmed = true)
        AND (
          expanded.item->'payment_confirmed' = 'true'::jsonb
@@ -71,6 +73,23 @@ export async function syncRoutableStationTickets(queryable, stationKey) {
            o.public_order_ref IS NULL
            AND expanded.item->'station_routing_requested' = 'true'::jsonb
          )
+       )
+       AND COALESCE(expanded.item->>'voidProcessed', 'false') <> 'true'
+       AND UPPER(COALESCE(expanded.item->>'status', '')) <> 'VOIDED'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM public.void_requests vr
+         WHERE vr.order_id = o.id
+           AND UPPER(COALESCE(vr.status, '')) = 'APPROVED'
+           AND LOWER(BTRIM(COALESCE(vr.item_name, '')))
+             = LOWER(BTRIM(COALESCE(expanded.item->>'name', '')))
+           AND COALESCE(
+                 NULLIF(expanded.item->>'price', '')::numeric,
+                 NULLIF(expanded.item->>'unit_price', '')::numeric,
+                 0
+               ) = COALESCE(vr.original_price, 0)
+           AND COALESCE(NULLIF(expanded.item->>'quantity', '')::numeric, 1)
+             = COALESCE(vr.original_quantity, 1)
        )
        AND ${station.sqlMatch}
      GROUP BY o.id, o.table_name, o.staff_name, o.staff_role

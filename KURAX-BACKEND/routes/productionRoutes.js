@@ -163,6 +163,21 @@ export async function ensureTicketWork(client, station) {
             CASE
               WHEN LOWER(COALESCE(order_row.status, '')) IN ('cancelled', 'voided') THEN 'Cancelled'
               WHEN item.value->>'voidProcessed' = 'true' OR UPPER(COALESCE(item.value->>'status','')) = 'VOIDED'
+                OR EXISTS (
+                  SELECT 1
+                  FROM public.void_requests vr
+                  WHERE vr.order_id = order_row.id
+                    AND UPPER(COALESCE(vr.status, '')) = 'APPROVED'
+                    AND LOWER(BTRIM(COALESCE(vr.item_name, '')))
+                      = LOWER(BTRIM(COALESCE(item.value->>'name', '')))
+                    AND COALESCE(
+                          NULLIF(item.value->>'price', '')::numeric,
+                          NULLIF(item.value->>'unit_price', '')::numeric,
+                          0
+                        ) = COALESCE(vr.original_price, 0)
+                    AND COALESCE(NULLIF(item.value->>'quantity', '')::numeric, 1)
+                      = COALESCE(vr.original_quantity, 1)
+                )
                 THEN 'Voided'
               ELSE 'Unclaimed'
             END
@@ -170,6 +185,7 @@ export async function ensureTicketWork(client, station) {
      JOIN public.orders order_row ON order_row.id=ticket.order_id
      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(ticket.items, '[]'::jsonb))
        WITH ORDINALITY AS item(value, ordinality)
+     WHERE COALESCE(jsonb_array_length(order_row.original_order_ids), 0) = 0
      ON CONFLICT (station, ticket_id, item_index) DO UPDATE
        SET status = CASE
              WHEN EXCLUDED.status = 'Voided' AND public.restaurant_production_work.status NOT IN ('Cancelled', 'Voided')
@@ -227,11 +243,13 @@ router.get('/:station/queue', authenticate, async (req, res) => {
               item.value AS item_details
        FROM public.restaurant_production_work work
        JOIN public.${table} ticket ON ticket.id = work.ticket_id
+       JOIN public.orders order_row ON order_row.id = work.order_id
        LEFT JOIN public.staff staff ON staff.id = work.staff_id
        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(ticket.items, '[]'::jsonb))
          WITH ORDINALITY AS item(value, ordinality)
        WHERE work.station = $1
          AND COALESCE(NULLIF(item.value->>'_orderItemIndex', '')::integer, item.ordinality - 1) = work.item_index
+         AND COALESCE(jsonb_array_length(order_row.original_order_ids), 0) = 0
          AND COALESCE(ticket.cleared_at, NULL) IS NULL
          AND work.status NOT IN ('Cancelled', 'Voided')
          AND ($2 = 'available'

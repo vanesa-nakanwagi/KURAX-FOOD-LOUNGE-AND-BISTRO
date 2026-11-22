@@ -1172,20 +1172,29 @@ router.get('/accounting/historical-summary', async (req, res) => {
         [startDate, endDate, startTime || null, endTime || null]
       ),
       pool.query(
-        `SELECT 'Kitchen' AS station, id, order_id, table_name, staff_name, total, status, created_at
-         FROM public.kitchen_tickets WHERE ticket_date BETWEEN $1 AND $2
-           AND ($3::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
-           AND ($4::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+        `SELECT 'Kitchen' AS station, t.id, t.order_id, t.table_name, t.staff_name, t.total, t.status, t.created_at
+         FROM public.kitchen_tickets t
+         JOIN public.orders o ON o.id=t.order_id
+         WHERE t.ticket_date BETWEEN $1 AND $2
+           AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
+           AND ($3::time IS NULL OR (t.created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (t.created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
          UNION ALL
-         SELECT 'Bar' AS station, id, order_id, table_name, staff_name, total, status, created_at
-         FROM public.barman_tickets WHERE ticket_date BETWEEN $1 AND $2
-           AND ($3::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
-           AND ($4::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         SELECT 'Bar' AS station, t.id, t.order_id, t.table_name, t.staff_name, t.total, t.status, t.created_at
+         FROM public.barman_tickets t
+         JOIN public.orders o ON o.id=t.order_id
+         WHERE t.ticket_date BETWEEN $1 AND $2
+           AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
+           AND ($3::time IS NULL OR (t.created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (t.created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
          UNION ALL
-         SELECT 'Barista' AS station, id, order_id, table_name, staff_name, total, status, created_at
-         FROM public.barista_tickets WHERE ticket_date BETWEEN $1 AND $2
-           AND ($3::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
-           AND ($4::time IS NULL OR (created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
+         SELECT 'Barista' AS station, t.id, t.order_id, t.table_name, t.staff_name, t.total, t.status, t.created_at
+         FROM public.barista_tickets t
+         JOIN public.orders o ON o.id=t.order_id
+         WHERE t.ticket_date BETWEEN $1 AND $2
+           AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
+           AND ($3::time IS NULL OR (t.created_at AT TIME ZONE 'Africa/Kampala')::time >= $3::time)
+           AND ($4::time IS NULL OR (t.created_at AT TIME ZONE 'Africa/Kampala')::time <= $4::time)
          ORDER BY created_at DESC LIMIT 500`,
         [startDate, endDate, startTime || null, endTime || null]
       ),

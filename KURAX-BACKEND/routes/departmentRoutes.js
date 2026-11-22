@@ -49,6 +49,10 @@ function departmentFor(value) {
   return DEPARTMENTS[String(value || '').toLowerCase()];
 }
 
+function excludesPaymentMirror(orderAlias) {
+  return `COALESCE(jsonb_array_length(${orderAlias}.original_order_ids), 0) = 0`;
+}
+
 async function inventoryReport(station, from, to) {
   const consumptionStationFilter = station === 'KITCHEN'
     ? "UPPER(COALESCE(NULLIF(ic.station,''), NULLIF(ii.station,''), 'KITCHEN')) NOT IN ('BARMAN','BAR','BARISTA','SHISHA')"
@@ -116,8 +120,10 @@ async function menuItemReport(department, from, to) {
             )),0) AS sales,
             COALESCE(SUM(COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)),0) AS quantity
      FROM public.${department.table} t
+     LEFT JOIN public.orders o ON o.id=t.order_id
      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
      WHERE t.ticket_date BETWEEN $1::date AND $2::date
+       AND ${excludesPaymentMirror('o')}
        AND COALESCE(ticket_items.item->>'voidProcessed','false') <> 'true'
        AND UPPER(COALESCE(ticket_items.item->>'status','')) <> 'VOIDED'
        AND ${approvedVoidExclusion('t.order_id', 'ticket_items.item')}
@@ -135,8 +141,10 @@ async function menuItemReport(department, from, to) {
        AND EXISTS (
          SELECT 1
          FROM public.${department.table} t
+         JOIN public.orders o ON o.id=t.order_id
          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
          WHERE t.order_id = vr.order_id
+           AND ${excludesPaymentMirror('o')}
            AND LOWER(BTRIM(COALESCE(item->>'name',''))) = LOWER(BTRIM(vr.item_name))
            AND ${department.paidItemFilter}
        )
@@ -174,6 +182,7 @@ async function menuItemReport(department, from, to) {
        LIMIT 1
      ) source_item ON true
      WHERE t.ticket_date BETWEEN $1::date AND $2::date
+       AND ${excludesPaymentMirror('o')}
        AND COALESCE(ticket_items.item->>'voidProcessed','false') <> 'true'
        AND UPPER(COALESCE(ticket_items.item->>'status','')) <> 'VOIDED'
        AND ${approvedVoidExclusion('t.order_id', 'ticket_items.item')}
@@ -269,6 +278,7 @@ async function productionStaffReport(department, from, to) {
             COALESCE(SUM(item.unit_price * work.quantity) FILTER (WHERE work.staff_id IS NOT NULL),0) AS production_value
      FROM public.restaurant_production_work work
      JOIN public.${department.table} ticket ON ticket.id=work.ticket_id
+     JOIN public.orders source_order ON source_order.id=work.order_id
      LEFT JOIN public.staff staff ON staff.id=work.staff_id
      LEFT JOIN LATERAL (
        SELECT CASE
@@ -282,6 +292,7 @@ async function productionStaffReport(department, from, to) {
        LIMIT 1
      ) item ON true
      WHERE work.station=$3
+       AND ${excludesPaymentMirror('source_order')}
        AND ticket.ticket_date BETWEEN $1::date AND $2::date
        AND (work.staff_id IS NOT NULL OR work.status='Voided')
      GROUP BY COALESCE(staff.name, work.staff_name, 'Unclaimed')
@@ -446,6 +457,7 @@ function departmentSalesJoin(department) {
       LIMIT 1
     ) source_item ON true
     WHERE COALESCE(${ticketItem}->>'voidProcessed','false') <> 'true'
+      AND ${excludesPaymentMirror('o')}
       AND UPPER(COALESCE(${ticketItem}->>'status','')) <> 'VOIDED'
       AND ${approvedVoidExclusion('t.order_id', ticketItem)}
       AND ${itemFilter}
@@ -523,6 +535,7 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
                 ARRAY[]::text[]
               ) AS workers
        FROM public.${req.department.table} t
+       JOIN public.orders order_row ON order_row.id=t.order_id
        LEFT JOIN public.${req.department.assignments} a ON a.ticket_id = t.id
        WHERE (
            t.ticket_date = $1::date
@@ -534,6 +547,7 @@ router.get('/:department/tickets', requireDepartmentHod, async (req, res) => {
          )
          AND COALESCE(t.cleared_by_kitchen, false) = false
          AND t.cleared_at IS NULL
+         AND ${excludesPaymentMirror('order_row')}
        GROUP BY t.id
        ORDER BY t.created_at ASC`,
       [date]
@@ -772,7 +786,8 @@ router.get('/reports/consolidated', async (req, res) => {
          FROM public.${department.table} t LEFT JOIN public.orders o ON o.id=t.order_id
          ${departmentSalesJoin(department)}
          ${departmentPaymentJoin(department)}
-         WHERE t.ticket_date BETWEEN $1::date AND $2::date`,
+         WHERE t.ticket_date BETWEEN $1::date AND $2::date
+           AND ${excludesPaymentMirror('o')}`,
         [range.from, range.to]
         ),
         pool.query(
@@ -785,8 +800,10 @@ router.get('/reports/consolidated', async (req, res) => {
                 * COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)
             )),0) AS total_sales
            FROM public.${department.table} t
+           LEFT JOIN public.orders o ON o.id=t.order_id
            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
            WHERE t.ticket_date BETWEEN $1::date AND $2::date
+             AND ${excludesPaymentMirror('o')}
              AND COALESCE(ticket_items.item->>'voidProcessed','false') <> 'true'
              AND UPPER(COALESCE(ticket_items.item->>'status','')) <> 'VOIDED'
              AND ${approvedVoidExclusion('t.order_id', 'ticket_items.item')}
@@ -941,7 +958,8 @@ router.get('/:department/reports', async (req, res) => {
          LEFT JOIN public.orders o ON o.id=t.order_id
          ${departmentSalesJoin(department)}
          ${departmentPaymentJoin(department)}
-         WHERE t.ticket_date BETWEEN $1::date AND $2::date`,
+         WHERE t.ticket_date BETWEEN $1::date AND $2::date
+           AND ${excludesPaymentMirror('o')}`,
         [range.from, range.to]
       ),
       pool.query(
@@ -954,8 +972,10 @@ router.get('/:department/reports', async (req, res) => {
               * COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)
           )),0) AS total_sales
          FROM public.${department.table} t
+         LEFT JOIN public.orders o ON o.id=t.order_id
          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
          WHERE t.ticket_date BETWEEN $1::date AND $2::date
+           AND ${excludesPaymentMirror('o')}
            AND COALESCE(ticket_items.item->>'voidProcessed','false') <> 'true'
            AND UPPER(COALESCE(ticket_items.item->>'status','')) <> 'VOIDED'
            AND ${approvedVoidExclusion('t.order_id', 'ticket_items.item')}

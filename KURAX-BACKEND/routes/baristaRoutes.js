@@ -96,13 +96,14 @@ router.get('/tickets/summary', async (req, res) => {
     const totalsRes = await pool.query(
       `SELECT
          COUNT(*)                                                    AS ticket_count,
-         COALESCE(SUM(total), 0)                                     AS total_value,
-         COALESCE(SUM(jsonb_array_length(items)), 0)                 AS total_items,
-         COUNT(*) FILTER (WHERE status IN ('Ready','Served','Paid')) AS completed_count,
-         COUNT(*) FILTER (WHERE status = 'Preparing')                AS preparing_count,
-         COUNT(*) FILTER (WHERE status = 'Pending')                  AS pending_count
-       FROM barista_tickets
-       WHERE ticket_date = $1`,
+         COALESCE(SUM(t.total), 0)                                   AS total_value,
+         COALESCE(SUM(jsonb_array_length(t.items)), 0)               AS total_items,
+         COUNT(*) FILTER (WHERE t.status IN ('Ready','Served','Paid')) AS completed_count,
+         COUNT(*) FILTER (WHERE t.status = 'Preparing')              AS preparing_count,
+         COUNT(*) FILTER (WHERE t.status = 'Pending')                 AS pending_count
+       FROM barista_tickets t
+       JOIN public.orders o ON o.id=t.order_id
+       WHERE t.ticket_date = $1 AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0`,
       [date]
     );
 
@@ -114,18 +115,20 @@ router.get('/tickets/summary', async (req, res) => {
          MAX(ba.assigned_at)         AS last_at
        FROM barista_assignments ba
        JOIN barista_tickets bt ON ba.ticket_id = bt.id
-       WHERE bt.ticket_date = $1
+       JOIN public.orders o ON o.id=bt.order_id
+       WHERE bt.ticket_date = $1 AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
        GROUP BY ba.assigned_to
        ORDER BY drinks_made DESC`,
       [date]
     );
 
     const ticketsRes = await pool.query(
-      `SELECT id, order_id, table_name, staff_name, items,
-              total, status, ready_at, cleared_at, created_at
-       FROM barista_tickets
-       WHERE ticket_date = $1
-       ORDER BY created_at ASC`,
+      `SELECT t.id, t.order_id, t.table_name, t.staff_name, t.items,
+              t.total, t.status, t.ready_at, t.cleared_at, t.created_at
+       FROM barista_tickets t
+       JOIN public.orders o ON o.id=t.order_id
+       WHERE t.ticket_date = $1 AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
+       ORDER BY t.created_at ASC`,
       [date]
     );
 
@@ -151,11 +154,14 @@ router.get('/tickets', async (req, res) => {
            AND t.cleared_at IS NULL
            AND COALESCE(o.day_cleared, false) = false
            AND COALESCE(o.shift_cleared, false) = false
+           AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
            AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided', 'closed', 'served')
          ORDER BY t.created_at ASC`
       )
       : await pool.query(
-        `SELECT * FROM barista_tickets WHERE ticket_date = $1 ORDER BY created_at ASC`,
+        `SELECT t.* FROM barista_tickets t JOIN public.orders o ON o.id=t.order_id
+         WHERE t.ticket_date = $1 AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
+         ORDER BY t.created_at ASC`,
         [date]
       );
     res.json(result.rows);

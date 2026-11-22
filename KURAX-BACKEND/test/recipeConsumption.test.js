@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { convertRecipeQuantity, directStockQuantity, isSoldOrderItem } from '../helpers/recipeConsumption.js';
+import {
+  convertRecipeQuantity,
+  directStockQuantity,
+  getOrderItemInventoryDisposition,
+  getPreparedVoidQuantity,
+  getUnpreparedQuantityRatio,
+  isSoldOrderItem,
+} from '../helpers/recipeConsumption.js';
 
 test('recipe quantities convert within compatible mass and volume units', () => {
   assert.equal(convertRecipeQuantity(150, 'g', 'kg'), 0.15);
@@ -39,4 +46,26 @@ test('served complimentary items consume recipes, while unserved or voided items
 
 test('served complimentary inventory items are eligible for stock consumption', () => {
   assert.equal(isSoldOrderItem({ complimentary: true, served: true, name: 'Four Cousins 1.5L' }), true);
+});
+
+test('prepared voids are recorded as waste only for prepared quantities', () => {
+  assert.equal(getPreparedVoidQuantity({ quantity: 2, served: true }), 2);
+  assert.equal(getPreparedVoidQuantity({ quantity: 2, readyForService: true }), 2);
+  assert.equal(getPreparedVoidQuantity({ quantity: 2 }, 0.5), 0.5);
+  assert.equal(getPreparedVoidQuantity({ quantity: 2 }, 3), 2);
+  assert.equal(getPreparedVoidQuantity({ quantity: 2 }, 0), 0);
+  assert.equal(getUnpreparedQuantityRatio(2, 0), 1);
+  assert.equal(getUnpreparedQuantityRatio(2, 0.5), 0.75);
+  assert.equal(getUnpreparedQuantityRatio(2, 2), 0);
+  assert.equal(getOrderItemInventoryDisposition({
+    status: 'VOIDED',
+    voidProcessed: true,
+    _approvedPreparedVoid: true,
+    _wasteQuantity: 1,
+  }), 'WASTE');
+  assert.equal(getOrderItemInventoryDisposition({
+    status: 'VOIDED',
+    voidProcessed: true,
+    _approvedPreparedVoid: false,
+  }), 'SKIP');
 });

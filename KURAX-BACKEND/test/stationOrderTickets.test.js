@@ -13,6 +13,8 @@ const items = [
   { name: 'Shisha', station: 'Shisha', price: 10000, quantity: 1, payment_confirmed: true },
   { name: 'Unpaid coffee', station: 'Barista', price: 5000, quantity: 1, payment_confirmed: false },
   { name: 'Unmarked kitchen item', price: 3000, quantity: 1, payment_confirmed: true },
+  { name: 'Voided pizza', station: 'Kitchen', price: 25000, quantity: 1, payment_confirmed: true, voidProcessed: true },
+  { name: 'Voided coffee', station: 'Barista', price: 4000, quantity: 1, payment_confirmed: true, status: 'VOIDED' },
 ];
 
 test('confirmed routed order items are grouped into the correct station without assignment', () => {
@@ -74,8 +76,12 @@ test('station ticket sync upserts confirmed or staff-routed items and leaves tic
   assert.match(query, /expanded\.item->'payment_confirmed' = 'true'::jsonb/);
   assert.match(query, /o\.public_order_ref IS NULL/);
   assert.match(query, /o\.public_order_ref IS NULL OR o\.payment_confirmed = true/);
+  assert.match(query, /COALESCE\(jsonb_array_length\(o\.original_order_ids\), 0\) = 0/);
   assert.match(query, /expanded\.item->'station_routing_requested' = 'true'::jsonb/);
   assert.match(query, /LOWER\(BTRIM\(expanded\.item->>'station'\)\) = 'barista'/);
+  assert.match(query, /expanded\.item->>'voidProcessed'/);
+  assert.match(query, /UPPER\(COALESCE\(expanded\.item->>'status'/);
+  assert.match(query, /FROM public\.void_requests vr/);
   assert.match(query, /OR ticket\.items IS DISTINCT FROM EXCLUDED\.items/);
   assert.doesNotMatch(query, /status\s*=/i);
   assert.doesNotMatch(query, /assignments/i);
@@ -119,6 +125,7 @@ test('public payment confirmation can synchronize tickets for every intended sta
   assert.match(statements[2], /INSERT INTO public\.barista_tickets/);
   for (const sql of statements) {
     assert.match(sql, /o\.public_order_ref IS NULL OR o\.payment_confirmed = true/);
+    assert.match(sql, /COALESCE\(jsonb_array_length\(o\.original_order_ids\), 0\) = 0/);
     assert.match(sql, /expanded\.item->'payment_confirmed' = 'true'::jsonb/);
   }
 });
