@@ -277,7 +277,7 @@ const StaffLogin = () => {
           BAR_HOD: '/barman/hod',
           BARISTA_HOD: '/barista/hod',
         };
-        navigate(roleRoutes[role] || '/staff/dashboard');
+        navigate(roleRoutes[role] || '/staff/dashboard', { replace: true });
       } else {
         setError(data.error || 'Access Denied');
       }
