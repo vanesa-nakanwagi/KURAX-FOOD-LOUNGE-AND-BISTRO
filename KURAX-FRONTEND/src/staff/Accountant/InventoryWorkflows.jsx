@@ -199,6 +199,18 @@ function PurchaseWorkflow({ items, locations, records, onAction }) {
       'Purchase receipt reversed; stock and accounting have been updated.'
     );
   };
+  const reconcileReversedPurchaseStock = async (row) => {
+    const receiptNumber = row.receipt_number || row.id;
+    if (!window.confirm(`Clear stale stock for already-reversed receipt ${receiptNumber}? This is only allowed when the remaining stock matches that receipt and has no other inventory activity.`)) return;
+    const reason = window.prompt(`Why are you reconciling stock for reversed receipt ${receiptNumber}?`);
+    if (!reason?.trim()) return;
+    await onAction(
+      `purchases/${row.id}/reconcile-reversed-stock`,
+      { reason: reason.trim() },
+      'POST',
+      'Stale stock cleared and item deactivated. You can now record the corrected purchase.'
+    );
+  };
   const receiptsToReverse = rows.filter((row) => !row.is_reversed);
   const reverseAllPurchases = async () => {
     if (!receiptsToReverse.length) return;
@@ -316,7 +328,7 @@ function PurchaseWorkflow({ items, locations, records, onAction }) {
         { label: 'Items', render: (row) => (row.items || []).map((item) => `${item.item_name} (${item.quantity} ${item.unit} → ${item.normalized_stock_quantity ?? item.quantity} ${item.normalized_stock_unit || item.unit})`).join(', ') || '—' },
         { label: 'Status', render: (row) => row.is_reversed ? `Reversed${row.reversal_reason ? `: ${row.reversal_reason}` : ''}` : 'Recorded' },
         { label: 'Action', render: (row) => row.is_reversed
-          ? '—'
+          ? <button type="button" onClick={() => reconcileReversedPurchaseStock(row)} className="inline-flex items-center gap-1 rounded-md border border-amber-200 px-2 py-1 font-bold text-amber-800 hover:bg-amber-50">Reconcile stock</button>
           : <button type="button" onClick={() => reversePurchase(row)} className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2 py-1 font-bold text-rose-700 hover:bg-rose-50"><Trash2 size={13} /> Delete</button> },
       ]} />
       <div className="purchase-print-area" hidden>

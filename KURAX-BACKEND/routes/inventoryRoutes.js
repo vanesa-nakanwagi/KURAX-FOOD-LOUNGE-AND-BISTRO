@@ -5,6 +5,7 @@ import { shishaInventoryFilterSql } from '../helpers/inventoryFilters.js';
 import { itemAssignedToStation } from '../helpers/inventoryStations.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
+import { getReversedPurchaseStockCorrectionBlocker } from '../helpers/reversedPurchaseStock.js';
 import {
   configuredPurchaseConversionFactor,
   inventoryUnitConversionFactor,
@@ -759,6 +760,15 @@ router.post('/purchases', async (req, res) => {
         if (!station || !isInventoryPurchaseUnitForStock(stockUnit, purchaseUnit, station)) {
           throw new UnitConversionError('Select stock and purchase units supported by the selected station.');
         }
+        const inactiveItems = await client.query(
+          `SELECT id FROM public.inventory_items
+           WHERE is_active = false
+             AND current_quantity <= 0.0001
+             AND LOWER(BTRIM(item_name)) = LOWER(BTRIM($1))
+             AND UPPER(COALESCE(station, 'KITCHEN')) IN ($2, CASE WHEN $2 = 'BAR' THEN 'BARMAN' ELSE $2 END)
+           FOR UPDATE`,
+          [String(itemName).trim(), station]
+        );
         const conversionFactor = configuredPurchaseConversionFactor(
           stockUnit,
           purchaseUnit,
@@ -783,6 +793,33 @@ router.post('/purchases', async (req, res) => {
           ]
         );
         item = createdItem.rows[0];
+        const inactiveItemIds = inactiveItems.rows.map((inactiveItem) => inactiveItem.id);
+        if (inactiveItemIds.length) {
+          const relinkedRecipes = await client.query(
+            `UPDATE public.recipe_ingredients ri
+             SET ingredient_item_id = $1
+             FROM public.inventory_recipes recipe
+             WHERE ri.recipe_id = recipe.id
+               AND recipe.status <> 'INACTIVE'
+               AND ri.ingredient_item_id = ANY($2::int[])
+             RETURNING ri.id`,
+            [item.id, inactiveItemIds]
+          );
+          if (relinkedRecipes.rowCount) {
+            await client.query(
+              `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
+               VALUES ('inventory_item', $1, 'recipe_ingredients_relinked', $2, $3)`,
+              [
+                item.id,
+                actor,
+                JSON.stringify({
+                  previous_inventory_item_ids: inactiveItemIds,
+                  relinked_recipe_ingredient_count: relinkedRecipes.rowCount,
+                }),
+              ]
+            );
+          }
+        }
       }
 
       if (!item) {
@@ -1037,8 +1074,15 @@ router.post('/purchases/:id/reverse', authenticateAccountant, async (req, res) =
       const quantity = Number(item.normalized_stock_quantity ?? item.quantity);
       await client.query(
         `UPDATE public.inventory_items
-         SET current_quantity = current_quantity - $1::numeric,
-             inventory_value = (current_quantity - $1::numeric) * unit_cost,
+         SET current_quantity = CASE
+               WHEN current_quantity - $1::numeric <= 0.0001 THEN 0
+               ELSE current_quantity - $1::numeric
+             END,
+             inventory_value = CASE
+               WHEN current_quantity - $1::numeric <= 0.0001 THEN 0
+               ELSE (current_quantity - $1::numeric) * unit_cost
+             END,
+             is_active = CASE WHEN current_quantity - $1::numeric <= 0.0001 THEN false ELSE is_active END,
              updated_by = $2, updated_at = NOW()
          WHERE id = $3`,
         [quantity, actor, item.item_id]
@@ -1063,6 +1107,22 @@ router.post('/purchases/:id/reverse', authenticateAccountant, async (req, res) =
           `Reversal of purchase receipt ${receipt.receipt_number || purchaseId}: ${reason}`,
         ]
       );
+      if (Number(item.available_quantity) - quantity <= 0.0001) {
+        await client.query(
+          `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
+           VALUES ('inventory_item', $1, 'deactivated_after_purchase_reversal', $2, $3)`,
+          [
+            item.item_id,
+            actor,
+            JSON.stringify({
+              purchase_id: purchaseId,
+              receipt_number: receipt.receipt_number,
+              reversed_quantity: quantity,
+              reason,
+            }),
+          ]
+        );
+      }
     }
 
     const reversalResult = await client.query(
@@ -1109,6 +1169,180 @@ router.post('/purchases/:id/reverse', authenticateAccountant, async (req, res) =
     await client.query('ROLLBACK');
     console.error('Purchase receipt reversal error:', error.message);
     res.status(500).json({ error: 'Could not reverse purchase receipt.' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/purchases/:id/reconcile-reversed-stock', authenticateAccountant, async (req, res) => {
+  const purchaseId = Number(req.params.id);
+  const reason = String(req.body?.reason || '').trim();
+  if (!Number.isInteger(purchaseId) || purchaseId < 1) {
+    return res.status(400).json({ error: 'A valid purchase receipt is required.' });
+  }
+  if (!reason) return res.status(400).json({ error: 'A reason is required to reconcile reversed stock.' });
+  if (reason.length > 1000) return res.status(400).json({ error: 'The reason must be 1000 characters or fewer.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const receiptResult = await client.query(
+      `SELECT * FROM public.purchase_receipts WHERE id = $1 FOR UPDATE`,
+      [purchaseId]
+    );
+    const receipt = receiptResult.rows[0];
+    if (!receipt) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Purchase receipt not found.' });
+    }
+
+    const originalResult = await client.query(
+      `SELECT * FROM public.journal_entries WHERE reference = $1 FOR UPDATE`,
+      [`INV-PUR-${purchaseId}`]
+    );
+    const original = originalResult.rows[0];
+    if (!original || original.status !== 'Reversed' || original.reversal_of) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Only an already-reversed purchase receipt can be reconciled.' });
+    }
+    const reversalResult = await client.query(
+      `SELECT id, reference
+       FROM public.journal_entries
+       WHERE reversal_of = $1 AND status = 'Posted'
+       ORDER BY id DESC
+       LIMIT 1
+       FOR SHARE`,
+      [original.id]
+    );
+    if (!reversalResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'The receipt has no posted reversal entry to reconcile.' });
+    }
+
+    const itemsResult = await client.query(
+      `SELECT pri.*, ii.item_name, ii.unit AS stock_unit, ii.current_quantity,
+              ii.unit_cost, ii.inventory_value, ii.location_id, ii.station, ii.is_active
+       FROM public.purchase_receipt_items pri
+       JOIN public.inventory_items ii ON ii.id = pri.item_id
+       WHERE pri.purchase_id = $1
+       ORDER BY pri.id
+       FOR UPDATE OF ii`,
+      [purchaseId]
+    );
+    if (!itemsResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This receipt has no inventory lines to reconcile.' });
+    }
+
+    const groupedItems = new Map();
+    for (const item of itemsResult.rows) {
+      const itemId = Number(item.item_id);
+      let group = groupedItems.get(itemId);
+      if (!group) {
+        group = {
+          ...item,
+          receiptQuantity: 0,
+          transactionReferences: [],
+        };
+        groupedItems.set(itemId, group);
+      }
+      const lineQuantity = item.normalized_stock_quantity == null
+        ? normalizeUnit(item.unit) === normalizeUnit(item.stock_unit) ? Number(item.quantity) : NaN
+        : Number(item.normalized_stock_quantity);
+      group.receiptQuantity += lineQuantity;
+      group.transactionReferences.push(item.transaction_reference);
+    }
+
+    for (const [itemId, item] of groupedItems) {
+      const otherReceiptsResult = await client.query(
+        `SELECT 1 FROM public.purchase_receipt_items
+         WHERE item_id = $1 AND purchase_id <> $2
+         LIMIT 1`,
+        [itemId, purchaseId]
+      );
+      const transactionsResult = await client.query(
+        `SELECT transaction_type, reference_number
+         FROM public.inventory_transactions
+         WHERE item_id = $1
+         ORDER BY id
+         FOR SHARE`,
+        [itemId]
+      );
+      const blocker = getReversedPurchaseStockCorrectionBlocker({
+        currentQuantity: item.current_quantity,
+        receiptQuantity: item.receiptQuantity,
+        isActive: item.is_active,
+        otherPurchaseReceiptExists: otherReceiptsResult.rows.length > 0,
+        transactions: transactionsResult.rows,
+        transactionReferences: item.transactionReferences,
+        purchaseId,
+        itemId,
+      });
+      if (blocker) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `Cannot reconcile ${item.item_name}: ${blocker}` });
+      }
+    }
+
+    const actor = req.inventoryActor.name;
+    const businessDate = currentBusinessDate();
+    for (const [itemId, item] of groupedItems) {
+      const value = Number(item.inventory_value || 0);
+      const reference = `REC-PUR-${purchaseId}-${itemId}-${Date.now()}`;
+      await client.query(
+        `UPDATE public.inventory_items
+         SET is_active = false, current_quantity = 0, inventory_value = 0,
+             updated_by = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [actor, itemId]
+      );
+      await client.query(
+        `INSERT INTO public.inventory_transactions
+           (item_id, reference_number, transaction_type, quantity, unit, unit_cost, total_value,
+            source_location_id, station, business_date, created_by, notes)
+         VALUES ($1, $2, 'REVERSAL', $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          itemId,
+          reference,
+          item.receiptQuantity,
+          item.stock_unit,
+          item.unit_cost,
+          value,
+          item.location_id,
+          item.station,
+          businessDate,
+          actor,
+          `Stale stock cleared for reversed receipt ${receipt.receipt_number || purchaseId}: ${reason}`,
+        ]
+      );
+      await client.query(
+        `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
+         VALUES ('inventory_item', $1, 'reconciled_reversed_purchase_stock', $2, $3)`,
+        [
+          itemId,
+          actor,
+          JSON.stringify({
+            purchase_id: purchaseId,
+            receipt_number: receipt.receipt_number,
+            reversal_reference: reversalResult.rows[0].reference,
+            quantity: item.receiptQuantity,
+            unit: item.stock_unit,
+            inventory_value_cleared: value,
+            reason,
+          }),
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+    return res.json({
+      success: true,
+      message: 'Stale stock was cleared and the inventory item deactivated. Record the corrected purchase as a new receipt.',
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Reversed purchase stock reconciliation error:', error.message);
+    return res.status(500).json({ error: 'Could not reconcile stock for the reversed purchase.' });
   } finally {
     client.release();
   }
