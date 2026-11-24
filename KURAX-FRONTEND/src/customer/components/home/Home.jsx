@@ -403,7 +403,7 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* Signature Combos Section */}
+      {/*
       <section id="combos" className="pt-8 pb-8 px-6 bg-[#f4f3ef] border-b border-zinc-200">
         <motion.div
           className="max-w-7xl mx-auto px-5 md:px-12"
@@ -464,6 +464,7 @@ export default function Home() {
           </Link>
         </motion.div>
       </section>
+      */}
 
       {/* Upcoming Events Section */}
       <section id="events" className="scroll-mt-24 pt-8 pb-24 px-6 bg-[#f4f3ef] relative overflow-hidden">

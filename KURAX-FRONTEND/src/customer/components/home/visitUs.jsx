@@ -35,7 +35,7 @@ export default function ContactPage() {
   const kuraxLocation = {
     address: 'Kyanja-Kisasi Rd, Opposite Pentagon',
     city: 'Kampala, Uganda',
-    hours: 'Monday - Sunday: 8:00 AM - 1:00 AM',
+    hours: 'Monday - Sunday: Open 24 Hours',
     contact: {
       phone: '+256 770 322 898',
       alternatePhone: '+256 745 763 167',

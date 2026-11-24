@@ -12,10 +12,6 @@ const pages = {
     title: "Menus | Kurax Food Lounge & Bistro",
     description: "Explore the food and drink menus at Kurax Food Lounge & Bistro in Kampala, featuring gourmet dishes and crafted cocktails.",
   },
-  "/combos": {
-    title: "Combos | Kurax Food Lounge & Bistro",
-    description: "Discover meal combos from Kurax Food Lounge & Bistro in Kampala and find a delicious option for your next visit.",
-  },
   "/events": {
     title: "Events | Kurax Food Lounge & Bistro",
     description: "See upcoming events at Kurax Food Lounge & Bistro in Kampala, from live entertainment to special dining experiences.",
