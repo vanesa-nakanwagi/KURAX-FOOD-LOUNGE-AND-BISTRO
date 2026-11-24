@@ -138,7 +138,7 @@ router.get('/', async (req, res) => {
       FROM public.menus
       WHERE LOWER(TRIM(COALESCE(category, ''))) <> 'shisha'
         AND LOWER(TRIM(COALESCE(station, ''))) <> 'shisha'
-      ORDER BY created_at DESC
+      ORDER BY updated_at DESC NULLS LAST, created_at DESC
     `;
     const result = await pool.query(query);
     res.json(result.rows.map(serializeMenu));

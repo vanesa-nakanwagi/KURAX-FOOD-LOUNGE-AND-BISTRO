@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
-import { Plus, Calendar, MapPin, Clock, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Loader2 } from 'lucide-react'
+import { Plus, Calendar, MapPin, Clock, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Loader2, Search } from 'lucide-react'
 import API_URL from "../../../config/api";
 
 export default function Events() {
@@ -11,6 +11,7 @@ export default function Events() {
   const [imagePreview, setImagePreview] = useState('')
   const [previewOpen, setPreviewOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)   // 👈 Track which event is being deleted
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
@@ -35,6 +36,16 @@ export default function Events() {
     if (Array.isArray(tags)) return tags;
     try { return JSON.parse(tags); } catch (e) { return []; }
   }
+
+  const normalizedSearch = searchTerm.trim().toLowerCase()
+  const filteredEvents = events.filter(event => (
+    !normalizedSearch || [
+      event.name,
+      event.description,
+      event.location,
+      getParsedTags(event.tags).join(' ')
+    ].some(value => String(value || '').toLowerCase().includes(normalizedSearch))
+  ))
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -200,11 +211,24 @@ export default function Events() {
               <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Events</h1>
               <p className="text-gray-500 text-xs md:text-sm mt-1">Schedule and manage your lounge highlights.</p>
             </div>
-            {!formVisible && (
-              <button onClick={() => setFormVisible(true)} className="flex items-center justify-center gap-2 px-6 py-3 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-600 transition shadow-md active:scale-95">
-                <Plus className="w-5 h-5" /> Add Event
-              </button>
-            )}
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="search"
+                  value={searchTerm}
+                  onChange={event => setSearchTerm(event.target.value)}
+                  placeholder="Search events..."
+                  aria-label="Search events"
+                  className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30"
+                />
+              </div>
+              {!formVisible && (
+                <button onClick={() => setFormVisible(true)} className="flex items-center justify-center gap-2 px-6 py-3 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-600 transition shadow-md active:scale-95">
+                  <Plus className="w-5 h-5" /> Add Event
+                </button>
+              )}
+            </div>
           </div>
 
           {formVisible && (
@@ -314,7 +338,11 @@ export default function Events() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8 pb-10">
-            {events.map(event => (
+            {filteredEvents.length === 0 ? (
+              <p className="col-span-full rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">
+                {normalizedSearch ? 'No events match your search.' : 'No events yet.'}
+              </p>
+            ) : filteredEvents.map(event => (
               <div key={event.id} className="group bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-yellow-300 hover:shadow-md transition-all flex flex-col shadow-sm">
                 <div className="h-44 md:h-48 bg-gray-100 flex items-center justify-center relative flex-shrink-0">
                   {event.image_url ? (

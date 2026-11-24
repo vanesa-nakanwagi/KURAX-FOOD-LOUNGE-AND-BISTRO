@@ -143,7 +143,7 @@ export default function ManagerOrderMenu({
                         onClick={() => onAddItem(item)} 
                         className="flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
                       >
-                        <Plus size={12} strokeWidth={4} /> Order Now
+                        <Plus size={12} strokeWidth={4} /> Add to Cart
                       </button>
                     ) : (
                       <div className="px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-600 rounded-xl text-[8px] font-black flex items-center justify-center gap-2 border border-black/5 dark:border-white/5 cursor-not-allowed uppercase tracking-widest">

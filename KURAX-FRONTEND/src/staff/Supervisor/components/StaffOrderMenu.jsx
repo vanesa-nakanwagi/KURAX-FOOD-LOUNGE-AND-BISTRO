@@ -155,7 +155,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                       className="flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-600 text-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
                     >
                       <Plus size={11} strokeWidth={3.5} />
-                      Order Now
+                      Add to Cart
                     </button>
 
                     {/* PRICE */}

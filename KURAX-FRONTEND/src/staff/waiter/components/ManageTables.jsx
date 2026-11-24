@@ -508,8 +508,20 @@ function CreditedItemsPanel({ creditedItems, theme }) {
 function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
   const isDark = theme === "dark";
   const paidItems = useMemo(() => {
+    const paymentSourceOrderIds = new Set();
+    orders.forEach((order) => {
+      let sourceIds = order.original_order_ids;
+      if (typeof sourceIds === 'string') {
+        try { sourceIds = JSON.parse(sourceIds); } catch { sourceIds = []; }
+      }
+      if (Array.isArray(sourceIds)) {
+        sourceIds.forEach((sourceId) => paymentSourceOrderIds.add(String(sourceId)));
+      }
+    });
+
     const items = [];
     orders.forEach(order => {
+      if (paymentSourceOrderIds.has(String(order.id))) return;
       let orderItems = order.items || [];
       if (typeof orderItems === 'string') {
         try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import API_URL from '../../../config/api';
 import { getImageSrc } from '../../../utils/imageHelper';
-import { Loader2, Plus, Trash2, Box, CheckCircle2, AlertCircle, ImagePlus, Edit2, ImageIcon, X } from 'lucide-react';
+import { Loader2, Plus, Trash2, Box, CheckCircle2, AlertCircle, ImagePlus, Edit2, ImageIcon, X, Search } from 'lucide-react';
 
 const formatUGX = (amount) => `UGX ${Number(amount || 0).toLocaleString('en-UG')}`;
 const createEmptyComboForm = () => ({
@@ -29,6 +29,7 @@ export default function Combos() {
   const [editingCombo, setEditingCombo] = useState(null);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [imagePreview, setImagePreview] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [form, setForm] = useState(createEmptyComboForm);
 
   const refreshData = async () => {
@@ -75,6 +76,15 @@ export default function Combos() {
 
   const discountAmount = Math.max(0, regularTotal - Number(form.price || 0));
   const discountPercentage = regularTotal > 0 ? (discountAmount / regularTotal) * 100 : 0;
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredCombos = useMemo(() => combos.filter((combo) => (
+    !normalizedSearch || [
+      combo.name,
+      combo.description,
+      combo.category,
+      (combo.components || []).map((component) => component.name).join(' '),
+    ].some((value) => String(value || '').toLowerCase().includes(normalizedSearch))
+  )), [combos, normalizedSearch]);
 
   const addComponent = () => {
     setForm((prev) => ({
@@ -207,14 +217,27 @@ export default function Combos() {
               <h1 className="text-2xl font-bold tracking-tight text-gray-900 md:text-3xl">Combos</h1>
               <p className="mt-1 text-xs text-gray-500 md:text-sm">Bundle menu items, set package pricing, and manage customer visibility.</p>
             </div>
-            {!formVisible && (
-              <button
-                onClick={() => setFormVisible(true)}
-                className="flex items-center justify-center gap-2 rounded-xl bg-yellow-500 px-6 py-3 font-bold text-black shadow-md transition hover:bg-yellow-600 active:scale-95"
-              >
-                <Plus className="h-5 w-5" /> Add Combo
-              </button>
-            )}
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search combos..."
+                  aria-label="Search combos"
+                  className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30"
+                />
+              </div>
+              {!formVisible && (
+                <button
+                  onClick={() => setFormVisible(true)}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-yellow-500 px-6 py-3 font-bold text-black shadow-md transition hover:bg-yellow-600 active:scale-95"
+                >
+                  <Plus className="h-5 w-5" /> Add Combo
+                </button>
+              )}
+            </div>
           </div>
 
           {message.text && (
@@ -392,7 +415,9 @@ export default function Combos() {
 
           <div className="mb-5 flex items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-gray-900">Saved Combos</h2>
-            <span className="text-sm text-gray-500">{combos.length} {combos.length === 1 ? 'combo' : 'combos'}</span>
+            <span className="text-sm text-gray-500">
+              {normalizedSearch ? `${filteredCombos.length} of ${combos.length}` : combos.length} {combos.length === 1 ? 'combo' : 'combos'}
+            </span>
           </div>
           {loading ? (
             <div className="flex items-center gap-3 py-12 text-gray-600">
@@ -402,9 +427,13 @@ export default function Combos() {
             <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">
               No combos yet. Add your first combo to get started.
             </div>
+          ) : filteredCombos.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">
+              No combos match your search.
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-6 pb-10 sm:grid-cols-2 lg:grid-cols-3">
-              {combos.map((combo) => (
+              {filteredCombos.map((combo) => (
                 <article key={combo.id} className="group flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-yellow-300 hover:shadow-md">
                   <div className="relative h-44 overflow-hidden bg-gray-100">
                     {combo.image_url ? (

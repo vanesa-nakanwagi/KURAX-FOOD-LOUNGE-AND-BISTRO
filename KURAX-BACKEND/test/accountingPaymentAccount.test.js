@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import pool from '../db.js';
 
 import {
   accountingEntryTypeSql,
@@ -10,6 +11,7 @@ import {
   calculateCashFlowTotals,
   DEFAULT_ACCOUNTS,
   getAccountTransactionOptions,
+  getIncomeStatement,
   resolveAccountTransferTargets,
   resolveIncomeStatementRevenueCode,
   resolvePaymentDebitAccountCode,
@@ -53,6 +55,41 @@ test('income statement keeps paid sales and approved credit sales in their depar
 
   assert.deepEqual(revenue, { '4001': 50000, '4002': 25000, '4003': 25000 });
   assert.equal(resolveIncomeStatementRevenueCode('', 'Coffee'), '4003');
+});
+
+test('income statement excludes source orders that have cashier payment copies', async (t) => {
+  const queries = [];
+  t.mock.method(pool, 'query', async (sql) => {
+    queries.push(sql);
+    if (sql.includes('FROM public.chart_of_accounts coa')) {
+      return {
+        rows: [
+          { code: '4001', name: 'Food Sales', category: 'Revenue', credit_total: '0', debit_total: '0' },
+          { code: '5010', name: 'Cost of Goods Sold', category: 'Expense', credit_total: '0', debit_total: '0' },
+        ],
+      };
+    }
+    if (sql.includes('FROM public.orders o')) {
+      return {
+        rows: [{
+          station: 'Kitchen',
+          category: 'Food',
+          amount: '35000',
+          gross_amount: '35000',
+          menu_discount_amount: '0',
+          special_discount_amount: '0',
+        }],
+      };
+    }
+    return { rows: [] };
+  });
+
+  const report = await getIncomeStatement('2026-11-24', '2026-11-24');
+  const salesQuery = queries.find((sql) => sql.includes('FROM public.orders o'));
+
+  assert.match(salesQuery, /payment_copy\.original_order_ids @> jsonb_build_array\(o\.id\)/);
+  assert.equal(report.grossSales, 35000);
+  assert.equal(report.totalRevenue, 35000);
 });
 
 test('sales revenue is proportionally assigned to item departments and excludes voided items', () => {

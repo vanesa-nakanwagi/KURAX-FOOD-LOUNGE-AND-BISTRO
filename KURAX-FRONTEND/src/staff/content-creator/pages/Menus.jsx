@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import Sidebar from '../../content-creator/components/Sidebar'
 import { useData } from "../../../customer/components/context/DataContext";
-import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles, Loader2 } from 'lucide-react'
+import { Plus, Utensils, Edit2, Trash2, X, CheckCircle2, AlertCircle, ImageIcon, Coffee, Wine, Sparkles, Loader2, Search } from 'lucide-react'
 import { getImageSrc } from "../../../utils/imageHelper";
 import API_URL from "../../../config/api";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
@@ -46,8 +46,15 @@ export default function Menus() {
   const [editingMenu, setEditingMenu] = useState(null)
   const [imagePreview, setImagePreview] = useState('')
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
   const { theme } = useTheme();
-  const menuItems = (menus || []).filter(item => item.type !== 'combo');
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const menuItems = (menus || []).filter(item => {
+    if (item.type === 'combo') return false;
+    if (!normalizedSearch) return true;
+    return [item.name, item.description, item.category, item.station]
+      .some(value => String(value || '').toLowerCase().includes(normalizedSearch));
+  });
 
   // 👇 New states for visual feedback
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -162,7 +169,7 @@ export default function Menus() {
       if (response.ok) {
         const updatedItem = await response.json();
         if (editingMenu) {
-          setMenus(prev => prev.map(m => (m.id === editingMenu.id ? updatedItem : m)));
+          setMenus(prev => [updatedItem, ...prev.filter(m => m.id !== editingMenu.id)]);
           setStatusMessage({ text: 'Menu item updated successfully!', type: 'success' })
         } else {
           setMenus(prev => [...prev, updatedItem]);
@@ -261,15 +268,28 @@ export default function Menus() {
               <p className="text-gray-500 text-xs md:text-sm mt-1">Design and route your menu items to the correct stations.</p>
             </div>
 
-            {!formVisible && (
-              <button
-                onClick={() => setFormVisible(true)}
-                className="flex items-center justify-center gap-2 px-6 py-3 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-600 transition shadow-md active:scale-95"
-              >
-                <Plus className="w-5 h-5" />
-                Add Menu
-              </button>
-            )}
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="search"
+                  value={searchTerm}
+                  onChange={event => setSearchTerm(event.target.value)}
+                  placeholder="Search menu items..."
+                  aria-label="Search menu items"
+                  className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30"
+                />
+              </div>
+              {!formVisible && (
+                <button
+                  onClick={() => setFormVisible(true)}
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-600 transition shadow-md active:scale-95"
+                >
+                  <Plus className="w-5 h-5" />
+                  Add Menu
+                </button>
+              )}
+            </div>
           </div>
 
           {formVisible && (
@@ -513,7 +533,11 @@ export default function Menus() {
           )}
 
           <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17.5rem),1fr))] gap-5 pb-10 sm:gap-6">
-            {menuItems.map((item) => {
+            {menuItems.length === 0 ? (
+              <p className="col-span-full rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">
+                {normalizedSearch ? 'No menu items match your search.' : 'No menu items yet.'}
+              </p>
+            ) : menuItems.map((item) => {
               const isNew = item.created_at && (new Date() - new Date(item.created_at)) / (1000 * 60 * 60) <= 48;
               return (
                 <div

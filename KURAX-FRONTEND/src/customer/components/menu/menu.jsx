@@ -79,7 +79,7 @@ export function MenuCard({ item, onOrder, onViewImage, isNew, badgeLabel = "NEW"
             className="group/btn flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
           >
             <Plus size={14} strokeWidth={3} className="transition-transform group-hover/btn:rotate-90" />
-            Order Now
+            Add to Cart
           </button>
 
           <div className="text-right">
@@ -147,8 +147,7 @@ export default function Menu() {
             item.is_available !== false &&
             item.website_published === true
           ))
-          .map((item) => ({ ...item, price: Number(item.website_price ?? item.price) }))
-          .sort((a, b) => b.id - a.id);
+          .map((item) => ({ ...item, price: Number(item.website_price ?? item.price) }));
         setDbMenus(sortedLiveItems);
       } catch (err) {
         console.error("Fetch Error:", err);

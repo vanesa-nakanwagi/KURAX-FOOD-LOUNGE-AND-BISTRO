@@ -1492,6 +1492,11 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
      ) approved_credit ON true
      WHERE UPPER(COALESCE(item->>'station', '')) NOT LIKE '%SHISHA%'
        AND UPPER(COALESCE(item->>'category', '')) NOT LIKE '%SHISHA%'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM public.orders payment_copy
+         WHERE payment_copy.original_order_ids @> jsonb_build_array(o.id)
+       )
        AND (
          (
            approved_credit.id IS NOT NULL
