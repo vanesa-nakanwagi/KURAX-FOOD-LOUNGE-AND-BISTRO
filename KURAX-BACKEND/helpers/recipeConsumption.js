@@ -43,6 +43,19 @@ export function getOrderItemInventoryDisposition(item = {}) {
 }
 
 export function directStockQuantity(itemQuantity, item = {}, stock = {}) {
+  const servingVolumeMl = Number(item.serving_volume_ml ?? item.drink_serving?.volume_ml);
+  const bottleVolumeMl = Number(item.bottle_volume_ml ?? item.drink_serving?.bottle_volume_ml);
+  if (Number.isFinite(servingVolumeMl) && servingVolumeMl > 0
+    && Number.isFinite(bottleVolumeMl) && bottleVolumeMl > 0) {
+    const quantity = Number(itemQuantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) return 0;
+    const totalMl = servingVolumeMl * quantity;
+    const stockUnit = normalizeUnit(stock.unit);
+    if (stockUnit === 'ml') return totalMl;
+    if (stockUnit === 'L') return totalMl / 1000;
+    if (stockUnit === 'btl') return totalMl / bottleVolumeMl;
+    throw new UnitConversionError(`Serving volume cannot be converted to inventory unit ${stock.unit}.`);
+  }
   const explicitUnit = item.inventory_unit || item.stock_unit || item.sale_unit;
   if (explicitUnit) {
     return convertInventoryQuantity(itemQuantity, explicitUnit, stock.unit, stock);
@@ -180,16 +193,24 @@ export async function consumeSoldOrderItems({
   }
 
   async function consumeDirectItem({ client, orderItemIndex, item, menuName, itemQuantity, station, itemKey }) {
-    const matches = await client.query(
-      `SELECT id
-       FROM public.inventory_items
-       WHERE is_active = true
-         AND LOWER(REGEXP_REPLACE(BTRIM(item_name), '[[:space:]]+', ' ', 'g'))
-             = LOWER(REGEXP_REPLACE(BTRIM($1), '[[:space:]]+', ' ', 'g'))
-       ORDER BY id
-       LIMIT 2`,
-      [menuName]
-    );
+    const inventoryItemId = Number(item.inventory_item_id ?? item.drink_serving?.inventory_item_id);
+    const matches = Number.isInteger(inventoryItemId) && inventoryItemId > 0
+      ? await client.query(
+        `SELECT id FROM public.inventory_items
+         WHERE id = $1 AND is_active = true
+         LIMIT 2`,
+        [inventoryItemId]
+      )
+      : await client.query(
+        `SELECT id
+         FROM public.inventory_items
+         WHERE is_active = true
+           AND LOWER(REGEXP_REPLACE(BTRIM(item_name), '[[:space:]]+', ' ', 'g'))
+               = LOWER(REGEXP_REPLACE(BTRIM($1), '[[:space:]]+', ' ', 'g'))
+         ORDER BY id
+         LIMIT 2`,
+        [menuName]
+      );
     if (!matches.rows.length) {
       return { order_item: menuName, status: 'MISSING_INVENTORY_ITEM', message: 'No matching active inventory item; no stock was deducted.' };
     }
@@ -298,6 +319,17 @@ export async function consumeSoldOrderItems({
     station,
     itemKey,
   }) {
+    if (Number(item.serving_volume_ml ?? item.drink_serving?.volume_ml) > 0) {
+      return consumeDirectItem({
+        client,
+        orderItemIndex,
+        item,
+        menuName,
+        itemQuantity,
+        station,
+        itemKey,
+      });
+    }
     const recipeResult = await client.query(
       `SELECT * FROM public.inventory_recipes
        WHERE status = 'ACTIVE'

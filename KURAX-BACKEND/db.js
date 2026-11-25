@@ -752,6 +752,8 @@ export async function ensureDatabaseSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );`,
+    `ALTER TABLE IF EXISTS public.menus ADD COLUMN IF NOT EXISTS bottle_volume_ml NUMERIC(12,3);`,
+    `ALTER TABLE IF EXISTS public.menus ADD COLUMN IF NOT EXISTS inventory_item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE SET NULL;`,
     `CREATE TABLE IF NOT EXISTS public.inventory_transactions (
       id SERIAL PRIMARY KEY,
       item_id INTEGER REFERENCES public.inventory_items(id) ON DELETE CASCADE,

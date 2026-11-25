@@ -160,6 +160,27 @@ test('selling price uses gross sales before discounts and displayed COGS include
   assert.equal(wine.gross_profit, 250000);
 });
 
+test('profitability rolls different drink servings into the original item sales and serving-level costs', () => {
+  const drink = buildMenuProfitabilityRow({
+    menu_name: 'Four Cousins Sweet Red 1.5L',
+    category: 'Drinks & Cocktails',
+    quantity_sold: 3,
+    gross_sales: 20000,
+    net_sales: 20000,
+  }, {
+    is_recipe_based: false,
+    has_purchase_cost: true,
+    unit_purchase_cost: 1500,
+    direct_purchase_cost: 4500,
+  });
+
+  assert.equal(drink.quantity_sold, 3);
+  assert.equal(drink.selling_price, 20000 / 3);
+  assert.equal(drink.gross_sales, 20000);
+  assert.equal(drink.total_cogs, 4500);
+  assert.equal(drink.gross_profit, 15500);
+});
+
 test('recipe costs convert ingredient quantities to inventory units', () => {
   const cost = calculateRecipeUnitCost([
     {

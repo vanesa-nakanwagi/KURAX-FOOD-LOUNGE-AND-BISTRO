@@ -24,6 +24,7 @@ import {
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import logActivity from '../utils/logsActivity.js';
 import { getOrderItemsTotal, snapshotMenuPromotions } from '../helpers/menuPromotions.js';
+import { snapshotDrinkServing } from '../helpers/drinkServing.js';
 
 const router = express.Router();
 
@@ -501,13 +502,24 @@ router.post('/', async (req, res) => {
       ? await pool.query(
         `SELECT id, name, price, category, station, promotion_enabled, promotion_discount_type,
                 promotion_discount_value, promotion_discount_percent,
-                promotion_starts_at, promotion_ends_at
+                promotion_starts_at, promotion_ends_at, bottle_volume_ml, inventory_item_id
          FROM public.menus
          WHERE id = ANY($1::int[]) OR LOWER(TRIM(name)) = ANY($2::text[])`,
         [itemIds, itemNames]
       )
       : { rows: [] };
-    const orderItems = snapshotMenuPromotions(submittedItems, catalogResult.rows);
+    const promotedItems = snapshotMenuPromotions(submittedItems, catalogResult.rows);
+    const orderItems = promotedItems.map((item) => {
+      const catalogItem = catalogResult.rows.find((menu) => (
+        (item?.id != null && Number(menu.id) === Number(item.id))
+        || (item?.name && String(menu.name).trim().toLowerCase() === String(item.name).trim().toLowerCase())
+      ));
+      return snapshotDrinkServing(item, catalogItem);
+    });
+    const invalidServing = orderItems.find((item) => item?._invalidDrinkServing);
+    if (invalidServing) {
+      return res.status(400).json({ error: invalidServing._invalidDrinkServing });
+    }
     const serverTotal = Array.isArray(orderItems) ? getOrderItemsTotal(orderItems) : Number(total);
 
     // CRITICAL FIX: Do NOT set payment_method by default

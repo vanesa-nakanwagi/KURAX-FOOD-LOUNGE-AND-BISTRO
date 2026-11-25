@@ -87,12 +87,14 @@ export default function NewOrder() {
 
   const addToCart = (item) => {
     setCart(prev => {
-      const existingItem = prev.find(i => i.id === item.id);
+      const cartKey = item.drink_serving ? `${item.id}:serving:${item.serving_volume_ml}` : String(item.id);
+      const existingItem = prev.find(i => (i.cartKey || i.id) === cartKey);
       if (existingItem) {
-        return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+        return prev.map(i => (i.cartKey || i.id) === cartKey ? { ...i, quantity: i.quantity + 1 } : i);
       }
       return [...prev, { 
         ...item, 
+        cartKey,
         quantity: 1, 
         note: "", 
         station: item.station || "Kitchen",

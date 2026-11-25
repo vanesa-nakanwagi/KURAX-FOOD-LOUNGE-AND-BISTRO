@@ -212,6 +212,12 @@ async function getCogsRows(startDate, endDate, menuName, category, salesRows = [
                 item->>'name' AS menu_name,
                 COALESCE(item->>'category', 'Uncategorized') AS category,
                 COALESCE(NULLIF(item->>'quantity', '')::numeric, 1) AS quantity,
+                CASE WHEN COALESCE(item->>'serving_volume_ml', '') ~ '^[0-9]+([.][0-9]+)?$'
+                  THEN (item->>'serving_volume_ml')::numeric END AS serving_volume_ml,
+                CASE WHEN COALESCE(item->>'bottle_volume_ml', '') ~ '^[0-9]+([.][0-9]+)?$'
+                  THEN (item->>'bottle_volume_ml')::numeric END AS bottle_volume_ml,
+                CASE WHEN COALESCE(item->>'inventory_item_id', '') ~ '^[0-9]+$'
+                  THEN (item->>'inventory_item_id')::integer END AS inventory_item_id,
                 COALESCE(
                   NULLIF(item->>'paid_at', '')::timestamptz,
                   o.paid_at,
@@ -260,25 +266,27 @@ async function getCogsRows(startDate, endDate, menuName, category, salesRows = [
        SELECT sold.menu_name,
               sold.category,
               0::numeric AS cogs,
-              SUM(sold.quantity * cost.unit_cost) FILTER (
-                WHERE match.match_count = 1 AND cost.unit_cost > 0
+              SUM(sold.quantity * serving_cost.unit_cost) FILTER (
+                WHERE match.match_count = 1 AND serving_cost.unit_cost > 0
               ) / NULLIF(SUM(sold.quantity) FILTER (
-                WHERE match.match_count = 1 AND cost.unit_cost > 0
+                WHERE match.match_count = 1 AND serving_cost.unit_cost > 0
               ), 0) AS unit_purchase_cost,
-              COALESCE(SUM(sold.quantity * cost.unit_cost) FILTER (WHERE cost.unit_cost > 0), 0)
+              COALESCE(SUM(sold.quantity * serving_cost.unit_cost) FILTER (WHERE serving_cost.unit_cost > 0), 0)
                 AS direct_purchase_cost,
               SUM(sold.quantity) AS consumed_quantity,
-              BOOL_AND(COALESCE(match.match_count = 1 AND cost.unit_cost > 0, false))
+              BOOL_AND(COALESCE(match.match_count = 1 AND serving_cost.unit_cost > 0, false))
                 AS has_purchase_cost,
-              BOOL_OR(COALESCE(match.match_count = 1 AND cost.unit_cost > 0, false))
+              BOOL_OR(COALESCE(match.match_count = 1 AND serving_cost.unit_cost > 0, false))
                 AS has_any_purchase_cost,
               false AS is_recipe_based
        FROM sold_lines sold
        JOIN LATERAL (
          SELECT MIN(ii.id) AS id, COUNT(*)::integer AS match_count
          FROM public.inventory_items ii
-         WHERE LOWER(REGEXP_REPLACE(BTRIM(ii.item_name), '[[:space:]]+', ' ', 'g'))
-             = LOWER(REGEXP_REPLACE(BTRIM(sold.menu_name), '[[:space:]]+', ' ', 'g'))
+         WHERE (sold.inventory_item_id IS NOT NULL AND ii.id = sold.inventory_item_id)
+            OR (sold.inventory_item_id IS NULL
+              AND LOWER(REGEXP_REPLACE(BTRIM(ii.item_name), '[[:space:]]+', ' ', 'g'))
+                = LOWER(REGEXP_REPLACE(BTRIM(sold.menu_name), '[[:space:]]+', ' ', 'g')))
        ) match ON true
        LEFT JOIN public.inventory_items stock ON stock.id = match.id AND match.match_count = 1
        LEFT JOIN LATERAL (
@@ -298,6 +306,33 @@ async function getCogsRows(startDate, endDate, menuName, category, salesRows = [
            ) THEN stock.unit_cost END
          ) AS unit_cost
        ) cost ON true
+       LEFT JOIN LATERAL (
+         SELECT SUM(inventory_tx.total_value) / NULLIF(sold.quantity, 0) AS actual_unit_cost
+         FROM public.inventory_consumptions consumption
+         JOIN public.inventory_transactions inventory_tx
+           ON inventory_tx.reference_number = consumption.reference_number
+          AND inventory_tx.transaction_type = 'CONSUMPTION'
+         WHERE consumption.order_id = sold.order_id
+           AND consumption.order_item_id = sold.order_id::text || ':' || sold.item_index::text
+           AND consumption.item_id = stock.id
+       ) recorded_consumption ON true
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(
+           NULLIF(recorded_consumption.actual_unit_cost, 0),
+           CASE
+             WHEN sold.serving_volume_ml > 0 AND sold.bottle_volume_ml > 0
+               AND sold.serving_volume_ml <= sold.bottle_volume_ml
+             THEN CASE LOWER(BTRIM(COALESCE(stock.unit, '')))
+               WHEN 'btl' THEN cost.unit_cost * sold.serving_volume_ml / sold.bottle_volume_ml
+               WHEN 'bottle' THEN cost.unit_cost * sold.serving_volume_ml / sold.bottle_volume_ml
+               WHEN 'l' THEN cost.unit_cost * sold.serving_volume_ml / 1000
+               WHEN 'ml' THEN cost.unit_cost * sold.serving_volume_ml
+               ELSE NULL
+             END
+             ELSE cost.unit_cost
+           END
+         ) AS unit_cost
+       ) serving_cost ON true
        WHERE ($3::text = '' OR
               LOWER(REGEXP_REPLACE(BTRIM(sold.menu_name), '[[:space:]]+', ' ', 'g'))
                 = LOWER(REGEXP_REPLACE(BTRIM($3), '[[:space:]]+', ' ', 'g')))

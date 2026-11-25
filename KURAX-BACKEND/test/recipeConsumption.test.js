@@ -28,6 +28,9 @@ test('direct sale quantities use the configured stock unit unless an explicit sa
   assert.equal(directStockQuantity(2, { name: 'Four Cousins Sweet Red/White 1.5L' }, { unit: 'L' }), 2);
   assert.equal(directStockQuantity(2, { name: 'Bottled Water' }, { unit: 'btl' }), 2);
   assert.equal(directStockQuantity(2, { inventory_unit: 'ml' }, { unit: 'L' }), 0.002);
+  assert.equal(directStockQuantity(2, { serving_volume_ml: 50, bottle_volume_ml: 1000 }, { unit: 'ml' }), 100);
+  assert.equal(directStockQuantity(2, { serving_volume_ml: 100, bottle_volume_ml: 1000 }, { unit: 'L' }), 0.2);
+  assert.equal(directStockQuantity(1, { serving_volume_ml: 1000, bottle_volume_ml: 1000 }, { unit: 'btl' }), 1);
 });
 
 test('only paid or approved-credit non-voided items are consumable', () => {

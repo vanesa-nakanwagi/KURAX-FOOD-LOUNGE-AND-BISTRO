@@ -157,6 +157,17 @@ router.post('/', upload.single('image'), async (req, res) => {
       return;
     }
     const { name, description, price, category, station, published, website_published, website_extra_fee } = req.body;
+    const bottleVolumeMl = req.body.bottle_volume_ml === '' || req.body.bottle_volume_ml == null
+      ? null
+      : Number(req.body.bottle_volume_ml);
+    const inventoryItemId = req.body.inventory_item_id === '' || req.body.inventory_item_id == null
+      ? null
+      : Number(req.body.inventory_item_id);
+    if (String(category).trim().toLowerCase() === 'drinks & cocktails'
+      && (inventoryItemId !== null && (!Number.isInteger(inventoryItemId) || inventoryItemId <= 0)
+        || bottleVolumeMl !== null && (!Number.isFinite(bottleVolumeMl) || bottleVolumeMl <= 0))) {
+      return res.status(400).json({ error: 'A valid inventory item and bottle volume in ml are required for drinks.' });
+    }
     const basePrice = Number(price);
     if (!Number.isFinite(basePrice) || basePrice < 0) {
       await removeMenuImage(uploadedImageUrl);
@@ -184,10 +195,10 @@ router.post('/', upload.single('image'), async (req, res) => {
     const query = `
       INSERT INTO public.menus (
         name, description, price, category, station, image_url, published, customer_visible,
-        website_published, website_extra_fee, promotion_enabled, promotion_discount_type,
+        website_published, website_extra_fee, bottle_volume_ml, inventory_item_id, promotion_enabled, promotion_discount_type,
         promotion_discount_value, promotion_discount_percent, promotion_starts_at, promotion_ends_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *, price + COALESCE(website_extra_fee, 0) AS website_price, (CASE WHEN $7 = true THEN 'live' ELSE 'draft' END) as status
     `;
 
@@ -196,6 +207,8 @@ router.post('/', upload.single('image'), async (req, res) => {
       website_published === 'true' || website_published === true,
       website_published === 'true' || website_published === true,
       websiteExtraFee,
+      bottleVolumeMl,
+      inventoryItemId,
       promotion.promotion_enabled,
       promotion.promotion_discount_type,
       promotion.promotion_discount_value,
@@ -224,6 +237,12 @@ router.post('/', upload.single('image'), async (req, res) => {
 router.put('/:id', upload.single('image'), async (req, res) => {
   const { id } = req.params;
   const { name, description, price, category, station, published, website_published, website_extra_fee } = req.body;
+  const bottleVolumeMl = req.body.bottle_volume_ml === '' || req.body.bottle_volume_ml == null
+    ? null
+    : Number(req.body.bottle_volume_ml);
+  const inventoryItemId = req.body.inventory_item_id === '' || req.body.inventory_item_id == null
+    ? null
+    : Number(req.body.inventory_item_id);
   let uploadedImageUrl = req.file ? `/uploads/${req.file.filename}` : null;
   try {
     if (!await authorizePromotionEditor(req, res)) {
@@ -238,6 +257,12 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     if (!currentMenu) {
       await removeMenuImage(uploadedImageUrl);
       return res.status(404).json({ error: 'Item not found' });
+    }
+    if (String(category).trim().toLowerCase() === 'drinks & cocktails'
+      && (inventoryItemId !== null && (!Number.isInteger(inventoryItemId) || inventoryItemId <= 0)
+        || bottleVolumeMl !== null && (!Number.isFinite(bottleVolumeMl) || bottleVolumeMl <= 0))) {
+      await removeMenuImage(uploadedImageUrl);
+      return res.status(400).json({ error: 'A valid inventory item and bottle volume in ml are required for drinks.' });
     }
     const basePrice = Number(price);
     if (!Number.isFinite(basePrice) || basePrice < 0) {
@@ -268,8 +293,9 @@ router.put('/:id', upload.single('image'), async (req, res) => {
           image_url=COALESCE($7, image_url), customer_visible=$8, website_published=$9,
           website_extra_fee=$10, promotion_enabled=$11, promotion_discount_type=$12,
           promotion_discount_value=$13, promotion_discount_percent=$14,
-          promotion_starts_at=$15, promotion_ends_at=$16, updated_at=NOW()
-      WHERE id=$17
+          promotion_starts_at=$15, promotion_ends_at=$16, bottle_volume_ml=$17,
+          inventory_item_id=$18, updated_at=NOW()
+      WHERE id=$19
       RETURNING *, price + COALESCE(website_extra_fee, 0) AS website_price, (CASE WHEN published = true THEN 'live' ELSE 'draft' END) as status
     `;
 
@@ -284,6 +310,8 @@ router.put('/:id', upload.single('image'), async (req, res) => {
       promotion.promotion_discount_percent,
       promotion.promotion_starts_at,
       promotion.promotion_ends_at,
+      bottleVolumeMl,
+      inventoryItemId,
       id
     ]);
     if (result.rows.length === 0) {

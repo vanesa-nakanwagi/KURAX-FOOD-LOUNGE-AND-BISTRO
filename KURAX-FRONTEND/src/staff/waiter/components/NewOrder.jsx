@@ -100,17 +100,20 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
 
   const addToCart = (item) => {
     setCart(prev => {
-      const existing = prev.find(i => i.id === item.id);
+      const cartKey = item.drink_serving
+        ? `${item.id}:serving:${item.serving_volume_ml}`
+        : String(item.id);
+      const existing = prev.find(i => (i.cartKey || i.id) === cartKey);
       if (existing) {
-        return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+        return prev.map(i => (i.cartKey || i.id) === cartKey ? { ...i, quantity: i.quantity + 1 } : i);
       }
-      return [...prev, { ...item, quantity: 1, note: "", status: "Pending" }];
+      return [...prev, { ...item, cartKey, quantity: 1, note: "", status: "Pending" }];
     });
   };
 
   const updateQuantity = (id, delta) => {
     setCart(prev => prev.map(item =>
-      item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
+      (item.cartKey || item.id) === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
     ));
   };
 
@@ -171,8 +174,8 @@ export default function NewOrder({ preSelectedTable, onClearSelection, staffRole
         cart={cart}
         existingItems={existingItems}
         updateQuantity={updateQuantity}
-        updateNote={(id, note) => setCart(prev => prev.map(i => i.id === id ? { ...i, note } : i))}
-        removeFromCart={(id) => setCart(prev => prev.filter(i => i.id !== id))}
+        updateNote={(id, note) => setCart(prev => prev.map(i => (i.cartKey || i.id) === id ? { ...i, note } : i))}
+        removeFromCart={(id) => setCart(prev => prev.filter(i => (i.cartKey || i.id) !== id))}
         clearCart={() => { if (window.confirm("Clear new items?")) setCart([]); }}
         tableName={tableName}
         handleSelectTable={handleSelectTable}
@@ -490,7 +493,7 @@ function CartModal({
             </div>
           ) : (
             cart.map((item) => (
-              <div key={item.id} className={`rounded-2xl border overflow-hidden
+              <div key={item.cartKey || item.id} className={`rounded-2xl border overflow-hidden
                 ${isDark ? "bg-black/40 border-white/5" : "bg-zinc-50 border-black/5"}`}>
                 <div className="flex gap-3 p-3">
                   <img
@@ -505,7 +508,7 @@ function CartModal({
                         {item.name}
                       </h4>
                       <button
-                        onClick={() => removeFromCart(item.id)}
+                        onClick={() => removeFromCart(item.cartKey || item.id)}
                         className="shrink-0 w-7 h-7 rounded-lg bg-rose-500/10 flex items-center justify-center hover:bg-rose-500/20 transition-all"
                       >
                         <Trash2 size={13} className="text-rose-500" />
@@ -514,16 +517,21 @@ function CartModal({
                     <p className="text-[11px] font-black text-yellow-500 mt-0.5">
                       UGX {(Number(item.price || 0) * item.quantity).toLocaleString()}
                     </p>
+                    {item.selected_serving_name && (
+                      <p className="mt-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                        {item.selected_serving_name} · {item.serving_volume_ml} ml
+                      </p>
+                    )}
                     <div className="flex items-center gap-2 mt-2">
                       <div className={`flex items-center rounded-xl overflow-hidden border
                         ${isDark ? "border-white/10 bg-black/30" : "border-black/8 bg-white"}`}>
                         <button
-                          onClick={() => updateQuantity(item.id, -1)}
+                          onClick={() => updateQuantity(item.cartKey || item.id, -1)}
                           className="w-9 h-9 flex items-center justify-center hover:bg-yellow-500 hover:text-black transition-all font-black text-xl leading-none"
                         >−</button>
                         <span className="w-8 text-center text-sm font-black">{item.quantity}</span>
                         <button
-                          onClick={() => updateQuantity(item.id, 1)}
+                          onClick={() => updateQuantity(item.cartKey || item.id, 1)}
                           className="w-9 h-9 flex items-center justify-center hover:bg-yellow-500 hover:text-black transition-all font-black text-xl leading-none"
                         >+</button>
                       </div>
@@ -538,7 +546,7 @@ function CartModal({
                     type="text"
                     placeholder="Kitchen note (e.g. no onions, extra spicy)..."
                     value={item.note || ""}
-                    onChange={(e) => updateNote(item.id, e.target.value)}
+                    onChange={(e) => updateNote(item.cartKey || item.id, e.target.value)}
                     className={`w-full text-xs py-2.5 px-3.5 rounded-xl border bg-transparent outline-none italic transition-all
                       ${isDark
                         ? "border-white/5 focus:border-yellow-500/40 placeholder:text-zinc-600"

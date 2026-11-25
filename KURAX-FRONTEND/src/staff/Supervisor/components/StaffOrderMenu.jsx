@@ -1,11 +1,13 @@
-import React from "react";
+import React, { useState } from "react";
 import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { Plus, SearchX, UtensilsCrossed, Sparkles } from "lucide-react";
 import { getImageSrc } from "../../../utils/imageHelper";
 import { formatMenuName } from "../../../utils/menuName.js";
+import { applyDrinkServing, getDrinkServingOptions, isEligibleDrink } from "../../drinkServing.js";
 
 export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = "", activeCategory, setActiveCategory }) {
   const { theme } = useTheme();
+  const [selectedServings, setSelectedServings] = useState({});
   const categories = ["Fast Foods", "Local Foods", "Drinks & Cocktails"];
 
   const filteredMenus = items.filter((item) => {
@@ -82,6 +84,8 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
             const currentPrice = Number(item.price);
             const promotionActive = item.promotion_active === true || item.promotion_active === "true";
             const hasPromotion = promotionActive && Number.isFinite(originalPrice) && originalPrice > currentPrice;
+            const drinkOptions = isEligibleDrink(item) ? getDrinkServingOptions(item) : [];
+            const selectedServing = selectedServings[item.id] || drinkOptions[0];
 
             return (
               <div
@@ -144,6 +148,25 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                   </div>
 
                   {/* INTERACTION BAR */}
+                  {drinkOptions.length > 0 && (
+                    <div className="mb-3">
+                      <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-zinc-500">Select Serving</label>
+                      <select
+                        value={selectedServing ? `${selectedServing.name}|${selectedServing.volumeMl}` : ""}
+                        onChange={(event) => {
+                          const [name, volumeMl] = event.target.value.split("|");
+                          setSelectedServings((previous) => ({ ...previous, [item.id]: { name, volumeMl: Number(volumeMl) } }));
+                        }}
+                        className={`w-full rounded-xl border px-3 py-2 text-xs font-bold outline-none ${theme === "dark" ? "border-zinc-700 bg-zinc-900 text-white" : "border-zinc-200 bg-white text-zinc-900"}`}
+                      >
+                        {drinkOptions.map((option) => (
+                          <option key={`${option.name}|${option.volumeMl}`} value={`${option.name}|${option.volumeMl}`}>
+                            {option.name} ({option.volumeMl.toLocaleString()} ml)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div
                     className={`mt-auto flex items-center justify-between border-t pt-3 ${
                       theme === "dark" ? "border-zinc-800/50" : "border-zinc-200"
@@ -151,7 +174,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
                   >
                     {/* ORDER BUTTON — always shows icon + text */}
                     <button
-                      onClick={() => onAddItem(item)}
+                      onClick={() => onAddItem(drinkOptions.length ? applyDrinkServing(item, selectedServing) : item)}
                       className="flex items-center gap-1 px-3 py-2.5 bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-600 text-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all duration-300 shadow-md active:scale-95"
                     >
                       <Plus size={11} strokeWidth={3.5} />
