@@ -8,6 +8,7 @@ import {
   getOrderItemPaidAmount,
   getOrderItemPayableAmount,
 } from '../helpers/complimentaryItems.js';
+import { applyApprovedCreditToItems } from '../helpers/approvedCreditItems.js';
 import notificationService from '../helpers/notificationService.js';
 import logActivity from '../utils/logsActivity.js';
 import requireCashier from '../middleware/cashierAuth.js';
@@ -750,6 +751,7 @@ router.get("/tables", requireCashier, async (req, res) => {
          LEFT JOIN public.staff s ON s.id = o.staff_id
          WHERE o.table_name IS NOT NULL
            AND UPPER(TRIM(o.table_name)) <> 'WALK-IN'
+           AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
            AND ${eligibleStaff}
          ORDER BY COALESCE(o.created_at, o.timestamp) DESC, o.id DESC`
       ),
@@ -1131,10 +1133,10 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
     const creditUpdateRes = await pool.query(
       `UPDATE credits
        SET status = 'Approved', approved_by = $1, approved_at = NOW()
-       WHERE UPPER(table_name) = UPPER($2)
+       WHERE cashier_queue_id = $2
          AND status IN ('PendingCashier', 'PendingManagerApproval')
        RETURNING id`,
-      [approved_by || "Manager", tableName]
+      [approved_by || "Manager", id]
     );
 
     if (!creditUpdateRes.rows.length) {
@@ -1158,8 +1160,13 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
     }
 
     if (q.order_ids?.length) {
-      const creditItemName = (q.item?.name || q.label || '').trim().toLowerCase();
+      let creditItem = q.item;
+      if (typeof creditItem === 'string') creditItem = JSON.parse(creditItem);
       for (const orderId of q.order_ids) {
+        if (q.is_item === true
+          && creditItem?._orderId != null
+          && Number(creditItem._orderId) !== Number(orderId)) continue;
+
         const orderRes = await pool.query(
           `SELECT items, status FROM orders WHERE id = $1`,
           [orderId]
@@ -1170,29 +1177,16 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
         if (typeof items === 'string') items = JSON.parse(items);
         if (!Array.isArray(items)) continue;
 
-        let creditItemFound = false;
-        const updatedItems = items.map(item => {
-          const nameMatch = creditItemName
-            ? item.name?.trim().toLowerCase() === creditItemName
-            : item.creditRequested === true;
-          if (nameMatch && !item._rowPaid) {
-            creditItemFound = true;
-            return {
-              ...item,
-              creditRequested:   true,
-              payment_method:    'Credit',
-              _rowPaid:          false,
-              payment_confirmed: false,
-            };
-          }
-          return item;
+        const creditItems = applyApprovedCreditToItems(items, {
+          targetItem: q.is_item === true ? creditItem : null,
+          markAllUnpaid: q.is_item !== true,
         });
 
-        if (!creditItemFound) {
-          console.warn(`⚠️  Credit item "${creditItemName}" not found in order #${orderId} — skipping item update`);
+        if (!creditItems.changed) {
+          console.warn(`Credit items were not found in order #${orderId} for cashier request #${id}.`);
         }
 
-        const newStatus = deriveOrderStatus(updatedItems, orderRes.rows[0].status);
+        const newStatus = deriveOrderStatus(creditItems.items, orderRes.rows[0].status);
         await pool.query(
           `UPDATE orders
            SET items = $1,
@@ -1200,10 +1194,10 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
                sent_to_cashier = false,
                updated_at = NOW()
            WHERE id = $3`,
-          [JSON.stringify(updatedItems), newStatus, orderId]
+          [JSON.stringify(creditItems.items), newStatus, orderId]
         );
         try {
-          const approvedCreditItems = updatedItems.map((item) =>
+          const approvedCreditItems = creditItems.items.map((item) =>
             item.creditRequested === true || String(item.payment_method || '').toUpperCase().includes('CREDIT')
               ? { ...item, _approvedCreditSale: true }
               : item

@@ -1,4 +1,17 @@
+export function getOrderItemUnitPrice(item = {}) {
+  const servingUnitPrice = Number(item.drink_serving?.unit_selling_price);
+  if (Number.isFinite(servingUnitPrice) && servingUnitPrice >= 0) return servingUnitPrice;
+  return Number(item.price ?? item.unit_price ?? 0);
+}
+
 export function getOrderItemOriginalAmount(item = {}) {
+  if (item.drink_serving) {
+    const servingUnitPrice = getOrderItemUnitPrice(item);
+    if (Number.isFinite(servingUnitPrice) && servingUnitPrice >= 0) {
+      return servingUnitPrice * Number(item.quantity || 1);
+    }
+  }
+
   const original = Number(item.originalLineAmount);
   if (Number.isFinite(original) && original >= 0) return original;
   return Number(item.originalUnitPrice ?? item.price ?? item.unit_price ?? 0)

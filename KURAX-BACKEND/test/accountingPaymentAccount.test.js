@@ -86,8 +86,12 @@ test('income statement excludes source orders that have cashier payment copies',
 
   const report = await getIncomeStatement('2026-11-24', '2026-11-24');
   const salesQuery = queries.find((sql) => sql.includes('FROM public.orders o'));
+  const refundsQuery = queries.find((sql) => sql.includes('FROM public.void_requests vr'));
 
   assert.match(salesQuery, /payment_copy\.original_order_ids @> jsonb_build_array\(o\.id\)/);
+  assert.match(salesQuery, /item->'drink_serving'->>'unit_selling_price'/);
+  assert.match(salesQuery, /LEAST\(/);
+  assert.match(refundsQuery, /item->'drink_serving'->>'unit_selling_price'/);
   assert.equal(report.grossSales, 35000);
   assert.equal(report.totalRevenue, 35000);
 });

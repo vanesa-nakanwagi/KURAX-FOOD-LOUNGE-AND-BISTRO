@@ -1,3 +1,5 @@
+import { getOrderItemUnitPrice } from './complimentaryItems.js';
+
 function parseItems(items) {
   if (Array.isArray(items)) return items;
   if (typeof items === 'string') {
@@ -55,6 +57,6 @@ export function getAssignedStationItems(ticketItems) {
 
 export function getStationItemsTotal(items) {
   return items.reduce((total, item) => (
-    total + (Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1)
+    total + getOrderItemUnitPrice(item) * (Number(item.quantity) || 1)
   ), 0);
 }

@@ -7,6 +7,7 @@ import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { buildSalesRevenueBreakdown, createReceivableSettlementJournalEntry, createSalesJournalEntry } from '../helpers/accounting.js';
 import notificationService from '../helpers/notificationService.js';
 import { getOrderItemPayableAmount } from '../helpers/complimentaryItems.js';
+import { applyApprovedCreditToItems } from '../helpers/approvedCreditItems.js';
 
 const router = express.Router();
 
@@ -533,11 +534,19 @@ router.patch('/:id/approve', async (req, res) => {
       sourceTransaction: `credit:${credit.id}`,
       postedBy: approved_by || 'Manager',
     });
+    if (credit.cashier_queue_id) {
+      await pool.query(
+        `UPDATE cashier_queue
+         SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW()
+         WHERE id = $2 AND status IN ('Pending', 'PendingManagerApproval')`,
+        [approved_by || 'Manager', credit.cashier_queue_id]
+      );
+    }
     // Mark items in the order as credit requested
     if (credit.order_id) {
       const creditItemTarget = await getCreditItemTarget(pool, credit);
       const orderRes = await pool.query(
-        `SELECT items FROM orders WHERE id = $1`,
+        `SELECT items, status FROM orders WHERE id = $1`,
         [credit.order_id]
       );
       
@@ -548,15 +557,14 @@ router.patch('/:id/approve', async (req, res) => {
         }
         
         if (Array.isArray(items)) {
-          const updatedItems = items.map((item, index) =>
-            isEligibleCreditItem(item) && matchesCreditItem(item, index, creditItemTarget)
-              ? { ...item, creditRequested: true, payment_method: 'Credit' }
-              : item
-          );
+          const updatedItems = applyApprovedCreditToItems(items, {
+            targetItem: creditItemTarget,
+            markAllUnpaid: Boolean(credit.cashier_queue_id && !creditItemTarget),
+          });
           
           await pool.query(
-            `UPDATE orders SET items = $1 WHERE id = $2`,
-            [JSON.stringify(updatedItems), credit.order_id]
+            `UPDATE orders SET items = $1, sent_to_cashier = false, updated_at = NOW() WHERE id = $2`,
+            [JSON.stringify(updatedItems.items), credit.order_id]
           );
         }
       }

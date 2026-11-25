@@ -10,7 +10,13 @@ import {
   CheckCircle2, XCircle, Award, CircleDollarSign, Zap
 } from "lucide-react";
 import API_URL from "../../../config/api";
-import { hasOutstandingCreditItems, isItemFullyPaid } from "../../../utils/paymentStatus";
+import {
+  getPaidOrderItems,
+  hasOutstandingCreditItems,
+  hasReadyForServiceItems,
+  isItemFullyPaid,
+  isItemReadyForService,
+} from "../../../utils/paymentStatus";
 import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
 import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
 
@@ -512,43 +518,20 @@ function CreditedItemsPanel({ creditedItems, theme }) {
 function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
   const isDark = theme === "dark";
   const paidItems = useMemo(() => {
-    const paymentSourceOrderIds = new Set();
-    orders.forEach((order) => {
-      let sourceIds = order.original_order_ids;
-      if (typeof sourceIds === 'string') {
-        try { sourceIds = JSON.parse(sourceIds); } catch { sourceIds = []; }
-      }
-      if (Array.isArray(sourceIds)) {
-        sourceIds.forEach((sourceId) => paymentSourceOrderIds.add(String(sourceId)));
-      }
-    });
-
-    const items = [];
-    orders.forEach(order => {
-      if (paymentSourceOrderIds.has(String(order.id))) return;
-      let orderItems = order.items || [];
-      if (typeof orderItems === 'string') {
-        try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
-      }
-      orderItems.forEach((item, itemIndex) => {
-        if (isItemFullyPaid(item)) {
-          items.push({
-            id: `${order.id}_${item.name}`,
-            order_id: order.id,
-            table_name: order.table_name,
-            name: item.name,
-            quantity: item.quantity || 1,
-            price: item.price || 0,
-            total: getOrderItemPayableAmount(item),
-            payment_method: item.payment_method || "Cash",
-            paid_at: item.paid_at || new Date().toISOString(),
-            timestamp: order.timestamp || order.created_at,
-            order: { id: order.id, staff_id: order.staff_id, status: order.status },
-            orderItem: { ...item, _orderId: order.id, _orderItemIndex: item._orderItemIndex ?? itemIndex },
-          });
-        }
-      });
-    });
+    const items = getPaidOrderItems(orders).map(({ order, item, itemIndex }) => ({
+      id: `${order.id}_${item.name}`,
+      order_id: order.id,
+      table_name: order.table_name,
+      name: item.name,
+      quantity: item.quantity || 1,
+      price: item.price || 0,
+      total: getOrderItemPayableAmount(item),
+      payment_method: item.payment_method || "Cash",
+      paid_at: item.paid_at || new Date().toISOString(),
+      timestamp: order.timestamp || order.created_at,
+      order: { id: order.id, staff_id: order.staff_id, status: order.status },
+      orderItem: { ...item, _orderId: order.id, _orderItemIndex: item._orderItemIndex ?? itemIndex },
+    }));
     items.sort((a, b) => new Date(b.paid_at) - new Date(a.paid_at));
     return items;
   }, [orders]);
@@ -797,7 +780,7 @@ function OrderCard({
                         {isVoidRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-orange-400 font-black uppercase">(waiting accountant)</span>}
                         {isPendingPayment && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-yellow-400 font-black uppercase">(awaiting cashier)</span>}
                         {isPendingComp && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-amber-500 font-black uppercase">(comp request pending cashier)</span>}
-                        {isCreditRequested && !isPaid && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">{item.is_partially_paid ? "(partially paid · balance due)" : "(credit pending)"}</span>}
+                        {isCreditRequested && !isPaid && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">{item.is_partially_paid ? "(partially paid · balance due)" : item.creditApproved ? "(credit approved · balance due)" : "(credit pending)"}</span>}
                       </p>
                       <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
                         ×{item.quantity || 1} · {fmtUGX(item.price || 0)}
@@ -1009,6 +992,9 @@ export default function OrderHistory({ onAddItems }) {
 
   useEffect(() => {
     if (!orders || orders.length === 0) return;
+    const cashierPendingTables = new Set(orders
+      .filter(order => order.sent_to_cashier === true)
+      .map(order => (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase()));
     setPendingPayments(prev => {
       let changed = false;
       const next = { ...prev };
@@ -1022,12 +1008,19 @@ export default function OrderHistory({ onAddItems }) {
         if (typeof orderItems === "string") {
           try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
         }
+        let hasApprovedCredit = false;
         orderItems.forEach(item => {
-          if (isItemFullyPaid(item)) {
+          if (isItemFullyPaid(item) || item.creditApproved === true) {
             const itemKey = pendingItemKey(tableName, item.name);
             if (next[itemKey]) { delete next[itemKey]; changed = true; }
           }
+          if (item.creditApproved === true) hasApprovedCredit = true;
         });
+        const tableKey = pendingTableKey(tableName);
+        if (hasApprovedCredit && !cashierPendingTables.has(tableName) && next[tableKey]) {
+          delete next[tableKey];
+          changed = true;
+        }
       });
       if (changed) {
         savePendingToLS(next);
@@ -1047,14 +1040,16 @@ export default function OrderHistory({ onAddItems }) {
       const nameMatch = currentStaffId == null && currentStaffName && currentStaffName !== "Manager"
         ? (o.staff_name ?? o.waiterName ?? o.staffName ?? "").toLowerCase() === currentStaffName.toLowerCase()
         : false;
-      return orderRole === "MANAGER" && (currentStaffId != null ? idMatch : nameMatch);
+      const isManagerOrder = orderRole === "MANAGER" && (currentStaffId != null ? idMatch : nameMatch);
+      return isManagerOrder || hasReadyForServiceItems(o);
     });
   }, [orders, currentStaffId, currentStaffName]);
 
   const dailyStaffOrders = useMemo(() => managerOrders.filter(order => {
     const timestamp = order.timestamp || order.created_at;
     return !order.sent_to_cashier || hasOutstandingCreditItems(order) ||
-      (timestamp && toLocalDateStr(new Date(timestamp)) === today);
+      (timestamp && toLocalDateStr(new Date(timestamp)) === today) ||
+      hasReadyForServiceItems(order);
   }), [managerOrders, today]);
 
   const managerCredits = useMemo(() => creditsData.filter(credit => {
@@ -1253,6 +1248,7 @@ export default function OrderHistory({ onAddItems }) {
       const nonVoided   = (g.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
       const allPaid     = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
       const hasAnyPaid  = nonVoided.some(i => i._rowPaid === true);
+      const hasReadyItems = nonVoided.some(isItemReadyForService);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
       const hasCreditOrder = g.orderIds?.some(id => {
         const o = orders.find(x => x.id === id);
@@ -1261,7 +1257,7 @@ export default function OrderHistory({ onAddItems }) {
       const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
         item.served === true || isItemFullyPaid(item)
       );
-      const isLive = !hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0 && !isServed;
+      const isLive = hasReadyItems || (!hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0 && !isServed);
       let matchTab = false;
       switch (activeTab) {
         case "Live":   matchTab = isLive && nonVoided.length > 0; break;
@@ -1274,15 +1270,7 @@ export default function OrderHistory({ onAddItems }) {
   );
 
   const totalPaidItemsCount = useMemo(() => {
-    let count = 0;
-    managerOrders.forEach(order => {
-      let orderItems = order.items || [];
-      if (typeof orderItems === "string") {
-        try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
-      }
-      orderItems.forEach(item => { if (isItemFullyPaid(item)) count++; });
-    });
-    return count;
+    return getPaidOrderItems(managerOrders).length;
   }, [managerOrders]);
 
   const counts = useMemo(() => {
@@ -1291,6 +1279,7 @@ export default function OrderHistory({ onAddItems }) {
       const nonVoided  = (g.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
       const allPaid    = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
       const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
+      const hasReadyItems = nonVoided.some(isItemReadyForService);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
       const hasCreditOrder = g.orderIds?.some(id => {
         const o = orders.find(x => x.id === id);
@@ -1299,7 +1288,7 @@ export default function OrderHistory({ onAddItems }) {
       const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
         item.served === true || isItemFullyPaid(item)
       );
-      const isLive = !hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0 && !isServed;
+      const isLive = hasReadyItems || (!hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0 && !isServed);
       if (isLive && nonVoided.length > 0) acc.Live++;
       if (isServed) acc.Served++;
     });

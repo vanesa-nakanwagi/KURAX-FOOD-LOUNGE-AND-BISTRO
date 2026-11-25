@@ -8,7 +8,13 @@ import {
   CheckCircle2, XCircle, CircleDollarSign
 } from "lucide-react";
 import API_URL from "../../../config/api";
-import { hasOutstandingCreditItems, isItemFullyPaid } from "../../../utils/paymentStatus";
+import {
+  getPaidOrderItems,
+  hasOutstandingCreditItems,
+  hasReadyForServiceItems,
+  isItemFullyPaid,
+  isItemReadyForService,
+} from "../../../utils/paymentStatus";
 import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
 import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
 
@@ -154,7 +160,7 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
                         )}
                         {isVoidRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-orange-400 font-black uppercase">(void pending)</span>}
                         {isPendingPayment && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-yellow-400 font-black uppercase">(payment pending)</span>}
-                        {isCreditRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">(credit pending)</span>}
+                        {isCreditRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">{item.creditApproved ? "(credit approved · balance due)" : "(credit pending)"}</span>}
                       </p>
                       <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
                         ×{item.quantity || 1} · {fmtUGX(item.price || 0)}
@@ -319,43 +325,20 @@ function PendingCreditsPanel({ pendingCredits, onApprove, onReject, theme }) {
 function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
   const isDark = theme === "dark";
   const paidItems = useMemo(() => {
-    const paymentSourceOrderIds = new Set();
-    orders.forEach((order) => {
-      let sourceIds = order.original_order_ids;
-      if (typeof sourceIds === 'string') {
-        try { sourceIds = JSON.parse(sourceIds); } catch { sourceIds = []; }
-      }
-      if (Array.isArray(sourceIds)) {
-        sourceIds.forEach((sourceId) => paymentSourceOrderIds.add(String(sourceId)));
-      }
-    });
-
-    const items = [];
-    orders.forEach(order => {
-      if (paymentSourceOrderIds.has(String(order.id))) return;
-      let orderItems = order.items || [];
-      if (typeof orderItems === 'string') {
-        try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
-      }
-      orderItems.forEach((item, itemIndex) => {
-        if (isItemFullyPaid(item)) {
-          items.push({
-            id: `${order.id}_${item.name}`,
-            order_id: order.id,
-            table_name: order.table_name,
-            name: item.name,
-            quantity: item.quantity || 1,
-            price: item.price || 0,
-            total: getOrderItemPayableAmount(item),
-            payment_method: item.payment_method || "Cash",
-            paid_at: item.paid_at || new Date().toISOString(),
-            timestamp: order.timestamp || order.created_at,
-            order: { id: order.id, staff_id: order.staff_id, status: order.status },
-            orderItem: { ...item, _orderId: order.id, _orderItemIndex: item._orderItemIndex ?? itemIndex },
-          });
-        }
-      });
-    });
+    const items = getPaidOrderItems(orders).map(({ order, item, itemIndex }) => ({
+      id: `${order.id}_${item.name}`,
+      order_id: order.id,
+      table_name: order.table_name,
+      name: item.name,
+      quantity: item.quantity || 1,
+      price: item.price || 0,
+      total: getOrderItemPayableAmount(item),
+      payment_method: item.payment_method || "Cash",
+      paid_at: item.paid_at || new Date().toISOString(),
+      timestamp: order.timestamp || order.created_at,
+      order: { id: order.id, staff_id: order.staff_id, status: order.status },
+      orderItem: { ...item, _orderId: order.id, _orderItemIndex: item._orderItemIndex ?? itemIndex },
+    }));
     items.sort((a, b) => new Date(b.paid_at) - new Date(a.paid_at));
     return items;
   }, [orders]);
@@ -535,8 +518,10 @@ export default function SupervisorDashboard({ onAddItems }) {
     const nameMatch = currentStaffId == null && currentStaffName !== "Supervisor" &&
       String(order.staff_name || order.waiterName || order.staffName || "").trim().toLowerCase() === currentStaffName.trim().toLowerCase();
     const isToday = timestamp && toLocalDateStr(new Date(timestamp)) === today;
-    return (currentStaffId != null ? idMatch : nameMatch) &&
-      (!order.sent_to_cashier || hasOutstandingCreditItems(order) || isToday);
+    const hasReadyItems = hasReadyForServiceItems(order);
+    const belongsToStaff = currentStaffId != null ? idMatch : nameMatch;
+    return (belongsToStaff || hasReadyItems) &&
+    (!order.sent_to_cashier || hasOutstandingCreditItems(order) || isToday || hasReadyItems);
   }), [orders, currentStaffId, currentStaffName, today]);
 
   // ── Group this supervisor's orders by table ──
@@ -579,7 +564,7 @@ export default function SupervisorDashboard({ onAddItems }) {
     Object.values(groups).forEach(g => {
       g.total = g.items.reduce((sum, item) => {
         if (item.status !== "VOIDED" && !item.voidProcessed) {
-          return sum + (Number(item.price) * Number(item.quantity || 1));
+          return sum + getOrderItemPayableAmount(item);
         }
         return sum;
       }, 0);
@@ -596,10 +581,11 @@ export default function SupervisorDashboard({ onAddItems }) {
       const allPaid = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
       const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
+      const hasReadyItems = nonVoided.some(isItemReadyForService);
       const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
         item.served === true || isItemFullyPaid(item)
       );
-      const isLive = !hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed;
+      const isLive = hasReadyItems || (!hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed);
       let matchTab = false;
       switch (activeTab) {
         case "Live": matchTab = isLive && nonVoided.length > 0; break;
@@ -612,15 +598,7 @@ export default function SupervisorDashboard({ onAddItems }) {
 
   // ── Counts for tabs ──
   const totalPaidItems = useMemo(() => {
-    let count = 0;
-    staffOrders.forEach(order => {
-      let orderItems = order.items || [];
-      if (typeof orderItems === 'string') {
-        try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
-      }
-      orderItems.forEach(item => { if (isItemFullyPaid(item)) count++; });
-    });
-    return count;
+    return getPaidOrderItems(staffOrders).length;
   }, [staffOrders]);
 
   const counts = useMemo(() => {
@@ -631,10 +609,11 @@ export default function SupervisorDashboard({ onAddItems }) {
       const allPaid = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
       const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
+      const hasReadyItems = nonVoided.some(isItemReadyForService);
       const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
         item.served === true || isItemFullyPaid(item)
       );
-      const isLive = !hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed;
+      const isLive = hasReadyItems || (!hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed);
       if (isLive && nonVoided.length > 0) acc.Live++;
       if (isServed) acc.Served++;
     });

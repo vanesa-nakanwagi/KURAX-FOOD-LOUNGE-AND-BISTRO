@@ -106,6 +106,11 @@ test('each station sync writes to its existing ticket table and preserves statio
     assert.match(query, new RegExp(`INSERT INTO public\\.${table}`));
     assert.match(query, stationCondition);
     assert.match(query, /'_orderItemIndex'/);
+    assert.match(query, /expanded\.item->'drink_serving'->>'unit_selling_price'/);
+    assert.ok(
+      query.indexOf("expanded.item->'drink_serving'->>'unit_selling_price'")
+        < query.indexOf("expanded.item->>'price'")
+    );
     assert.match(query, /GROUP BY o\.id, o\.table_name, o\.staff_name, o\.staff_role/);
   }
 });

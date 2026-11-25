@@ -45,6 +45,21 @@ test('a UGX 50000 waiver on a UGX 150000 item preserves gross and leaves UGX 100
   assert.equal(getOrderItemPayableAmount(item), 100000);
 });
 
+test('drink serving price overrides stale bottle-level order amounts', () => {
+  const serving = {
+    price: 150000,
+    originalUnitPrice: 150000,
+    originalLineAmount: 150000,
+    payableAmount: 150000,
+    quantity: 1,
+    drink_serving: { unit_selling_price: 5000 },
+  };
+
+  assert.equal(getOrderItemOriginalAmount(serving), 5000);
+  assert.equal(getOrderItemPayableAmount(serving), 5000);
+  assert.equal(getOrderPayableTotal([serving]), 5000);
+});
+
 test('stored payable amount is honored for promotional and special bill discounts', () => {
   const promoItem = {
     name: 'Meal',

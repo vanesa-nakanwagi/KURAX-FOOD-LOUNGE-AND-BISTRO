@@ -1,3 +1,17 @@
+export function allocateDepartmentCreditAmounts(credit, departmentItemAmount, totalItemAmount) {
+  const amount = Math.max(0, Number(credit.amount) || 0);
+  const amountPaid = Math.min(amount, Math.max(0, Number(credit.amount_paid) || 0));
+  const totalItems = Math.max(0, Number(totalItemAmount) || 0);
+  const departmentItems = Math.min(totalItems, Math.max(0, Number(departmentItemAmount) || 0));
+  const share = totalItems > 0 ? departmentItems / totalItems : 0;
+
+  return {
+    ...credit,
+    amount: amount * share,
+    amount_paid: amountPaid * share,
+  };
+}
+
 export function summarizeDepartmentCredits(credits = []) {
   const summary = {
     partially_paid_credit_count: 0,

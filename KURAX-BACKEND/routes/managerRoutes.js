@@ -9,6 +9,7 @@ import {
   getOrderItemPaidAmount,
   getOrderItemPayableAmount,
 } from '../helpers/complimentaryItems.js';
+import { applyApprovedCreditToItems } from '../helpers/approvedCreditItems.js';
 import notificationService from '../helpers/notificationService.js';
 
 const router = express.Router();
@@ -1890,9 +1891,23 @@ router.patch('/credits/:id/approve', async (req, res) => {
   try {
     const creditRes = await pool.query(`SELECT * FROM credits WHERE id = $1`, [id]);
     if (creditRes.rows.length === 0) return res.status(404).json({ error: 'Credit not found' });
+    const credit = creditRes.rows[0];
+    let cashierRequest = null;
+    if (credit.cashier_queue_id) {
+      const requestRes = await pool.query(
+        `SELECT id, order_ids, is_item, item, status
+         FROM public.cashier_queue WHERE id = $1`,
+        [credit.cashier_queue_id]
+      );
+      cashierRequest = requestRes.rows[0] || null;
+      if (typeof cashierRequest?.item === 'string') {
+        cashierRequest.item = JSON.parse(cashierRequest.item);
+      }
+    }
+
     let saleItems = [];
-    if (creditRes.rows[0].order_id) {
-      const orderRes = await pool.query('SELECT items FROM public.orders WHERE id = $1', [creditRes.rows[0].order_id]);
+    if (credit.order_id) {
+      const orderRes = await pool.query('SELECT items FROM public.orders WHERE id = $1', [credit.order_id]);
       const items = orderRes.rows[0]?.items;
       if (Array.isArray(items)) saleItems = items;
       else if (typeof items === 'string') {
@@ -1905,10 +1920,10 @@ router.patch('/credits/:id/approve', async (req, res) => {
       }
     }
     await createSalesJournalEntry({
-      amount: creditRes.rows[0].amount,
+      amount: credit.amount,
       paymentMethod: 'Credit',
       revenueBreakdown: buildSalesRevenueBreakdown(saleItems, creditRes.rows[0].amount),
-      description: `Approved credit sale · ${creditRes.rows[0].client_name || creditRes.rows[0].table_name || id}`,
+      description: `Approved credit sale · ${credit.client_name || credit.table_name || id}`,
       sourceTransaction: `credit:${id}`,
       postedBy: approved_by || 'Manager',
     });
@@ -1916,12 +1931,64 @@ router.patch('/credits/:id/approve', async (req, res) => {
       `UPDATE credits SET status = 'Approved', approved_by = $1, approved_at = NOW(), updated_at = NOW() WHERE id = $2`,
       [approved_by || 'Manager', id]
     );
+    if (cashierRequest) {
+      await pool.query(
+        `UPDATE public.cashier_queue
+         SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW()
+         WHERE id = $2 AND status IN ('Pending', 'PendingManagerApproval')`,
+        [approved_by || 'Manager', cashierRequest.id]
+      );
+    }
+    let orderIds = cashierRequest?.order_ids || [];
+    if (typeof orderIds === 'string') orderIds = JSON.parse(orderIds);
+    if (!Array.isArray(orderIds)) orderIds = [];
+    orderIds = [...new Set([...orderIds, credit.order_id]
+      .filter(value => Number.isInteger(Number(value)) && Number(value) > 0)
+      .map(Number))];
+
+    for (const orderId of orderIds) {
+      if (cashierRequest?.is_item === true
+        && cashierRequest.item?._orderId != null
+        && Number(cashierRequest.item._orderId) !== orderId) continue;
+
+      const orderRes = await pool.query(
+        `SELECT items, status FROM public.orders WHERE id = $1`,
+        [orderId]
+      );
+      if (!orderRes.rows.length) continue;
+
+      let items = orderRes.rows[0].items;
+      if (typeof items === 'string') items = JSON.parse(items);
+      if (!Array.isArray(items)) continue;
+
+      const creditItems = applyApprovedCreditToItems(items, {
+        targetItem: cashierRequest?.is_item === true ? cashierRequest.item : null,
+        markAllUnpaid: Boolean(cashierRequest && cashierRequest.is_item !== true),
+      });
+      const nextStatus = calculateOrderStatusFromItems(creditItems.items, orderRes.rows[0].status);
+      const pendingRequest = await pool.query(
+        `SELECT EXISTS (
+           SELECT 1 FROM public.cashier_queue
+           WHERE id <> $1
+             AND status IN ('Pending', 'PendingManagerApproval')
+             AND order_ids @> $2::jsonb
+         ) AS pending`,
+        [cashierRequest?.id || 0, JSON.stringify([orderId])]
+      );
+      await pool.query(
+        `UPDATE public.orders
+         SET items = $1, status = $2, sent_to_cashier = $3, updated_at = NOW()
+         WHERE id = $4`,
+        [JSON.stringify(creditItems.items), nextStatus, pendingRequest.rows[0]?.pending === true, orderId]
+      );
+    }
+
     const cashierNotification = await notificationService.sendToRoles(['CASHIER'], {
       type: 'CREDIT_APPROVED',
       title: 'Credit request approved',
-      body: `${creditRes.rows[0].client_name || 'Client'}'s credit for ${creditRes.rows[0].table_name || 'the table'} (UGX ${Number(creditRes.rows[0].amount).toLocaleString()}) was approved by ${approved_by || 'Manager'}.`,
-      referenceId: creditRes.rows[0].cashier_queue_id || id,
-      referenceType: creditRes.rows[0].cashier_queue_id ? 'cashier_queue' : 'credit',
+      body: `${credit.client_name || 'Client'}'s credit for ${credit.table_name || 'the table'} (UGX ${Number(credit.amount).toLocaleString()}) was approved by ${approved_by || 'Manager'}.`,
+      referenceId: credit.cashier_queue_id || id,
+      referenceType: credit.cashier_queue_id ? 'cashier_queue' : 'credit',
       link: '/cashier',
     });
     console.log(

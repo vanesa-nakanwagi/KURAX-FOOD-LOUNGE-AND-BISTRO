@@ -12,7 +12,12 @@ import {
 import API_URL from "../../../config/api";
 import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
 import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
-import { hasOutstandingCreditItems } from "../../../utils/paymentStatus";
+import {
+  getPaidOrderItems,
+  hasOutstandingCreditItems,
+  hasReadyForServiceItems,
+  isItemReadyForService,
+} from "../../../utils/paymentStatus";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -508,43 +513,20 @@ function CreditedItemsPanel({ creditedItems, theme }) {
 function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
   const isDark = theme === "dark";
   const paidItems = useMemo(() => {
-    const paymentSourceOrderIds = new Set();
-    orders.forEach((order) => {
-      let sourceIds = order.original_order_ids;
-      if (typeof sourceIds === 'string') {
-        try { sourceIds = JSON.parse(sourceIds); } catch { sourceIds = []; }
-      }
-      if (Array.isArray(sourceIds)) {
-        sourceIds.forEach((sourceId) => paymentSourceOrderIds.add(String(sourceId)));
-      }
-    });
-
-    const items = [];
-    orders.forEach(order => {
-      if (paymentSourceOrderIds.has(String(order.id))) return;
-      let orderItems = order.items || [];
-      if (typeof orderItems === 'string') {
-        try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
-      }
-      orderItems.forEach((item, itemIndex) => {
-        if (item._rowPaid === true || item.paid_at) {
-          items.push({
-            id: `${order.id}_${item.name}`,
-            order_id: order.id,
-            table_name: order.table_name,
-            name: item.name,
-            quantity: item.quantity || 1,
-            price: item.price || 0,
-            total: getOrderItemPayableAmount(item),
-            payment_method: item.payment_method || "Cash",
-            paid_at: item.paid_at || new Date().toISOString(),
-            timestamp: order.timestamp || order.created_at,
-            order: { id: order.id, staff_id: order.staff_id, status: order.status },
-            orderItem: { ...item, _orderId: order.id, _orderItemIndex: item._orderItemIndex ?? itemIndex },
-          });
-        }
-      });
-    });
+    const items = getPaidOrderItems(orders).map(({ order, item, itemIndex }) => ({
+      id: `${order.id}_${item.name}`,
+      order_id: order.id,
+      table_name: order.table_name,
+      name: item.name,
+      quantity: item.quantity || 1,
+      price: item.price || 0,
+      total: getOrderItemPayableAmount(item),
+      payment_method: item.payment_method || "Cash",
+      paid_at: item.paid_at || new Date().toISOString(),
+      timestamp: order.timestamp || order.created_at,
+      order: { id: order.id, staff_id: order.staff_id, status: order.status },
+      orderItem: { ...item, _orderId: order.id, _orderItemIndex: item._orderItemIndex ?? itemIndex },
+    }));
     items.sort((a, b) => new Date(b.paid_at) - new Date(a.paid_at));
     return items;
   }, [orders]);
@@ -796,7 +778,7 @@ function OrderCard({
                         {isPendingComp && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-amber-500 font-black uppercase">(comp request pending cashier)</span>}
                         {isCreditRequested && (
                           <span className={`ml-1 sm:ml-2 text-[7px] sm:text-[8px] font-black uppercase ${item.creditRejected ? "text-red-400" : "text-purple-400"}`}>
-                            {item.creditRejected ? "(credit rejected - payment due)" : "(credit pending)"}
+                            {item.creditRejected ? "(credit rejected - payment due)" : item.creditApproved ? "(credit approved - balance due)" : "(credit pending)"}
                           </span>
                         )}
                       </p>
@@ -1014,6 +996,9 @@ export default function OrderHistory({ onAddItems }) {
 
   useEffect(() => {
     if (!orders || orders.length === 0) return;
+    const cashierPendingTables = new Set(orders
+      .filter(order => order.sent_to_cashier === true)
+      .map(order => (order.table_name || order.tableName || "WALK-IN").trim().toUpperCase()));
     setPendingPayments(prev => {
       let changed = false;
       const next = { ...prev };
@@ -1027,12 +1012,19 @@ export default function OrderHistory({ onAddItems }) {
         if (typeof orderItems === "string") {
           try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
         }
+        let hasApprovedCredit = false;
         orderItems.forEach(item => {
-          if (item._rowPaid === true || item.paid_at) {
+          if (item._rowPaid === true || item.paid_at || item.creditApproved === true) {
             const itemKey = pendingItemKey(tableName, item.name);
             if (next[itemKey]) { delete next[itemKey]; changed = true; }
           }
+          if (item.creditApproved === true) hasApprovedCredit = true;
         });
+        const tableKey = pendingTableKey(tableName);
+        if (hasApprovedCredit && !cashierPendingTables.has(tableName) && next[tableKey]) {
+          delete next[tableKey];
+          changed = true;
+        }
       });
       if (changed) {
         savePendingToLS(next);
@@ -1054,11 +1046,12 @@ export default function OrderHistory({ onAddItems }) {
         : false;
       const isOpenOrder = !["paid", "closed", "voided", "cancelled", "served"]
         .includes(String(o.status || "").trim().toLowerCase());
-      return (idMatch || nameMatch) &&
+      return (idMatch || nameMatch || hasReadyForServiceItems(o)) &&
         (!o.sent_to_cashier ||
           hasOutstandingCreditItems(o) ||
           isOpenOrder ||
-          (ts && toLocalDateStr(new Date(ts)) === today));
+          (ts && toLocalDateStr(new Date(ts)) === today) ||
+          hasReadyForServiceItems(o));
     });
   }, [orders, currentStaffId, currentStaffName, today]);
 
@@ -1272,11 +1265,12 @@ export default function OrderHistory({ onAddItems }) {
       const allPaid     = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
       const hasAnyPaid  = nonVoided.some(i => i._rowPaid === true);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
+      const hasReadyItems = nonVoided.some(isItemReadyForService);
       const hasCreditOrder = g.orderIds?.some(id => {
         const o = orders.find(x => x.id === id);
         return o?.status === "Credit" || o?.payment_method === "Credit";
       }) || false;
-      const isLive   = !hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0;
+      const isLive   = hasReadyItems || (!hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0);
       const isServed = g.status === "Served" && !allPaid && nonVoided.length > 0;
       let matchTab = false;
       switch (activeTab) {
@@ -1290,15 +1284,7 @@ export default function OrderHistory({ onAddItems }) {
   );
 
   const totalPaidItemsCount = useMemo(() => {
-    let count = 0;
-    orders.forEach(order => {
-      let orderItems = order.items || [];
-      if (typeof orderItems === "string") {
-        try { orderItems = JSON.parse(orderItems); } catch { orderItems = []; }
-      }
-      orderItems.forEach(item => { if (item._rowPaid === true || item.paid_at) count++; });
-    });
-    return count;
+    return getPaidOrderItems(orders).length;
   }, [orders]);
 
   const counts = useMemo(() => {
@@ -1308,11 +1294,12 @@ export default function OrderHistory({ onAddItems }) {
       const allPaid    = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
       const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
       const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
+      const hasReadyItems = nonVoided.some(isItemReadyForService);
       const hasCreditOrder = g.orderIds?.some(id => {
         const o = orders.find(x => x.id === id);
         return o?.status === "Credit" || o?.payment_method === "Credit";
       }) || false;
-      const isLive   = !hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0;
+      const isLive   = hasReadyItems || (!hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0);
       const isServed = g.status === "Served" && !allPaid && nonVoided.length > 0;
       if (isLive && nonVoided.length > 0) acc.Live++;
       if (isServed) acc.Served++;

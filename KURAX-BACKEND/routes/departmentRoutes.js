@@ -1,8 +1,16 @@
 import express from 'express';
 import pool from '../db.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
-import { summarizeDepartmentCredits } from '../helpers/departmentCreditSummary.js';
+import {
+  allocateDepartmentCreditAmounts,
+  summarizeDepartmentCredits,
+} from '../helpers/departmentCreditSummary.js';
 import { syncRoutableStationTickets } from '../helpers/stationOrderTickets.js';
+import {
+  orderItemGrossAmountSql,
+  orderItemPayableAmountSql,
+  orderItemUnitPriceSql,
+} from '../helpers/orderItemSalesAmounts.js';
 import { hashStaffPin } from '../helpers/staffPin.js';
 import { assertPinIsAvailable } from '../helpers/pinUniqueness.js';
 import { ensureTicketWork } from './productionRoutes.js';
@@ -105,19 +113,10 @@ async function inventoryReport(station, from, to) {
 }
 
 async function menuItemReport(department, from, to) {
-  const complimentaryOriginalAmount = `COALESCE(
-    NULLIF(source_item.item->>'originalLineAmount','')::numeric,
-    COALESCE(NULLIF(source_item.item->>'originalUnitPrice','')::numeric,
-      NULLIF(source_item.item->>'price','')::numeric, NULLIF(source_item.item->>'unit_price','')::numeric,0)
-      * COALESCE(NULLIF(source_item.item->>'quantity','')::numeric,1)
-  )`;
+  const complimentaryOriginalAmount = orderItemGrossAmountSql('source_item.item');
   const [salesResult, voidedResult, complimentaryResult] = await Promise.all([pool.query(
     `SELECT ticket_items.item->>'name' AS menu_item,
-            COALESCE(SUM(COALESCE(
-              NULLIF(ticket_items.item->>'line_total','')::numeric, NULLIF(ticket_items.item->>'lineTotal','')::numeric,
-              COALESCE(NULLIF(ticket_items.item->>'price','')::numeric, NULLIF(ticket_items.item->>'unit_price','')::numeric)
-                * COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)
-            )),0) AS sales,
+            COALESCE(SUM(${orderItemPayableAmountSql('ticket_items.item')}),0) AS sales,
             COALESCE(SUM(COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)),0) AS quantity
      FROM public.${department.table} t
      LEFT JOIN public.orders o ON o.id=t.order_id
@@ -267,6 +266,7 @@ async function productionStaffReport(department, from, to) {
     barman_tickets: 'bar',
     barista_tickets: 'barista',
   }[department.table];
+  const unitPrice = orderItemUnitPriceSql('source_item.value');
   await ensureTicketWork(pool, station);
   const result = await pool.query(
     `SELECT COALESCE(staff.name, work.staff_name, 'Unclaimed') AS claimed_by,
@@ -281,11 +281,7 @@ async function productionStaffReport(department, from, to) {
      JOIN public.orders source_order ON source_order.id=work.order_id
      LEFT JOIN public.staff staff ON staff.id=work.staff_id
      LEFT JOIN LATERAL (
-       SELECT CASE
-                WHEN COALESCE(source_item.value->>'price', source_item.value->>'unit_price') ~ '^[0-9]+(\\.[0-9]+)?$'
-                  THEN COALESCE(source_item.value->>'price', source_item.value->>'unit_price')::numeric
-                ELSE NULL
-              END AS unit_price
+       SELECT ${unitPrice} AS unit_price
        FROM jsonb_array_elements(COALESCE(ticket.items,'[]'::jsonb))
          WITH ORDINALITY AS source_item(value, ordinality)
        WHERE COALESCE(NULLIF(source_item.value->>'_orderItemIndex','')::integer, source_item.ordinality - 1) = work.item_index
@@ -311,54 +307,109 @@ async function productionStaffReport(department, from, to) {
 }
 
 async function departmentCreditReport(department, from, to) {
-  const itemFilter = department.paidItemFilter.replaceAll('item->>', 'credit_items.item->>');
+  const itemFilter = department.paidItemFilter.replaceAll('item->>', 'source_items.item->>');
+  const payableItemAmount = orderItemPayableAmountSql('source_items.item');
+  const selectedCreditItem = `(
+    (NULLIF(q.item->>'_orderItemIndex','') IS NOT NULL
+      AND source_items.ordinality - 1 = NULLIF(q.item->>'_orderItemIndex','')::int)
+    OR (NULLIF(q.item->>'_orderItemIndex','') IS NULL
+      AND LOWER(TRIM(COALESCE(source_items.item->>'name',''))) =
+          LOWER(TRIM(COALESCE(q.item->>'name',''))))
+  )`;
+  const creditCoveredItem = `(
+    (q.is_item IS TRUE AND ${selectedCreditItem})
+    OR (q.is_item IS NOT TRUE
+      AND (source_items.item->>'creditRequested'='true'
+        OR source_items.item->>'creditApproved'='true'))
+  )`;
   const result = await pool.query(
-    `SELECT DISTINCT c.id, c.amount, c.amount_paid, c.paid, c.status
+    `SELECT DISTINCT c.id, c.amount, c.amount_paid, c.paid, c.status,
+            allocation.department_item_amount, allocation.total_item_amount,
+            (q.id IS NULL) AS legacy_credit
      FROM public.${department.table} t
+     JOIN public.orders o ON o.id = t.order_id
      JOIN public.credits c ON c.order_id = t.order_id
+     LEFT JOIN public.cashier_queue q ON q.id = c.cashier_queue_id
+     CROSS JOIN LATERAL (
+       SELECT
+         COALESCE(SUM(${payableItemAmount}) FILTER (
+           WHERE ${creditCoveredItem} AND ${itemFilter}
+         ),0) AS department_item_amount,
+         COALESCE(SUM(${payableItemAmount}) FILTER (WHERE ${creditCoveredItem}),0) AS total_item_amount
+       FROM jsonb_array_elements(COALESCE(o.items, '[]'::jsonb))
+         WITH ORDINALITY AS source_items(item, ordinality)
+       WHERE COALESCE(source_items.item->>'voidProcessed','false') <> 'true'
+         AND UPPER(COALESCE(source_items.item->>'status','')) <> 'VOIDED'
+     ) allocation
      WHERE t.ticket_date BETWEEN $1::date AND $2::date
-       AND EXISTS (
+       AND (
+         (q.id IS NOT NULL AND allocation.department_item_amount > 0)
+         OR (q.id IS NULL AND EXISTS (
          SELECT 1
-         FROM jsonb_array_elements(COALESCE(t.items, '[]'::jsonb)) AS credit_items(item)
-         WHERE LOWER(TRIM(COALESCE(credit_items.item->>'name', ''))) = LOWER(TRIM(COALESCE(c.label, '')))
-           AND ${itemFilter}
+         FROM jsonb_array_elements(COALESCE(t.items, '[]'::jsonb)) AS ticket_items(item)
+         WHERE LOWER(TRIM(COALESCE(ticket_items.item->>'name', ''))) = LOWER(TRIM(COALESCE(c.label, '')))
+           AND ${department.paidItemFilter.replaceAll('item->>', 'ticket_items.item->>')}
+         ))
        )`,
     [from, to]
   );
-  return summarizeDepartmentCredits(result.rows);
+  const allocatedCredits = result.rows.map((credit) => (
+    credit.legacy_credit
+      ? credit
+      : allocateDepartmentCreditAmounts(credit, credit.department_item_amount, credit.total_item_amount)
+  ));
+  return summarizeDepartmentCredits(allocatedCredits);
 }
 
-function departmentPaymentJoin(department) {
-  const itemAmount = `COALESCE(
-    NULLIF(source_items.item->>'line_total','')::numeric,
-    NULLIF(source_items.item->>'lineTotal','')::numeric,
-    COALESCE(NULLIF(source_items.item->>'price','')::numeric, NULLIF(source_items.item->>'unit_price','')::numeric)
-      * COALESCE(NULLIF(source_items.item->>'quantity','')::numeric,1)
+export function departmentPaymentJoin(department) {
+  const payableItemAmount = orderItemPayableAmountSql('source_items.item');
+  const selectedCreditItem = `(
+    (NULLIF(credit_queue.item->>'_orderItemIndex','') IS NOT NULL
+      AND source_items.ordinality - 1 = NULLIF(credit_queue.item->>'_orderItemIndex','')::int)
+    OR (NULLIF(credit_queue.item->>'_orderItemIndex','') IS NULL
+      AND LOWER(TRIM(COALESCE(source_items.item->>'name',''))) =
+          LOWER(TRIM(COALESCE(credit_queue.item->>'name',''))))
   )`;
-  const payableItemAmount = `CASE
-    WHEN COALESCE(source_items.item->>'complimentary','false') = 'true' THEN COALESCE(
-      NULLIF(source_items.item->>'payableAmount','')::numeric,
-      GREATEST(
-        0,
-        COALESCE(
-          NULLIF(source_items.item->>'originalLineAmount','')::numeric,
-          COALESCE(NULLIF(source_items.item->>'originalUnitPrice','')::numeric,
-            NULLIF(source_items.item->>'price','')::numeric, NULLIF(source_items.item->>'unit_price','')::numeric, 0)
-            * COALESCE(NULLIF(source_items.item->>'quantity','')::numeric,1)
-        ) - COALESCE(NULLIF(source_items.item->>'complimentaryWaivedAmount','')::numeric,0)
-      )
-    )
-    ELSE ${itemAmount}
-  END`;
   const hasCredit = `EXISTS (
-    SELECT 1 FROM public.credits credit
+    SELECT 1
+    FROM public.credits credit
+    LEFT JOIN public.cashier_queue credit_queue ON credit_queue.id = credit.cashier_queue_id
     WHERE credit.order_id = o.id
-      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(source_items.item->>'name','')))
+      AND (
+        (credit_queue.is_item IS TRUE AND ${selectedCreditItem})
+        OR (credit_queue.id IS NOT NULL AND credit_queue.is_item IS NOT TRUE
+          AND (source_items.item->>'creditRequested'='true'
+            OR source_items.item->>'creditApproved'='true'))
+        OR (credit_queue.id IS NULL
+          AND LOWER(TRIM(COALESCE(credit.label,''))) =
+              LOWER(TRIM(COALESCE(source_items.item->>'name',''))))
+      )
   )`;
   const creditPaid = `COALESCE((
-    SELECT SUM(credit.amount_paid) FROM public.credits credit
+    SELECT SUM(CASE
+      WHEN credit_queue.id IS NOT NULL AND credit_queue.is_item IS NOT TRUE THEN
+        COALESCE(credit.amount_paid,0) * ${payableItemAmount} / NULLIF((
+          SELECT SUM(${orderItemPayableAmountSql('credit_total_items.item')})
+          FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb)) AS credit_total_items(item)
+          WHERE (credit_total_items.item->>'creditRequested'='true'
+              OR credit_total_items.item->>'creditApproved'='true')
+            AND COALESCE(credit_total_items.item->>'voidProcessed','false') <> 'true'
+            AND UPPER(COALESCE(credit_total_items.item->>'status','')) <> 'VOIDED'
+        ),0)
+      ELSE COALESCE(credit.amount_paid,0)
+    END)
+    FROM public.credits credit
+    LEFT JOIN public.cashier_queue credit_queue ON credit_queue.id = credit.cashier_queue_id
     WHERE credit.order_id = o.id
-      AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(source_items.item->>'name','')))
+      AND (
+        (credit_queue.is_item IS TRUE AND ${selectedCreditItem})
+        OR (credit_queue.id IS NOT NULL AND credit_queue.is_item IS NOT TRUE
+          AND (source_items.item->>'creditRequested'='true'
+            OR source_items.item->>'creditApproved'='true'))
+        OR (credit_queue.id IS NULL
+          AND LOWER(TRIM(COALESCE(credit.label,''))) =
+              LOWER(TRIM(COALESCE(source_items.item->>'name',''))))
+      )
   ),0)`;
   const itemFilter = department.paidItemFilter.replaceAll('item->>', 'source_items.item->>');
 
@@ -372,7 +423,8 @@ function departmentPaymentJoin(department) {
         0
       ))
     END),0) AS collected_amount
-    FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb)) AS source_items(item)
+    FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb))
+      WITH ORDINALITY AS source_items(item, ordinality)
     WHERE (source_items.item->>'_rowPaid'='true' OR source_items.item->>'is_partially_paid'='true'
       OR source_items.item->>'creditRequested'='true' OR ${hasCredit})
       AND COALESCE(source_items.item->>'voidProcessed','false') <> 'true'
@@ -382,20 +434,10 @@ function departmentPaymentJoin(department) {
   ) paid ON true`;
 }
 
-function departmentSalesJoin(department) {
+export function departmentSalesJoin(department) {
   const ticketItem = 'ticket_items.item';
-  const ticketAmount = `COALESCE(
-    NULLIF(${ticketItem}->>'line_total','')::numeric,
-    NULLIF(${ticketItem}->>'lineTotal','')::numeric,
-    COALESCE(NULLIF(${ticketItem}->>'price','')::numeric, NULLIF(${ticketItem}->>'unit_price','')::numeric)
-      * COALESCE(NULLIF(${ticketItem}->>'quantity','')::numeric,1)
-  )`;
-  const complimentaryOriginalAmount = `COALESCE(
-    NULLIF(source_item.item->>'originalLineAmount','')::numeric,
-    COALESCE(NULLIF(source_item.item->>'originalUnitPrice','')::numeric,
-      NULLIF(source_item.item->>'price','')::numeric, NULLIF(source_item.item->>'unit_price','')::numeric,0)
-      * COALESCE(NULLIF(source_item.item->>'quantity','')::numeric,1)
-  )`;
+  const ticketAmount = orderItemPayableAmountSql(ticketItem);
+  const complimentaryOriginalAmount = orderItemGrossAmountSql('source_item.item');
   const complimentaryWaiver = `COALESCE(NULLIF(source_item.item->>'complimentaryWaivedAmount','')::numeric,0)`;
   const complimentaryPayable = `GREATEST(${complimentaryOriginalAmount} - ${complimentaryWaiver},0)`;
   const hasComplimentaryCredit = `EXISTS (
@@ -470,7 +512,7 @@ function approvedVoidExclusion(orderId, item = 'item') {
     WHERE vr.order_id = ${orderId}
       AND UPPER(COALESCE(vr.status,'')) = 'APPROVED'
       AND LOWER(BTRIM(COALESCE(vr.item_name,''))) = LOWER(BTRIM(COALESCE(${item}->>'name','')))
-      AND COALESCE(NULLIF(${item}->>'price','')::numeric, NULLIF(${item}->>'unit_price','')::numeric,0)
+      AND COALESCE(${orderItemUnitPriceSql(item)},0)
         = COALESCE(vr.original_price,0)
       AND COALESCE(NULLIF(${item}->>'quantity','')::numeric,1) = COALESCE(vr.original_quantity,1)
   )`;
@@ -794,11 +836,7 @@ router.get('/reports/consolidated', async (req, res) => {
           `SELECT COALESCE(NULLIF(ticket_items.item->>'assignedTo',''), NULLIF(ticket_items.item->>'assigned_to','')) AS staff_name,
             COUNT(*)::int AS items_assigned,
             COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(t.status,''))) IN ('ready','served','paid','closed'))::int AS completed_items,
-            COALESCE(SUM(COALESCE(
-              NULLIF(ticket_items.item->>'line_total','')::numeric, NULLIF(ticket_items.item->>'lineTotal','')::numeric,
-              COALESCE(NULLIF(ticket_items.item->>'price','')::numeric, NULLIF(ticket_items.item->>'unit_price','')::numeric)
-                * COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)
-            )),0) AS total_sales
+            COALESCE(SUM(${orderItemPayableAmountSql('ticket_items.item')}),0) AS total_sales
            FROM public.${department.table} t
            LEFT JOIN public.orders o ON o.id=t.order_id
            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)
@@ -966,11 +1004,7 @@ router.get('/:department/reports', async (req, res) => {
         `SELECT COALESCE(NULLIF(ticket_items.item->>'assignedTo',''), NULLIF(ticket_items.item->>'assigned_to','')) AS staff_name,
           COUNT(*)::int AS items_assigned,
           COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(t.status,''))) IN ('ready','served','paid','closed'))::int AS completed_items,
-          COALESCE(SUM(COALESCE(
-            NULLIF(ticket_items.item->>'line_total','')::numeric, NULLIF(ticket_items.item->>'lineTotal','')::numeric,
-            COALESCE(NULLIF(ticket_items.item->>'price','')::numeric, NULLIF(ticket_items.item->>'unit_price','')::numeric)
-              * COALESCE(NULLIF(ticket_items.item->>'quantity','')::numeric,1)
-          )),0) AS total_sales
+          COALESCE(SUM(${orderItemPayableAmountSql('ticket_items.item')}),0) AS total_sales
          FROM public.${department.table} t
          LEFT JOIN public.orders o ON o.id=t.order_id
          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb)) AS ticket_items(item)

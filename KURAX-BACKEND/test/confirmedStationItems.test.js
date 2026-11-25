@@ -17,6 +17,15 @@ test('station queue exposes items sent by staff or confirmed by the cashier', ()
   assert.equal(getStationItemsTotal(visibleItems), 5000);
 });
 
+test('station ticket totals use serving price when bottle-level fields are stale', () => {
+  assert.equal(getStationItemsTotal([{
+    price: 150000,
+    unit_price: 150000,
+    quantity: 2,
+    drink_serving: { unit_selling_price: 5000 },
+  }]), 10000);
+});
+
 test('ticket order indexes identify duplicate lines without leaking unpaid quantities', () => {
   const ticketItems = [
     { name: 'Tea', station: 'Barista', quantity: 1, _orderItemIndex: 0 },

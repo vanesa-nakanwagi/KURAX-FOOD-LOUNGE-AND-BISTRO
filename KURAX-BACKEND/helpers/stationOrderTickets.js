@@ -53,7 +53,8 @@ export async function syncRoutableStationTickets(queryable, stationKey) {
        jsonb_agg(expanded.item || jsonb_build_object('_orderItemIndex', expanded.ordinality - 1)
          ORDER BY expanded.ordinality),
        SUM(
-         COALESCE(NULLIF(expanded.item->>'price', '')::numeric,
+         COALESCE(NULLIF(expanded.item->'drink_serving'->>'unit_selling_price', '')::numeric,
+           NULLIF(expanded.item->>'price', '')::numeric,
            NULLIF(expanded.item->>'unit_price', '')::numeric, 0)
          * COALESCE(NULLIF(expanded.item->>'quantity', '')::numeric, 1)
        ),
@@ -84,6 +85,7 @@ export async function syncRoutableStationTickets(queryable, stationKey) {
            AND LOWER(BTRIM(COALESCE(vr.item_name, '')))
              = LOWER(BTRIM(COALESCE(expanded.item->>'name', '')))
            AND COALESCE(
+                 NULLIF(expanded.item->'drink_serving'->>'unit_selling_price', '')::numeric,
                  NULLIF(expanded.item->>'price', '')::numeric,
                  NULLIF(expanded.item->>'unit_price', '')::numeric,
                  0

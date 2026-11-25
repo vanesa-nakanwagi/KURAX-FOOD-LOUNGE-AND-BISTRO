@@ -1,7 +1,23 @@
+export function getOrderItemUnitPrice(item = {}) {
+  const rawUnitPrice = item.drink_serving
+    ? item.drink_serving.unit_selling_price ?? item.price ?? item.unit_price
+    : item.originalUnitPrice ?? item.original_unit_price ?? item.price ?? item.unit_price;
+  return Number(rawUnitPrice ?? 0);
+}
+
 export function getOrderItemOriginalAmount(item = {}) {
+  if (item.drink_serving) {
+    const unitPrice = getOrderItemUnitPrice(item);
+    const quantity = Number(item.quantity || 1);
+    if (!Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error('Order item price and quantity must be valid non-negative values.');
+    }
+    return roundMoney(unitPrice * quantity);
+  }
+
   const storedOriginal = Number(item.originalLineAmount);
   if (Number.isFinite(storedOriginal) && storedOriginal >= 0) return roundMoney(storedOriginal);
-  const unitPrice = Number(item.originalUnitPrice ?? item.price ?? item.unit_price ?? 0);
+  const unitPrice = getOrderItemUnitPrice(item);
   const quantity = Number(item.quantity || 1);
   if (!Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(quantity) || quantity <= 0) {
     throw new Error('Order item price and quantity must be valid non-negative values.');
@@ -48,7 +64,7 @@ export function applyComplimentaryTerms(item, {
     throw new Error('The complimentary amount must be between zero and the original item total.');
   }
 
-  const unitPrice = Number(item.originalUnitPrice ?? item.price ?? item.unit_price ?? 0);
+  const unitPrice = getOrderItemUnitPrice(item);
   const nextWaiver = roundMoney(normalizedWaiver);
   return {
     ...item,

@@ -10,6 +10,7 @@ import {
   Power, Wine
 } from "lucide-react";
 import API_URL from "../../config/api";
+import { getOrderItemUnitPrice } from "../../utils/orderItemAmounts";
 
 // ─── KAMPALA DATE ─────────────────────────────────────────────────────────────
 function kampalaDateStr(d = new Date()) {
@@ -19,6 +20,12 @@ function kampalaDateStr(d = new Date()) {
 
 function formatMoney(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
+}
+
+function getTicketItemsTotal(items = []) {
+  return items.reduce((total, item) => (
+    total + getOrderItemUnitPrice(item) * Number(item.quantity || 1)
+  ), 0);
 }
 
 // ─── SHIFT SUMMARY MODAL ─────────────────────────────────────────────────────
@@ -80,7 +87,7 @@ function ShiftSummaryModal({ stats, onConfirm, onClose }) {
 // ─── ORDER CARD ───────────────────────────────────────────────────────────────
 function OrderCard({ order, onUpdateStatus, isProductionWorker, onProductionStatus, updatingWorkId }) {
   const minutesAgo  = Math.floor((Date.now() - new Date(order.timestamp || order.created_at)) / 60000);
-  const orderTotal = (order.items || []).reduce((total, item) => total + Number(item.price || item.unit_price || 0) * Number(item.quantity || 1), 0);
+  const orderTotal = getTicketItemsTotal(order.items || []);
   const isCompleted = ["Served","Paid","Closed","Credit","Mixed"].includes(order.status);
   const isReady     = order.status === "Ready";
   const isPreparing = order.status === "Preparing";
@@ -133,7 +140,7 @@ function OrderCard({ order, onUpdateStatus, isProductionWorker, onProductionStat
                   {item.quantity}x
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2"><p className={`font-black text-sm uppercase leading-tight ${isReady || isCompleted ? "line-through text-zinc-400" : "text-zinc-900"}`}>{item.name}</p><span className="shrink-0 text-xs font-semibold text-zinc-600">{formatMoney(Number(item.price || item.unit_price || 0) * Number(item.quantity || 1))}</span></div>
+                  <div className="flex items-start justify-between gap-2"><p className={`font-black text-sm uppercase leading-tight ${isReady || isCompleted ? "line-through text-zinc-400" : "text-zinc-900"}`}>{item.name}</p><span className="shrink-0 text-xs font-semibold text-zinc-600">{formatMoney(getOrderItemUnitPrice(item) * Number(item.quantity || 1))}</span></div>
                   {item.note && (
                     <p className="text-[10px] text-amber-800 italic font-bold mt-1 bg-amber-50 p-1.5 rounded-lg">
                       "{item.note}"

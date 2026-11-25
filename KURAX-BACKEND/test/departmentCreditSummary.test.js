@@ -1,7 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { summarizeDepartmentCredits, updateCreditOrderItems } from '../helpers/departmentCreditSummary.js';
+import {
+  allocateDepartmentCreditAmounts,
+  summarizeDepartmentCredits,
+  updateCreditOrderItems,
+} from '../helpers/departmentCreditSummary.js';
+
+test('department credit allocation splits a table credit by credited item value', () => {
+  const credit = { amount: 35000, amount_paid: 5000, status: 'PartiallySettled' };
+  const kitchen = allocateDepartmentCreditAmounts(credit, 21000, 35000);
+  const bar = allocateDepartmentCreditAmounts(credit, 14000, 35000);
+
+  assert.equal(kitchen.amount, 21000);
+  assert.equal(kitchen.amount_paid, 3000);
+  assert.equal(bar.amount, 14000);
+  assert.equal(bar.amount_paid, 2000);
+  assert.equal(kitchen.amount + bar.amount, credit.amount);
+  assert.equal(kitchen.amount_paid + bar.amount_paid, credit.amount_paid);
+});
 
 test('department credit summary separates partial, settled, and outstanding balances', () => {
   const summary = summarizeDepartmentCredits([

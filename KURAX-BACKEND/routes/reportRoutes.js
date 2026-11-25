@@ -1,7 +1,11 @@
 import express from 'express';
 import pool from '../db.js';
 import { readSessionToken } from '../middleware/sessionTokens.js';
-import { orderItemGrossAmountSql, orderItemNetAmountSql } from '../helpers/orderItemSalesAmounts.js';
+import {
+  orderItemGrossAmountSql,
+  orderItemNetAmountSql,
+  orderItemPayableAmountSql,
+} from '../helpers/orderItemSalesAmounts.js';
 import {
   buildMenuProfitabilityRow,
   buildMenuProfitabilitySummary,
@@ -588,6 +592,8 @@ router.get('/complimentary-items', async (req, res) => {
   }
 
   try {
+    const originalAmountSql = orderItemGrossAmountSql('item');
+    const payableAmountSql = orderItemPayableAmountSql('item');
     const result = await pool.query(
       `WITH complimentary_lines AS (
          SELECT o.id AS order_id,
@@ -595,31 +601,12 @@ router.get('/complimentary-items', async (req, res) => {
                 COALESCE(item->>'name', item->>'menu_name', 'Unknown item') AS item_name,
                 COALESCE(NULLIF(item->>'quantity', '')::numeric, 1) AS quantity,
                 COALESCE(item->>'station', item->>'department', item->>'category', 'Other') AS department,
-                COALESCE(
-                  NULLIF(item->>'originalLineAmount', '')::numeric,
-                  COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric, 0)
-                    * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
-                ) AS original_amount,
+                ${originalAmountSql} AS original_amount,
                 COALESCE(NULLIF(item->>'complimentaryWaivedAmount', '')::numeric, 0) AS waived_amount,
-                COALESCE(NULLIF(item->>'payableAmount', '')::numeric,
-                  GREATEST(0,
-                    COALESCE(
-                      NULLIF(item->>'originalLineAmount', '')::numeric,
-                      COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric, 0)
-                        * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
-                    ) - COALESCE(NULLIF(item->>'complimentaryWaivedAmount', '')::numeric, 0)
-                  )
-                ) AS payable_amount,
+                ${payableAmountSql} AS payable_amount,
                 COALESCE(NULLIF(item->>'paidAmount', '')::numeric,
                   CASE WHEN COALESCE(item->>'_rowPaid', 'false') = 'true'
-                    THEN COALESCE(NULLIF(item->>'payableAmount', '')::numeric,
-                      GREATEST(0,
-                        COALESCE(
-                          NULLIF(item->>'originalLineAmount', '')::numeric,
-                          COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric, 0)
-                            * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
-                        ) - COALESCE(NULLIF(item->>'complimentaryWaivedAmount', '')::numeric, 0)
-                      ))
+                    THEN ${payableAmountSql}
                     ELSE 0
                   END
                 ) AS paid_amount,
@@ -640,6 +627,7 @@ router.get('/complimentary-items', async (req, res) => {
          LEFT JOIN public.staff approver ON approver.id = NULLIF(item->>'complimentaryApprovedBy', '')::integer
          WHERE COALESCE(item->>'voidProcessed', 'false') <> 'true'
            AND UPPER(COALESCE(item->>'status', '')) <> 'VOIDED'
+           AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
        )
        SELECT line.order_id,
               COALESCE(line.public_order_ref, 'Order #' || line.order_id::text) AS order_reference,

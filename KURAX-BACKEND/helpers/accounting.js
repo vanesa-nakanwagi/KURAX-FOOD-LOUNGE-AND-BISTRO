@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import pool from '../db.js';
 import { toSearchPattern } from './pagination.js';
 import { getOrderItemPayableAmount } from './complimentaryItems.js';
+import { orderItemGrossAmountSql, orderItemPayableAmountSql } from './orderItemSalesAmounts.js';
 
 export const DEFAULT_ACCOUNTS = [
   { code: '1001', name: 'Counter Cash', category: 'Asset', account_type: 'Cash', normal_balance: 'Debit', description: 'Cash on hand' },
@@ -1455,20 +1456,8 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
     `SELECT
        item->>'station' AS station,
        item->>'category' AS category,
-       COALESCE(
-         NULLIF(item->>'line_total', '')::numeric,
-         NULLIF(item->>'lineTotal', '')::numeric,
-         COALESCE(NULLIF(item->>'price', '')::numeric, NULLIF(item->>'unit_price', '')::numeric)
-           * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
-       ) AS amount,
-       COALESCE(
-         NULLIF(item->>'originalLineAmount', '')::numeric,
-         COALESCE(
-           NULLIF(item->>'originalUnitPrice', '')::numeric,
-           NULLIF(item->>'price', '')::numeric,
-           NULLIF(item->>'unit_price', '')::numeric
-         ) * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
-       ) AS gross_amount,
+       ${orderItemPayableAmountSql('item')} AS amount,
+       ${orderItemGrossAmountSql('item')} AS gross_amount,
        CASE WHEN COALESCE(item->>'voidProcessed', 'false') = 'true'
                   OR UPPER(COALESCE(item->>'status', '')) = 'VOIDED'
          THEN 0 ELSE COALESCE(NULLIF(item->>'menuDiscountAmount', '')::numeric, 0) END AS menu_discount_amount,
@@ -1522,14 +1511,7 @@ export async function getIncomeStatement(startDate, endDate, startTime = null, e
     [startDate, endDate, startTime, endTime]
   ), pool.query(
     `SELECT item->>'station' AS station, item->>'category' AS category,
-            COALESCE(
-              NULLIF(item->>'originalLineAmount', '')::numeric,
-              COALESCE(
-                NULLIF(item->>'originalUnitPrice', '')::numeric,
-                NULLIF(item->>'price', '')::numeric,
-                NULLIF(item->>'unit_price', '')::numeric
-              ) * COALESCE(NULLIF(item->>'quantity', '')::numeric, 1)
-            ) AS amount
+            ${orderItemGrossAmountSql('item')} AS amount
      FROM public.void_requests vr
      JOIN public.orders o ON o.id = vr.order_id
      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
