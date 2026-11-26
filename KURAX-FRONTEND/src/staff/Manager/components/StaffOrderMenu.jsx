@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { getImageSrc } from "../../../utils/imageHelper";
 import { formatMenuName } from "../../../utils/menuName.js";
+import { getDrinkStationLabel } from "../../../utils/menuStation.js";
 import { applyDrinkServing, getDrinkServingOptions, isEligibleDrink } from "../../drinkServing.js";
 
 export default function ManagerOrderMenu({ 
@@ -88,6 +89,7 @@ export default function ManagerOrderMenu({
             const hasPromotion = promotionActive && Number.isFinite(originalPrice) && originalPrice > currentPrice;
             const drinkOptions = isEligibleDrink(item) ? getDrinkServingOptions(item) : [];
             const selectedServing = selectedServings[item.id] || drinkOptions[0];
+            const drinkStation = getDrinkStationLabel(item);
 
             return (
               <div 
@@ -100,16 +102,16 @@ export default function ManagerOrderMenu({
                 {/* Image Section */}
                 <div className="relative h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
                   <div className="absolute top-2.5 left-2.5 right-2.5 flex justify-between items-start z-10">
-                    <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border backdrop-blur-md shadow-sm ${
-                      item.station === 'Barista' ? 'bg-amber-900/60 text-amber-200 border-amber-500/30' : 
-                      item.station === 'Barman' ? 'bg-blue-900/60 text-blue-200 border-blue-500/30' : 
-                      'bg-emerald-900/60 text-emerald-200 border-emerald-500/30'
-                    }`}>
-                      {item.station === 'Barista' && <Coffee size={10} />}
-                      {item.station === 'Barman' && <Wine size={10} />}
-                      {(item.station === 'Kitchen' || !item.station) && <UtensilsCrossed size={10} />}
-                      {item.station || 'Kitchen'}
-                    </span>
+                    {drinkStation && (
+                      <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border backdrop-blur-md shadow-sm ${
+                        drinkStation === 'BARISTA'
+                          ? 'bg-amber-900/70 text-amber-100 border-amber-500/40'
+                          : 'bg-blue-900/70 text-blue-100 border-blue-500/40'
+                      }`}>
+                        {drinkStation === 'BARISTA' ? <Coffee size={10} /> : <Wine size={10} />}
+                        {drinkStation}
+                      </span>
+                    )}
                     {isNew && (
                       <div className="bg-yellow-500 text-white text-[8px] font-black px-3 py-1 rounded-full shadow-lg flex items-center gap-1 uppercase tracking-widest border border-white/10">
                         <Sparkles size={8} /> NEW

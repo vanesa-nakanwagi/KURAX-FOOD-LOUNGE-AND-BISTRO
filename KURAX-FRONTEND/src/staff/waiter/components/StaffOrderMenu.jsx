@@ -3,6 +3,7 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 import { Plus, SearchX, UtensilsCrossed, Sparkles } from "lucide-react";
 import { getImageSrc } from "../../../utils/imageHelper";
 import { formatMenuName } from "../../../utils/menuName.js";
+import { getDrinkStationLabel } from "../../../utils/menuStation.js";
 import { applyDrinkServing, getDrinkServingOptions, isEligibleDrink } from "../../drinkServing.js";
 
 // Helper: determine which tab this item belongs to (case‑insensitive, trimmed)
@@ -107,6 +108,7 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
             const hasPromotion = promotionActive && Number.isFinite(originalPrice) && originalPrice > currentPrice;
             const drinkOptions = isEligibleDrink(item) ? getDrinkServingOptions(item) : [];
             const selectedServing = selectedServings[item.id] || drinkOptions[0];
+            const drinkStation = getDrinkStationLabel(item);
             return (
               <div
                 key={item.id}
@@ -115,6 +117,15 @@ export default function StaffOrderMenu({ onAddItem, items = [], searchQuery = ""
               >
                 <div className="relative h-52 overflow-hidden bg-zinc-50 dark:bg-[#1a1a1a] shrink-0">
                   <div className="absolute top-2.5 left-2.5 right-2.5 flex justify-end items-start z-10">
+                    {drinkStation && (
+                      <span className={`mr-auto rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider shadow ${
+                        drinkStation === "BARISTA"
+                          ? "border-amber-300/50 bg-amber-950/80 text-amber-100"
+                          : "border-blue-300/50 bg-blue-950/80 text-blue-100"
+                      }`}>
+                        {drinkStation}
+                      </span>
+                    )}
                     {isNew && (
                       <div className="bg-yellow-500 text-black text-[9px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 uppercase tracking-wider border border-white/10 shadow">
                         <Sparkles size={8} /> NEW

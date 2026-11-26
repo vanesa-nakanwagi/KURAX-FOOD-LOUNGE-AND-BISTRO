@@ -4,6 +4,7 @@ import { useData } from "../../customer/components/context/DataContext";
 import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
 import ProductionPanel from "../components/ProductionPanel";
 import useClaimedProduction from "../components/useClaimedProduction";
+import { getDrinkStationLabel } from "../../utils/menuStation.js";
 import {
   Clock, CheckCircle, Coffee, Play,
   AlertCircle, Search, RotateCcw, Trophy, Bean,
@@ -125,26 +126,38 @@ function OrderCard({ order, onUpdateStatus, isProductionWorker, onProductionStat
 
       {/* Items */}
       <div className="p-5 flex-grow overflow-y-auto space-y-3 custom-scrollbar">
-        {order.items.map((item, idx) => (
-          <div key={idx} className="border-b border-zinc-100 pb-3 last:border-0">
-            <div className="flex justify-between items-start gap-3">
-              <div className="flex items-start gap-2 flex-1 min-w-0">
-                <span className="bg-amber-400 text-zinc-950 text-[10px] font-black px-1.5 py-0.5 rounded leading-none shrink-0 mt-0.5">
-                  {item.quantity}x
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2"><p className={`font-black text-sm uppercase leading-tight ${isReady || isCompleted ? "line-through text-zinc-400" : "text-zinc-900"}`}>{item.name}</p><span className="shrink-0 text-xs font-semibold text-zinc-600">{formatMoney(Number(item.price || item.unit_price || 0) * Number(item.quantity || 1))}</span></div>
-                  {item.note && (
-                    <p className="text-[10px] text-amber-800 italic font-bold mt-1 bg-amber-50 p-1.5 rounded-lg">
-                      "{item.note}"
-                    </p>
-                  )}
+        {order.items.map((item, idx) => {
+          const stationLabel = getDrinkStationLabel(item);
+          return (
+            <div key={idx} className="border-b border-zinc-100 pb-3 last:border-0">
+              <div className="flex justify-between items-start gap-3">
+                <div className="flex items-start gap-2 flex-1 min-w-0">
+                  <span className="bg-amber-400 text-zinc-950 text-[10px] font-black px-1.5 py-0.5 rounded leading-none shrink-0 mt-0.5">
+                    {item.quantity}x
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <p className={`font-black text-sm uppercase leading-tight ${isReady || isCompleted ? "line-through text-zinc-400" : "text-zinc-900"}`}>{item.name}</p>
+                        {stationLabel && (
+                          <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-amber-800">
+                            {stationLabel}
+                          </span>
+                        )}
+                      </div>
+                      <span className="shrink-0 text-xs font-semibold text-zinc-600">{formatMoney(Number(item.price || item.unit_price || 0) * Number(item.quantity || 1))}</span>
+                    </div>
+                    {item.note && (
+                      <p className="text-[10px] text-amber-800 italic font-bold mt-1 bg-amber-50 p-1.5 rounded-lg">
+                        "{item.note}"
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
-
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Footer actions */}
