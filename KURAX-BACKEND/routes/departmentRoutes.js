@@ -317,18 +317,54 @@ async function departmentCreditReport(department, from, to) {
           LOWER(TRIM(COALESCE(q.item->>'name',''))))
   )`;
   const creditCoveredItem = `(
-    (q.is_item IS TRUE AND ${selectedCreditItem})
-    OR (q.is_item IS NOT TRUE
+    (q.is_item IS TRUE AND (
+      ${selectedCreditItem}
+      OR LOWER(TRIM(COALESCE(source_items.item->>'name',''))) =
+         LOWER(TRIM(COALESCE(c.label,'')))
+      OR UPPER(COALESCE(source_items.item->>'payment_method','')) LIKE '%CREDIT%'
+    ))
+    OR (q.id IS NOT NULL AND q.is_item IS NOT TRUE)
+    OR (q.id IS NULL
       AND (source_items.item->>'creditRequested'='true'
-        OR source_items.item->>'creditApproved'='true'))
+        OR source_items.item->>'creditApproved'='true'
+        OR UPPER(COALESCE(source_items.item->>'payment_method','')) LIKE '%CREDIT%'))
   )`;
   const result = await pool.query(
-    `SELECT DISTINCT c.id, c.amount, c.amount_paid, c.paid, c.status,
+    `SELECT DISTINCT c.id, c.amount,
+            COALESCE((
+              SELECT SUM(cs.amount_paid)
+              FROM public.credit_settlements cs
+              WHERE cs.credit_id = c.id
+           ), NULLIF(c.amount_paid, 0), (
+             SELECT COALESCE(SUM(COALESCE(
+               NULLIF(source_items.item->>'partial_amount_paid','')::numeric,
+               NULLIF(source_items.item->>'paidAmount','')::numeric,
+               0
+             )),0)
+             FROM jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS source_items(item)
+             WHERE (
+               source_items.item->>'creditRequested'='true'
+               OR source_items.item->>'creditApproved'='true'
+               OR UPPER(COALESCE(source_items.item->>'payment_method','')) LIKE '%CREDIT%'
+               OR LOWER(TRIM(COALESCE(source_items.item->>'name',''))) =
+                  LOWER(TRIM(COALESCE(c.label,'')))
+             )
+               AND COALESCE(source_items.item->>'voidProcessed','false') <> 'true'
+               AND UPPER(COALESCE(source_items.item->>'status','')) <> 'VOIDED'
+           ), 0) AS amount_paid,
+            c.paid, c.status,
             allocation.department_item_amount, allocation.total_item_amount,
             (q.id IS NULL) AS legacy_credit
      FROM public.${department.table} t
      JOIN public.orders o ON o.id = t.order_id
-     JOIN public.credits c ON c.order_id = t.order_id
+     JOIN public.credits c ON
+       c.order_id = t.order_id
+       OR EXISTS (
+         SELECT 1
+         FROM public.cashier_queue cq
+         WHERE cq.id = c.cashier_queue_id
+           AND cq.order_ids::jsonb @> jsonb_build_array(o.id)
+       )
      LEFT JOIN public.cashier_queue q ON q.id = c.cashier_queue_id
      CROSS JOIN LATERAL (
        SELECT
@@ -376,10 +412,17 @@ export function departmentPaymentJoin(department) {
     LEFT JOIN public.cashier_queue credit_queue ON credit_queue.id = credit.cashier_queue_id
     WHERE credit.order_id = o.id
       AND (
-        (credit_queue.is_item IS TRUE AND ${selectedCreditItem})
-        OR (credit_queue.id IS NOT NULL AND credit_queue.is_item IS NOT TRUE
+        (credit_queue.is_item IS TRUE AND (
+          ${selectedCreditItem}
+          OR LOWER(TRIM(COALESCE(source_items.item->>'name',''))) =
+             LOWER(TRIM(COALESCE(credit.label,'')))
+          OR UPPER(COALESCE(source_items.item->>'payment_method','')) LIKE '%CREDIT%'
+        ))
+        OR (credit_queue.id IS NOT NULL AND credit_queue.is_item IS NOT TRUE)
+        OR (credit_queue.id IS NULL
           AND (source_items.item->>'creditRequested'='true'
-            OR source_items.item->>'creditApproved'='true'))
+            OR source_items.item->>'creditApproved'='true'
+            OR UPPER(COALESCE(source_items.item->>'payment_method','')) LIKE '%CREDIT%'))
         OR (credit_queue.id IS NULL
           AND LOWER(TRIM(COALESCE(credit.label,''))) =
               LOWER(TRIM(COALESCE(source_items.item->>'name',''))))
@@ -388,24 +431,44 @@ export function departmentPaymentJoin(department) {
   const creditPaid = `COALESCE((
     SELECT SUM(CASE
       WHEN credit_queue.id IS NOT NULL AND credit_queue.is_item IS NOT TRUE THEN
-        COALESCE(credit.amount_paid,0) * ${payableItemAmount} / NULLIF((
+        COALESCE((
+          SELECT SUM(credit_settlement.amount_paid)
+          FROM public.credit_settlements credit_settlement
+          WHERE credit_settlement.credit_id = credit.id
+        ), credit.amount_paid, 0) * ${payableItemAmount} / NULLIF((
           SELECT SUM(${orderItemPayableAmountSql('credit_total_items.item')})
-          FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb)) AS credit_total_items(item)
-          WHERE (credit_total_items.item->>'creditRequested'='true'
-              OR credit_total_items.item->>'creditApproved'='true')
+          FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb))
+            AS credit_total_items(item)
+          WHERE (
+              credit_queue.is_item IS NOT TRUE
+              OR credit_total_items.item->>'creditRequested'='true'
+              OR credit_total_items.item->>'creditApproved'='true'
+              OR UPPER(COALESCE(credit_total_items.item->>'payment_method','')) LIKE '%CREDIT%'
+            )
             AND COALESCE(credit_total_items.item->>'voidProcessed','false') <> 'true'
             AND UPPER(COALESCE(credit_total_items.item->>'status','')) <> 'VOIDED'
         ),0)
-      ELSE COALESCE(credit.amount_paid,0)
+      ELSE COALESCE((
+        SELECT SUM(credit_settlement.amount_paid)
+        FROM public.credit_settlements credit_settlement
+        WHERE credit_settlement.credit_id = credit.id
+      ), credit.amount_paid, 0)
     END)
     FROM public.credits credit
     LEFT JOIN public.cashier_queue credit_queue ON credit_queue.id = credit.cashier_queue_id
     WHERE credit.order_id = o.id
       AND (
-        (credit_queue.is_item IS TRUE AND ${selectedCreditItem})
-        OR (credit_queue.id IS NOT NULL AND credit_queue.is_item IS NOT TRUE
+        (credit_queue.is_item IS TRUE AND (
+          ${selectedCreditItem}
+          OR LOWER(TRIM(COALESCE(source_items.item->>'name',''))) =
+             LOWER(TRIM(COALESCE(credit.label,'')))
+          OR UPPER(COALESCE(source_items.item->>'payment_method','')) LIKE '%CREDIT%'
+        ))
+        OR (credit_queue.id IS NOT NULL AND credit_queue.is_item IS NOT TRUE)
+        OR (credit_queue.id IS NULL
           AND (source_items.item->>'creditRequested'='true'
-            OR source_items.item->>'creditApproved'='true'))
+            OR source_items.item->>'creditApproved'='true'
+            OR UPPER(COALESCE(source_items.item->>'payment_method','')) LIKE '%CREDIT%'))
         OR (credit_queue.id IS NULL
           AND LOWER(TRIM(COALESCE(credit.label,''))) =
               LOWER(TRIM(COALESCE(source_items.item->>'name',''))))
@@ -442,7 +505,8 @@ export function departmentSalesJoin(department) {
   const complimentaryPayable = `GREATEST(${complimentaryOriginalAmount} - ${complimentaryWaiver},0)`;
   const hasComplimentaryCredit = `EXISTS (
     SELECT 1 FROM public.credits credit
-    WHERE credit.order_id = o.id
+    LEFT JOIN public.cashier_queue credit_queue ON credit_queue.id = credit.cashier_queue_id
+    WHERE (credit.order_id = o.id OR credit_queue.order_ids::jsonb @> jsonb_build_array(o.id))
       AND LOWER(TRIM(COALESCE(credit.label,''))) = LOWER(TRIM(COALESCE(source_item.item->>'name','')))
   )`;
   const complimentaryCreditPaid = `COALESCE((

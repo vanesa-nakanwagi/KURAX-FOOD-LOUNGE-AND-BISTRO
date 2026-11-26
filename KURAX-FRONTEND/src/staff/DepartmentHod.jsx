@@ -734,15 +734,16 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             </button>
             <button type="button" onClick={isManagement ? downloadConsolidatedReport : downloadDepartmentReport} disabled={!report || report.from !== from || report.to !== to || downloadingPdf} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 ${isManagement ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-amber-400 hover:bg-amber-300'}`}><Download size={15} /> {downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}</button>
           </div></div>
-          {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[1720px] text-left text-sm">
+          {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[1400px] text-left text-sm">
             <thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr>
               <th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th>
               <th className="p-3">Sales less waived comps</th>
               <th className="p-3">Comp qty</th><th className="p-3">Fully waived qty</th>
               <th className="p-3">Partially waived qty</th><th className="p-3">Comp waived</th>
-              <th className="p-3">Comp collected</th><th className="p-3">Voided</th>
-              <th className="p-3">Collected</th><th className="p-3">Unpaid balance</th><th className="p-3">Partial credits</th>
-              <th className="p-3">Settled credits</th><th className="p-3">Outstanding credits</th>
+              <th className="p-3">Comp collected</th>
+              <th className="p-3">Partially paid credits</th>
+              <th className="p-3">Settled credits</th>
+              <th className="p-3">Credit balance</th>
             </tr></thead>
             <tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200">
               <td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td>
@@ -751,9 +752,8 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
               <td className="p-3">{row.fully_waived_quantity || 0}</td><td className="p-3">{row.partially_waived_quantity || 0}</td>
               <td className="p-3">{money(row.complimentary_waived_amount)}</td>
               <td className="p-3">{money(row.complimentary_collected_amount)}</td>
-              <td className="p-3">{money(row.voided_total)}</td>
-              <td className="p-3">{money(row.amount_collected)}</td><td className="p-3">{money(row.outstanding_balance)}</td>
-              <td className="p-3">{money(row.partially_paid_credit_amount)}</td><td className="p-3">{money(row.settled_credit_amount)}</td>
+              <td className="p-3">{money(row.partially_paid_credit_amount)}</td>
+              <td className="p-3">{money(row.settled_credit_amount)}</td>
               <td className="p-3">{money(row.outstanding_credit_balance)}</td>
             </tr>)}</tbody>
             <tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr>
@@ -768,9 +768,6 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
               <td className="p-3">{departments.reduce((total, row) => total + Number(row.partially_waived_quantity || 0), 0)}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_waived_amount || 0), 0))}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.complimentary_collected_amount || 0), 0))}</td>
-              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.voided_total || 0), 0))}</td>
-              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.amount_collected || 0), 0))}</td>
-              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_balance || 0), 0))}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.partially_paid_credit_amount || 0), 0))}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.settled_credit_amount || 0), 0))}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.outstanding_credit_balance || 0), 0))}</td>

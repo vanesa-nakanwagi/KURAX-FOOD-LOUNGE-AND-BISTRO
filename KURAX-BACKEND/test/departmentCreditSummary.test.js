@@ -38,6 +38,17 @@ test('department credit summary separates partial, settled, and outstanding bala
   });
 });
 
+test('a UGX 35000 credit with UGX 5000 paid reports the paid amount and remaining balance', () => {
+  const summary = summarizeDepartmentCredits([
+    { amount: 35000, amount_paid: 5000, status: 'PartiallySettled' },
+  ]);
+
+  assert.equal(summary.partially_paid_credit_count, 1);
+  assert.equal(summary.partially_paid_credit_amount, 5000);
+  assert.equal(summary.partially_paid_credit_balance, 30000);
+  assert.equal(summary.outstanding_credit_balance, 30000);
+});
+
 test('department credit summary clamps overpayment and ignores non-positive credits', () => {
   const summary = summarizeDepartmentCredits([
     { amount: 20, amount_paid: 25 },
