@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Receipt, Calculator, CheckCircle2, FileText, X, LogOut,
-  RotateCcw, BookOpen, Wallet, Sparkles, Menu, CircleDollarSign, Settings,
+  RotateCcw, BookOpen, Sparkles, Menu, CircleDollarSign, Settings,
   BarChart3, Boxes, Flame,
 } from "lucide-react";
 import logo from "../../customer/assets/images/logo.jpeg";
@@ -12,14 +12,13 @@ import LogoutConfirmDialog from "../components/LogoutConfirmDialog";
 
 const DESKTOP_MENU_ITEMS = [
   { key: "DASHBOARD",         label: "Dashboard",           icon: Receipt },
-  { key: "INVENTORY",         label: "Inventory Management", icon: Boxes },
   { key: "PHYSICAL_COUNT",    label: "Physical Finances",  icon: Calculator },
   { key: "LIVE_AUDIT",        label: "Live Audit",         icon: CheckCircle2 },
-  { key: "MONTHLY_COSTS",     label: "Monthly Costs",      icon: Wallet },
   { key: "CREDITS",           label: "Credits",            icon: BookOpen },
   { key: "DEPARTMENT_REPORTS", label: "Department Reports", icon: CircleDollarSign },
   { key: "SHISHA_SALES",      label: "Shisha Sales",       icon: Flame },
   { key: "REPORTS",           label: "Accounting",         icon: FileText },
+  { key: "INVENTORY",         label: "Inventory Management", icon: Boxes },
   { key: "STAFF_PERFORMANCE", label: "Staff Sales Performance", icon: BarChart3 },
   { key: "SYSTEM_CONFIGURATION", label: "System Configuration", icon: Settings },
   { key: "END_OF_SHIFT",      label: "End of Shift",       icon: RotateCcw },

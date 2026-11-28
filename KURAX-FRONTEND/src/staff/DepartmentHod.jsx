@@ -7,6 +7,7 @@ import ProductionPanel from './components/ProductionPanel';
 import API_URL from '../config/api';
 import { downloadReportPdf } from './reportExport';
 import DepartmentInventory from './DepartmentInventory';
+import { isCompletedTicket, isCompletedTodayTicket } from '../utils/departmentTicketStatus.js';
 
 const DEPARTMENTS = {
   kitchen: { label: 'Kitchen', title: 'Kitchen station', role: 'KITCHEN_HOD', station: 'kitchen', productionStation: 'kitchen', workerRole: 'CHEF', icon: ChefHat },
@@ -47,10 +48,6 @@ function money(value) {
 
 function salesAfterWaivedComps(sales, waivedComps) {
   return Number(sales || 0) - Number(waivedComps || 0);
-}
-
-function isCompletedTicket(ticket) {
-  return ['ready', 'served', 'paid', 'closed'].includes(String(ticket.status || '').trim().toLowerCase());
 }
 
 function isAssignedItem(item) {
@@ -229,11 +226,13 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             ['Partially waived quantity', report.summary?.partially_waived_quantity ?? 0],
             ['Complimentary waived value', money(report.summary?.complimentary_waived_amount)],
             ['Complimentary amount collected', money(report.summary?.complimentary_collected_amount)],
-            ['Voided', money(report.summary?.voided_total)],
+            ['Voided sales value', money(report.summary?.voided_total)],
             ['Voided quantity', report.summary?.voided_quantity ?? 0],
+            ['Voided COGS', money(report.summary?.voided_cogs)],
+            ['Voided COGS items to review', report.summary?.voided_cogs_review_count ?? 0],
             ['Production voided items', report.summary?.production_voided_items ?? 0],
             ['Production voided quantity', report.summary?.production_voided_quantity ?? 0],
-            ['Production voided total', money(report.summary?.production_voided_total)],
+            ['Production voided sales value', money(report.summary?.production_voided_total)],
             ['COGS', money(report.summary?.cogs)],
             ['Gross profit', money(report.summary?.gross_profit)],
             ['Inventory consumption', money(report.summary?.consumption_value)],
@@ -244,16 +243,16 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         },
         {
           title: 'Menu items',
-          columns: ['Menu item', 'Quantity', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Voided quantity', 'Voided total'],
+          columns: ['Menu item', 'Quantity', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Voided quantity', 'Voided sales value', 'Voided COGS', 'Voided COGS items to review'],
           rows: (report.menu_items || []).map(item => [
             item.menu_item, item.quantity, money(item.sales), item.complimentary_quantity || 0, item.fully_waived_quantity || 0,
             item.partially_waived_quantity || 0, money(item.complimentary_waived_amount),
-            item.voided_quantity || 0, money(item.voided_total),
+            item.voided_quantity || 0, money(item.voided_total), money(item.voided_cogs), item.voided_cogs_review_count || 0,
           ]),
         },
         {
           title: 'Claimed production and voided items',
-          columns: ['Claimed by', 'Items claimed', 'Completed', 'Production value', 'Voided items', 'Voided quantity', 'Voided total'],
+          columns: ['Claimed by', 'Items claimed', 'Completed', 'Production value', 'Voided items', 'Voided quantity', 'Voided sales value'],
           rows: (report.production_performance || []).map(person => [
             person.claimed_by, person.items_claimed, person.completed_items, money(person.production_value),
             person.voided_items, person.voided_quantity, money(person.voided_total),
@@ -291,12 +290,14 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         ['Complimentary waived value (UGX)', Number(report.summary?.complimentary_waived_amount || 0)],
         ['Complimentary amount collected (UGX)', Number(report.summary?.complimentary_collected_amount || 0)],
         ['Voided quantity', Number(report.summary?.voided_quantity || 0)],
-        ['Voided total (UGX)', Number(report.summary?.voided_total || 0)],
+        ['Voided sales value (UGX)', Number(report.summary?.voided_total || 0)],
+        ['Voided COGS (UGX)', Number(report.summary?.voided_cogs || 0)],
+        ['Voided COGS items to review', Number(report.summary?.voided_cogs_review_count || 0)],
         ['Collected (UGX)', Number(report.summary?.amount_collected || 0)],
         ['Outstanding (UGX)', Number(report.summary?.outstanding_balance || 0)],
       ];
       const menuRows = [
-        ['Menu item', 'Quantity', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Voided quantity', 'Voided total (UGX)'],
+        ['Menu item', 'Quantity', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Voided quantity', 'Voided sales value (UGX)', 'Voided COGS (UGX)', 'Voided COGS items to review'],
         ...(report.menu_items || []).map(item => [
           item.menu_item,
           Number(item.quantity || 0),
@@ -307,10 +308,12 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           Number(item.complimentary_waived_amount || 0),
           Number(item.voided_quantity || 0),
           Number(item.voided_total || 0),
+          Number(item.voided_cogs || 0),
+          Number(item.voided_cogs_review_count || 0),
         ]),
       ];
       const productionRows = [
-        ['Claimed by', 'Items claimed', 'Completed', 'Production value (UGX)', 'Voided items', 'Voided quantity', 'Voided total (UGX)'],
+        ['Claimed by', 'Items claimed', 'Completed', 'Production value (UGX)', 'Voided items', 'Voided quantity', 'Voided sales value (UGX)'],
         ...(report.production_performance || []).map(person => [
           person.claimed_by,
           Number(person.items_claimed || 0),
@@ -351,6 +354,8 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         complimentary_collected_amount: result.complimentary_collected_amount + Number(department.complimentary_collected_amount || 0),
         voided_total: result.voided_total + Number(department.voided_total || 0),
         voided_quantity: result.voided_quantity + Number(department.voided_quantity || 0),
+        voided_cogs: result.voided_cogs + Number(department.voided_cogs || 0),
+        voided_cogs_review_count: result.voided_cogs_review_count + Number(department.voided_cogs_review_count || 0),
         production_voided_items: result.production_voided_items + Number(department.production_voided_items || 0),
         production_voided_quantity: result.production_voided_quantity + Number(department.production_voided_quantity || 0),
         production_voided_total: result.production_voided_total + Number(department.production_voided_total || 0),
@@ -366,7 +371,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         settled_credit_amount: result.settled_credit_amount + Number(department.settled_credit_amount || 0),
         outstanding_credit_count: result.outstanding_credit_count + Number(department.outstanding_credit_count || 0),
         outstanding_credit_balance: result.outstanding_credit_balance + Number(department.outstanding_credit_balance || 0),
-      }), { total_orders: 0, total_sales: 0, complimentary_quantity: 0, fully_waived_quantity: 0, partially_waived_quantity: 0, complimentary_waived_amount: 0, complimentary_collected_amount: 0, voided_total: 0, voided_quantity: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
+      }), { total_orders: 0, total_sales: 0, complimentary_quantity: 0, fully_waived_quantity: 0, partially_waived_quantity: 0, complimentary_waived_amount: 0, complimentary_collected_amount: 0, voided_total: 0, voided_quantity: 0, voided_cogs: 0, voided_cogs_review_count: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
       const staffPerformance = departments.flatMap(department => (department.staff_performance || []).map(person => [
         department.label,
         String(person.worker_role || '').replaceAll('_', ' '),
@@ -405,11 +410,13 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             ['Partially waived quantity', totals.partially_waived_quantity],
             ['Complimentary waived value', money(totals.complimentary_waived_amount)],
             ['Complimentary amount collected', money(totals.complimentary_collected_amount)],
-            ['Voided', money(totals.voided_total)],
+            ['Voided sales value', money(totals.voided_total)],
             ['Voided quantity', totals.voided_quantity],
+            ['Voided COGS', money(totals.voided_cogs)],
+            ['Voided COGS items to review', totals.voided_cogs_review_count],
             ['Production voided items', totals.production_voided_items],
             ['Production voided quantity', totals.production_voided_quantity],
-            ['Production voided total', money(totals.production_voided_total)],
+            ['Production voided sales value', money(totals.production_voided_total)],
             ['COGS', money(totals.cogs)],
             ['Gross profit', money(totals.gross_profit)],
             ['Inventory consumption', money(totals.consumption_value)],
@@ -421,19 +428,19 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         },
         {
           title: 'Main departments',
-          columns: ['Department', 'Orders', 'Sales', 'Sales less waived comps', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Comp collected', 'Voided', 'Voided quantity', 'Collected', 'Outstanding', 'Partial credits', 'Settled credits', 'Credit balance'],
+          columns: ['Department', 'Orders', 'Sales', 'Sales less waived comps', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Comp collected', 'Voided sales value', 'Voided quantity', 'Voided COGS', 'Voided COGS items to review', 'Collected', 'Outstanding', 'Partial credits', 'Settled credits', 'Credit balance'],
           rows: [
-            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), money(salesAfterWaivedComps(department.total_sales, department.complimentary_waived_amount)), department.complimentary_quantity || 0, department.fully_waived_quantity || 0, department.partially_waived_quantity || 0, money(department.complimentary_waived_amount), money(department.complimentary_collected_amount), money(department.voided_total), department.voided_quantity || 0, money(department.amount_collected), money(department.outstanding_balance), money(department.partially_paid_credit_amount), money(department.settled_credit_amount), money(department.outstanding_credit_balance)]),
-            ['Total main departments', totals.total_orders, money(totals.total_sales), money(salesAfterWaivedComps(totals.total_sales, totals.complimentary_waived_amount)), totals.complimentary_quantity, totals.fully_waived_quantity, totals.partially_waived_quantity, money(totals.complimentary_waived_amount), money(totals.complimentary_collected_amount), money(totals.voided_total), totals.voided_quantity, money(totals.amount_collected), money(totals.outstanding_balance), money(totals.partially_paid_credit_amount), money(totals.settled_credit_amount), money(totals.outstanding_credit_balance)],
+            ...departments.map(department => [department.label, department.total_orders, money(department.total_sales), money(salesAfterWaivedComps(department.total_sales, department.complimentary_waived_amount)), department.complimentary_quantity || 0, department.fully_waived_quantity || 0, department.partially_waived_quantity || 0, money(department.complimentary_waived_amount), money(department.complimentary_collected_amount), money(department.voided_total), department.voided_quantity || 0, money(department.voided_cogs), department.voided_cogs_review_count || 0, money(department.amount_collected), money(department.outstanding_balance), money(department.partially_paid_credit_amount), money(department.settled_credit_amount), money(department.outstanding_credit_balance)]),
+            ['Total main departments', totals.total_orders, money(totals.total_sales), money(salesAfterWaivedComps(totals.total_sales, totals.complimentary_waived_amount)), totals.complimentary_quantity, totals.fully_waived_quantity, totals.partially_waived_quantity, money(totals.complimentary_waived_amount), money(totals.complimentary_collected_amount), money(totals.voided_total), totals.voided_quantity, money(totals.voided_cogs), totals.voided_cogs_review_count, money(totals.amount_collected), money(totals.outstanding_balance), money(totals.partially_paid_credit_amount), money(totals.settled_credit_amount), money(totals.outstanding_credit_balance)],
           ],
         },
         {
           title: 'Menu items by department',
-          columns: ['Department', 'Menu item', 'Quantity', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Voided quantity', 'Voided total'],
+          columns: ['Department', 'Menu item', 'Quantity', 'Sales', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived', 'Voided quantity', 'Voided sales value', 'Voided COGS', 'Voided COGS items to review'],
           rows: departments.flatMap(department => (department.menu_items || []).map(item => [
             department.label, item.menu_item, item.quantity, money(item.sales), item.complimentary_quantity || 0, item.fully_waived_quantity || 0,
             item.partially_waived_quantity || 0, money(item.complimentary_waived_amount),
-            item.voided_quantity || 0, money(item.voided_total),
+            item.voided_quantity || 0, money(item.voided_total), money(item.voided_cogs), item.voided_cogs_review_count || 0,
           ])),
         },
         {
@@ -448,7 +455,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         },
         {
           title: 'Claimed production and voided items',
-          columns: ['Department', 'Role', 'Claimed by', 'Items claimed', 'Completed', 'Production value', 'Voided items', 'Voided quantity', 'Voided total'],
+          columns: ['Department', 'Role', 'Claimed by', 'Items claimed', 'Completed', 'Production value', 'Voided items', 'Voided quantity', 'Voided sales value'],
           rows: productionPerformance,
         },
         ],
@@ -472,7 +479,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         ['KURAX DEPARTMENT SALES REPORT'],
         ['Period', fullReport.from, 'to', fullReport.to],
         [],
-        ['Department', 'Orders', 'Sales (UGX)', 'Sales less waived comps (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Comp collected (UGX)', 'Voided (UGX)', 'Voided quantity', 'Collected (UGX)', 'Outstanding (UGX)', 'Partial credits (UGX)', 'Settled credits (UGX)', 'Credit balance (UGX)'],
+        ['Department', 'Orders', 'Sales (UGX)', 'Sales less waived comps (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Comp collected (UGX)', 'Voided sales value (UGX)', 'Voided quantity', 'Voided COGS (UGX)', 'Voided COGS items to review', 'Collected (UGX)', 'Outstanding (UGX)', 'Partial credits (UGX)', 'Settled credits (UGX)', 'Credit balance (UGX)'],
         ...departmentRows.map(row => [
           row.label,
           Number(row.total_orders || 0),
@@ -485,6 +492,8 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           Number(row.complimentary_collected_amount || 0),
           Number(row.voided_total || 0),
           Number(row.voided_quantity || 0),
+          Number(row.voided_cogs || 0),
+          Number(row.voided_cogs_review_count || 0),
           Number(row.amount_collected || 0),
           Number(row.outstanding_balance || 0),
           Number(row.partially_paid_credit_amount || 0),
@@ -493,7 +502,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         ]),
       ];
       const menuSheet = [
-        ['Department', 'Menu item', 'Quantity', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Voided quantity', 'Voided total (UGX)'],
+        ['Department', 'Menu item', 'Quantity', 'Sales (UGX)', 'Comp qty', 'Fully waived qty', 'Partially waived qty', 'Comp waived (UGX)', 'Voided quantity', 'Voided sales value (UGX)', 'Voided COGS (UGX)', 'Voided COGS items to review'],
         ...departmentRows.flatMap(department => (department.menu_items || []).map(item => [
           department.label,
           item.menu_item,
@@ -505,6 +514,8 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
           Number(item.complimentary_waived_amount || 0),
           Number(item.voided_quantity || 0),
           Number(item.voided_total || 0),
+          Number(item.voided_cogs || 0),
+          Number(item.voided_cogs_review_count || 0),
         ])),
       ];
       const staffSheet = [
@@ -519,7 +530,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         ])),
       ];
       const productionSheet = [
-        ['Department', 'Role', 'Claimed by', 'Items claimed', 'Completed', 'Production value (UGX)', 'Voided items', 'Voided quantity', 'Voided total (UGX)'],
+        ['Department', 'Role', 'Claimed by', 'Items claimed', 'Completed', 'Production value (UGX)', 'Voided items', 'Voided quantity', 'Voided sales value (UGX)'],
         ...departmentRows.flatMap(department => (department.production_performance || []).map(person => [
           department.label,
           String(person.worker_role || '').replaceAll('_', ' '),
@@ -571,7 +582,9 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
 
   const departments = report?.departments || [];
   const summary = report?.summary || {};
+  const currentDate = kampalaToday();
   const activeTickets = tickets.filter(ticket => !isCompletedTicket(ticket));
+  const completedTodayCount = tickets.filter(ticket => isCompletedTodayTicket(ticket, currentDate)).length;
   const visibleTickets = ticketView === 'completed'
     ? tickets.filter(isCompletedTicket)
     : activeTickets;
@@ -631,7 +644,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         {tab === 'orders' && !isManagement && <section>
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">My Production</h2><p className="text-sm text-zinc-500">Claim unassigned items with a staff PIN and follow production progress. Updates automatically.</p></div><div className="flex flex-wrap items-center gap-2"><label className="relative block"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" /><input aria-label="Search tables" type="search" placeholder="Search table..." value={tableSearch} onChange={event => setTableSearch(event.target.value)} className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm sm:w-48" /></label><button onClick={() => setTicketView('active')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'active' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Active</button><button onClick={() => setTicketView('completed')} className={`rounded-lg px-3 py-2 text-xs font-bold ${ticketView === 'completed' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600'}`}>Completed</button><button onClick={() => setShowStationQueue(true)} className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-950 hover:bg-amber-300">Open station <ArrowRight size={16} /></button></div></div>
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[
-            ['Open', activeTickets.length], ['Pending', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'pending').length], ['Preparing', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'preparing').length], ['Completed today', tickets.filter(isCompletedTicket).length],
+            ['Open', activeTickets.length], ['Pending', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'pending').length], ['Preparing', activeTickets.filter(ticket => String(ticket.status || '').toLowerCase() === 'preparing').length], ['Completed today', completedTodayCount],
             ['Voided items', voidedProductionItems.length], ['Voided quantity / total', `${voidedProductionQuantity} · ${money(voidedProductionValue)}`],
           ].map(([label, value]) => <div key={label} className="rounded-xl border border-zinc-200 bg-white p-4"><p className="text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p><p className="mt-2 text-2xl font-black">{value}</p></div>)}</div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -674,7 +687,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
                           {isVoidedProductionItem(item) ? 'Voided' : item.production_status === 'Completed' ? 'Ready' : item.production_status || 'Unclaimed'}
                           {' · Claimed by '}{item.claimed_by || (isAssignedItem(item) ? item.production_staff_name || item.assignedTo || item.assigned_to : 'Unclaimed')}
                         </span>
-                        {isVoidedProductionItem(item) && <small className="mt-1 block font-bold text-rose-700">Voided total: {money(productionItemValue(item))}</small>}
+                        {isVoidedProductionItem(item) && <small className="mt-1 block font-bold text-rose-700">Voided sales value: {money(productionItemValue(item))}</small>}
                         {item.note && <small className="mt-1 block rounded bg-amber-50 p-2 text-zinc-600">{item.note}</small>}
                         {item.production_work_id && (
                           <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -734,9 +747,29 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             </button>
             <button type="button" onClick={isManagement ? downloadConsolidatedReport : downloadDepartmentReport} disabled={!report || report.from !== from || report.to !== to || downloadingPdf} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 ${isManagement ? 'bg-yellow-500 hover:bg-yellow-400' : 'bg-amber-400 hover:bg-amber-300'}`}><Download size={15} /> {downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}</button>
           </div></div>
+          {(isManagement
+            ? departments.reduce((total, row) => total + Number(row.voided_cogs_review_count || 0), 0)
+            : Number(summary.voided_cogs_review_count || 0)) > 0 && (
+            <p role="status" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              Some voided items have no inventory cost transactions or have zero unit cost. Their Voided COGS may be incomplete; review the affected items’ inventory costs.
+            </p>
+          )}
+          {isManagement && (
+            <div className="mb-4 grid gap-3 sm:grid-cols-2">
+              <article className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-rose-700">Voided COGS</p>
+                <p className="mt-2 text-xl font-black text-rose-900">{money(departments.reduce((total, row) => total + Number(row.voided_cogs || 0), 0))}</p>
+              </article>
+              <article className="rounded-xl border border-zinc-200 bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Voided sales value</p>
+                <p className="mt-2 text-xl font-black text-zinc-900">{money(departments.reduce((total, row) => total + Number(row.voided_total || 0), 0))}</p>
+              </article>
+            </div>
+          )}
           {isManagement ? <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[1400px] text-left text-sm">
             <thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr>
               <th className="p-3">Department</th><th className="p-3">Orders</th><th className="p-3">Sales</th>
+              <th className="p-3">Voided COGS</th><th className="p-3">Voided sales value</th><th className="p-3">Voided quantity</th><th className="p-3">Cost review items</th>
               <th className="p-3">Sales less waived comps</th>
               <th className="p-3">Comp qty</th><th className="p-3">Fully waived qty</th>
               <th className="p-3">Partially waived qty</th><th className="p-3">Comp waived</th>
@@ -747,6 +780,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             </tr></thead>
             <tbody>{departments.map(row => <tr key={row.department} className="border-t border-stone-200">
               <td className="p-3 font-bold">{row.label}</td><td className="p-3">{row.total_orders}</td><td className="p-3">{money(row.total_sales)}</td>
+              <td className="p-3 font-bold text-rose-800">{money(row.voided_cogs)}</td><td className="p-3">{money(row.voided_total)}</td><td className="p-3">{row.voided_quantity || 0}</td><td className="p-3">{row.voided_cogs_review_count || 0}</td>
               <td className="p-3">{money(salesAfterWaivedComps(row.total_sales, row.complimentary_waived_amount))}</td>
               <td className="p-3">{row.complimentary_quantity || 0}</td>
               <td className="p-3">{row.fully_waived_quantity || 0}</td><td className="p-3">{row.partially_waived_quantity || 0}</td>
@@ -759,6 +793,10 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             <tfoot className="border-t-2 border-stone-400 bg-stone-100 font-black"><tr>
               <td className="p-3">All departments</td><td className="p-3">{departments.reduce((total, row) => total + Number(row.total_orders || 0), 0)}</td>
               <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.total_sales || 0), 0))}</td>
+              <td className="p-3 font-bold text-rose-800">{money(departments.reduce((total, row) => total + Number(row.voided_cogs || 0), 0))}</td>
+              <td className="p-3">{money(departments.reduce((total, row) => total + Number(row.voided_total || 0), 0))}</td>
+              <td className="p-3">{departments.reduce((total, row) => total + Number(row.voided_quantity || 0), 0)}</td>
+              <td className="p-3">{departments.reduce((total, row) => total + Number(row.voided_cogs_review_count || 0), 0)}</td>
               <td className="p-3">{money(salesAfterWaivedComps(
                 departments.reduce((total, row) => total + Number(row.total_sales || 0), 0),
                 departments.reduce((total, row) => total + Number(row.complimentary_waived_amount || 0), 0),
@@ -783,9 +821,11 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
               ['Complimentary waived value', money(summary.complimentary_waived_amount)],
               ['Complimentary amount collected', money(summary.complimentary_collected_amount)],
               ['Voided quantity', summary.voided_quantity || 0],
-              ['Voided total', money(summary.voided_total)],
+              ['Voided sales value', money(summary.voided_total)],
+              ['Voided COGS', money(summary.voided_cogs)],
+              ['Voided COGS items to review', summary.voided_cogs_review_count || 0],
               ['Production voided items', summary.production_voided_items || 0],
-              ['Production voided quantity / total', `${summary.production_voided_quantity || 0} · ${money(summary.production_voided_total)}`],
+              ['Production voided quantity / sales value', `${summary.production_voided_quantity || 0} · ${money(summary.production_voided_total)}`],
               ['Collected', money(summary.amount_collected)],
               ['Outstanding', money(summary.outstanding_balance)],
               ['Partially paid credits', money(summary.partially_paid_credit_amount)],
@@ -795,7 +835,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
             <h3 className="mb-3 text-lg font-black">Claimed production and voided items</h3>
             <div className="mb-6 overflow-x-auto rounded-xl border border-zinc-200 bg-white">
               <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="bg-zinc-50 text-xs uppercase text-zinc-500"><tr><th className="p-3">Claimed by</th><th className="p-3">Items claimed</th><th className="p-3">Completed</th><th className="p-3">Production value</th><th className="p-3">Voided items</th><th className="p-3">Voided quantity</th><th className="p-3">Voided total</th></tr></thead>
+                <thead className="bg-zinc-50 text-xs uppercase text-zinc-500"><tr><th className="p-3">Claimed by</th><th className="p-3">Items claimed</th><th className="p-3">Completed</th><th className="p-3">Production value</th><th className="p-3">Voided items</th><th className="p-3">Voided quantity</th><th className="p-3">Voided sales value</th></tr></thead>
                 <tbody>{(report?.production_performance || []).map((person, index) => <tr key={`${person.claimed_by}-${index}`} className="border-t border-zinc-100"><td className="p-3 font-bold">{person.claimed_by}</td><td className="p-3">{person.items_claimed}</td><td className="p-3">{person.completed_items}</td><td className="p-3">{money(person.production_value)}</td><td className="p-3">{person.voided_items}</td><td className="p-3">{person.voided_quantity}</td><td className="p-3">{money(person.voided_total)}</td></tr>)}
                   {!report?.production_performance?.length && <tr><td colSpan="7" className="p-5 text-center text-zinc-400">No production records in this period.</td></tr>}
                 </tbody>
@@ -806,7 +846,7 @@ export default function DepartmentHod({ department: departmentKey = 'all', embed
         {tab === 'reports' && isManagement && <section className="mt-8">
           <h3 className="mb-2 mt-8 text-lg font-black">Claimed production and voided items by department</h3>
           <div className="overflow-x-auto border border-stone-300 bg-white"><table className="w-full min-w-[1000px] text-left text-sm">
-            <thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr><th className="p-3">Department</th><th className="p-3">Claimed by</th><th className="p-3">Items claimed</th><th className="p-3">Completed</th><th className="p-3">Production value</th><th className="p-3">Voided items</th><th className="p-3">Voided quantity</th><th className="p-3">Voided total</th></tr></thead>
+            <thead className="bg-stone-100 text-xs uppercase tracking-wider text-stone-600"><tr><th className="p-3">Department</th><th className="p-3">Claimed by</th><th className="p-3">Items claimed</th><th className="p-3">Completed</th><th className="p-3">Production value</th><th className="p-3">Voided items</th><th className="p-3">Voided quantity</th><th className="p-3">Voided sales value</th></tr></thead>
             <tbody>{departments.flatMap(row => (row.production_performance || []).map((person, index) => <tr key={`${row.department}-${person.claimed_by}-${index}`} className="border-t border-stone-200"><td className="p-3">{row.label}</td><td className="p-3 font-bold">{person.claimed_by}</td><td className="p-3">{person.items_claimed}</td><td className="p-3">{person.completed_items}</td><td className="p-3">{money(person.production_value)}</td><td className="p-3">{person.voided_items}</td><td className="p-3">{person.voided_quantity}</td><td className="p-3">{money(person.voided_total)}</td></tr>))}
               {!departments.some(row => row.production_performance?.length) && <tr><td colSpan="8" className="p-5 text-center text-stone-500">No production records in this period.</td></tr>}
             </tbody>

@@ -183,13 +183,13 @@ function stockStatus(item) {
   return 'IN STOCK';
 }
 
-async function postInventoryValueAdjustment(client, { amount, reference, description, actor }) {
+async function postInventoryValueAdjustment(client, { amount, reference, description, actor, businessDate = currentBusinessDate() }) {
   const value = Number(Math.abs(amount).toFixed(2));
   if (value === 0) return;
 
   const inventoryDebit = amount > 0;
   await createJournalEntry({
-    entryDate: currentBusinessDate(),
+    entryDate: businessDate,
     description,
     sourceTransaction: reference,
     postedBy: actor,
@@ -566,6 +566,7 @@ router.patch('/items/:id', authenticateAccountant, async (req, res) => {
       reference,
       description: `Inventory value adjustment for ${updated.item_name}`,
       actor: req.inventoryActor.name,
+      businessDate: req.businessDate,
     });
 
     const quantityChange = Number((Number(updated.current_quantity) - Number(existing.current_quantity)).toFixed(3));
@@ -575,7 +576,7 @@ router.patch('/items/:id', authenticateAccountant, async (req, res) => {
         `INSERT INTO public.inventory_adjustments
            (item_id, location_id, adjustment_type, quantity, reason, business_date, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [itemId, updated.location_id, adjustmentType, Math.abs(quantityChange), 'Accountant inventory edit', currentBusinessDate(), req.inventoryActor.name]
+        [itemId, updated.location_id, adjustmentType, Math.abs(quantityChange), 'Accountant inventory edit', req.businessDate, req.inventoryActor.name]
       );
       await client.query(
         `INSERT INTO public.inventory_transactions
@@ -593,7 +594,7 @@ router.patch('/items/:id', authenticateAccountant, async (req, res) => {
           quantityChange < 0 ? existing.location_id : null,
           quantityChange > 0 ? updated.location_id : null,
           updated.station,
-          currentBusinessDate(),
+          req.businessDate,
           req.inventoryActor.name,
           'Accountant inventory edit',
         ]
@@ -672,7 +673,7 @@ router.delete('/items/:id', authenticateAccountant, async (req, res) => {
         `INSERT INTO public.inventory_adjustments
            (item_id, location_id, adjustment_type, quantity, reason, business_date, created_by)
          VALUES ($1, $2, 'ADJUSTMENT_OUT', $3, $4, $5, $6)`,
-        [itemId, item.location_id, quantity, 'Inventory item deleted; remaining stock written off', currentBusinessDate(), req.inventoryActor.name]
+        [itemId, item.location_id, quantity, 'Inventory item deleted; remaining stock written off', req.businessDate, req.inventoryActor.name]
       );
       await client.query(
         `INSERT INTO public.inventory_transactions
@@ -688,7 +689,7 @@ router.delete('/items/:id', authenticateAccountant, async (req, res) => {
           value,
           item.location_id,
           item.station,
-          currentBusinessDate(),
+          req.businessDate,
           req.inventoryActor.name,
           'Inventory item deleted; remaining stock written off',
         ]
@@ -700,6 +701,7 @@ router.delete('/items/:id', authenticateAccountant, async (req, res) => {
       reference,
       description: `Inventory write-off for deleted item ${item.item_name}`,
       actor: req.inventoryActor.name,
+      businessDate: req.businessDate,
     });
     await client.query(
       `INSERT INTO public.accounting_audit_log (entity_type, entity_id, action, actor, details)
@@ -1025,7 +1027,7 @@ router.post('/purchases/:id/reverse', authenticateAccountant, async (req, res) =
       return res.status(409).json({ error: 'This purchase receipt has already been reversed or its accounting entry is not posted.' });
     }
 
-    let reversalDate = currentBusinessDate();
+    let reversalDate = req.businessDate || currentBusinessDate();
     let periodResult = await client.query(
       `SELECT start_date::text AS start_date
        FROM public.accounting_periods
@@ -1306,7 +1308,7 @@ router.post('/purchases/:id/reconcile-reversed-stock', authenticateAccountant, a
     }
 
     const actor = req.inventoryActor.name;
-    const businessDate = currentBusinessDate();
+    const businessDate = req.businessDate || currentBusinessDate();
     for (const [itemId, item] of groupedItems) {
       const value = Number(item.inventory_value || 0);
       const reference = `REC-PUR-${purchaseId}-${itemId}-${Date.now()}`;

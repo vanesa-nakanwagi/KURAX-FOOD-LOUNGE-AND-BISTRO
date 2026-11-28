@@ -58,7 +58,7 @@ export async function syncRoutableStationTickets(queryable, stationKey) {
            NULLIF(expanded.item->>'unit_price', '')::numeric, 0)
          * COALESCE(NULLIF(expanded.item->>'quantity', '')::numeric, 1)
        ),
-       'Pending', (NOW() AT TIME ZONE 'Africa/Kampala')::date
+       'Pending', COALESCE(o.business_date, (NOW() AT TIME ZONE 'Africa/Kampala')::date)
      FROM public.orders o
      CROSS JOIN LATERAL jsonb_array_elements(
        CASE WHEN jsonb_typeof(o.items) = 'array' THEN o.items ELSE '[]'::jsonb END
@@ -101,12 +101,14 @@ export async function syncRoutableStationTickets(queryable, stationKey) {
        staff_role = EXCLUDED.staff_role,
        items = EXCLUDED.items,
        total = EXCLUDED.total,
+       ticket_date = EXCLUDED.ticket_date,
        updated_at = NOW()
      WHERE ticket.table_name IS DISTINCT FROM EXCLUDED.table_name
         OR ticket.staff_name IS DISTINCT FROM EXCLUDED.staff_name
         OR ticket.staff_role IS DISTINCT FROM EXCLUDED.staff_role
         OR ticket.items IS DISTINCT FROM EXCLUDED.items
-        OR ticket.total IS DISTINCT FROM EXCLUDED.total`
+        OR ticket.total IS DISTINCT FROM EXCLUDED.total
+        OR ticket.ticket_date IS DISTINCT FROM EXCLUDED.ticket_date`
   );
 }
 

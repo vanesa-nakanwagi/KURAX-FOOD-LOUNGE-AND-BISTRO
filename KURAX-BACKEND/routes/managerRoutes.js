@@ -8,8 +8,13 @@ import {
   getOrderItemOriginalAmount,
   getOrderItemPaidAmount,
   getOrderItemPayableAmount,
+  getOrderItemUnitCount,
+  getOrderItemUnitPayableAmount,
+  getOrderItemUnitStates,
 } from '../helpers/complimentaryItems.js';
 import { applyApprovedCreditToItems } from '../helpers/approvedCreditItems.js';
+import { getStaffPerformanceOrderSummary } from '../helpers/staffSalesPerformance.js';
+import { consumeSoldOrderItems } from '../helpers/recipeConsumption.js';
 import notificationService from '../helpers/notificationService.js';
 
 const router = express.Router();
@@ -28,16 +33,23 @@ function calculateOrderStatusFromItems(items, currentStatus) {
   let voidedCount       = 0;
 
   items.forEach(item => {
-    const isVoided = item.status === 'VOIDED' || item.voidProcessed === true;
-    const isCredit =
-      item.creditRequested === true ||
-      (item.payment_method || '').toUpperCase().includes('CREDIT');
-    const isPaid = !isCredit && item._rowPaid === true;
+    const itemCredit = item.creditRequested === true
+      || (item.payment_method || '').toUpperCase().includes('CREDIT');
+    if (Array.isArray(item.unitStates)) {
+      item.unitStates.forEach(state => {
+        if (state?.voidProcessed === true) voidedCount++;
+        else if (state?.creditRequested === true || itemCredit) creditItemsCount++;
+        else if (state?.paid === true) paidItemsCount++;
+        else pendingItemsCount++;
+      });
+      return;
+    }
 
-    if (isVoided)       voidedCount++;
-    else if (isPaid)    paidItemsCount++;
-    else if (isCredit)  creditItemsCount++;
-    else                pendingItemsCount++;
+    const isVoided = item.status === 'VOIDED' || item.voidProcessed === true;
+    if (isVoided) voidedCount++;
+    else if (itemCredit) creditItemsCount++;
+    else if (item._rowPaid === true) paidItemsCount++;
+    else pendingItemsCount++;
   });
 
   const totalActiveItems = items.length - voidedCount;
@@ -65,20 +77,20 @@ const PAID_ORDER_FILTER = `
 
 const STAFF_NAME_EXPR = `COALESCE(s.name, o.staff_name, 'Unknown')`;
 
-function orderDateCondition(type, { date, month, startDate, endDate }) {
-  const col = `COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'`;
-  if (type === 'daily')   return { cond: `DATE(${col}) = $1`,                     params: [date] };
-  if (type === 'weekly')  return { cond: `DATE(${col}) BETWEEN $1 AND $2`,        params: [startDate, endDate] };
-  if (type === 'monthly') return { cond: `TO_CHAR(${col}, 'YYYY-MM') = $1`,       params: [month] };
-  return { cond: `DATE(${col}) = CURRENT_DATE`, params: [] };
+function orderDateCondition(type, { date, month, startDate, endDate }, businessDate) {
+  const col = `COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'))`;
+  if (type === 'daily')   return { cond: `${col} = $1::date`, params: [date] };
+  if (type === 'weekly')  return { cond: `${col} BETWEEN $1::date AND $2::date`, params: [startDate, endDate] };
+  if (type === 'monthly') return { cond: `TO_CHAR(${col}::timestamp, 'YYYY-MM') = $1`, params: [month] };
+  return { cond: `${col} = $1::date`, params: [businessDate] };
 }
 
-function creditDateCondition(type, { date, month, startDate, endDate }) {
-  const col = `cs.created_at AT TIME ZONE 'Africa/Nairobi'`;
-  if (type === 'daily')   return { cond: `DATE(${col}) = $1`,               params: [date] };
-  if (type === 'weekly')  return { cond: `DATE(${col}) BETWEEN $1 AND $2`,  params: [startDate, endDate] };
-  if (type === 'monthly') return { cond: `TO_CHAR(${col}, 'YYYY-MM') = $1`, params: [month] };
-  return { cond: `DATE(${col}) = CURRENT_DATE`, params: [] };
+function creditDateCondition(type, { date, month, startDate, endDate }, businessDate) {
+  const col = `COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi'))`;
+  if (type === 'daily')   return { cond: `${col} = $1::date`, params: [date] };
+  if (type === 'weekly')  return { cond: `${col} BETWEEN $1::date AND $2::date`, params: [startDate, endDate] };
+  if (type === 'monthly') return { cond: `TO_CHAR(${col}::timestamp, 'YYYY-MM') = $1`, params: [month] };
+  return { cond: `${col} = $1::date`, params: [businessDate] };
 }
 
 // Helper to add time filter (HH:MI) to a timestamp column
@@ -95,7 +107,7 @@ function applyTimeFilter(columnAlias, startTime, endTime) {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/target-progress', async (req, res) => {
   try {
-    const monthKey = req.query.month || new Date().toISOString().substring(0, 7);
+    const monthKey = req.query.month || req.businessDate.slice(0, 7);
 
     const financials = await getMonthlyFinancials(pool, monthKey);
 
@@ -113,27 +125,27 @@ router.get('/target-progress', async (req, res) => {
         WHEN UPPER(COALESCE(o.payment_method,'')) NOT LIKE '%CREDIT%' AND o.payment_confirmed = true 
         THEN o.total ELSE 0 END), 0) AS cash_revenue
       FROM orders o
-      WHERE DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') = DATE(NOW() AT TIME ZONE 'Africa/Nairobi')
+      WHERE COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')) = $1::date
         AND (
           o.public_order_ref IS NOT NULL
           OR
           o.is_archived = true
           OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'credit', 'served')
         )
-    `);
+    `, [req.businessDate]);
 
     const todayCreditResult = await pool.query(`
       SELECT COALESCE(SUM(cs.amount_paid), 0) AS credit_settled
       FROM credit_settlements cs
       JOIN credits c ON cs.credit_id = c.id
-      WHERE DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') = DATE(NOW() AT TIME ZONE 'Africa/Nairobi')
+      WHERE COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi')) = $1::date
         AND c.status IN ('FullySettled', 'PartiallySettled')
-    `);
+    `, [req.businessDate]);
 
     const todayRevenue =
       parseFloat(todayResult.rows[0].cash_revenue || 0) +
       parseFloat(todayCreditResult.rows[0].credit_settled || 0);
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Nairobi' }).format(new Date());
+    const today = req.businessDate;
     const { cashOnCounter } = await getCounterCash(pool, today);
 
     res.json({
@@ -156,13 +168,13 @@ router.get('/target-progress', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/analytics/daily', async (req, res) => {
   try {
-    const targetDate = req.query.date || new Date().toISOString().split('T')[0];
+    const targetDate = req.query.date || req.businessDate;
 
     const ordersResult = await pool.query(`
       SELECT id, table_name, total, payment_method, status, public_order_ref,
              payment_confirmed, items, timestamp
       FROM orders 
-      WHERE DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
+      WHERE COALESCE(business_date, DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi')) = $1
         AND (
           public_order_ref IS NOT NULL
           OR is_archived = true
@@ -224,7 +236,7 @@ router.get('/analytics/daily', async (req, res) => {
         COUNT(*) AS credit_settlement_count
       FROM credit_settlements cs
       JOIN credits c ON cs.credit_id = c.id
-      WHERE DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') = $1
+      WHERE COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi')) = $1
         AND c.status IN ('FullySettled', 'PartiallySettled')
     `, [targetDate]);
     const cs = csResult.rows[0];
@@ -232,7 +244,7 @@ router.get('/analytics/daily', async (req, res) => {
     const pendingCreditResult = await pool.query(`
       SELECT COALESCE(SUM(amount), 0) AS pending_credit_total, COUNT(*) AS pending_credit_count
       FROM credits
-      WHERE DATE(created_at AT TIME ZONE 'Africa/Nairobi') = $1 AND status = 'Approved'
+      WHERE COALESCE(business_date, DATE(created_at AT TIME ZONE 'Africa/Nairobi')) = $1 AND status = 'Approved'
     `, [targetDate]);
 
     res.json({
@@ -259,8 +271,8 @@ router.get('/analytics/daily', async (req, res) => {
 router.get('/report', async (req, res) => {
   try {
     const { type, startDate, endDate, month, start_time, end_time } = req.query;
-    const date = startDate;
-    const { cond, params } = orderDateCondition(type, { date, month, startDate, endDate });
+    const date = req.query.date || startDate || req.businessDate;
+    const { cond, params } = orderDateCondition(type, { date, month, startDate, endDate }, req.businessDate);
     const timeFilter = applyTimeFilter('COALESCE(o.timestamp, o.created_at)', start_time, end_time);
 
     const ordersResult = await pool.query(`
@@ -303,8 +315,8 @@ router.get('/report', async (req, res) => {
         ${plainTimeFilter}
     `, params);
 
-    const { cond: creditCond, params: creditParams } = creditDateCondition(type, { date, month, startDate, endDate });
-    const creditTimeFilter = applyTimeFilter('c.created_at', start_time, end_time);
+    const { cond: creditCond, params: creditParams } = creditDateCondition(type, { date, month, startDate, endDate }, req.businessDate);
+    const creditTimeFilter = applyTimeFilter('cs.created_at', start_time, end_time);
     const creditSummaryResult = await pool.query(`
       SELECT COALESCE(SUM(cs.amount_paid), 0) AS credit_settled
       FROM credit_settlements cs
@@ -416,10 +428,10 @@ router.get("/staff-sales-performance", async (req, res) => {
     ];
 
     if (startDate) {
-      orderConditions.push(`DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') >= ${addParam(startDate)}`);
+      orderConditions.push(`COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')) >= ${addParam(startDate)}`);
     }
     if (endDate) {
-      orderConditions.push(`DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') <= ${addParam(endDate)}`);
+      orderConditions.push(`COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')) <= ${addParam(endDate)}`);
     }
     if (startTime) {
       orderConditions.push(`(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')::time >= ${addParam(startTime)}::time`);
@@ -471,6 +483,7 @@ router.get("/staff-sales-performance", async (req, res) => {
     const staffMap = new Map(staffResult.rows.map(staff => [String(staff.staff_id), {
       ...staff,
       orders_count: 0,
+      items_count: 0,
       total_sales: 0,
       payment_breakdown: {}
     }]));
@@ -478,44 +491,6 @@ router.get("/staff-sales-performance", async (req, res) => {
     const paymentTotals = {};
 
     orderRows.rows.forEach(order => {
-      let items = order.items;
-      if (typeof items === 'string') {
-        try { items = JSON.parse(items); } catch { items = []; }
-      }
-      if (!Array.isArray(items) || !items.length) {
-        items = [{ _reportAmount: Number(order.total) || 0 }];
-      }
-
-      const orderStatus = String(order.status || '').toLowerCase();
-      const isCompletedOrder = ['served', 'paid', 'closed', 'confirmed', 'credit', 'mixed', 'partially_paid', 'partially paid', 'partiallypaid'].includes(orderStatus);
-      const matchedItems = items.flatMap(item => {
-        if (item.status === 'VOIDED' || item.voidProcessed === true) return [];
-        const amount = item._reportAmount !== undefined
-          ? Number(item._reportAmount) || 0
-          : Number(item.line_total ?? item.lineTotal) ||
-            (Number(item.price || item.unit_price) || 0) * (Number(item.quantity) || 1);
-        if (amount <= 0) return [];
-
-        const method = String(item.payment_method || order.payment_method || '').toLowerCase();
-        const isCredit = item.creditRequested === true || method.includes('credit') || orderStatus === 'credit';
-        const isPaid = item._rowPaid === true || item.payment_confirmed === true ||
-          item.status === 'Paid' || order.payment_confirmed === true ||
-          ['paid', 'closed', 'confirmed'].includes(orderStatus);
-        const isServed = item.served === true || isCompletedOrder;
-        const isOutstanding = isCredit || (isServed && !isPaid);
-        const included = paymentStatus === 'paid'
-          ? isPaid
-          : paymentStatus === 'credit'
-            ? isCredit && !isPaid
-            : paymentStatus === 'pending'
-              ? isServed && !isPaid && !isCredit
-              : isPaid || isServed || isCredit;
-        if (!included) return [];
-
-        return [{ amount, payment: isPaid ? (method || 'paid') : isCredit ? 'credit' : 'Pending', isOutstanding }];
-      });
-      if (!matchedItems.length) return;
-
       const key = String(order.staff_id || order.staff_name);
       if (!staffMap.has(key)) {
         staffMap.set(key, {
@@ -523,24 +498,35 @@ router.get("/staff-sales-performance", async (req, res) => {
           staff_name: order.staff_name,
           role: order.role,
           orders_count: 0,
+          items_count: 0,
           total_sales: 0,
           payment_breakdown: {}
         });
       }
-      const amount = matchedItems.reduce((sum, item) => sum + item.amount, 0);
       const staff = staffMap.get(key);
-      staff.orders_count += 1;
-      staff.total_sales += amount;
-      matchedItems.forEach(item => {
-        staff.payment_breakdown[item.payment] = (staff.payment_breakdown[item.payment] || 0) + 1;
-        paymentTotals[item.payment] = (paymentTotals[item.payment] || 0) + 1;
-      });
 
       const day = new Date(order.order_date).toLocaleDateString('en-CA', { timeZone: 'Africa/Nairobi' });
-      const dayRow = dailyMap.get(day) || { date: day, orders_count: 0, total_sales: 0, staff: {} };
-      dayRow.orders_count += 1;
-      dayRow.total_sales += amount;
-      dayRow.staff[staff.staff_name] = (dayRow.staff[staff.staff_name] || 0) + amount;
+      const dayRow = dailyMap.get(day) || { date: day, orders_count: 0, items_count: 0, total_sales: 0, staff: {} };
+      const orderSummary = getStaffPerformanceOrderSummary(order, paymentStatus);
+      if (orderSummary.orders_count > 0) {
+        staff.orders_count += orderSummary.orders_count;
+        dayRow.orders_count += orderSummary.orders_count;
+      }
+      staff.items_count += orderSummary.items_count;
+      dayRow.items_count += orderSummary.items_count;
+      if (!orderSummary.total_sales) {
+        dailyMap.set(day, dayRow);
+        return;
+      }
+
+      staff.total_sales += orderSummary.total_sales;
+      Object.entries(orderSummary.payment_breakdown).forEach(([payment, count]) => {
+        staff.payment_breakdown[payment] = (staff.payment_breakdown[payment] || 0) + count;
+        paymentTotals[payment] = (paymentTotals[payment] || 0) + count;
+      });
+
+      dayRow.total_sales += orderSummary.total_sales;
+      dayRow.staff[staff.staff_name] = (dayRow.staff[staff.staff_name] || 0) + orderSummary.total_sales;
       dailyMap.set(day, dayRow);
     });
 
@@ -553,6 +539,7 @@ router.get("/staff-sales-performance", async (req, res) => {
     })).sort((a, b) => b.total_sales - a.total_sales);
     const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
     const totalOrders = staff.reduce((sum, row) => sum + row.orders_count, 0);
+    const totalItems = staff.reduce((sum, row) => sum + row.items_count, 0);
     const totalSales = staff.reduce((sum, row) => sum + row.total_sales, 0);
 
     res.json({
@@ -561,6 +548,7 @@ router.get("/staff-sales-performance", async (req, res) => {
       paymentTotals,
       summary: {
         total_orders: totalOrders,
+        total_items: totalItems,
         total_sales: Number(totalSales.toFixed(2)),
         active_staff: staff.filter(row => row.orders_count > 0).length
       },
@@ -577,7 +565,7 @@ router.get("/staff-sales-performance", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/staff-performance/monthly', async (req, res) => {
   try {
-    const targetMonth = req.query.month || new Date().toISOString().substring(0, 7);
+    const targetMonth = req.query.month || req.businessDate.slice(0, 7);
 
     const grossResult = await pool.query(`
       SELECT 
@@ -588,7 +576,7 @@ router.get('/staff-performance/monthly', async (req, res) => {
         COALESCE(SUM(o.total), 0) AS gross_revenue
       FROM orders o
       LEFT JOIN staff s ON o.staff_id = s.id
-      WHERE TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1
         AND LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'served', 'credit')
         AND UPPER(COALESCE(o.payment_method,'')) NOT LIKE '%CREDIT%'
       GROUP BY s.id, COALESCE(s.name, o.staff_name, 'Unknown'), COALESCE(s.role, 'WAITER')
@@ -600,7 +588,7 @@ router.get('/staff-performance/monthly', async (req, res) => {
         COALESCE(SUM(cs.amount_paid), 0) AS settled_credits
       FROM credits c
       JOIN credit_settlements cs ON cs.credit_id = c.id
-      WHERE TO_CHAR(cs.created_at AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1
         AND c.status IN ('FullySettled', 'PartiallySettled')
       GROUP BY COALESCE(c.requested_by, 'Unknown')
     `, [targetMonth]);
@@ -710,10 +698,10 @@ router.get('/petty-cash-summary', async (req, res) => {
     const { period, date, startDate, endDate, month, start_time, end_time } = req.query;
     let dateCondition, params;
 
-    if      (period === "daily"   && date)                { dateCondition = "DATE(created_at) = $1";                     params = [date]; }
-    else if (["weekly", "custom"].includes(period) && startDate && endDate) { dateCondition = "DATE(created_at) BETWEEN $1 AND $2"; params = [startDate, endDate]; }
-    else if (period === "monthly" && month)                { dateCondition = "TO_CHAR(created_at, 'YYYY-MM') = $1";      params = [month]; }
-    else                                                   { dateCondition = "DATE(created_at) = CURRENT_DATE";          params = []; }
+    if      (period === "daily"   && date)                { dateCondition = "entry_date = $1::date";                     params = [date]; }
+    else if (["weekly", "custom"].includes(period) && startDate && endDate) { dateCondition = "entry_date BETWEEN $1::date AND $2::date"; params = [startDate, endDate]; }
+    else if (period === "monthly" && month)                { dateCondition = "TO_CHAR(entry_date::timestamp, 'YYYY-MM') = $1";      params = [month]; }
+    else                                                   { dateCondition = "entry_date = $1::date";          params = [req.businessDate]; }
 
     const timeFilter = applyTimeFilter('created_at', start_time, end_time);
     const query = `
@@ -736,11 +724,11 @@ router.get('/petty-cash-summary', async (req, res) => {
 
 router.get('/petty-cash', async (req, res) => {
   try {
-    const targetDate = req.query.date || new Date().toISOString().split('T')[0];
+    const targetDate = req.query.date || req.businessDate;
     const result = await pool.query(`
       SELECT 
         COALESCE(SUM(CASE WHEN UPPER(direction) = 'OUT' THEN amount ELSE 0 END), 0) AS total_out
-      FROM petty_cash WHERE DATE(created_at) = $1
+      FROM petty_cash WHERE entry_date = $1::date
     `, [targetDate]);
     const row = result.rows[0];
     res.json({
@@ -836,10 +824,10 @@ router.get('/floor-monitor', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/station-breakdown', async (req, res) => {
   try {
-    const targetDate = req.query.date || new Date().toISOString().split('T')[0];
+    const targetDate = req.query.date || req.businessDate;
     const result = await pool.query(`
       SELECT items FROM orders 
-      WHERE DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
+      WHERE COALESCE(business_date, DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi')) = $1
         AND (
           public_order_ref IS NOT NULL
           OR is_archived = true
@@ -877,15 +865,16 @@ router.get('/period-summary', async (req, res) => {
   try {
     const { type, startDate, endDate, month, start_time, end_time } = req.query;
     let dateCondition, params;
+    const businessDateExpression = "COALESCE(business_date, DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi'))";
 
-    if      (type === "weekly"  && startDate && endDate) { dateCondition = "DATE(COALESCE(timestamp, created_at)) BETWEEN $1 AND $2"; params = [startDate, endDate]; }
-    else if (type === "monthly" && month)                 { dateCondition = "TO_CHAR(COALESCE(timestamp, created_at), 'YYYY-MM') = $1"; params = [month]; }
-    else                                                  { dateCondition = "DATE(COALESCE(timestamp, created_at)) = CURRENT_DATE"; params = []; }
+    if      (type === "weekly"  && startDate && endDate) { dateCondition = `${businessDateExpression} BETWEEN $1::date AND $2::date`; params = [startDate, endDate]; }
+    else if (type === "monthly" && month)                 { dateCondition = `TO_CHAR(${businessDateExpression}::timestamp, 'YYYY-MM') = $1`; params = [month]; }
+    else                                                  { dateCondition = `${businessDateExpression} = $1::date`; params = [req.businessDate]; }
 
     const timeFilter = applyTimeFilter('created_at', start_time, end_time);
     const query = `
       SELECT 
-        DATE(COALESCE(timestamp, created_at)) AS date,
+        ${businessDateExpression} AS date,
         COUNT(*) AS daily_orders,
         COALESCE(SUM(total), 0) AS daily_revenue,
         COALESCE(SUM(CASE WHEN UPPER(payment_method) LIKE '%CASH%'   THEN total ELSE 0 END), 0) AS daily_cash,
@@ -902,8 +891,8 @@ router.get('/period-summary', async (req, res) => {
         AND payment_confirmed = true
         AND UPPER(COALESCE(payment_method,'')) NOT LIKE '%CREDIT%'
         ${timeFilter}
-      GROUP BY DATE(COALESCE(timestamp, created_at))
-      ORDER BY DATE(COALESCE(timestamp, created_at)) ASC
+      GROUP BY ${businessDateExpression}
+      ORDER BY ${businessDateExpression} ASC
     `;
     const result = params.length > 0 ? await pool.query(query, params) : await pool.query(query);
     res.json(result.rows);
@@ -921,10 +910,10 @@ router.post('/staff-goals', async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO staff_order_goals (target_date, order_count_goal)
-       VALUES (CURRENT_DATE, $1)
+       VALUES ($1::date, $2)
        ON CONFLICT (target_date) DO UPDATE SET order_count_goal = EXCLUDED.order_count_goal
        RETURNING *`,
-      [order_count_goal]
+      [req.businessDate, order_count_goal]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -936,7 +925,8 @@ router.post('/staff-goals', async (req, res) => {
 router.get('/staff-goals/today', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT order_count_goal FROM staff_order_goals WHERE target_date = CURRENT_DATE`
+      `SELECT order_count_goal FROM staff_order_goals WHERE target_date = $1::date`,
+      [req.businessDate]
     );
     res.json(result.rows[0] || { order_count_goal: 20 });
   } catch (err) {
@@ -953,10 +943,10 @@ router.get('/credits-summary', async (req, res) => {
     const { period, date, startDate, endDate, month, start_time, end_time } = req.query;
     let dateCondition, params;
 
-    if      (period === "daily"   && date)                { dateCondition = "DATE(created_at) = $1";                     params = [date]; }
-    else if (["weekly", "custom"].includes(period) && startDate && endDate) { dateCondition = "DATE(created_at) BETWEEN $1 AND $2"; params = [startDate, endDate]; }
-    else if (period === "monthly" && month)                { dateCondition = "TO_CHAR(created_at, 'YYYY-MM') = $1";      params = [month]; }
-    else                                                   { dateCondition = "DATE(created_at) = CURRENT_DATE";          params = []; }
+    if      (period === "daily"   && date)                { dateCondition = "COALESCE(business_date, DATE(created_at AT TIME ZONE 'Africa/Nairobi')) = $1::date";                     params = [date]; }
+    else if (["weekly", "custom"].includes(period) && startDate && endDate) { dateCondition = "COALESCE(business_date, DATE(created_at AT TIME ZONE 'Africa/Nairobi')) BETWEEN $1::date AND $2::date"; params = [startDate, endDate]; }
+    else if (period === "monthly" && month)                { dateCondition = "TO_CHAR(COALESCE(business_date, DATE(created_at AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1";      params = [month]; }
+    else                                                   { dateCondition = "COALESCE(business_date, DATE(created_at AT TIME ZONE 'Africa/Nairobi')) = $1::date";          params = [req.businessDate]; }
 
     const timeFilter = applyTimeFilter('created_at', start_time, end_time);
     const query = `
@@ -1114,11 +1104,11 @@ router.get('/export-pdf', async (req, res) => {
 
     // ── Date condition setup (unchanged) ──
     if (reportType === "daily" && date) {
-      dateCondition    = "DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') = $1";
+      dateCondition    = "COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')) = $1::date";
       params           = [date];
-      creditsCondition = "DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') = $1";
+      creditsCondition = "COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi')) = $1::date";
       creditsParams    = [date];
-      pettyCondition   = "DATE(created_at AT TIME ZONE 'Africa/Nairobi') = $1";
+      pettyCondition   = "entry_date = $1::date";
       pettyParams      = [date];
       title      = "DAILY TRANSACTION REPORT";
       periodText = new Date(date + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -1130,21 +1120,21 @@ router.get('/export-pdf', async (req, res) => {
       const we   = new Date(ws);  we.setDate(ws.getDate() + 6);
       const wss  = ws.toISOString().split('T')[0];
       const wse  = we.toISOString().split('T')[0];
-      dateCondition    = "DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2";
+      dateCondition    = "COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')) BETWEEN $1::date AND $2::date";
       params           = [wss, wse];
-      creditsCondition = "DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2";
+      creditsCondition = "COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi')) BETWEEN $1::date AND $2::date";
       creditsParams    = [wss, wse];
-      pettyCondition   = "DATE(created_at AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2";
+      pettyCondition   = "entry_date BETWEEN $1::date AND $2::date";
       pettyParams      = [wss, wse];
       title      = "WEEKLY TRANSACTION REPORT";
       periodText = `${new Date(wss + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })} - ${new Date(wse + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
       filename   = `Kurax_Weekly_Report_${date}${start_time ? `_${start_time.replace(':', '-')}` : ''}${end_time ? `_to_${end_time.replace(':', '-')}` : ''}.pdf`;
     } else if (reportType === "monthly" && month) {
-      dateCondition    = "TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1";
+      dateCondition    = "TO_CHAR(COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1";
       params           = [month];
-      creditsCondition = "TO_CHAR(cs.created_at AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1";
+      creditsCondition = "TO_CHAR(COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1";
       creditsParams    = [month];
-      pettyCondition   = "TO_CHAR(created_at AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1";
+      pettyCondition   = "TO_CHAR(entry_date::timestamp, 'YYYY-MM') = $1";
       pettyParams      = [month];
       const [y, m] = month.split("-");
       title      = "MONTHLY TRANSACTION REPORT";
@@ -1152,11 +1142,11 @@ router.get('/export-pdf', async (req, res) => {
       filename   = `Kurax_Monthly_Report_${month}${start_time ? `_${start_time.replace(':', '-')}` : ''}${end_time ? `_to_${end_time.replace(':', '-')}` : ''}.pdf`;
     } else if (reportType === "custom" && req.query.startDate && req.query.endDate) {
       const { startDate, endDate } = req.query;
-      dateCondition    = "DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2";
+      dateCondition    = "COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')) BETWEEN $1::date AND $2::date";
       params           = [startDate, endDate];
-      creditsCondition = "DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2";
+      creditsCondition = "COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi')) BETWEEN $1::date AND $2::date";
       creditsParams    = [startDate, endDate];
-      pettyCondition   = "DATE(created_at AT TIME ZONE 'Africa/Nairobi') BETWEEN $1 AND $2";
+      pettyCondition   = "entry_date BETWEEN $1::date AND $2::date";
       pettyParams      = [startDate, endDate];
       title      = "CUSTOM TRANSACTION REPORT";
       periodText = `${new Date(`${startDate}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} - ${new Date(`${endDate}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
@@ -1597,7 +1587,7 @@ router.get('/export-staff-pdf', async (req, res) => {
         COALESCE(SUM(o.total), 0) AS gross_revenue
       FROM orders o
       LEFT JOIN staff s ON o.staff_id = s.id
-      WHERE TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1
         AND (o.is_archived = true OR LOWER(o.status) IN ('paid', 'closed', 'confirmed', 'credit', 'served'))
         AND o.payment_confirmed = true
         AND UPPER(COALESCE(o.payment_method,'')) NOT LIKE '%CREDIT%'
@@ -1613,7 +1603,7 @@ router.get('/export-staff-pdf', async (req, res) => {
         COALESCE(SUM(cs.amount_paid), 0) AS settled_credits
       FROM credits c
       JOIN credit_settlements cs ON cs.credit_id = c.id
-      WHERE TO_CHAR(cs.created_at AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1
         AND c.status IN ('FullySettled', 'PartiallySettled')
         ${settlementTimeFilter}
       GROUP BY COALESCE(c.waiter_name, c.requested_by, 'Unknown')
@@ -1821,12 +1811,12 @@ router.get('/export-staff-pdf', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/debug/check-payments', async (req, res) => {
   try {
-    const targetDate = req.query.date || new Date().toISOString().split('T')[0];
+    const targetDate = req.query.date || req.businessDate;
     const result = await pool.query(`
       SELECT id, table_name, total, payment_method, status,
              payment_confirmed, credit_approved, items, timestamp, created_at
       FROM orders 
-      WHERE DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
+      WHERE COALESCE(business_date, DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi')) = $1
         AND is_archived = false
       ORDER BY table_name, id
     `, [targetDate]);
@@ -1926,6 +1916,7 @@ router.patch('/credits/:id/approve', async (req, res) => {
       description: `Approved credit sale · ${credit.client_name || credit.table_name || id}`,
       sourceTransaction: `credit:${id}`,
       postedBy: approved_by || 'Manager',
+      entryDate: req.businessDate,
     });
     await pool.query(
       `UPDATE credits SET status = 'Approved', approved_by = $1, approved_at = NOW(), updated_at = NOW() WHERE id = $2`,
@@ -1934,9 +1925,9 @@ router.patch('/credits/:id/approve', async (req, res) => {
     if (cashierRequest) {
       await pool.query(
         `UPDATE public.cashier_queue
-         SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW()
-         WHERE id = $2 AND status IN ('Pending', 'PendingManagerApproval')`,
-        [approved_by || 'Manager', cashierRequest.id]
+         SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW(), business_date = $2::date
+         WHERE id = $3 AND status IN ('Pending', 'PendingManagerApproval')`,
+        [approved_by || 'Manager', req.businessDate, cashierRequest.id]
       );
     }
     let orderIds = cashierRequest?.order_ids || [];
@@ -1981,6 +1972,39 @@ router.patch('/credits/:id/approve', async (req, res) => {
          WHERE id = $4`,
         [JSON.stringify(creditItems.items), nextStatus, pendingRequest.rows[0]?.pending === true, orderId]
       );
+      if (cashierRequest?.is_item === true
+        && cashierRequest.item?._unitIndex !== undefined
+        && cashierRequest.item?._unitIndex !== null) {
+        const unitIndex = Number(cashierRequest.item._unitIndex);
+        const itemIndex = Number(cashierRequest.item._orderItemIndex);
+        const approvedItem = creditItems.items[itemIndex];
+        const unitCount = approvedItem ? getOrderItemUnitCount(approvedItem) : 0;
+        if (approvedItem?.unitStates?.[unitIndex]?.creditApproved === true && unitCount > 0) {
+          const unitPrice = getOrderItemOriginalAmount(approvedItem) / unitCount;
+          try {
+            await consumeSoldOrderItems({
+              orderId,
+              items: [{
+                ...approvedItem,
+                quantity: 1,
+                price: unitPrice,
+                originalUnitPrice: unitPrice,
+                originalLineAmount: unitPrice,
+                payableAmount: getOrderItemUnitPayableAmount(approvedItem, unitIndex),
+                unitStates: undefined,
+                _unitIndex: unitIndex,
+                _unitCount: unitCount,
+                _orderItemIndex: itemIndex,
+                _approvedCreditSale: true,
+              }],
+              businessDate: req.businessDate,
+              createdBy: approved_by || 'Manager',
+            });
+          } catch (error) {
+            console.error(`Recipe consumption failed for approved credit unit on order #${orderId}:`, error.message);
+          }
+        }
+      }
     }
 
     const cashierNotification = await notificationService.sendToRoles(['CASHIER'], {
@@ -2131,7 +2155,30 @@ router.patch('/credits/:id/reject', async (req, res) => {
       }
       if (!Array.isArray(items)) continue;
 
+      const targetUnitIndex = queue.is_item === true
+        && queueItem?._unitIndex !== undefined
+        && queueItem?._unitIndex !== null
+        ? Number(queueItem._unitIndex)
+        : null;
       const updatedItems = items.map((item, index) => {
+        if (targetUnitIndex !== null
+          && index === itemIndex
+          && item.name === queueItem?.name) {
+          const unitStates = getOrderItemUnitStates(item);
+          const state = unitStates[targetUnitIndex];
+          if (!state || (Number(state.cashierQueueId) !== Number(queue.id)
+            && state.creditRequested !== true)) return item;
+          unitStates[targetUnitIndex] = {
+            ...state,
+            creditRequested: false,
+            creditApproved: false,
+            creditRejected: true,
+            creditStatus: 'Rejected',
+            creditRejectionReason: rejectionReason,
+            cashierQueueId: null,
+          };
+          return { ...item, unitStates };
+        }
         const matchesRequestedItem = queue.is_item
           ? Boolean(queueItem?.name)
             ? item.name === queueItem.name

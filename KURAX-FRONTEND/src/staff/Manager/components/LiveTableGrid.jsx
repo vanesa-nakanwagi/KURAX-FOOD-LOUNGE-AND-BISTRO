@@ -12,12 +12,19 @@ import API_URL from "../../../config/api";
 // --- HELPERS ---
 function toLocalDateStr(date) {
   const d = date instanceof Date ? date : new Date(date);
-  return [d.getFullYear(), String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0")].join("-");
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Africa/Kampala",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 function getTodayLocal() { return toLocalDateStr(new Date()); }
-function getCurrentMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+function getBusinessDate(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return value ? toLocalDateStr(new Date(value)) : null;
 }
 
 function isRowAllVoided(order) {
@@ -52,7 +59,10 @@ function isTableGroupCredited(group, creditsByTable) {
 }
 
 export default function LiveTableGrid() {
-  const { orders = [], refreshData } = useData();
+  const { orders = [], allOrders = [], refreshData, businessDate, businessDateMode } = useData();
+  const selectedBusinessDate = businessDate || getTodayLocal();
+  const isHistoricalDate = businessDateMode !== "LIVE" || selectedBusinessDate !== getTodayLocal();
+  const sourceOrders = isHistoricalDate ? allOrders : orders;
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
@@ -70,10 +80,10 @@ export default function LiveTableGrid() {
         const res = await fetch(`${API_URL}/api/cashier-ops/credits`);
         if (res.ok) {
           const rows = await res.json();
-          const thisMonth = getCurrentMonth();
+          const thisMonth = selectedBusinessDate.slice(0, 7);
           setCreditsLedger(rows.filter(r => {
-            const d = r.created_at || r.confirmed_at;
-            return d && toLocalDateStr(new Date(d)).startsWith(thisMonth);
+            const date = getBusinessDate(r.business_date || r.created_at || r.confirmed_at);
+            return date?.startsWith(thisMonth);
           }));
         }
       } catch {}
@@ -81,59 +91,47 @@ export default function LiveTableGrid() {
     load();
     const id = setInterval(load, 30000);
     return () => clearInterval(id);
-  }, []);
+  }, [selectedBusinessDate]);
 
   // Voided ledger
   const [voidedLedger, setVoidedLedger] = useState([]);
   useEffect(() => {
     const load = async () => {
       try {
-        const today = getTodayLocal();
         const res = await fetch(`${API_URL}/api/orders/void-requests`);
         if (!res.ok) return;
         const rows = await res.json();
         setVoidedLedger(rows.filter(r => {
           const approved = r.status === "Approved" || r.status === "approved" || r.voidProcessed === true;
-          const d = r.created_at || r.resolved_at;
-          const isToday = d && toLocalDateStr(new Date(d)) === today;
-          return approved && isToday;
+          const date = getBusinessDate(r.business_date || r.created_at || r.resolved_at);
+          return approved && date === selectedBusinessDate;
         }));
       } catch {}
     };
     load();
     const id = setInterval(load, 20000);
     return () => clearInterval(id);
-  }, []);
+  }, [selectedBusinessDate]);
 
   const creditsByTable = useMemo(() => {
     const map = {};
-    creditsLedger.forEach(c => {
+    creditsLedger.filter(c =>
+      getBusinessDate(c.business_date || c.created_at || c.confirmed_at) === selectedBusinessDate
+    ).forEach(c => {
       const key = (c.table_name || "").trim().toUpperCase();
       if (!map[key] || new Date(c.created_at) > new Date(map[key].created_at)) map[key] = c;
     });
     return map;
-  }, [creditsLedger]);
-
-  const [today, setToday] = useState(getTodayLocal);
-  useEffect(() => {
-    const schedule = () => {
-      const now = new Date();
-      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      const t = setTimeout(() => { setToday(getTodayLocal()); schedule(); }, next - now);
-      return t;
-    };
-    const t = schedule();
-    return () => clearTimeout(t);
-  }, []);
+  }, [creditsLedger, selectedBusinessDate]);
 
   // ─── Calculate table groups with correct payment status ───────────
   const tableGroups = useMemo(() => {
-    const todayOrders = (orders || []).filter(o => {
-      const ts = o.timestamp || o.created_at;
-      if (!ts || toLocalDateStr(new Date(ts)) !== today) return false;
+    const todayOrders = (sourceOrders || []).filter(o => {
+      const date = getBusinessDate(o.business_date || o.timestamp || o.created_at);
+      if (date !== selectedBusinessDate) return false;
       const cleared = o.day_cleared === true || o.day_cleared === "t" || o.day_cleared === "true" ||
                       o.shift_cleared === true || o.shift_cleared === "t" || o.shift_cleared === "true";
-      return !cleared;
+      return isHistoricalDate || !cleared;
     });
 
     const groups = {};
@@ -326,7 +324,7 @@ export default function LiveTableGrid() {
         !g.hasPendingCredit &&
         (!hasFullySettledCredit || g._rows.every(r => r.paid === true));
 
-      const minsElapsed = Math.floor((Date.now() - new Date(g.timestamp)) / 60000);
+      const minsElapsed = isHistoricalDate ? 0 : Math.floor((Date.now() - new Date(g.timestamp)) / 60000);
       const isVoided = isTableGroupVoided(g);
       const isAnyVoided = isTableGroupAnyVoided(g);
 
@@ -335,12 +333,12 @@ export default function LiveTableGrid() {
         !!creditEntry &&
         creditEntry.status !== "FullySettled";
       
-      const isDelayed = !isAnyVoided && !isCredited && !allPaid && minsElapsed >= 30 &&
+      const isDelayed = !isHistoricalDate && !isAnyVoided && !isCredited && !allPaid && minsElapsed >= 30 &&
                        ["Pending","Preparing","Ready","Delayed","Partially Paid","Awaiting Approval","Approved","Partially Settled"].includes(g.status);
 
       return { ...g, allPaid, minsElapsed, isDelayed, isVoided, isAnyVoided, isCredited };
     });
-  }, [orders, today, creditsByTable]);
+  }, [sourceOrders, selectedBusinessDate, isHistoricalDate, creditsByTable]);
 
   // Credit breakdown with partial payments
   const creditBreakdown = useMemo(() => {
@@ -462,7 +460,7 @@ export default function LiveTableGrid() {
               <span className="truncate">Floor Manager</span>
             </h1>
             <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] font-bold text-gray-500 mt-0.5 ml-3">
-              <span>{today}</span>
+              <span>{selectedBusinessDate}</span>
               <span>•</span>
               <span>{counts.active} active</span>
               {counts.delayed > 0 && <span className="text-red-500">• {counts.delayed} delayed</span>}
@@ -505,6 +503,11 @@ export default function LiveTableGrid() {
 
       {/* Main content */}
       <div className="px-3 pt-3">
+        {isHistoricalDate && (
+          <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[10px] font-semibold text-amber-700">
+            Historical business date selected. Floor data is read-only.
+          </div>
+        )}
         {showCredits && <CreditsPanel credits={creditsLedger} breakdown={creditBreakdown} isDark={isDark} />}
         {showVoided && <VoidedPanel ledger={voidedLedger} groups={tableGroups.filter(t=>t.isAnyVoided)} isDark={isDark} />}
         {showTables && (
@@ -987,7 +990,7 @@ function VoidedPanel({ ledger, groups, isDark }) {
     return (
       <div className={`py-16 text-center border-2 border-dashed rounded-2xl ${isDark ? "border-gray-700" : "border-gray-200"}`}>
         <Ban size={28} className="mx-auto mb-2 opacity-30" />
-        <p className="text-[10px] font-black uppercase">No voided items today</p>
+        <p className="text-[10px] font-black uppercase">No voided items on this date</p>
       </div>
     );
   }

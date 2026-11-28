@@ -1,7 +1,9 @@
+import { createPortal } from "react-dom";
+
 export default function LogoutConfirmDialog({ open, onConfirm, onCancel }) {
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px] px-4">
       <div
         role="dialog"
@@ -30,6 +32,7 @@ export default function LogoutConfirmDialog({ open, onConfirm, onCancel }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

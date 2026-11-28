@@ -21,6 +21,7 @@ export default function SystemConfiguration({
   mode,
   businessDate,
   onBusinessDateChange,
+  businessDateError,
   businessTime,
   onBusinessTimeChange,
   dateRange,
@@ -113,8 +114,8 @@ export default function SystemConfiguration({
 
       <section className="grid gap-5 border-b border-gray-200 pb-6 md:grid-cols-2">
         <div>
-          <h3 className="text-sm font-bold text-gray-900">Business date and reporting context</h3>
-          <p className="mt-1 text-xs text-gray-500">These settings do not change the server or computer clock.</p>
+          <h3 className="text-sm font-bold text-gray-900">Shared system business date</h3>
+          <p className="mt-1 text-xs text-gray-500">Applies across non-Shisha departments and devices. New business records use this date; actual posting and creation timestamps remain unchanged. The server and computer clocks are not changed.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="border-l-2 border-gray-300 pl-3">
               <p className="text-[9px] font-bold uppercase text-gray-500">Current live date</p>
@@ -133,7 +134,7 @@ export default function SystemConfiguration({
 
         <div className="grid content-start gap-3 sm:grid-cols-2">
           <label className={fieldLabelClass}>
-            Selected reporting date
+            Shared business date
             <input type="date" max={liveDate} value={businessDate} onChange={(event) => onBusinessDateChange(event.target.value)} className={fieldClass} />
           </label>
           <label className={fieldLabelClass}>
@@ -165,6 +166,7 @@ export default function SystemConfiguration({
             </div>
           )}
           {(timeRange.start || timeRange.end) && <p className="sm:col-span-2 text-xs text-gray-500">Time filters apply to accounting entries with a recorded business time. Daily sales, petty cash, and older date-only entries remain full-day totals.</p>}
+          {businessDateError && <p role="alert" className="sm:col-span-2 border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700">{businessDateError}</p>}
         </div>
       </section>
 

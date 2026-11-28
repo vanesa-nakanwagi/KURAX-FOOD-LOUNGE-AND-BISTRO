@@ -17,6 +17,7 @@ export function convertRecipeQuantity(quantity, fromUnit, toUnit, item = {}) {
 export function isSoldOrderItem(item = {}) {
   if (item.voidProcessed === true || String(item.status || '').toUpperCase() === 'VOIDED') return false;
   if (item.complimentary === true) return item.served === true;
+  if (item._approvedUnitSale === true) return true;
   if (item._approvedCreditSale === true) return true;
   const isCredit = item.creditRequested === true || String(item.payment_method || '').toUpperCase().includes('CREDIT');
   return item._rowPaid === true && !isCredit;
@@ -276,9 +277,10 @@ export async function consumeSoldOrderItems({
     );
     const lineCost = costResult.rows[0].cost;
     const asWaste = item._approvedPreparedVoid === true;
+    const unitSuffix = Number.isInteger(Number(item._unitIndex)) ? `-UNIT-${Number(item._unitIndex)}` : '';
     const reference = asWaste
       ? `DIRECT-${stock.id}`
-      : `ORDER-${parsedOrderId}-ITEM-${orderItemIndex}-DIRECT-${stock.id}`;
+      : `ORDER-${parsedOrderId}-ITEM-${orderItemIndex}${unitSuffix}-DIRECT-${stock.id}`;
     await recordInventoryReduction({
       client,
       orderId: parsedOrderId,
@@ -454,9 +456,10 @@ export async function consumeSoldOrderItems({
       const lineCost = costResult.rows[0].cost;
       needsCostReview ||= Number(unitCost) <= 0;
       const asWaste = item._approvedPreparedVoid === true;
+      const unitSuffix = Number.isInteger(Number(item._unitIndex)) ? `-UNIT-${Number(item._unitIndex)}` : '';
       const reference = asWaste
         ? `RECIPE-${recipe.id}-ING-${entry.stock.id}`
-        : `ORDER-${parsedOrderId}-ITEM-${orderItemIndex}-RECIPE-${recipe.id}-ING-${entry.stock.id}`;
+        : `ORDER-${parsedOrderId}-ITEM-${orderItemIndex}${unitSuffix}-RECIPE-${recipe.id}-ING-${entry.stock.id}`;
       await recordInventoryReduction({
         client,
         orderId: parsedOrderId,
@@ -496,7 +499,13 @@ export async function consumeSoldOrderItems({
     const disposition = getOrderItemInventoryDisposition(item);
     if (disposition === 'SKIP') continue;
 
-    const itemKey = `${parsedOrderId}:${index}`;
+    const sourceIndex = Number.isInteger(Number(item._orderItemIndex))
+      ? Number(item._orderItemIndex)
+      : index;
+    const unitIndex = Number.isInteger(Number(item._unitIndex)) ? Number(item._unitIndex) : null;
+    const itemKey = unitIndex === null
+      ? `${parsedOrderId}:${sourceIndex}`
+      : `${parsedOrderId}:${sourceIndex}:UNIT-${unitIndex}`;
     const asWaste = disposition === 'WASTE';
     const isComboItem = item.type === 'combo' || item.combo_id || item.is_combo === true;
     const comboComponents = isComboItem ? (Array.isArray(item.components) ? item.components.map((component) => ({
@@ -534,7 +543,7 @@ export async function consumeSoldOrderItems({
            WHERE order_id = $1 AND transaction_type = 'WASTE'
              AND reference_number LIKE $2
            LIMIT 1`,
-          [parsedOrderId, `WASTE-ORDER-${parsedOrderId}-VOID-${item._voidRequestId}-ITEM-${index}-%`]
+          [parsedOrderId, `WASTE-ORDER-${parsedOrderId}-VOID-${item._voidRequestId}-ITEM-${sourceIndex}-%`]
         );
         if (previousWaste.rows.length) {
           if (ownsClient) await client.query('COMMIT');
@@ -559,7 +568,7 @@ export async function consumeSoldOrderItems({
           };
           const componentResult = await consumeSingleMenuItem({
             client,
-            orderItemIndex: index,
+            orderItemIndex: sourceIndex,
             item: componentItem,
             menuName: resolvedName,
             menuItemId: resolvedItemId,
@@ -589,7 +598,7 @@ export async function consumeSoldOrderItems({
       const menuItemId = Number(item.menu_item_id || item.menuId || item.menu_id || item.id);
       const result = await consumeSingleMenuItem({
         client,
-        orderItemIndex: index,
+        orderItemIndex: sourceIndex,
         item,
         menuName,
         menuItemId,
@@ -616,27 +625,47 @@ export async function reverseConsumedOrderItem({
   businessDate = businessDateInKampala(),
   queryable,
   quantityRatio = 1,
+  unitIndex,
+  unitCount,
 }) {
   const parsedOrderId = Number(orderId);
   const parsedIndex = Number(orderItemIndex);
   if (!Number.isInteger(parsedOrderId) || !Number.isInteger(parsedIndex) || parsedOrderId <= 0 || parsedIndex < 0) {
     throw new Error('A valid order ID and order item index are required for a consumption reversal.');
   }
-  const normalizedRatio = Number(quantityRatio);
+  const parsedUnitIndex = Number.isInteger(Number(unitIndex)) ? Number(unitIndex) : null;
+  const parsedUnitCount = Number(unitCount);
+  let normalizedRatio = parsedUnitIndex === null
+    ? Number(quantityRatio)
+    : Number.isInteger(parsedUnitCount) && parsedUnitCount > 0
+      ? 1 / parsedUnitCount
+      : Number.NaN;
   if (!Number.isFinite(normalizedRatio) || normalizedRatio <= 0 || normalizedRatio > 1) {
     throw new Error('The consumption reversal quantity ratio must be greater than zero and at most one.');
   }
 
   const ownsClient = !queryable;
   const client = queryable || await pool.connect();
-  const itemKey = `${parsedOrderId}:${parsedIndex}`;
+  let itemKey = parsedUnitIndex === null
+    ? `${parsedOrderId}:${parsedIndex}`
+    : `${parsedOrderId}:${parsedIndex}:UNIT-${parsedUnitIndex}`;
   try {
     if (ownsClient) await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [itemKey]);
-    const consumptions = await client.query(
+    let consumptions = await client.query(
       `SELECT * FROM public.inventory_consumptions WHERE order_id = $1 AND order_item_id = $2 ORDER BY id`,
       [parsedOrderId, itemKey]
     );
+    if (!consumptions.rows.length && parsedUnitIndex !== null) {
+      itemKey = `${parsedOrderId}:${parsedIndex}`;
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [itemKey]);
+      consumptions = await client.query(
+        `SELECT * FROM public.inventory_consumptions WHERE order_id = $1 AND order_item_id = $2 ORDER BY id`,
+        [parsedOrderId, itemKey]
+      );
+    } else if (consumptions.rows.length) {
+      normalizedRatio = 1;
+    }
     if (!consumptions.rows.length) {
       if (ownsClient) await client.query('COMMIT');
       return { status: 'NO_CONSUMPTION_TO_REVERSE', order_id: parsedOrderId, order_item_id: itemKey };
@@ -644,7 +673,9 @@ export async function reverseConsumedOrderItem({
 
     let reversed = 0;
     for (const consumption of consumptions.rows) {
-      const reversalReference = `REV-${consumption.reference_number}`;
+      const reversalReference = parsedUnitIndex === null
+        ? `REV-${consumption.reference_number}`
+        : `REV-${consumption.reference_number}-UNIT-${parsedUnitIndex}`;
       const existing = await client.query(
         `SELECT id FROM public.inventory_transactions WHERE reference_number = $1 AND transaction_type = 'REVERSAL' LIMIT 1`,
         [reversalReference]

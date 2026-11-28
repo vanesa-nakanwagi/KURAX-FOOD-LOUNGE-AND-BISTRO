@@ -11,11 +11,17 @@ import {
 } from "lucide-react";
 import API_URL from "../../../config/api";
 import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
-import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
 import {
+  expandOrderItemUnits,
+  getOrderItemPayableAmount,
+  getOrderItemUnitPayableAmount,
+} from "../../../utils/orderItemAmounts";
+import {
+  getActiveOrderItems,
   getPaidOrderItems,
   hasOutstandingCreditItems,
   hasReadyForServiceItems,
+  isManagerCreatedOrder,
   isItemReadyForService,
 } from "../../../utils/paymentStatus";
 
@@ -39,8 +45,9 @@ const PENDING_TTL_MS   = 4 * 60 * 60 * 1000; // 4 hours
 function pendingTableKey(tableName) {
   return `pending_table_${String(tableName).trim().toUpperCase()}`;
 }
-function pendingItemKey(tableName, itemName) {
-  return `pending_item_${String(tableName).trim().toUpperCase()}_${String(itemName).trim()}`;
+function pendingItemKey(tableName, itemName, unitIndex) {
+  const suffix = Number.isInteger(unitIndex) ? `_unit_${unitIndex + 1}` : "";
+  return `pending_item_${String(tableName).trim().toUpperCase()}_${String(itemName).trim()}${suffix}`;
 }
 
 function loadPendingFromLS() {
@@ -89,10 +96,13 @@ function PayModal({ target, onClose, onSend, onComplimentaryUpdated }) {
     ? (target?.item ? [target.item] : [])
     : (target?.items || []);
   const amount   = isItem
-    ? Number(target?.item?.price || 0) * Number(target?.item?.quantity || 1)
+    ? getOrderItemPayableAmount(target?.item || {})
     : Number(target?.payableTotal ?? target?.total ?? 0);
 
-  const label    = isItem ? (target?.item?.name || "Item") : `Full Table · ${target?.tableName || ""}`;
+  const isUnitSplit = isItem && Number(target?.item?._unitCount) > 1;
+  const label    = isItem
+    ? `${target?.item?.name || "Item"}${isUnitSplit ? ` · Unit ${target.item._unitIndex + 1}` : ""}`
+    : `Full Table · ${target?.tableName || ""}`;
   const isMomo   = method === "Momo-MTN" || method === "Momo-Airtel";
   const isCredit = method === "Credit";
   const canSend  = method && (!isCredit || (creditName.trim() && creditPhone.trim()));
@@ -514,10 +524,12 @@ function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
   const isDark = theme === "dark";
   const paidItems = useMemo(() => {
     const items = getPaidOrderItems(orders).map(({ order, item, itemIndex }) => ({
-      id: `${order.id}_${item.name}`,
+      id: `${order.id}_${item.name}_${item._unitIndex ?? itemIndex}`,
       order_id: order.id,
       table_name: order.table_name,
       name: item.name,
+      unitIndex: item._unitIndex,
+      unitCount: item._unitCount,
       quantity: item.quantity || 1,
       price: item.price || 0,
       total: getOrderItemPayableAmount(item),
@@ -561,7 +573,9 @@ function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className={`text-[10px] sm:text-[11px] font-medium break-words ${isDark ? "text-white" : "text-yellow-900"}`}>{item.name}</p>
+                    <p className={`text-[10px] sm:text-[11px] font-medium break-words ${isDark ? "text-white" : "text-yellow-900"}`}>
+                      {item.name}{item.unitCount > 1 ? ` · Unit ${item.unitIndex + 1}` : ""}
+                    </p>
                     <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 text-[6px] sm:text-[7px] font-black uppercase">Paid</span>
                   </div>
                   <p className={`text-[8px] sm:text-[9px] font-bold uppercase mt-1 ${isDark ? "text-zinc-900" : "text-zinc-600"}`}>
@@ -610,14 +624,17 @@ function OrderCard({
 
   if (!order) return null;
 
-  const hasPendingVoid    = (order.items || []).some(item => item.voidRequested === true && item.voidProcessed !== true);
-  const hasPendingPayment = (order.items || []).some(item => item.paymentRequested === true && !item._rowPaid);
+  const allNonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
+  const nonVoidedItems = getActiveOrderItems(order.items || []);
+  const remainingTotal = nonVoidedItems.reduce((sum, item) => sum + getOrderItemPayableAmount(item), 0);
+  const hasPendingVoid    = allNonVoidedItems.some(item => item.voidRequested === true && item.voidProcessed !== true);
+  const hasPendingPayment = allNonVoidedItems.some(item => item.paymentRequested === true && !item._rowPaid);
 
   const handleAddMore = () => {
     navigate('/staff/waiter/menu', { state: { tableName: order.tableName, isAppending: true, openSidebar: true } });
   };
 
-  const payableItems = (order.items || []).filter(item =>
+  const payableItems = nonVoidedItems.filter(item =>
     !item._rowPaid && item.status !== "VOIDED" && !item.voidProcessed
       && !item.paymentRequested && !item.creditRequested && !item.complimentaryRequestPending
       && getOrderItemPayableAmount(item) > 0
@@ -632,19 +649,18 @@ function OrderCard({
       item.complimentaryRequestPending === true || item.status === "VOIDED" || item.voidProcessed === true
     );
 
-  const nonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
   const hasReadyItems = nonVoidedItems.some(item => item.readyForService === true && item.served !== true && !item._rowPaid);
   const isServed = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item.served === true || item._rowPaid === true);
   const canMarkAllServed = !isServed && nonVoidedItems.some(item => item.readyForService === true || item.served === true);
-  const allItemsPaid      = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
-  const hasAnyPaidItems   = nonVoidedItems.some(item => item._rowPaid === true);
-  const hasAnyCreditItems = nonVoidedItems.some(item => item.creditRequested === true);
-  const hasRejectedCreditItems = nonVoidedItems.some(item =>
+  const allItemsPaid      = allNonVoidedItems.length > 0 && allNonVoidedItems.every(item => item._rowPaid === true);
+  const hasAnyPaidItems   = allNonVoidedItems.some(item => item._rowPaid === true);
+  const hasAnyCreditItems = allNonVoidedItems.some(item => item.creditRequested === true);
+  const hasRejectedCreditItems = allNonVoidedItems.some(item =>
     item.creditRequested === true && item.creditRejected === true && item._rowPaid !== true
   );
   const hasAnyPendingItems       = nonVoidedItems.some(item => !item._rowPaid && !item.paymentRequested && !item.creditRequested && !item.complimentaryRequestPending);
-  const hasAnyPaymentRequested   = nonVoidedItems.some(item => item.paymentRequested === true);
-  const hasPendingCompRequests   = nonVoidedItems.some(item => item.complimentaryRequestPending === true);
+  const hasAnyPaymentRequested   = allNonVoidedItems.some(item => item.paymentRequested === true);
+  const hasPendingCompRequests   = allNonVoidedItems.some(item => item.complimentaryRequestPending === true);
 
   const isAwaitingCashier = tablePaymentPending || hasAnyPaymentRequested;
 
@@ -707,7 +723,7 @@ function OrderCard({
             <div className="min-w-0 flex-1">
               <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>{order.tableName}</span>
               <p className="text-[9px] sm:text-[10px] font-bold text-zinc-500">
-                {nonVoidedItems.length} items · {fmtUGX(order.total || 0)}
+                {nonVoidedItems.length} items · {fmtUGX(remainingTotal)}
               </p>
             </div>
             <div className="flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg sm:rounded-xl border text-[7px] sm:text-[8px] font-black uppercase bg-emerald-500/10 border-emerald-500/20 text-emerald-400">
@@ -730,7 +746,7 @@ function OrderCard({
           <div className="min-w-0 flex-1">
             <span className={`font-medium text-sm sm:text-base uppercase ${isDark ? "text-white" : "text-yellow-900"}`}>{order.tableName}</span>
             <p className="text-[9px] sm:text-[10px] font-bold text-zinc-900">
-              {nonVoidedItems.length} items · {fmtUGX(order.total || 0)}
+              {nonVoidedItems.length} items · {fmtUGX(remainingTotal)}
             </p>
           </div>
           <div className={`flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg sm:rounded-xl border text-[7px] sm:text-[8px] font-black uppercase ${displayBg} ${displayColor}`}>
@@ -759,7 +775,8 @@ function OrderCard({
             const isItemServed = item.served === true;
             const isPendingPayment = item.paymentRequested === true && !isPaid;
             const isPendingComp = item.complimentaryRequestPending === true;
-            const isCreditRequested = item.creditRequested === true;
+            const isCreditRejected = item.creditRejected === true;
+            const isCreditRequested = item.creditRequested === true && !isCreditRejected;
             const isVoidRequested = item.voidRequested && !item.voidProcessed;
             return (
               <div key={i} className={`p-2 sm:p-3 rounded-lg sm:rounded-xl ${isDark ? "bg-white/5" : "bg-zinc-50"}`}>
@@ -767,7 +784,7 @@ function OrderCard({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-semibold text-yellow-900 text-[10px] sm:text-[12px] break-words">
-                        {item.name}
+                        {item.name}{item._unitCount > 1 ? ` · Unit ${item._unitIndex + 1}` : ""}
                         {isPaid && (
                           <span className="ml-2 inline-flex items-center gap-1 text-[7px] sm:text-[8px] text-emerald-400 font-black uppercase bg-emerald-500/10 px-1.5 py-0.5 rounded-full">
                             <CheckCircle2 size={8} /> Paid
@@ -776,9 +793,9 @@ function OrderCard({
                         {isVoidRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-orange-400 font-black uppercase">(waiting accountant)</span>}
                         {isPendingPayment && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-yellow-400 font-black uppercase">(awaiting cashier)</span>}
                         {isPendingComp && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-amber-500 font-black uppercase">(comp request pending cashier)</span>}
-                        {isCreditRequested && (
+                        {(isCreditRequested || isCreditRejected) && (
                           <span className={`ml-1 sm:ml-2 text-[7px] sm:text-[8px] font-black uppercase ${item.creditRejected ? "text-red-400" : "text-purple-400"}`}>
-                            {item.creditRejected ? "(credit rejected - payment due)" : item.creditApproved ? "(credit approved - balance due)" : "(credit pending)"}
+                            {item.creditRejected ? "(credit rejected - payment due)" : item.is_partially_paid ? "(partially paid - balance due)" : item.creditApproved ? "(credit approved - balance due)" : "(credit pending)"}
                           </span>
                         )}
                       </p>
@@ -831,23 +848,6 @@ function OrderCard({
               </div>
             );
           })}
-          {(order.items || []).filter(item => item.status === "VOIDED" || item.voidProcessed).length > 0 && (
-            <div className="mt-3 pt-2 border-t border-white/10">
-              <p className="text-[7px] sm:text-[8px] font-black text-zinc-500 uppercase tracking-widest mb-2">Voided Items</p>
-              {(order.items || []).filter(item => item.status === "VOIDED" || item.voidProcessed).map((item, i) => (
-                <div key={`voided-${i}`} className="p-2 rounded-lg bg-red-500/5 border border-red-500/20">
-                  <div className="flex justify-between items-center gap-2">
-                    <div className="min-w-0">
-                      <p className="font-black text-[9px] sm:text-[11px] line-through text-zinc-500 break-words">{item.name}</p>
-                      <p className="text-[7px] sm:text-[8px] font-bold text-zinc-500">×{item.quantity || 1} · {fmtUGX(item.price || 0)}</p>
-                    </div>
-                    <span className="text-[7px] sm:text-[8px] text-red-400 font-black shrink-0">VOIDED</span>
-                  </div>
-                  {item.voidReason && <p className="text-[6px] sm:text-[7px] text-zinc-500 mt-1 break-words">Reason: {item.voidReason}</p>}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
@@ -926,13 +926,15 @@ function VoidedItemsPanel({ voidedItems, theme }) {
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                  <span className={`font-black text-xs sm:text-sm uppercase tracking-tight break-words ${isDark ? "text-white" : "text-zinc-900"}`}>{item.name}</span>
+                  <span className={`font-black text-xs sm:text-sm uppercase tracking-tight break-words ${isDark ? "text-white" : "text-zinc-900"}`}>
+                    {item.name}{item._unitCount > 1 ? ` · Unit ${item._unitIndex + 1}` : ""}
+                  </span>
                   <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[6px] sm:text-[8px] font-black uppercase">
                     <CheckCircle size={7} /> Voided
                   </span>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-1">
-                  <span className={`text-[9px] sm:text-[10px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>Table: {item.tableName}</span>
+                  <span className={`text-[9px] sm:text-[10px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>Table: {item.tableName} · Order #{item._orderId}</span>
                   <span className={`text-[8px] sm:text-[9px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>· x{item.quantity || 1}</span>
                 </div>
                 {item.voidReason && <p className={`text-[8px] sm:text-[9px] font-bold break-words ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>Reason: {item.voidReason}</p>}
@@ -1014,7 +1016,15 @@ export default function OrderHistory({ onAddItems }) {
         }
         let hasApprovedCredit = false;
         orderItems.forEach(item => {
-          if (item._rowPaid === true || item.paid_at || item.creditApproved === true) {
+          if (Array.isArray(item.unitStates)) {
+            item.unitStates.forEach((state, unitIndex) => {
+              const itemKey = pendingItemKey(tableName, item.name, unitIndex);
+              if ((state?.paid === true || state?.paymentRequested !== true) && next[itemKey]) {
+                delete next[itemKey];
+                changed = true;
+              }
+            });
+          } else if (item._rowPaid === true || item.paid_at || item.creditApproved === true) {
             const itemKey = pendingItemKey(tableName, item.name);
             if (next[itemKey]) { delete next[itemKey]; changed = true; }
           }
@@ -1046,7 +1056,8 @@ export default function OrderHistory({ onAddItems }) {
         : false;
       const isOpenOrder = !["paid", "closed", "voided", "cancelled", "served"]
         .includes(String(o.status || "").trim().toLowerCase());
-      return (idMatch || nameMatch || hasReadyForServiceItems(o)) &&
+      return !isManagerCreatedOrder(o) &&
+        (idMatch || nameMatch || hasReadyForServiceItems(o)) &&
         (!o.sent_to_cashier ||
           hasOutstandingCreditItems(o) ||
           isOpenOrder ||
@@ -1077,20 +1088,24 @@ export default function OrderHistory({ onAddItems }) {
       g.orderIds.push(order.id);
       g._rows.push({ id: order.id, paid: rowPaid, total: Number(order.total) || 0 });
       (order.items || []).forEach((item, orderItemIndex) => {
-        g.items.push({
+        const row = {
           ...item,
-          _orderId:         order.id,
-          _orderItemIndex:  item._orderItemIndex ?? orderItemIndex,
-          staff_id:         order.staff_id,
-          _rowPaid:         item._rowPaid === true || Boolean(item.paid_at) || (rowPaid && item.complimentary !== true),
-          voidRequested:    item.voidRequested    || false,
-          voidProcessed:    item.voidProcessed    || false,
-          paymentRequested: item.paymentRequested ||
-                            !!pendingPayments[pendingItemKey(key, item.name)],
-          creditRequested:  item.creditRequested  || false,
-          voidReason:       item.voidReason       || null,
-          voidedAt:         item.voidedAt         || null,
-          tableName:        key,
+          _rowPaid: item._rowPaid === true || Boolean(item.paid_at) || (rowPaid && item.complimentary !== true),
+        };
+        expandOrderItemUnits(row, {
+          _orderId: order.id,
+          _orderItemIndex: item._orderItemIndex ?? orderItemIndex,
+          staff_id: order.staff_id,
+          creditRequested: item.creditRequested || false,
+          voidReason: item.voidReason || null,
+          voidedAt: item.voidedAt || null,
+          tableName: key,
+        }).forEach((unit) => {
+          const unitKey = pendingItemKey(key, item.name, unit._unitIndex);
+          g.items.push({
+            ...unit,
+            paymentRequested: unit.paymentRequested || !!pendingPayments[unitKey],
+          });
         });
       });
       const rank = { Paid: 7, Served: 6, Ready: 5, Delayed: 4, Preparing: 3, Pending: 2 };
@@ -1190,7 +1205,7 @@ export default function OrderHistory({ onAddItems }) {
     const tableName = String(payload.tableName || "").trim().toUpperCase();
     const isItemPay = payload.type === "item";
     const lsKey = isItemPay
-      ? pendingItemKey(tableName, payload.item?.name || "")
+      ? pendingItemKey(tableName, payload.item?.name || "", payload.item?._unitIndex)
       : pendingTableKey(tableName);
     markPending(lsKey);
     try {
@@ -1217,7 +1232,9 @@ export default function OrderHistory({ onAddItems }) {
         body: JSON.stringify(requestBody),
       });
       if (res.ok) {
-        alert("Success: Payment request sent to cashier!");
+        alert(payload.method === "Credit"
+          ? "Success: Credit request sent to cashier for manager approval."
+          : "Success: Payment request sent to cashier!");
         refreshData?.();
         fetchCredits();
       } else {
@@ -1244,7 +1261,14 @@ export default function OrderHistory({ onAddItems }) {
     try {
       const res = await fetch(`${API_URL}/api/orders/void-item`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order_id: orderId, item_name: item.name, reason, requested_by: currentStaffName }),
+        body: JSON.stringify({
+          order_id: orderId,
+          item_name: item.name,
+          item_index: item._orderItemIndex,
+          unit_index: item._unitIndex,
+          reason,
+          requested_by: currentStaffName,
+        }),
       });
       if (res.ok) {
         alert(`Success: Void request for "${item.name}" sent to accountant for approval!`);
@@ -1261,26 +1285,19 @@ export default function OrderHistory({ onAddItems }) {
   const filteredOrders = useMemo(() =>
     enrichedGroups.filter(g => {
       const matchSearch = g.tableName.toLowerCase().includes(searchQuery.toLowerCase());
-      const nonVoided   = (g.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
-      const allPaid     = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
-      const hasAnyPaid  = nonVoided.some(i => i._rowPaid === true);
-      const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
-      const hasReadyItems = nonVoided.some(isItemReadyForService);
-      const hasCreditOrder = g.orderIds?.some(id => {
-        const o = orders.find(x => x.id === id);
-        return o?.status === "Credit" || o?.payment_method === "Credit";
-      }) || false;
-      const isLive   = hasReadyItems || (!hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0);
-      const isServed = g.status === "Served" && !allPaid && nonVoided.length > 0;
+      const activeItems = getActiveOrderItems(g.items || []);
+      const hasReadyItems = activeItems.some(isItemReadyForService);
+      const isServed = g.status === "Served" && activeItems.length > 0 && !hasReadyItems;
+      const isLive = hasReadyItems || (activeItems.length > 0 && !isServed);
       let matchTab = false;
       switch (activeTab) {
-        case "Live":   matchTab = isLive && nonVoided.length > 0; break;
+        case "Live":   matchTab = isLive; break;
         case "Served": matchTab = isServed; break;
         default:       matchTab = false;
       }
       return matchSearch && matchTab;
     }),
-    [enrichedGroups, searchQuery, activeTab, orders]
+    [enrichedGroups, searchQuery, activeTab]
   );
 
   const totalPaidItemsCount = useMemo(() => {
@@ -1290,22 +1307,15 @@ export default function OrderHistory({ onAddItems }) {
   const counts = useMemo(() => {
     const acc = { Live: 0, Served: 0, Paid: totalPaidItemsCount, Credits: creditsData.length, Voided: voidedItemsList.length };
     enrichedGroups.forEach(g => {
-      const nonVoided  = (g.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
-      const allPaid    = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
-      const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
-      const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
-      const hasReadyItems = nonVoided.some(isItemReadyForService);
-      const hasCreditOrder = g.orderIds?.some(id => {
-        const o = orders.find(x => x.id === id);
-        return o?.status === "Credit" || o?.payment_method === "Credit";
-      }) || false;
-      const isLive   = hasReadyItems || (!hasAnyPaid && !hasCreditItems && !hasCreditOrder && nonVoided.length > 0);
-      const isServed = g.status === "Served" && !allPaid && nonVoided.length > 0;
-      if (isLive && nonVoided.length > 0) acc.Live++;
+      const activeItems = getActiveOrderItems(g.items || []);
+      const hasReadyItems = activeItems.some(isItemReadyForService);
+      const isServed = g.status === "Served" && activeItems.length > 0 && !hasReadyItems;
+      const isLive = hasReadyItems || (activeItems.length > 0 && !isServed);
+      if (isLive) acc.Live++;
       if (isServed) acc.Served++;
     });
     return acc;
-  }, [enrichedGroups, voidedItemsList, creditsData, totalPaidItemsCount, orders]);
+  }, [enrichedGroups, voidedItemsList, creditsData, totalPaidItemsCount]);
 
   return (
     <div className={`manage-tables-page min-h-full font-[Outfit] pb-20 sm:pb-28 ${theme === "dark" ? "bg-zinc-950 text-white" : "bg-zinc-50 text-zinc-900"}`}>
@@ -1376,7 +1386,7 @@ export default function OrderHistory({ onAddItems }) {
                 onMarkTablePaid={handleMarkTablePaid}
                 onPayItem={(item, ord) => {
                   if (isPaying) return;
-                  const lsKey = pendingItemKey(ord?.tableName ?? order.tableName, item?.name);
+                  const lsKey = pendingItemKey(ord?.tableName ?? order.tableName, item?.name, item?._unitIndex);
                   if (pendingPayments[lsKey]) {
                     alert("Warning: A payment request for this item is already pending with the cashier.");
                     return;

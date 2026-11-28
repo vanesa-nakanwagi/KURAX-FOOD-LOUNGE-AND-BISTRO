@@ -12,12 +12,6 @@ import {
 } from "lucide-react";
 import API_URL from "../../config/api";
 
-// ─── KAMPALA DATE ─────────────────────────────────────────────────────────────
-function kampalaDateStr(d = new Date()) {
-  return new Date(d.toLocaleString("en-US", { timeZone: "Africa/Nairobi" }))
-    .toISOString().split("T")[0];
-}
-
 function formatMoney(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
 }
@@ -353,7 +347,7 @@ export default function BaristaDisplay() {
   const handleShiftReset = async () => {
     let baristas = [];
     try {
-      const res = await fetch(`${API_URL}/api/barista/tickets/summary?date=${kampalaDateStr()}`);
+      const res = await fetch(`${API_URL}/api/barista/tickets/summary`);
       if (res.ok) { const d = await res.json(); baristas = d.baristas || []; }
     } catch {}
     const cupCount = filteredOrders.reduce((s, o) => s + o.items.length, 0);

@@ -7,7 +7,7 @@ import pool from '../db.js';
  *
  * @param {Object} params
  * @param {number} params.amount                - Payment amount
- * @param {number} [params.grossAmount]         - Full selling price before waivers and discounts
+ * @param {number} [params.grossAmount]         - Sale amount to add to gross revenue (defaults to payment amount)
  * @param {string} params.method                - Cash | Card | Momo-MTN | Momo-Airtel | Credit | Mixed
  * @param {string} [params.date]                - YYYY-MM-DD (defaults to today Kampala time)
  * @param {number} [params.orderCount]          - Orders to add to count (default 1)
@@ -71,8 +71,8 @@ export async function updateDailySummary({
   const isMixed  = m === 'mixed';
 
   // Credits are IOUs — they NEVER count toward gross revenue.
-  // For sales, grossAmount is the full item value before discounts or waivers;
-  // payment-method columns continue to record the amount actually received.
+  // Payment-method columns always record the amount actually received. Callers
+  // may pass grossAmount when the recognized sale amount differs from payment.
   const grossAmt = isCredit ? 0 : Number(grossAmount) || 0;
 
   try {

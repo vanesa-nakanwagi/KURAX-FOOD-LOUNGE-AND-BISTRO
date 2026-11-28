@@ -49,9 +49,10 @@ router.post('/tickets', async (req, res) => {
        ON CONFLICT (order_id) DO UPDATE SET
          items      = EXCLUDED.items,
          staff_name = EXCLUDED.staff_name,
+         ticket_date = EXCLUDED.ticket_date,
          updated_at = NOW()
        RETURNING *`,
-      [order_id, table_name, staff_name || null, JSON.stringify(stationItems), ticketTotal || Number(total) || 0, status, kampalaDate()]
+      [order_id, table_name, staff_name || null, JSON.stringify(stationItems), ticketTotal || Number(total) || 0, status, req.businessDate || kampalaDate()]
     );
     const actor = await resolveNotificationUser(req);
     if (actor?.scope === 'restaurant' && ['WAITER', 'SUPERVISOR', 'MANAGER', 'DIRECTOR', 'BAR_HOD'].includes(actor.role)) {
@@ -75,7 +76,7 @@ router.post('/tickets', async (req, res) => {
 // 2a. GET /api/barman/tickets/summary  —  registered BEFORE /:id routes
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/tickets/summary', async (req, res) => {
-  const date = req.query.date || kampalaDate();
+  const date = req.query.date || req.businessDate || kampalaDate();
   try {
     const totalsRes = await pool.query(
       `SELECT
@@ -127,7 +128,7 @@ router.get('/tickets/summary', async (req, res) => {
 // 2b. GET /api/barman/tickets?date=…
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/tickets', async (req, res) => {
-  const date = req.query.date || kampalaDate();
+  const date = req.query.date || req.businessDate || kampalaDate();
   try {
     await syncRoutableStationTickets(pool, 'bar');
     const result = req.query.active === 'true'
@@ -135,12 +136,14 @@ router.get('/tickets', async (req, res) => {
         `SELECT t.* FROM barman_tickets t
          JOIN public.orders o ON o.id = t.order_id
          WHERE t.status IN ('Pending', 'Preparing', 'Ready')
+           AND t.ticket_date = $1::date
            AND t.cleared_at IS NULL
            AND COALESCE(o.day_cleared, false) = false
            AND COALESCE(o.shift_cleared, false) = false
            AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
            AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided', 'closed', 'served')
-         ORDER BY t.created_at ASC`
+         ORDER BY t.created_at ASC`,
+        [date]
       )
       : await pool.query(
         `SELECT t.* FROM barman_tickets t JOIN public.orders o ON o.id=t.order_id
@@ -221,7 +224,8 @@ router.patch('/tickets/:id/assign-barman', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/clear-shift', async (req, res) => {
   const { cleared_by = 'Head Barman' } = req.body;
-  const date = kampalaDate();
+  const date = req.body.date || req.businessDate || kampalaDate();
+  const isHistoricalDate = date < kampalaDate();
   try {
     const result = await pool.query(
       `UPDATE barman_tickets
@@ -230,8 +234,9 @@ router.patch('/clear-shift', async (req, res) => {
            updated_at    = NOW()
        WHERE ticket_date = $2
          AND cleared_at IS NULL
+         AND ($3::boolean = false OR LOWER(COALESCE(status, '')) NOT IN ('pending', 'preparing', 'ready'))
        RETURNING id`,
-      [cleared_by, date]
+      [cleared_by, date, isHistoricalDate]
     );
     console.log(`Barman shift cleared by ${cleared_by} — ${result.rowCount} ticket(s) archived`);
     res.json({ cleared: result.rowCount, cleared_by, date });

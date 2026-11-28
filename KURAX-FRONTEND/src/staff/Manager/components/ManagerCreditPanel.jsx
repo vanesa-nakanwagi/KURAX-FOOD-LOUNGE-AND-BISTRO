@@ -109,7 +109,7 @@ function CreditApprovalCard({ credit, managerName, onAction }) {
                 <p className="text-[8px] text-zinc-600 uppercase font-black">Credit Amount</p>
                 <p className="text-xl font-black text-purple-400">UGX {amount.toLocaleString()}</p>
               </div>
-              {credit.item_name && <p className="text-[9px] text-zinc-500">Item: <span className="text-zinc-300 font-bold">{credit.item_name}</span></p>}
+              {(credit.item_name || credit.label) && <p className="text-[9px] text-zinc-500">Item: <span className="text-zinc-300 font-bold">{credit.item_name || credit.label}</span></p>}
             </div>
           </div>
 

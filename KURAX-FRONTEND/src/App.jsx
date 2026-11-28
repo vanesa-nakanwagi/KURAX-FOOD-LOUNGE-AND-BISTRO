@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import ScrollToHash from "./customer/components/home/ScrollToHash";
 import { useState, useEffect } from "react";
+import { useData } from "./customer/components/context/DataContext";
 // Public Pages
 import HomePage from "./customer/pages/HomePage.jsx";
 import MenusPage from "./customer/pages/menuPage.jsx";
@@ -29,6 +30,20 @@ function InternalStaffNotifications() {
   const isShisha = pathname.startsWith('/shisha');
   const isStaffRoute = /^\/(director|cashier|staff\/(waiter|manager)|supervisor|accountant|kitchen|barman|barista|shisha)(\/|$)/.test(pathname);
   return isStaffRoute ? <StaffNotificationControl key={isShisha ? 'shisha' : 'restaurant'} isShisha={isShisha} /> : null;
+}
+
+function GlobalBusinessDateNotice() {
+  const { pathname } = useLocation();
+  const { businessDate, businessDateMode } = useData();
+  const isShisha = pathname.startsWith("/shisha");
+  const isStaffRoute = /^\/(director|cashier|staff\/(waiter|manager)|supervisor|accountant|kitchen|barman|barista|content-creator)(\/|$)/.test(pathname);
+  if (!isStaffRoute || isShisha || businessDateMode !== "HISTORICAL") return null;
+
+  return (
+    <div role="status" className="sticky top-0 z-[70] border-b border-amber-300 bg-amber-100 px-3 py-2 text-center text-xs font-bold text-amber-950">
+      HISTORICAL BUSINESS DATE: {businessDate}. New business records use this date; actual posting times remain unchanged.
+    </div>
+  );
 }
 
 function getSessionExpiry(storageKey) {
@@ -244,6 +259,7 @@ export default function App() {
       <SEO />
       <ScrollToHash />
       <SessionExpiryHandler />
+      <GlobalBusinessDateNotice />
       <Routes>
         {/* --- PUBLIC CUSTOMER PAGES --- */}
         <Route path="/" element={<HomePage />} />

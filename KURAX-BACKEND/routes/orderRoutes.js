@@ -18,6 +18,9 @@ import {
   getOrderItemOriginalAmount,
   getOrderItemPaidAmount,
   getOrderItemPayableAmount,
+  getOrderItemUnitCount,
+  getOrderItemUnitPayableAmount,
+  getOrderItemUnitStates,
   getOrderItemWaivedAmount,
   getOrderPayableTotal,
 } from '../helpers/complimentaryItems.js';
@@ -25,6 +28,8 @@ import { readSessionToken } from '../middleware/sessionTokens.js';
 import logActivity from '../utils/logsActivity.js';
 import { getOrderItemsTotal, snapshotMenuPromotions } from '../helpers/menuPromotions.js';
 import { snapshotDrinkServing } from '../helpers/drinkServing.js';
+import { getMenuInventoryMatchFields } from '../helpers/menuInventoryMatch.js';
+import { getLiveBusinessDate } from '../helpers/businessDateFormat.js';
 
 const router = express.Router();
 
@@ -105,9 +110,11 @@ function canEditComplimentaryOrder(actor, order) {
 
 // ── Kampala date helper ───────────────────────────────────────────────────────
 function kampalaDate() {
-  return new Date(
-    new Date().toLocaleString('en-US', { timeZone: 'Africa/Nairobi' })
-  ).toISOString().split('T')[0];
+  return getLiveBusinessDate();
+}
+
+function isHistoricalBusinessDate(date) {
+  return Boolean(date) && date < kampalaDate();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,7 +139,7 @@ router.get('/', async (req, res) => {
     }
     if (orderDate !== undefined) {
       values.push(orderDate);
-      filters.push(`DATE(COALESCE(o.created_at, o.timestamp) AT TIME ZONE 'Africa/Kampala') = $${values.length}::date`);
+      filters.push(`COALESCE(o.business_date, DATE(COALESCE(o.created_at, o.timestamp) AT TIME ZONE 'Africa/Kampala')) = $${values.length}::date`);
     }
     const includeUnsentOrders = staffId === undefined && orderDate === undefined;
     if (includeUnsentOrders) {
@@ -344,7 +351,7 @@ router.get('/cashier-history', async (req, res) => {
          cq.credit_pay_by  AS pay_by
        FROM cashier_queue cq
        WHERE cq.status IN ('Confirmed', 'Rejected')
-         AND (COALESCE(cq.confirmed_at, cq.created_at) AT TIME ZONE 'Africa/Kampala')::date = $1::date
+         AND COALESCE(cq.business_date, (COALESCE(cq.confirmed_at, cq.created_at) AT TIME ZONE 'Africa/Kampala')::date) = $1::date
          AND cq.shift_cleared = FALSE
        ORDER BY cq.confirmed_at DESC NULLS LAST
        LIMIT 500`,
@@ -500,17 +507,28 @@ router.post('/', async (req, res) => {
       : [];
     const catalogResult = itemNames.length || itemIds.length
       ? await pool.query(
-        `SELECT id, name, price, category, station, promotion_enabled, promotion_discount_type,
+        `SELECT menus.id, menus.name, menus.price, menus.category, menus.station, menus.promotion_enabled, menus.promotion_discount_type,
                 promotion_discount_value, promotion_discount_percent,
-                promotion_starts_at, promotion_ends_at, bottle_volume_ml, inventory_item_id
-         FROM public.menus
-         WHERE id = ANY($1::int[]) OR LOWER(TRIM(name)) = ANY($2::text[])`,
+                promotion_starts_at, promotion_ends_at, menus.bottle_volume_ml, menus.inventory_item_id
+         FROM public.menus AS menus
+         WHERE menus.id = ANY($1::int[]) OR LOWER(TRIM(menus.name)) = ANY($2::text[])`,
         [itemIds, itemNames]
       )
       : { rows: [] };
-    const promotedItems = snapshotMenuPromotions(submittedItems, catalogResult.rows);
+    const inventoryResult = catalogResult.rows.length
+      ? await pool.query(
+        `SELECT id, item_name, current_quantity, is_active
+         FROM public.inventory_items
+         WHERE is_active IS TRUE`
+      )
+      : { rows: [] };
+    const catalogItems = catalogResult.rows.map((menu) => ({
+      ...menu,
+      ...getMenuInventoryMatchFields(menu, inventoryResult.rows),
+    }));
+    const promotedItems = snapshotMenuPromotions(submittedItems, catalogItems);
     const orderItems = promotedItems.map((item) => {
-      const catalogItem = catalogResult.rows.find((menu) => (
+      const catalogItem = catalogItems.find((menu) => (
         (item?.id != null && Number(menu.id) === Number(item.id))
         || (item?.name && String(menu.name).trim().toLowerCase() === String(item.name).trim().toLowerCase())
       ));
@@ -527,8 +545,8 @@ router.post('/', async (req, res) => {
     const orderResult = await pool.query(
       `INSERT INTO orders (
          staff_id, staff_role, table_name,
-         items, total, payment_method, status, date, created_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, NOW())
+         items, total, payment_method, status, date, created_at, business_date
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, NOW(), $8::date)
        RETURNING *`,
       [
         actor.id,
@@ -538,6 +556,7 @@ router.post('/', async (req, res) => {
         Number.isFinite(serverTotal) && serverTotal >= 0 ? serverTotal : total,
         null,  // ← FIXED: No default payment method
         'Pending',   // ← FIXED: Status is Pending, not Served
+        req.businessDate,
       ]
     );
 
@@ -548,7 +567,7 @@ router.post('/', async (req, res) => {
       parsedItems = JSON.parse(parsedItems);
     }
 
-    if (tableName && tableName !== 'WALK-IN') {
+    if (tableName && tableName !== 'WALK-IN' && !isHistoricalBusinessDate(req.businessDate)) {
       await pool.query(
         `INSERT INTO tables (name, status, last_order_id, updated_at)
          VALUES ($1, 'Occupied', $2, NOW())
@@ -591,7 +610,9 @@ router.post('/', async (req, res) => {
 // POST /api/orders/void-item - Waiter requests to void an item (FIXED)
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/void-item', async (req, res) => {
-  const { order_id, item_name, reason, requested_by } = req.body;
+  const { order_id, item_name, item_index, unit_index, reason, requested_by } = req.body;
+  const itemIndex = item_index != null && Number.isInteger(Number(item_index)) ? Number(item_index) : null;
+  const unitIndex = unit_index != null && Number.isInteger(Number(unit_index)) ? Number(unit_index) : null;
 
   console.log("Received void request:", { order_id, item_name, reason, requested_by });
 
@@ -600,17 +621,26 @@ router.post('/void-item', async (req, res) => {
     return res.status(400).json({ error: 'order_id, item_name, and reason are required' });
   }
 
+  let client;
+  let transactionOpen = false;
+  let clientReleased = false;
   try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionOpen = true;
     // Get order details
-    const orderRes = await pool.query(
+    const orderRes = await client.query(
       `SELECT o.table_name, o.staff_id, o.items, o.total, COALESCE(s.name, $2) AS waiter_name
        FROM orders o
        LEFT JOIN staff s ON o.staff_id = s.id
-       WHERE o.id = $1`,
+       WHERE o.id = $1
+       FOR UPDATE OF o`,
       [order_id, requested_by || 'Unknown']
     );
 
     if (orderRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
       console.log("Order not found:", order_id);
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -627,13 +657,47 @@ router.post('/void-item', async (req, res) => {
       items = [];
     }
     
-    const targetItemIndex = items.findIndex(item =>
-      item.name === item_name && !item.voidRequested && !item.voidProcessed);
+    const targetItemIndex = itemIndex !== null
+      ? (items[itemIndex]?.name === item_name
+        && !items[itemIndex].voidRequested && !items[itemIndex].voidProcessed
+        ? itemIndex
+        : -1)
+      : items.findIndex(item => item.name === item_name
+        && !item.voidRequested && !item.voidProcessed
+        && (unitIndex === null || (
+          getOrderItemUnitCount(item) > 1
+          && !getOrderItemUnitStates(item)[unitIndex]?.paid
+          && !getOrderItemUnitStates(item)[unitIndex]?.paymentRequested
+          && !getOrderItemUnitStates(item)[unitIndex]?.creditRequested
+          && !getOrderItemUnitStates(item)[unitIndex]?.voidRequested
+          && !getOrderItemUnitStates(item)[unitIndex]?.voidProcessed
+        )));
     const targetItem = targetItemIndex >= 0 ? items[targetItemIndex] : null;
     
     if (!targetItem) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
       console.log("Item not found or already voided:", item_name);
       return res.status(404).json({ error: 'Item not found or already voided' });
+    }
+    if (unitIndex === null && getOrderItemUnitCount(targetItem) > 1) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({ error: 'Select the specific unit to void from this quantity item.' });
+    }
+    if (unitIndex !== null) {
+      const state = getOrderItemUnitStates(targetItem)[unitIndex];
+      if (getOrderItemUnitCount(targetItem) < 2 || !state
+        || state.paid === true || state.paymentRequested === true
+        || state.creditRequested === true
+        || targetItem._rowPaid === true || Boolean(targetItem.paid_at)
+        || targetItem.creditRequested === true
+        || String(targetItem.payment_method || '').toUpperCase().includes('CREDIT')
+        || state.voidRequested === true || state.voidProcessed === true) {
+        await client.query('ROLLBACK');
+        transactionOpen = false;
+        return res.status(409).json({ error: 'The selected item unit is no longer available to void.' });
+      }
     }
     
     // FIND THE ASSIGNED CHEF FROM KITCHEN_TICKETS
@@ -701,16 +765,24 @@ router.post('/void-item', async (req, res) => {
       console.log(`Found chef from target item assignedTo: ${chefName}`);
     }
     
-    const originalPrice = Number(targetItem.price || 0);
-    const originalQuantity = Number(targetItem.quantity || 1);
-    const itemTotal = originalPrice * originalQuantity;
+    const unitCount = getOrderItemUnitCount(targetItem);
+    const originalPrice = unitIndex === null
+      ? Number(targetItem.price || 0)
+      : getOrderItemOriginalAmount(targetItem) / unitCount;
+    const originalQuantity = unitIndex === null ? Number(targetItem.quantity || 1) : 1;
+    const itemTotal = unitIndex === null
+      ? getOrderItemPayableAmount(targetItem)
+      : getOrderItemUnitPayableAmount(targetItem, unitIndex);
+    const requestItemName = unitIndex === null
+      ? item_name
+      : `${item_name} · Unit ${unitIndex + 1}`;
 
     console.log("Inserting void request with:", {
       order_id, item_name, reason, requested_by, tableName, waiterName,
       originalPrice, originalQuantity, itemTotal, chefName
     });
 
-    const voidRes = await pool.query(
+    const voidRes = await client.query(
       `INSERT INTO void_requests
          (order_id, item_name, reason, requested_by,
           table_name, waiter_name, status, created_at,
@@ -718,34 +790,47 @@ router.post('/void-item', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, 'Pending', NOW(), 
                $7, $8, $9)
        RETURNING *`,
-      [order_id, item_name, reason, requested_by, tableName, waiterName, 
+      [order_id, requestItemName, reason, requested_by, tableName, waiterName,
        originalPrice, originalQuantity, chefName]
     );
 
     console.log("Void request inserted, ID:", voidRes.rows[0].id);
 
-    let found = false;
-    const updatedItems = items.map(item => {
-      if (!found && item.name === item_name && !item.voidRequested && !item.voidProcessed) {
-        found = true; 
-        return { 
-          ...item, 
-          voidRequested: true, 
-          voidReason: reason, 
+    const updatedItems = items.map((item, index) => {
+      if (index !== targetItemIndex) return item;
+      if (unitIndex !== null) {
+        const unitStates = getOrderItemUnitStates(item);
+        unitStates[unitIndex] = {
+          ...unitStates[unitIndex],
+          voidRequested: true,
+          voidRequestId: Number(voidRes.rows[0].id),
+          voidReason: reason,
           voidRequestedBy: requested_by,
           voidRequestedAt: new Date().toISOString(),
-          original_price: originalPrice,
-          price: originalPrice,
-          chefName: chefName
         };
+        return { ...item, unitStates };
       }
-      return item;
+      return {
+        ...item,
+        voidRequested: true,
+        voidRequestId: Number(voidRes.rows[0].id),
+        voidReason: reason,
+        voidRequestedBy: requested_by,
+        voidRequestedAt: new Date().toISOString(),
+        original_price: originalPrice,
+        price: originalPrice,
+        chefName,
+      };
     });
 
-    await pool.query(
+    await client.query(
       `UPDATE orders SET items = $1 WHERE id = $2`,
       [JSON.stringify(updatedItems), order_id]
     );
+    await client.query('COMMIT');
+    transactionOpen = false;
+    client.release();
+    clientReleased = true;
 
     await logActivity(pool, {
       type: 'VOID_REQUESTED',
@@ -776,9 +861,18 @@ router.post('/void-item', async (req, res) => {
       message: `Void request for ${item_name} sent to accountant`
     });
   } catch (err) {
+    if (client && transactionOpen) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Void request rollback failed:', rollbackError.message);
+      }
+    }
     console.error('Void Request Error:', err.message);
     console.error('Full error:', err);
     res.status(500).json({ error: err.message, stack: err.stack });
+  } finally {
+    if (client && !clientReleased) client.release();
   }
 });
 
@@ -937,6 +1031,7 @@ router.patch('/:id/items/:itemIndex/serve', async (req, res) => {
       const consumption = await consumeSoldOrderItems({
         orderId,
         items: updatedResult.rows[0].items,
+        businessDate: req.businessDate,
         createdBy: 'Service',
       });
       for (const entry of consumption.filter((record) => !['CONSUMED', 'CONSUMED_COST_REVIEW', 'ALREADY_CONSUMED'].includes(record.status))) {
@@ -1288,8 +1383,8 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
       const queueResult = await client.query(
         `INSERT INTO public.cashier_queue
            (order_ids, table_name, label, method, amount, is_item, item,
-            requested_by, staff_id, status, created_at)
-         VALUES ($1::jsonb, $2, $3, $4, $5, true, $6::jsonb, $7, $8, 'Pending', NOW())
+            requested_by, staff_id, status, created_at, business_date)
+         VALUES ($1::jsonb, $2, $3, $4, $5, true, $6::jsonb, $7, $8, 'Pending', NOW(), $9::date)
          RETURNING id`,
         [
           JSON.stringify([order.id]),
@@ -1300,6 +1395,7 @@ router.patch('/complimentary-corrections/:requestId', authenticateComplimentaryS
           JSON.stringify(queueItem),
           correction.requester_name || 'Staff',
           order.staff_id || correction.requested_by,
+          req.businessDate,
         ]
       );
       cashierQueueId = queueResult.rows[0].id;
@@ -1466,7 +1562,7 @@ router.patch('/:id/pay', async (req, res) => {
     );
 
     try {
-      const consumption = await consumeSoldOrderItems({ orderId: id, items: updatedItems, createdBy: 'Cashier' });
+      const consumption = await consumeSoldOrderItems({ orderId: id, items: updatedItems, businessDate: req.businessDate, createdBy: 'Cashier' });
       for (const entry of consumption.filter((record) => !['CONSUMED', 'CONSUMED_COST_REVIEW', 'ALREADY_CONSUMED'].includes(record.status))) {
         console.warn(`Recipe consumption ${entry.status} for order #${id}: ${entry.order_item}`);
       }
@@ -1475,7 +1571,7 @@ router.patch('/:id/pay', async (req, res) => {
     }
  
     // Update table status if no more pending orders
-    if (updatedOrder.table_name && updatedOrder.table_name !== 'WALK-IN') {
+    if (updatedOrder.table_name && updatedOrder.table_name !== 'WALK-IN' && !isHistoricalBusinessDate(req.businessDate)) {
       try {
         const pendingCheck = await pool.query(
           `SELECT COUNT(*) AS cnt FROM orders
@@ -1504,13 +1600,13 @@ router.patch('/:id/pay', async (req, res) => {
       0
     );
  
-    await updateDailySummary({ amount: paidNow, method: payment_method });
+    await updateDailySummary({ amount: paidNow, method: payment_method, date: req.businessDate });
  
     if (paidNow > 0) {
       const cashierEntry = await pool.query(
         `INSERT INTO cashier_queue 
-             (order_ids, table_name, label, method, amount, status, requested_by, staff_id, confirmed_by, confirmed_at, created_at)
-           VALUES ($1, $2, $3, $4, $5, 'Confirmed', $6, $7, 'Cashier', NOW(), NOW())
+             (order_ids, table_name, label, method, amount, status, requested_by, staff_id, confirmed_by, confirmed_at, created_at, business_date)
+           VALUES ($1, $2, $3, $4, $5, 'Confirmed', $6, $7, 'Cashier', NOW(), NOW(), $8::date)
          RETURNING id`,
         [
           JSON.stringify([updatedOrder.id]),
@@ -1520,6 +1616,7 @@ router.patch('/:id/pay', async (req, res) => {
           paidNow,
           updatedOrder.staff_name || null,
           updatedOrder.staff_id || null,
+          req.businessDate,
         ]
       );
       await createSalesJournalEntry({
@@ -1529,6 +1626,7 @@ router.patch('/:id/pay', async (req, res) => {
         description: `Order payment · ${updatedOrder.table_name || 'WALK-IN'}`,
         sourceTransaction: `cashier_queue:${cashierEntry.rows[0].id}`,
         postedBy: 'Cashier',
+        entryDate: req.businessDate,
       });
     }
  
@@ -1622,7 +1720,21 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
     let items = orderRes.rows[0].items;
     if (typeof items === 'string') items = JSON.parse(items);
     if (!Array.isArray(items)) items = [];
-    const voidedItemIndex = items.findIndex((item) => item.name === vr.item_name && !item.voidProcessed);
+    let voidedItemIndex = -1;
+    let voidedUnitIndex = null;
+    items.forEach((item, index) => {
+      if (Array.isArray(item.unitStates)) {
+        const unitIndex = item.unitStates.findIndex((state) =>
+          Number(state?.voidRequestId) === Number(id) && state?.voidRequested === true);
+        if (unitIndex >= 0) {
+          voidedItemIndex = index;
+          voidedUnitIndex = unitIndex;
+        }
+      }
+      if (voidedItemIndex < 0 && item.name === vr.item_name && !item.voidProcessed) {
+        voidedItemIndex = index;
+      }
+    });
     if (voidedItemIndex < 0) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'The requested order item was already voided or no longer exists.' });
@@ -1658,29 +1770,40 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
         || preparedResult.rows[0]?.production_completed === true
         || ticketResult.rows[0]?.status === 'Ready',
     };
-    const preparedQuantity = getPreparedVoidQuantity(
-      preparedItem,
-      preparedResult.rows[0]?.completed_quantity
-    );
-
     const voidedItem = items[voidedItemIndex];
+    const isUnitRequest = voidedUnitIndex !== null;
+    const unitPrepared = isUnitRequest && (
+      preparedItem.served === true
+      || preparedItem.readyForService === true
+      || Number(preparedResult.rows[0]?.completed_quantity || 0) > voidedUnitIndex
+    );
+    const preparedQuantity = isUnitRequest
+      ? (unitPrepared ? 1 : 0)
+      : getPreparedVoidQuantity(preparedItem, preparedResult.rows[0]?.completed_quantity);
+
     let inventoryTreatment = 'NOT_PREPARED';
     if (preparedQuantity > 0) {
-      const wasteItems = items.map((item, index) => index === voidedItemIndex ? {
-        ...item,
-        status: 'VOIDED',
-        voidProcessed: true,
+      const wasteItem = {
+        ...voidedItem,
+        ...(isUnitRequest ? {
+          quantity: 1,
+          _unitIndex: voidedUnitIndex,
+          _orderItemIndex: voidedItemIndex,
+        } : {}),
+        status: isUnitRequest ? voidedItem.status : 'VOIDED',
+        voidProcessed: isUnitRequest ? false : true,
         _approvedPreparedVoid: true,
         _wasteQuantity: preparedQuantity,
         _voidRequestId: Number(id),
-        _voidWasteReason: { requestId: Number(id), reason: vr.reason },
-      } : item);
+        _voidWasteReason: { requestId: Number(id), reason: vr.reason, unitIndex: voidedUnitIndex },
+      };
       const wasteResult = await consumeSoldOrderItems({
         orderId: vr.order_id,
-        items: wasteItems,
+        items: [wasteItem],
+        businessDate: req.businessDate,
         createdBy: approved_by || 'Accountant',
         queryable: client,
-        onlyOrderItemIndex: voidedItemIndex,
+        onlyOrderItemIndex: 0,
       });
       const wasteOutcome = wasteResult[0];
       if (!wasteOutcome || !['WASTED', 'WASTED_COST_REVIEW', 'ALREADY_CONSUMED', 'ALREADY_WASTED'].includes(wasteOutcome.status)) {
@@ -1691,11 +1814,14 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
         throw error;
       }
       if (wasteOutcome.status === 'ALREADY_CONSUMED') {
-        const unpreparedRatio = getUnpreparedQuantityRatio(voidedItem.quantity || 1, preparedQuantity);
+        const unpreparedRatio = isUnitRequest
+          ? 0
+          : getUnpreparedQuantityRatio(voidedItem.quantity || 1, preparedQuantity);
         if (unpreparedRatio > 0) {
           await reverseConsumedOrderItem({
             orderId: vr.order_id,
             orderItemIndex: voidedItemIndex,
+            businessDate: req.businessDate,
             createdBy: approved_by || 'Accountant',
             queryable: client,
             quantityRatio: unpreparedRatio,
@@ -1711,6 +1837,11 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
       const reversal = await reverseConsumedOrderItem({
         orderId: vr.order_id,
         orderItemIndex: voidedItemIndex,
+        ...(isUnitRequest ? {
+          unitIndex: voidedUnitIndex,
+          unitCount: getOrderItemUnitCount(voidedItem),
+        } : {}),
+        businessDate: req.businessDate,
         createdBy: approved_by || 'Accountant',
         queryable: client,
       });
@@ -1719,18 +1850,50 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
         : 'NOT_PREPARED_NO_STOCK_DEDUCTION';
     }
 
-    const updatedItems = items.map((item, index) => index === voidedItemIndex ? {
-      ...item,
-      status: 'VOIDED',
-      voidProcessed: true,
-      voidApprovedBy: approved_by || 'Accountant',
-      voidApprovedAt: new Date().toISOString(),
-      voidReason: vr.reason,
-      voidPreparedQuantity: preparedQuantity,
-      voidInventoryTreatment: inventoryTreatment,
-    } : item);
+    const updatedItems = items.map((item, index) => {
+      if (index !== voidedItemIndex) return item;
+      if (isUnitRequest) {
+        const unitStates = getOrderItemUnitStates(item);
+        unitStates[voidedUnitIndex] = {
+          ...unitStates[voidedUnitIndex],
+          voidRequested: false,
+          voidProcessed: true,
+          creditRequested: false,
+          creditApproved: false,
+          creditRejected: false,
+          creditRejectionReason: null,
+          voidRequestId: Number(id),
+          voidApprovedBy: approved_by || 'Accountant',
+          voidApprovedAt: new Date().toISOString(),
+          voidReason: vr.reason,
+          voidPreparedQuantity: preparedQuantity,
+          voidInventoryTreatment: inventoryTreatment,
+        };
+        const activeUnits = unitStates.filter((state) => state?.voidProcessed !== true);
+        const fullyVoided = activeUnits.length === 0;
+        return {
+          ...item,
+          unitStates,
+          _rowPaid: activeUnits.length > 0 && activeUnits.every((state) => state?.paid === true),
+          paidAmount: getOrderItemPaidAmount({ ...item, unitStates }),
+          ...(fullyVoided ? { status: 'VOIDED', voidProcessed: true } : {}),
+        };
+      }
+      return {
+        ...item,
+        status: 'VOIDED',
+        voidProcessed: true,
+        voidRequestId: Number(id),
+        voidApprovedBy: approved_by || 'Accountant',
+        voidApprovedAt: new Date().toISOString(),
+        voidReason: vr.reason,
+        voidPreparedQuantity: preparedQuantity,
+        voidInventoryTreatment: inventoryTreatment,
+      };
+    });
     const newTotal = getOrderPayableTotal(updatedItems);
 
+    if (!isUnitRequest || getOrderItemUnitStates(updatedItems[voidedItemIndex]).every((state) => state?.voidProcessed === true)) {
     await client.query(
       `WITH voided_work AS (
          UPDATE public.restaurant_production_work
@@ -1744,6 +1907,7 @@ router.patch('/void-requests/:id/approve', async (req, res) => {
        ON CONFLICT (work_id) WHERE event_type IN ('VOIDED', 'CANCELLED') DO NOTHING`,
       [vr.order_id, voidedItemIndex, `Approved void request #${id}`]
     );
+    }
 
     await client.query(
       `UPDATE orders SET items = $1, total = $2 WHERE id = $3`,
@@ -1818,7 +1982,23 @@ router.patch('/void-requests/:id/reject', async (req, res) => {
       }
       
       const updatedItems = items.map(item => {
-        if (item.name === vr.item_name && item.voidRequested && !item.voidProcessed) {
+        if (Array.isArray(item.unitStates)) {
+          let changed = false;
+          const unitStates = getOrderItemUnitStates(item).map((state) => {
+            if (Number(state?.voidRequestId) !== Number(id) || state?.voidRequested !== true) return state;
+            changed = true;
+            return {
+              ...state,
+              voidRequested: false,
+              voidRejected: true,
+              voidRejectedBy: rejected_by || 'Accountant',
+              voidRejectedAt: new Date().toISOString(),
+            };
+          });
+          if (changed) return { ...item, unitStates };
+        }
+        if (item.name === vr.item_name && item.voidRequested && !item.voidProcessed
+          && (item.voidRequestId === undefined || Number(item.voidRequestId) === Number(id))) {
           return {
             ...item,
             voidRequested: false,

@@ -4,7 +4,7 @@ import MonthlyFinancialBreakdown from "../components/MonthlyFinancialBreakdown";
 import API_URL from "../../config/api";
 import {
   Target, TrendingUp, Zap, Calendar, Activity,
-  ChevronLeft, ChevronRight, BarChart3, Clock, AlertCircle, CheckCircle2, Lock
+  ChevronLeft, ChevronRight, BarChart3, Clock, AlertCircle, CheckCircle2
 } from "lucide-react";
 
 // ✅ FULL NUMBER FORMATTER (no abbreviation)
@@ -25,6 +25,7 @@ export default function DirectorTargetView() {
     target: 7000000,
     grossSales: 0,
     creditSettlements: 0,
+    creditBalance: 0,
     expenses: 0,
     currentCash: 0,
     remaining: 7000000,
@@ -48,6 +49,7 @@ export default function DirectorTargetView() {
   const monthlyTarget = Number(targetSummary.target ?? 7000000);
   const grossSales = Number(targetSummary.grossSales) || 0;
   const creditSettlements = Number(targetSummary.creditSettlements) || 0;
+  const creditBalance = Number(targetSummary.creditBalance) || 0;
   const expenses = Number(targetSummary.expenses) || 0;
   const currentCash = Number(targetSummary.currentCash) || 0;
 
@@ -64,13 +66,6 @@ export default function DirectorTargetView() {
     const d = new Date(viewDate);
     d.setMonth(d.getMonth() + offset);
     setViewDate(d);
-  };
-
-  const getProgressColor = (pct) => {
-    if (pct >= 75) return "text-emerald-500";
-    if (pct >= 50) return "text-yellow-500";
-    if (pct >= 25) return "text-orange-500";
-    return "text-red-500";
   };
 
   const textClass = dark ? "text-white" : "text-gray-900";
@@ -91,61 +86,7 @@ export default function DirectorTargetView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-2">
-      <div className={`rounded-2xl border relative overflow-hidden transition-all duration-300 hover:shadow-xl ${cardBg}`}>
-        <Lock className="absolute -right-4 -top-4 text-white/5 w-24 h-24 rotate-12" />
-        <div className="flex justify-between items-start p-6 relative z-10">
-          <div>
-            <p className={`text-[10px] font-black uppercase tracking-widest ${subtextClass}`}>Monthly Target</p>
-            <h3 className="text-2xl font-black tracking-tighter italic break-words">{formatFullAmount(monthlyTarget)}</h3>
-          </div>
-          <div className="flex items-center gap-2"><Calendar size={14} className={subtextClass} /><span className="text-[9px] font-black">{monthKey}</span></div>
-        </div>
-
-        <div className="flex items-center gap-6 mb-6 px-6 relative z-10 flex-wrap sm:flex-nowrap">
-          <div className="relative flex-shrink-0" style={{ width: 140, height: 140 }}>
-            <svg width="140" height="140" viewBox="0 0 140 140" style={{ transform: "rotate(-90deg)" }}>
-              <defs><linearGradient id="ringGradDir" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#EAB308" /><stop offset="60%" stopColor="#CA8A04" /><stop offset="100%" stopColor={dark ? "#3f3f46" : "#27272a"} /></linearGradient></defs>
-              <circle cx="70" cy="70" r="54" fill="none" stroke={dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="11" />
-              <circle cx="70" cy="70" r="54" fill="none" stroke="url(#ringGradDir)" strokeWidth="11" strokeLinecap="round" strokeDasharray={`${2 * Math.PI * 54}`} strokeDashoffset={`${2 * Math.PI * 54 * (1 - progress / 100)}`} style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.34,1.56,0.64,1)" }} />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-              <span className={`text-2xl font-black italic ${getProgressColor(progress)}`}>{progress.toFixed(1)}%</span>
-              <span className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>done</span>
-            </div>
-          </div>
-              <div className="flex-1 flex flex-col gap-2 min-w-0">
-            <div className={`p-3 rounded-xl border-l-2 border-emerald-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
-              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Gross Sales</p>
-              <p className="text-sm font-black italic text-emerald-500 break-words">{formatFullAmount(grossSales)}</p>
-            </div>
-            <div className={`p-3 rounded-xl border-l-2 border-purple-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
-              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Credit Settlements</p>
-              <p className="text-sm font-black italic text-purple-500 break-words">{formatFullAmount(creditSettlements)}</p>
-            </div>
-            <div className={`p-3 rounded-xl border-l-2 border-cyan-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
-              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Complimentary Paid</p>
-              <p className="text-sm font-black italic text-cyan-500 break-words">{formatFullAmount(targetSummary.complimentaryPaid)}</p>
-            </div>
-            <div className={`p-3 rounded-xl border-l-2 border-orange-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
-              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Complimentary Waived</p>
-              <p className="text-sm font-black italic text-orange-500 break-words">{formatFullAmount(targetSummary.complimentaryWaived)}</p>
-            </div>
-            <div className={`p-3 rounded-xl border-l-2 border-rose-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
-              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Expenses</p>
-              <p className="text-sm font-black italic text-rose-500 break-words">{formatFullAmount(expenses)}</p>
-            </div>
-            <div className={`p-3 rounded-xl border-l-2 border-yellow-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
-              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Current Cash</p>
-              <p className="text-sm font-black italic text-yellow-500 break-words">{formatFullAmount(currentCash)}</p>
-            </div>
-            <div className={`p-3 rounded-xl border-l-2 border-emerald-500 ${dark ? "bg-white/5" : "bg-black/[0.03]"}`}>
-              <p className={`text-[8px] font-black uppercase tracking-widest ${subtextClass}`}>Remaining</p>
-              <p className="text-sm font-black italic text-emerald-500 break-words">{formatFullAmount(Number(targetSummary.remaining) || 0)}</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div className="grid grid-cols-1 items-stretch gap-6">
       <MonthlyFinancialBreakdown
         month={monthKey}
         target={monthlyTarget}
@@ -153,6 +94,7 @@ export default function DirectorTargetView() {
         complimentaryPaid={targetSummary.complimentaryPaid}
         complimentaryWaived={targetSummary.complimentaryWaived}
         creditSettlements={creditSettlements}
+        creditBalance={creditBalance}
         expenses={expenses}
         currentCash={currentCash}
         remaining={Number(targetSummary.remaining) || 0}

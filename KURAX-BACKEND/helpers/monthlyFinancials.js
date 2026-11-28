@@ -19,7 +19,7 @@ export function calculateMonthlyFinancials({ grossSales = 0, collectedSales = gr
 }
 
 export async function getMonthlyFinancials(pool, month) {
-  const [salesResult, complimentaryResult, settlementsResult, pettyResult, expensesResult, cashierExpensesResult] = await Promise.all([
+  const [salesResult, complimentaryResult, settlementsResult, pettyResult, expensesResult, cashierExpensesResult, creditBalanceResult] = await Promise.all([
     pool.query(`
       SELECT
         COALESCE(SUM(main_items.gross_total), 0) AS gross_sales,
@@ -41,7 +41,7 @@ export async function getMonthlyFinancials(pool, month) {
         FROM jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
         WHERE LOWER(COALESCE(item->>'station','')) <> 'shisha'
       ) main_items
-      WHERE TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1
         AND (
           o.public_order_ref IS NOT NULL
           OR o.is_archived = true
@@ -82,7 +82,7 @@ export async function getMonthlyFinancials(pool, month) {
         END), 0) AS complimentary_waived
       FROM orders o
       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
-      WHERE TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(o.business_date, DATE(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1
         AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
         AND LOWER(COALESCE(item->>'station','')) <> 'shisha'
     `, [month]),
@@ -96,7 +96,7 @@ export async function getMonthlyFinancials(pool, month) {
         COUNT(*) AS settlement_count
       FROM credit_settlements cs
       JOIN credits c ON c.id = cs.credit_id
-      WHERE TO_CHAR(cs.created_at AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(cs.business_date, DATE(cs.created_at AT TIME ZONE 'Africa/Nairobi'))::timestamp, 'YYYY-MM') = $1
         AND c.status IN ('FullySettled', 'PartiallySettled')
     `, [month]),
     pool.query(`
@@ -119,6 +119,28 @@ export async function getMonthlyFinancials(pool, month) {
         )
         AND TO_CHAR(entry.entry_date, 'YYYY-MM') = $1
     `, [month]),
+    pool.query(`
+      SELECT COALESCE(SUM(GREATEST(
+        COALESCE(c.amount, 0) - CASE
+          WHEN EXISTS (
+            SELECT 1 FROM credit_settlements any_settlement
+            WHERE any_settlement.credit_id = c.id
+          )
+          THEN COALESCE((
+            SELECT SUM(month_settlement.amount_paid)
+            FROM credit_settlements month_settlement
+            WHERE month_settlement.credit_id = c.id
+              AND COALESCE(month_settlement.business_date, (month_settlement.created_at AT TIME ZONE 'Africa/Kampala')::date)
+                < (DATE_TRUNC('month', ($1 || '-01')::date) + INTERVAL '1 month')::date
+          ), 0)
+          ELSE COALESCE(c.amount_paid, 0)
+        END,
+        0
+      )), 0) AS credit_balance
+      FROM credits c
+      WHERE TO_CHAR(COALESCE(c.business_date, (c.created_at AT TIME ZONE 'Africa/Kampala')::date)::timestamp, 'YYYY-MM') = $1
+        AND UPPER(c.status) IN ('APPROVED', 'PARTIALLYSETTLED', 'FULLYSETTLED')
+    `, [month]),
   ]);
 
   const sales = salesResult.rows[0];
@@ -139,6 +161,7 @@ export async function getMonthlyFinancials(pool, month) {
     orderCount: Number(sales.order_count),
     complimentaryPaid: Number(complimentaryResult.rows[0].complimentary_paid) || 0,
     complimentaryWaived: Number(complimentaryResult.rows[0].complimentary_waived) || 0,
+    creditBalance: Number(creditBalanceResult.rows[0].credit_balance) || 0,
     settlementCount: Number(settlementBreakdown.settlement_count),
     salesBreakdown: {
       cash: Number(sales.cash),

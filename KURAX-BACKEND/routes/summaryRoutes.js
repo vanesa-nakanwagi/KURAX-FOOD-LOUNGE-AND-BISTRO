@@ -32,7 +32,7 @@ function methodToColumn(method) {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/today', async (req, res) => {
   try {
-    const today = kampalaDate();
+    const today = req.businessDate || kampalaDate();
 
     let result = await pool.query(
       `SELECT * FROM daily_summary WHERE summary_date = $1`,
@@ -88,7 +88,7 @@ router.get('/today', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/pending-credits-total', async (req, res) => {
   try {
-    const today = kampalaDate();
+    const today = req.businessDate || kampalaDate();
 
     const result = await pool.query(`
       SELECT
@@ -97,7 +97,7 @@ router.get('/pending-credits-total', async (req, res) => {
       FROM orders
       WHERE UPPER(payment_method) = 'CREDIT'
         AND LOWER(status) NOT IN ('paid', 'closed')
-        AND DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi') = $1
+        AND COALESCE(business_date, DATE(COALESCE(timestamp, created_at) AT TIME ZONE 'Africa/Nairobi')) = $1
     `, [today]);
 
     res.json({
@@ -134,7 +134,7 @@ router.get('/range', async (req, res) => {
 // 4. PETTY CASH
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/petty-cash', async (req, res) => {
-  const date = req.query.date || kampalaDate();
+  const date = req.query.date || req.businessDate || kampalaDate();
   try {
     const result = await pool.query(
       `SELECT * FROM petty_cash WHERE entry_date = $1 AND direction = 'OUT' ORDER BY created_at DESC`,
@@ -176,7 +176,7 @@ router.post('/petty-cash', async (req, res) => {
   }
   try {
     const saved = await createPettyExpense(pool, {
-      entry_date: entry_date || kampalaDate(),
+      entry_date: req.businessDate || entry_date || kampalaDate(),
       amount: expenseAmount,
       category: category || 'General',
       description: description.trim(),
@@ -249,7 +249,7 @@ router.put('/petty-cash/:id', async (req, res) => {
 // 5. MONTHLY FIXED EXPENSES
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/monthly-expenses', async (req, res) => {
-  const month = req.query.month || kampalaDate().substring(0, 7);
+  const month = req.query.month || (req.businessDate || kampalaDate()).substring(0, 7);
   try {
     const result = await pool.query(
       `SELECT * FROM monthly_expenses WHERE month = $1 ORDER BY category ASC`,
@@ -291,7 +291,7 @@ router.post('/monthly-expenses', async (req, res) => {
       paymentAccountCode: paymentAccounts[paymentMethod],
       sourceTransaction: `monthly_expense:${month}`,
       postedBy: entered_by || 'Accountant',
-      entryDate: month ? `${month}-01` : kampalaDate(),
+      entryDate: month ? `${month}-01` : req.businessDate || kampalaDate(),
     });
 
     res.status(201).json({ ...result.rows[0], journal_entry: journal.reference });
@@ -378,10 +378,10 @@ router.patch('/credits/:id/settle', async (req, res) => {
     );
 
     const settlementRes = await client.query(
-      `INSERT INTO credit_settlements (credit_id, amount_paid, method, transaction_id, settled_by)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO credit_settlements (credit_id, amount_paid, method, transaction_id, settled_by, business_date)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id`,
-      [id, paidAmt, method, transaction_id || null, settled_by]
+      [id, paidAmt, method, transaction_id || null, settled_by, req.businessDate || kampalaDate()]
     );
 
     await createReceivableSettlementJournalEntry({
@@ -390,11 +390,11 @@ router.patch('/credits/:id/settle', async (req, res) => {
       settlementStatus: settlement_status,
       sourceTransaction: `credit_settlement:${settlementRes.rows[0].id}`,
       postedBy: settled_by || 'Cashier',
-      entryDate: kampalaDate(),
+      entryDate: req.businessDate || kampalaDate(),
       queryable: client,
     });
 
-    const today   = kampalaDate();
+    const today   = req.businessDate || kampalaDate();
     const payCol  = methodToColumn(method);
     if (payCol) {
       await client.query(`
@@ -460,7 +460,7 @@ router.patch('/credits/:id/settle', async (req, res) => {
 // 7. MONTHLY PROFIT (FIXED – case‑insensitive, no aggressive exclusion)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/monthly-profit', async (req, res) => {
-  const month = req.query.month || kampalaDate().substring(0, 7);
+  const month = req.query.month || (req.businessDate || kampalaDate()).substring(0, 7);
   console.log(`🔵 Monthly profit requested for: ${month}`);
 
   try {
@@ -508,7 +508,7 @@ router.get('/staff-monthly-income', async (req, res) => {
     return res.status(400).json({ error: 'Either staffId or staffName is required' });
   }
 
-  const targetMonth = month || kampalaDate().substring(0, 7);
+  const targetMonth = month || (req.businessDate || kampalaDate()).substring(0, 7);
 
   try {
     let queueTotal = 0, creditTotal = 0;
@@ -530,7 +530,7 @@ router.get('/staff-monthly-income', async (req, res) => {
           AND o.staff_id = $1
           AND o.payment_confirmed = true
           AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
-          AND TO_CHAR((COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+          AND TO_CHAR(COALESCE(o.business_date, (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')::date)::timestamp, 'YYYY-MM') = $2
       `, [staffId, targetMonth]);
 
       queueTotal     = Number(queuePayments.rows[0].total);
@@ -561,7 +561,7 @@ router.get('/staff-monthly-income', async (req, res) => {
         FROM credit_settlements cs
         JOIN credits c ON c.id = cs.credit_id
         WHERE UPPER(TRIM(COALESCE(c.waiter_name, c.requested_by, ''))) = UPPER(TRIM($1))
-          AND TO_CHAR((cs.created_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+          AND TO_CHAR(COALESCE(cs.business_date, (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date)::timestamp, 'YYYY-MM') = $2
       `, [staffMemberName, targetMonth]);
 
       creditTotal     = Number(creditSettlements.rows[0].total);
@@ -587,7 +587,7 @@ router.get('/staff-monthly-income', async (req, res) => {
           AND UPPER(COALESCE(o.staff_name, '')) = UPPER($1)
           AND o.payment_confirmed = true
           AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided')
-          AND TO_CHAR((COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+          AND TO_CHAR(COALESCE(o.business_date, (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')::date)::timestamp, 'YYYY-MM') = $2
       `, [staffName, targetMonth]);
 
       queueTotal     = Number(queuePayments.rows[0].total);
@@ -610,7 +610,7 @@ router.get('/staff-monthly-income', async (req, res) => {
         FROM credit_settlements cs
         JOIN credits c ON c.id = cs.credit_id
         WHERE UPPER(TRIM(COALESCE(c.waiter_name, c.requested_by, ''))) = UPPER(TRIM($1))
-          AND TO_CHAR((cs.created_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+          AND TO_CHAR(COALESCE(cs.business_date, (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date)::timestamp, 'YYYY-MM') = $2
       `, [staffName, targetMonth]);
 
       creditTotal     = Number(creditSettlements.rows[0].total);
@@ -660,7 +660,7 @@ router.get('/staff-monthly-income', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/all-staff-monthly-income', async (req, res) => {
   const { month } = req.query;
-  const targetMonth = month || kampalaDate().substring(0, 7);
+  const targetMonth = month || (req.businessDate || kampalaDate()).substring(0, 7);
 
   try {
     const staffList = await pool.query(`
@@ -678,15 +678,16 @@ router.get('/all-staff-monthly-income', async (req, res) => {
         FROM cashier_queue
         WHERE status = 'Confirmed'
           AND staff_id = $1
-          AND TO_CHAR((confirmed_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+          AND TO_CHAR(COALESCE(business_date, (confirmed_at AT TIME ZONE 'Africa/Nairobi')::date)::timestamp, 'YYYY-MM') = $2
       `, [staff.id, targetMonth]);
 
       const creditSettlements = await pool.query(`
-        SELECT COALESCE(SUM(c.amount_paid), 0) AS total
+        SELECT COALESCE(SUM(cs.amount_paid), 0) AS total
         FROM credits c
+        JOIN credit_settlements cs ON cs.credit_id = c.id
         LEFT JOIN cashier_queue cq ON c.cashier_queue_id = cq.id
         WHERE c.status IN ('FullySettled', 'PartiallySettled')
-          AND TO_CHAR((c.paid_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $2
+          AND TO_CHAR(COALESCE(cs.business_date, (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date)::timestamp, 'YYYY-MM') = $2
           AND (
             (c.cashier_queue_id IS NOT NULL AND cq.staff_id = $1)
             OR
@@ -740,7 +741,7 @@ router.get('/export-pdf', async (req, res) => {
              amount, amount_paid, balance, status,
              created_at, approved_by, settled_by, settle_method, pay_by
       FROM credits
-      WHERE TO_CHAR((created_at AT TIME ZONE 'Africa/Nairobi'), 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(business_date, (created_at AT TIME ZONE 'Africa/Nairobi')::date)::timestamp, 'YYYY-MM') = $1
       ORDER BY created_at DESC
     `, [month]);
 

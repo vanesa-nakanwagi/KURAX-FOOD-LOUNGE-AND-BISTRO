@@ -52,9 +52,13 @@ router.post('/tickets', async (req, res) => {
     const result = await pool.query(
       `INSERT INTO kitchen_tickets (order_id, table_name, staff_name, staff_role, items, total, status, ticket_date)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (order_id) DO UPDATE SET items = EXCLUDED.items, staff_name = EXCLUDED.staff_name, updated_at = NOW()
+      ON CONFLICT (order_id) DO UPDATE SET
+        items = EXCLUDED.items,
+        staff_name = EXCLUDED.staff_name,
+        ticket_date = EXCLUDED.ticket_date,
+        updated_at = NOW()
        RETURNING *`,
-      [order_id, table_name, staff_name || 'System', staff_role || 'WAITER', JSON.stringify(stationItems), ticketTotal || Number(total), status, kampalaDate()]
+      [order_id, table_name, staff_name || 'System', staff_role || 'WAITER', JSON.stringify(stationItems), ticketTotal || Number(total), status, req.businessDate || kampalaDate()]
     );
     const actor = await resolveNotificationUser(req);
     if (actor?.scope === 'restaurant' && ['WAITER', 'SUPERVISOR', 'MANAGER', 'DIRECTOR', 'KITCHEN_HOD'].includes(actor.role)) {
@@ -87,7 +91,7 @@ router.post('/tickets', async (req, res) => {
 // 2a. GET /api/kitchen/tickets/summary  (Must stay BEFORE /tickets/:id)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/tickets/summary', async (req, res) => {
-  const date = req.query.date || kampalaDate();
+  const date = req.query.date || req.businessDate || kampalaDate();
   try {
     const totalsRes = await pool.query(
       `SELECT
@@ -127,7 +131,7 @@ router.get('/tickets/summary', async (req, res) => {
 // 2b. GET /api/kitchen/tickets
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/tickets', async (req, res) => {
-  const date = req.query.date || kampalaDate();
+  const date = req.query.date || req.businessDate || kampalaDate();
   try {
     await syncRoutableStationTickets(pool, 'kitchen');
     const result = req.query.active === 'true'
@@ -135,12 +139,14 @@ router.get('/tickets', async (req, res) => {
         `SELECT t.* FROM kitchen_tickets t
          JOIN public.orders o ON o.id = t.order_id
          WHERE t.status IN ('Pending', 'Preparing', 'Ready')
+           AND t.ticket_date = $1::date
            AND COALESCE(t.cleared_by_kitchen, false) = false
            AND COALESCE(o.day_cleared, false) = false
            AND COALESCE(o.shift_cleared, false) = false
            AND COALESCE(jsonb_array_length(o.original_order_ids), 0) = 0
            AND LOWER(COALESCE(o.status, '')) NOT IN ('cancelled', 'voided', 'closed', 'served')
-         ORDER BY t.created_at ASC`
+         ORDER BY t.created_at ASC`,
+        [date]
       )
       : await pool.query(
         `SELECT t.* FROM kitchen_tickets t JOIN public.orders o ON o.id=t.order_id
@@ -274,15 +280,18 @@ router.get('/chef-assignments', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/clear-shift', async (req, res) => {
   const { cleared_by = 'Head Chef' } = req.body;
-  const date = kampalaDate();
+  const date = req.body.date || req.businessDate || kampalaDate();
+  const isHistoricalDate = date < kampalaDate();
 
   try {
     const result = await pool.query(
       `UPDATE kitchen_tickets
        SET cleared_by_kitchen = TRUE, cleared_at = NOW(), cleared_by = $1, updated_at = NOW()
-       WHERE ticket_date = $2 AND cleared_by_kitchen = FALSE
+       WHERE ticket_date = $2
+         AND COALESCE(cleared_by_kitchen, false) = false
+         AND ($3::boolean = false OR LOWER(COALESCE(status, '')) NOT IN ('pending', 'preparing', 'ready'))
        RETURNING id`,
-      [cleared_by, date]
+      [cleared_by, date, isHistoricalDate]
     );
 
     await logActivity(pool, {

@@ -7,10 +7,7 @@ import { orderItemGrossAmountSql } from "../helpers/orderItemSalesAmounts.js";
 const router = express.Router();
 // GET /api/overview/monthly-revenue
 router.get("/monthly-revenue", async (req, res) => {
-  const { month } = req.query;
-  if (!month) {
-    return res.status(400).json({ error: "Month parameter is required (YYYY-MM)" });
-  }
+  const month = req.query.month || req.businessDate.slice(0, 7);
   
   console.log(`🔵 Fetching revenue for month: ${month}`);
 
@@ -18,7 +15,7 @@ router.get("/monthly-revenue", async (req, res) => {
     // 1. New sales (cash + card + mobile money) from orders
     const salesResult = await pool.query(`
       SELECT 
-        EXTRACT(DAY FROM (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')) AS day,
+        EXTRACT(DAY FROM COALESCE(o.business_date, (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')::date)) AS day,
         COALESCE(SUM(main_items.gross_total), 0) AS gross_sales,
         COALESCE(SUM(o.total), 0) AS collected_sales,
         COALESCE(SUM(CASE WHEN LOWER(o.payment_method) = 'cash' THEN o.total ELSE 0 END), 0) AS cash,
@@ -31,7 +28,7 @@ router.get("/monthly-revenue", async (req, res) => {
         END AS gross_total
         FROM jsonb_array_elements(COALESCE(o.items, '[]'::jsonb)) AS order_items(item)
       ) main_items
-      WHERE TO_CHAR(COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(o.business_date, (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')::date)::timestamp, 'YYYY-MM') = $1
         AND (
           o.public_order_ref IS NOT NULL
           OR o.is_archived = true
@@ -44,19 +41,19 @@ router.get("/monthly-revenue", async (req, res) => {
           WHERE o2.original_order_ids IS NOT NULL
             AND o2.original_order_ids::text LIKE '%' || o.id::text || '%'
         )
-      GROUP BY EXTRACT(DAY FROM (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi'))
+      GROUP BY EXTRACT(DAY FROM COALESCE(o.business_date, (COALESCE(o.timestamp, o.created_at) AT TIME ZONE 'Africa/Nairobi')::date))
     `, [month]);
 
     // 2. Credit settlements for the month
     const creditResult = await pool.query(`
       SELECT 
-        EXTRACT(DAY FROM (cs.created_at AT TIME ZONE 'Africa/Nairobi')) AS day,
+        EXTRACT(DAY FROM COALESCE(cs.business_date, (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date)) AS day,
         COALESCE(SUM(cs.amount_paid), 0) AS credit_settled
       FROM credit_settlements cs
       JOIN credits c ON cs.credit_id = c.id
-      WHERE TO_CHAR(cs.created_at AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM') = $1
+      WHERE TO_CHAR(COALESCE(cs.business_date, (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date)::timestamp, 'YYYY-MM') = $1
         AND c.status IN ('FullySettled', 'PartiallySettled')
-      GROUP BY EXTRACT(DAY FROM (cs.created_at AT TIME ZONE 'Africa/Nairobi'))
+      GROUP BY EXTRACT(DAY FROM COALESCE(cs.business_date, (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date))
     `, [month]);
 
     const pettyResult = await pool.query(`

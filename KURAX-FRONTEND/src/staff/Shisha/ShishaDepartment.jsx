@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import LogoutConfirmDialog from '../components/LogoutConfirmDialog';
 import {
-  ArrowLeft, ArrowRight, Ban, Check, ChefHat, CircleDollarSign, ClipboardList, Eye, EyeOff, Flame, LogOut,
+  ArrowLeft, ArrowRight, Ban, Check, ChefHat, CircleDollarSign, ClipboardList, Eye, EyeOff, Flame, LogOut, ShoppingCart, Trash2, X,
   Download, Package, Plus, RefreshCw, Search, Users, Wallet,
 } from 'lucide-react';
 import API_URL from '../../config/api';
@@ -10,6 +10,7 @@ import { downloadReportPdf } from '../reportExport';
 import ReceiptPrint from '../components/ReceiptPrint';
 import kuraxLogo from '../../customer/assets/images/logo.jpeg';
 import { EyeOpen, EyeClosed, EnvelopeIcon, LockIcon, ImageCarousel, UnderlineInput } from '../StaffLogin.jsx';
+import { partitionShishaOrders } from './shishaOrderFilters.js';
 
 const METHODS = [
   ['MTN_MOBILE_MONEY', 'MTN Mobile Money'],
@@ -146,7 +147,11 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const [touchedEmail, setTouchedEmail] = useState(false);
   const [touchedPin, setTouchedPin] = useState(false);
   const [tab, setTab] = useState('');
+  const [orderQueueFilter, setOrderQueueFilter] = useState('incoming');
   const [packages, setPackages] = useState([]);
+  const [packageSearch, setPackageSearch] = useState('');
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [selectedPackageImage, setSelectedPackageImage] = useState(null);
   const [orders, setOrders] = useState([]);
   const [tableSearch, setTableSearch] = useState('');
   const [staff, setStaff] = useState([]);
@@ -184,6 +189,24 @@ export default function ShishaDepartment({ requiredRole = null }) {
     return () => window.removeEventListener('kurax:staff-session-changed', refreshSession);
   }, [requiredRole]);
 
+  useEffect(() => {
+    if (!selectedPackageImage) return undefined;
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') setSelectedPackageImage(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [selectedPackageImage]);
+
+  useEffect(() => {
+    if (!isCartOpen) return undefined;
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') setIsCartOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [isCartOpen]);
+
   const role = String(session?.role || '').toUpperCase();
   const routeRoleMismatch = Boolean(session?.token && requiredRole && role !== requiredRole);
   const loginAudience = requiredRole === 'SHISHA_CHEF'
@@ -196,9 +219,21 @@ export default function ShishaDepartment({ requiredRole = null }) {
   const isChef = role === 'SHISHA_CHEF';
   const isDirector = role === 'DIRECTOR';
   const canReport = isHod || ['DIRECTOR', 'MANAGER', 'ACCOUNTANT'].includes(role);
-  const visibleOrders = isHod
+  const searchedOrders = isHod
     ? orders.filter(order => String(order.table_id ?? '').toLowerCase().includes(tableSearch.trim().toLowerCase()))
     : orders;
+  const orderGroups = partitionShishaOrders(searchedOrders);
+  const isSidebarNav = isHod || isWaiter;
+  const visibleOrders = isSidebarNav
+    ? orderQueueFilter === 'fully-paid' ? orderGroups.fullyPaid : orderGroups.incoming
+    : orders;
+  const emptyOrdersMessage = !isSidebarNav
+    ? 'No Shisha orders yet.'
+    : orderQueueFilter === 'fully-paid'
+      ? 'No fully paid Shisha orders.'
+      : tableSearch.trim()
+        ? `No Shisha orders found for table "${tableSearch.trim()}".`
+        : 'No incoming Shisha orders.';
   const emailError = touchedEmail && !email.trim()
     ? 'Email is required'
     : touchedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -326,18 +361,24 @@ export default function ShishaDepartment({ requiredRole = null }) {
   }
 
   function updateCart(product, quantity) {
+    const productName = product.name
+      || product.package_name
+      || packages.find(item => String(item.id) === String(product.id))?.name
+      || 'Shisha package';
     setCart(current => {
       const existing = current.find(item => item.id === product.id);
       if (quantity < 1) return current.filter(item => item.id !== product.id);
-      if (existing) return current.map(item => item.id === product.id ? { ...item, quantity } : item);
-      return [...current, { ...product, quantity }];
+      if (existing) return current.map(item => item.id === product.id
+        ? { ...item, name: item.name || productName, quantity }
+        : item);
+      return [...current, { ...product, name: productName, quantity }];
     });
   }
 
-  function submitOrder(event) {
+  async function submitOrder(event) {
     event.preventDefault();
     if (!cart.length) return setError('Add a package before submitting the order.');
-    runAction(async () => {
+    const submitted = await runAction(async () => {
       await request('/orders', session.token, {
         method: 'POST', body: {
           table_id: table,
@@ -350,6 +391,7 @@ export default function ShishaDepartment({ requiredRole = null }) {
       setOrderNotes('');
       setTab('my-orders');
     }, 'Shisha order sent to the station.');
+    if (submitted) setIsCartOpen(false);
   }
 
   function savePackage(event) {
@@ -537,6 +579,10 @@ export default function ShishaDepartment({ requiredRole = null }) {
   }
 
   const activePackages = packages.filter(item => item.published && item.is_available);
+  const filteredPackages = activePackages.filter(item => {
+    const query = packageSearch.trim().toLowerCase();
+    return !query || `${item.name || ''} ${item.description || ''}`.toLowerCase().includes(query);
+  });
   const totalInCart = cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
 
   if (!session?.token) {
@@ -620,38 +666,102 @@ export default function ShishaDepartment({ requiredRole = null }) {
       />
       <main className="min-h-screen bg-[#f4f3ef] text-zinc-900">
       <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-4 md:px-8">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-3 py-4 sm:gap-4 sm:px-5 md:px-8">
           <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-900 text-amber-300"><Flame size={21} /></span><div><p className="text-xs font-black uppercase tracking-[0.18em]">Kurax · Internal</p><p className="text-xs text-zinc-500">Shisha Department</p></div></div>
           <div className="flex items-center gap-3"><span className="hidden text-right sm:block"><span className="block text-sm font-bold">{session.name}</span><span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{role.replaceAll('_', ' ')}</span></span><Button tone="quiet" onClick={loadData}><RefreshCw size={15} /> Refresh</Button><Button tone="quiet" onClick={signOut}><LogOut size={15} /> Sign out</Button></div>
         </div>
       </header>
-      <div className="mx-auto max-w-[1440px] px-5 py-6 md:px-8 md:py-8">
+      <div className="mx-auto max-w-[1440px] px-3 py-5 sm:px-5 md:px-8 md:py-8">
         <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">{isHod ? 'Department control' : isWaiter ? 'Floor service' : isChef ? 'Preparation station' : 'Management visibility'}</p><h1 className="mt-1 text-3xl font-black tracking-tight">{isHod ? 'Shisha station' : isWaiter ? 'Shisha Waiter' : isChef ? 'Mixer orders' : 'Shisha sales'}</h1></div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">{isHod ? 'Department control' : isWaiter ? 'Floor service' : isChef ? 'Preparation station' : 'Management visibility'}</p><h1 className="mt-1 text-2xl font-black tracking-tight sm:text-3xl">{isHod ? 'Shisha station' : isWaiter ? 'Shisha Waiter' : isChef ? 'Mixer orders' : 'Shisha sales'}</h1></div>
           <div className="text-xs font-medium text-zinc-500">Separate from restaurant orders and cashiering</div>
         </div>
 
-        <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-zinc-200" aria-label="Shisha workspace">
-          {navItems.map(([key, label, Icon]) => <button key={key} onClick={() => setTab(key)} aria-label={key === 'voids' && voidRequests.length ? `${label}, ${voidRequests.length} pending` : label} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition ${tab === key ? 'border-amber-600 text-zinc-950' : 'border-transparent text-zinc-500 hover:text-zinc-900'}`}><Icon size={16} />{label}{key === 'voids' && voidRequests.length > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-black leading-none text-white">{voidRequests.length > 99 ? '99+' : voidRequests.length}</span>}</button>)}
-        </nav>
+        <div className={isSidebarNav ? 'grid items-start gap-5 md:grid-cols-[200px_minmax(0,1fr)]' : ''}>
+          <nav
+            className={`mb-6 ${isSidebarNav
+              ? 'grid grid-cols-2 gap-1 border-b border-zinc-200 pb-3 sm:grid-cols-3 md:sticky md:top-4 md:mb-0 md:flex md:flex-col md:border-b-0 md:border-r md:pr-3 md:pb-0'
+              : 'flex gap-1 overflow-x-auto border-b border-zinc-200'}`}
+            aria-label="Shisha workspace"
+          >
+            {navItems.map(([key, label, Icon]) => <button key={key} onClick={() => setTab(key)} aria-label={key === 'voids' && voidRequests.length ? `${label}, ${voidRequests.length} pending` : label} className={`flex items-center gap-2 text-sm font-bold transition ${isSidebarNav
+              ? `w-full rounded-lg border-l-4 px-3 py-3 text-left ${tab === key ? 'border-amber-600 bg-amber-50 text-zinc-950' : 'border-transparent text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'}`
+              : `shrink-0 border-b-2 px-4 py-3 ${tab === key ? 'border-amber-600 text-zinc-950' : 'border-transparent text-zinc-500 hover:text-zinc-900'}`}`}><Icon size={16} />{label}{key === 'voids' && voidRequests.length > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-black leading-none text-white">{voidRequests.length > 99 ? '99+' : voidRequests.length}</span>}</button>)}
+          </nav>
 
-        {(error || message) && <div className={`mb-5 flex items-center justify-between rounded-lg border px-4 py-3 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">{error || message}<button onClick={() => { setError(''); setMessage(''); }} aria-label="Dismiss" className="ml-4 font-bold">×</button></div>}
+          <div className="min-w-0">
+            {(error || message) && <div className={`mb-5 flex items-center justify-between rounded-lg border px-4 py-3 text-sm ${error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">{error || message}<button onClick={() => { setError(''); setMessage(''); }} aria-label="Dismiss" className="ml-4 font-bold">×</button></div>}
 
         {tab === 'take-order' && isWaiter && (
-          <form onSubmit={submitOrder} className="grid gap-6 xl:grid-cols-[1fr_340px]">
-            <section><div className="mb-3 flex items-end justify-between"><div><h2 className="text-lg font-black">Available packages</h2><p className="text-sm text-zinc-500">Only published Shisha products appear here.</p></div><span className="text-xs font-semibold text-zinc-500">{activePackages.length} available</span></div>
-              {activePackages.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{activePackages.map(product => { const item = cart.find(entry => entry.id === product.id); return <article key={product.id} className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
-                {product.image_url ? <img src={`${API_URL}${product.image_url}`} alt="" className="h-36 w-full object-cover" /> : <div className="grid h-36 place-items-center bg-[#e6e0d4] text-amber-800"><Flame size={32} /></div>}
-                <div className="p-4"><div className="flex items-start justify-between gap-3"><h3 className="font-bold">{product.name}</h3><span className="whitespace-nowrap text-sm font-black text-amber-800">{money(product.price)}</span></div><p className="mt-1 min-h-10 text-xs leading-5 text-zinc-500">{product.description || 'Shisha package'}</p><div className="mt-3 flex items-center justify-between"><span className="text-xs font-semibold text-zinc-500">Quantity</span><div className="flex items-center gap-3"><button type="button" onClick={() => updateCart(product, (item?.quantity || 0) - 1)} className="h-8 w-8 rounded-md border border-zinc-200 font-bold">−</button><span className="w-4 text-center text-sm font-bold">{item?.quantity || 0}</span><button type="button" onClick={() => updateCart(product, (item?.quantity || 0) + 1)} className="h-8 w-8 rounded-md bg-zinc-900 text-white font-bold">+</button></div></div></div>
-              </article>; })}</div> : <Empty text="No published packages are currently available." />}
+          <div className="min-w-0">
+            <section className="min-w-0">
+              <div className="mb-3 flex flex-col items-start justify-between gap-1 sm:flex-row sm:items-end sm:gap-3">
+                <div><h2 className="text-lg font-black">Available packages</h2><p className="text-sm text-zinc-500">Only published Shisha products appear here.</p></div>
+                <span className="shrink-0 text-xs font-semibold text-zinc-500">{activePackages.length} available</span>
+              </div>
+              <div className="mb-3 flex w-full max-w-[440px] items-center gap-3">
+                <label className="relative min-w-0 flex-1">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                  <input
+                    type="search"
+                    aria-label="Search Shisha packages"
+                    placeholder="Search packages..."
+                    value={packageSearch}
+                    onChange={event => setPackageSearch(event.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsCartOpen(true)}
+                  aria-label={`Open order cart, ${cart.reduce((sum, item) => sum + item.quantity, 0)} items`}
+                  className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-400 text-zinc-950 transition hover:bg-amber-300"
+                >
+                  <ShoppingCart size={21} />
+                  {cart.length > 0 && (
+                    <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-900 px-1 text-[10px] font-black text-white">
+                      {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                    </span>
+                  )}
+                </button>
+              </div>
+              {filteredPackages.length ? (
+                <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]">
+                  {filteredPackages.map(product => {
+                    const item = cart.find(entry => entry.id === product.id);
+                    return (
+                      <article key={product.id} className="min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-white">
+                        {product.image_url ? (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPackageImage({ src: `${API_URL}${product.image_url}`, name: product.name })}
+                            aria-label={`View image for ${product.name}`}
+                            className="block h-40 w-full cursor-zoom-in overflow-hidden sm:h-48 lg:h-64"
+                          >
+                            <img src={`${API_URL}${product.image_url}`} alt={product.name} className="h-full w-full object-cover" />
+                          </button>
+                        ) : (
+                          <div className="grid h-40 place-items-center bg-[#e6e0d4] text-amber-800 sm:h-48 lg:h-64"><Flame size={32} /></div>
+                        )}
+                        <div className="p-4">
+                          <div className="flex items-start justify-between gap-2 sm:gap-3"><h3 className="min-w-0 flex-1 break-words font-bold">{product.name}</h3><span className="shrink-0 whitespace-nowrap text-sm font-black text-amber-800">{money(product.price)}</span></div>
+                          <p className="mt-1 min-h-10 text-xs leading-5 text-zinc-500">{product.description || 'Shisha package'}</p>
+                          <div className="mt-3 flex items-center justify-between"><span className="text-xs font-semibold text-zinc-500">Quantity</span><div className="flex items-center gap-2 sm:gap-3"><button type="button" onClick={() => updateCart(product, (item?.quantity || 0) - 1)} className="h-8 w-8 shrink-0 rounded-md border border-zinc-200 font-bold">−</button><span className="w-4 text-center text-sm font-bold">{item?.quantity || 0}</span><button type="button" onClick={() => updateCart(product, (item?.quantity || 0) + 1)} className="h-8 w-8 shrink-0 rounded-md bg-zinc-900 text-white font-bold">+</button></div></div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Empty text={activePackages.length ? `No packages match "${packageSearch.trim()}".` : 'No published packages are currently available.'} />
+              )}
             </section>
-            <aside className="h-fit rounded-xl border border-zinc-200 bg-white p-5 xl:sticky xl:top-5"><h2 className="text-lg font-black">Order details</h2><div className="mt-4 grid gap-4"><Field label="Table number" value={table} onChange={event => setTable(event.target.value)} placeholder="e.g. 5" required /><label className="grid gap-1.5 text-xs font-semibold text-zinc-600">Order notes<textarea value={orderNotes} onChange={event => setOrderNotes(event.target.value)} rows="3" className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm font-medium outline-none focus:border-amber-500" placeholder="Optional preparation notes" /></label></div><div className="my-5 border-t border-zinc-100 pt-3">{cart.map(item => <div key={item.id} className="flex justify-between gap-3 py-1.5 text-sm"><span>{item.quantity} × {item.name}</span><span className="font-semibold">{money(Number(item.price) * item.quantity)}</span></div>)}{!cart.length && <p className="py-3 text-sm text-zinc-400">Your order is empty.</p>}</div><div className="mb-4 flex justify-between border-t border-zinc-100 pt-4 font-black"><span>Total</span><span>{money(totalInCart)}</span></div><Button type="submit" tone="accent" disabled={busy || !cart.length}>Send to station <ArrowRight size={16} /></Button></aside>
-          </form>
+          </div>
         )}
 
         {(tab === 'station' || tab === 'my-orders') && (isHod || isWaiter || isChef) && (
-          <section><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">{isHod ? 'My Production' : isWaiter ? 'Your Shisha orders' : 'My assigned production'}</h2><p className="text-sm text-zinc-500">Updates automatically every 12 seconds.</p></div><div className="flex flex-wrap items-center gap-3">{isHod && <label className="relative block"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" /><input aria-label="Search tables" type="search" placeholder="Search table..." value={tableSearch} onChange={event => setTableSearch(event.target.value)} className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm sm:w-48" /></label>}<span className="rounded-full bg-zinc-200 px-3 py-1 text-xs font-bold">{visibleOrders.length} orders</span></div></div>
-            {visibleOrders.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{visibleOrders.map(order => <OrderCard key={order.id} order={order} role={role} staffId={session.id} paymentMethods={paymentMethods} setPaymentMethods={setPaymentMethods} token={session.token} runAction={runAction} refreshData={loadData} error={error} busy={busy} />)}</div> : <Empty text={tableSearch.trim() ? `No Shisha orders found for table "${tableSearch.trim()}".` : 'No Shisha orders yet.'} />}
+          <section><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-black">{isHod ? 'My Production' : isWaiter ? 'Your Shisha orders' : 'My assigned production'}</h2><p className="text-sm text-zinc-500">Updates automatically every 12 seconds.</p></div><div className="flex flex-wrap items-center gap-3">{isHod && <label className="relative block"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" /><input aria-label="Search tables" type="search" placeholder="Search table..." value={tableSearch} onChange={event => setTableSearch(event.target.value)} className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm sm:w-48" /></label>}{isHod || isWaiter ? <div className="inline-flex rounded-full bg-zinc-100 p-1" role="group" aria-label="Filter Shisha orders">{[['incoming', 'Incoming', orderGroups.incoming.length], ['fully-paid', 'Fully Paid', orderGroups.fullyPaid.length]].map(([key, label, count]) => <button key={key} type="button" aria-pressed={orderQueueFilter === key} onClick={() => setOrderQueueFilter(key)} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${orderQueueFilter === key ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'}`}>{label}<span className="text-[10px] opacity-70">{count}</span></button>)}</div> : <span className="rounded-full bg-zinc-200 px-3 py-1 text-xs font-bold">{visibleOrders.length} orders</span>}</div></div>
+            {visibleOrders.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{visibleOrders.map(order => <OrderCard key={order.id} order={order} role={role} staffId={session.id} paymentMethods={paymentMethods} setPaymentMethods={setPaymentMethods} token={session.token} runAction={runAction} refreshData={loadData} error={error} busy={busy} />)}</div> : <Empty text={emptyOrdersMessage} />}
           </section>
         )}
 
@@ -764,9 +874,141 @@ export default function ShishaDepartment({ requiredRole = null }) {
         {tab === 'setup' && isDirector && <section className="max-w-2xl rounded-xl border border-zinc-200 bg-white p-6"><h2 className="text-xl font-black">Establish Shisha HOD access</h2><p className="my-2 text-sm text-zinc-500">Create the initial department administrator. The HOD will manage waiter and mixer accounts.</p><form onSubmit={saveStaff} className="mt-5 grid gap-4 sm:grid-cols-2"><Field label="Full name" value={staffForm.name} onChange={event => setStaffForm({ ...staffForm, name: event.target.value, role: 'SHISHA_HOD' })} required /><Field label="Email" type="email" value={staffForm.email} onChange={event => setStaffForm({ ...staffForm, email: event.target.value, role: 'SHISHA_HOD' })} required /><Field label="4-8 digit PIN" inputMode="numeric" pattern="[0-9]{4,8}" value={staffForm.pin} onChange={event => setStaffForm({ ...staffForm, pin: event.target.value, role: 'SHISHA_HOD' })} required /><div className="flex items-end"><Button type="submit" tone="accent" disabled={busy}>Create HOD account <ArrowRight size={16} /></Button></div></form></section>}
 
         {tab === 'reports' && canReport && <ReportsPanel report={report} mode={reportMode} setMode={chooseReportMode} from={reportFrom} to={reportTo} setFrom={setReportFrom} setTo={setReportTo} reportMonth={reportMonth} setReportMonth={value => { if (!value) return; setReportMonth(value); const [from, to] = rangeForMonth(value); setReportFrom(from); setReportTo(to); }} onDownload={downloadShishaReport} />}
+          </div>
+        </div>
       </div>
       </main>
+      {isCartOpen && isWaiter && tab === 'take-order' && (
+        <div
+          className="fixed inset-0 z-[1400] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
+          onClick={() => setIsCartOpen(false)}
+          role="presentation"
+        >
+          <form
+            onSubmit={submitOrder}
+            onClick={event => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shisha-cart-title"
+            className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl"
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-100 px-4 py-4 sm:px-5">
+              <div>
+                <h2 id="shisha-cart-title" className="text-lg font-black">Your order</h2>
+                <p className="text-xs text-zinc-500">{cart.reduce((sum, item) => sum + item.quantity, 0)} items</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCartOpen(false)}
+                aria-label="Close order cart"
+                className="grid h-9 w-9 place-items-center rounded-lg bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="grid gap-4 overflow-y-auto p-4 sm:p-5">
+              <Field label="Table number" value={table} onChange={event => setTable(event.target.value)} placeholder="e.g. 5" required />
+              <label className="grid gap-1.5 text-xs font-semibold text-zinc-600">
+                Order notes
+                <textarea
+                  value={orderNotes}
+                  onChange={event => setOrderNotes(event.target.value)}
+                  rows="3"
+                  className="rounded-lg border border-zinc-200 px-3 py-2.5 text-sm font-medium outline-none focus:border-amber-500"
+                  placeholder="Optional preparation notes"
+                />
+              </label>
+              <div className="border-t border-zinc-100 pt-3">
+                {cart.length ? (
+                  <div className="space-y-3">
+                    {cart.map(item => {
+                      const itemName = item.name
+                        || item.package_name
+                        || packages.find(product => String(product.id) === String(item.id))?.name
+                        || 'Shisha package';
+                      return (
+                        <div key={item.id} className="flex items-center justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="break-words text-sm font-bold text-zinc-900">{itemName}</p>
+                              <button
+                                type="button"
+                                onClick={() => updateCart(item, 0)}
+                                aria-label={`Remove ${itemName} from cart`}
+                                title="Remove from cart"
+                                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-rose-50 text-rose-600 transition hover:bg-rose-100"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                            <p className="text-xs text-zinc-500">{money(Number(item.price) * item.quantity)}</p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateCart(item, item.quantity - 1)}
+                              aria-label={`Decrease ${itemName} quantity`}
+                              className="grid h-8 w-8 place-items-center rounded-md border border-zinc-200 font-bold"
+                            >−</button>
+                            <span className="w-4 text-center text-sm font-bold">{item.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => updateCart(item, item.quantity + 1)}
+                              aria-label={`Increase ${itemName} quantity`}
+                              className="grid h-8 w-8 place-items-center rounded-md bg-zinc-900 font-bold text-white"
+                            >+</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="py-3 text-sm text-zinc-400">Your order is empty.</p>
+                )}
+              </div>
+            </div>
+            <div className="shrink-0 border-t border-zinc-100 bg-white p-4 sm:p-5">
+              <div className="mb-4 flex justify-between font-black">
+                <span>Total</span>
+                <span>{money(totalInCart)}</span>
+              </div>
+              <button
+                type="submit"
+                disabled={busy || !cart.length}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-3 text-sm font-bold text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Send to station <ArrowRight size={16} />
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       <ReceiptPrint receipt={receipt} onClose={() => setReceipt(null)} />
+      {selectedPackageImage && (
+        <div
+          className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setSelectedPackageImage(null)}
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${selectedPackageImage.name} image preview`}
+            className="relative flex max-h-full max-w-full items-center justify-center"
+            onClick={event => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedPackageImage(null)}
+              aria-label="Close image preview"
+              className="absolute -right-2 -top-2 z-10 rounded-full bg-white p-2 text-zinc-900 shadow-lg sm:right-0 sm:top-0 sm:m-3"
+            >
+              <X size={20} />
+            </button>
+            <img src={selectedPackageImage.src} alt={selectedPackageImage.name} className="max-h-[90vh] max-w-[94vw] object-contain" />
+          </div>
+        </div>
+      )}
     </>
   );
 }

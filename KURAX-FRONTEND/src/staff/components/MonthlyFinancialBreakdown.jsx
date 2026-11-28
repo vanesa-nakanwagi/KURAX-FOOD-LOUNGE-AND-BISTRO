@@ -12,6 +12,7 @@ export default function MonthlyFinancialBreakdown({
   complimentaryPaid = 0,
   complimentaryWaived = 0,
   creditSettlements,
+  creditBalance,
   expenses,
   currentCash,
   remaining,
@@ -29,6 +30,11 @@ export default function MonthlyFinancialBreakdown({
     { name: "Gross Sales", value: Number(grossSales) || 0 },
     { name: "Credit Settlements", value: Number(creditSettlements) || 0 },
   ];
+  const hasCreditBalance = creditBalance !== undefined && creditBalance !== null;
+  const normalizedCreditBalance = Number(creditBalance) || 0;
+  if (hasCreditBalance) {
+    collectionData.push({ name: "Credit Balance", value: normalizedCreditBalance });
+  }
   const cashData = [
     { name: "Expenses", value: Number(expenses) || 0 },
     { name: "Current Cash", value: Math.max(Number(currentCash) || 0, 0) },
@@ -36,13 +42,20 @@ export default function MonthlyFinancialBreakdown({
   const legendGroups = [
     { title: "Target", items: [["Target", target, "#eab308"]] },
     { title: "Target Progress", items: [["Gross Sales", grossSales, "#eab308"], ["Remaining", remaining, isDark ? "#52525b" : "#a1a1aa"]] },
-    { title: "Collections", items: [["Gross Sales", grossSales, "#10b981"], ["Credit Settlements", creditSettlements, "#8b5cf6"]] },
+    {
+      title: hasCreditBalance ? "Collections & Credit Balance" : "Collections",
+      items: [
+        ["Gross Sales", grossSales, "#10b981"],
+        ["Credit Settlements", creditSettlements, "#8b5cf6"],
+        ...(hasCreditBalance ? [["Credit Balance", normalizedCreditBalance, "#f59e0b"]] : []),
+      ],
+    },
     { title: "Complimentary Items", items: [["Complimentary Paid", complimentaryPaid, "#06b6d4"], ["Complimentary Waived", complimentaryWaived, "#f97316"]] },
     { title: "After Expenses", items: [["Expenses", expenses, "#f43f5e"], ["Current Cash", currentCash, "#f97316"]] },
   ];
 
   return (
-    <section className={`h-full min-w-0 rounded-2xl border p-5 sm:p-6 ${isDark ? "border-white/5 bg-zinc-900/40 shadow-2xl" : "border-black/5 bg-white shadow-xl"}`}>
+    <section className={`h-full min-w-0 rounded-2xl border p-5 sm:p-6 ${isDark ? "border-white/5 bg-zinc-900/40 text-zinc-100 shadow-2xl" : "border-black/5 bg-white text-zinc-900 shadow-xl"}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <p className={`text-[11px] font-black uppercase tracking-widest ${textClass}`}>Monthly Financial Breakdown</p>
@@ -71,6 +84,7 @@ export default function MonthlyFinancialBreakdown({
               <Pie data={collectionData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={77} outerRadius={99} startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
                 <Cell fill="#10b981" />
                 <Cell fill="#8b5cf6" />
+                {hasCreditBalance && <Cell fill="#f59e0b" />}
               </Pie>
               <Pie data={cashData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={49} outerRadius={72} startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
                 <Cell fill="#f43f5e" />
@@ -89,7 +103,7 @@ export default function MonthlyFinancialBreakdown({
               <p className={`mb-1 text-[10px] font-black uppercase tracking-widest ${textClass}`}>{group.title}</p>
               {group.items.map(([label, value, color]) => (
                 <div key={label} className="flex items-center justify-between gap-2 py-0.5">
-                  <span className="flex min-w-0 items-center gap-2 text-[11px] font-bold text-zinc-700 dark:text-zinc-300">
+                  <span className={`flex min-w-0 items-center gap-2 text-[11px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
                     <span className="truncate">{label}</span>
                   </span>

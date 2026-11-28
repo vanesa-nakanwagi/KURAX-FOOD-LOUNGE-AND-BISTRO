@@ -12,12 +12,6 @@ import {
 import API_URL from "../../config/api";
 import { getOrderItemUnitPrice } from "../../utils/orderItemAmounts";
 
-// ─── KAMPALA DATE ─────────────────────────────────────────────────────────────
-function kampalaDateStr(d = new Date()) {
-  return new Date(d.toLocaleString("en-US", { timeZone: "Africa/Nairobi" }))
-    .toISOString().split("T")[0];
-}
-
 function formatMoney(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
 }
@@ -336,7 +330,7 @@ export default function BarmanDisplay() {
   const handleShiftReset = async () => {
     let barmen = [];
     try {
-      const res = await fetch(`${API_URL}/api/barman/tickets/summary?date=${kampalaDateStr()}`);
+      const res = await fetch(`${API_URL}/api/barman/tickets/summary`);
       if (res.ok) { const d = await res.json(); barmen = d.barmen || []; }
     } catch {}
     const drinkCount = filteredOrders.reduce((s, o) => s + o.items.length, 0);

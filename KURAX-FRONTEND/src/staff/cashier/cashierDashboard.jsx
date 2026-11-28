@@ -209,7 +209,7 @@ export default function CashierDashboard() {
   const cardRevenue = Number(todaySummary?.total_card ?? 0);
   const momoMTN = Number(todaySummary?.total_mtn ?? 0);
   const momoAirtel = Number(todaySummary?.total_airtel ?? 0);
-  const grossRevenue = Number(todaySummary?.total_gross ?? (cashRevenue + cardRevenue + momoMTN + momoAirtel));
+  const grossRevenue = cashRevenue + cardRevenue + momoMTN + momoAirtel;
   const creditSettledToday = Number(todaySummary?.credit_settlements_today ?? 0);
 
   const totalMobileMoney = momoMTN + momoAirtel;
@@ -461,7 +461,7 @@ export default function CashierDashboard() {
           staff: order.requested_by,
           items: payableItems.length
             ? payableItems.map(item => ({
-              name: item.name || item.package_name || item.title || "Order item",
+              name: `${item.name || item.package_name || item.title || "Order item"}${item._unitCount > 1 ? ` · Unit ${item._unitIndex + 1}` : ""}`,
               quantity: Number(item.quantity || 1),
               total: getOrderItemPayableAmount(item),
             }))

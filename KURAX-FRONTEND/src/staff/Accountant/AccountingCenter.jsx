@@ -31,7 +31,6 @@ const VIEWS = [
   { key: "periods", label: "Accounting Periods", icon: CalendarDays },
   { key: "cashflow", label: "Cash Flow", icon: Wallet },
   { key: "statements", label: "Financial Statements", icon: FileSpreadsheet },
-  { key: "expenses", label: "Expense Management", icon: CircleDollarSign },
 ];
 
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Kampala" }).format(new Date());
@@ -257,7 +256,7 @@ function getTableModel(view, data) {
   return { columns: [], rows: [] };
 }
 
-export default function AccountingCenter({ setActiveSection, initialDateRange, timeRange, onDateRangeChange }) {
+export default function AccountingCenter({ initialDateRange, timeRange, onDateRangeChange }) {
   const [view, setView] = useState("accounts");
   const [dateRange, setDateRange] = useState(initialDateRange || { start: monthStart, end: today });
   const [data, setData] = useState(null);
@@ -493,23 +492,11 @@ export default function AccountingCenter({ setActiveSection, initialDateRange, t
 
       {view === "statements" && <ReportsPanel initialDateRange={dateRange} timeRange={timeRange} onDateRangeChange={changeDateRange} />}
 
-      {view === "expenses" && (
-        <section className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 py-5">
-          <div>
-            <h3 className="font-bold text-gray-900">Expense Management</h3>
-            <p className="mt-1 text-sm text-gray-500">Open the existing Monthly Costs ledger to record and review expenses.</p>
-          </div>
-          <button onClick={() => setActiveSection("MONTHLY_COSTS")} className="rounded-md bg-yellow-500 px-4 py-2 text-sm font-bold text-black hover:bg-yellow-600">
-            Open Monthly Costs
-          </button>
-        </section>
-      )}
-
       {view === "cashbook" && (
         <Cashbook initialDateRange={dateRange} onDateRangeChange={changeDateRange} />
       )}
 
-      {!['statements', 'expenses', 'cashbook'].includes(view) && (
+      {!['statements', 'cashbook'].includes(view) && (
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-gray-200 pb-4">
             <div className="flex flex-wrap items-end gap-3">

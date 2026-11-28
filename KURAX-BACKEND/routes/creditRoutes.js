@@ -6,8 +6,14 @@ import logActivity from '../utils/logsActivity.js';
 import { updateDailySummary } from '../helpers/summaryHelper.js';
 import { buildSalesRevenueBreakdown, createReceivableSettlementJournalEntry, createSalesJournalEntry } from '../helpers/accounting.js';
 import notificationService from '../helpers/notificationService.js';
-import { getOrderItemPayableAmount } from '../helpers/complimentaryItems.js';
-import { applyApprovedCreditToItems } from '../helpers/approvedCreditItems.js';
+import {
+  getOrderItemPaidAmount,
+  getOrderItemPayableAmount,
+} from '../helpers/complimentaryItems.js';
+import {
+  applyApprovedCreditToItems,
+  applyUnitCreditSettlement,
+} from '../helpers/approvedCreditItems.js';
 
 const router = express.Router();
 
@@ -132,6 +138,12 @@ router.get('/', async (req, res) => {
         c.*,
         COALESCE(c.amount - c.amount_paid, c.amount) AS balance,
         COALESCE(
+          NULLIF(BTRIM(cq.requested_by), ''),
+          NULLIF(BTRIM(c.waiter_name), ''),
+          NULLIF(BTRIM(o.staff_name), '')
+        ) AS owner_name,
+        COALESCE(cq.staff_id, o.staff_id) AS owner_staff_id,
+        COALESCE(
           json_agg(
             json_build_object(
               'id',             cs.id,
@@ -140,14 +152,17 @@ router.get('/', async (req, res) => {
               'transaction_id', cs.transaction_id,
               'notes',          cs.notes,
               'settled_by',     cs.settled_by,
-              'created_at',     cs.created_at
+              'created_at',     cs.created_at,
+              'business_date',  cs.business_date
             ) ORDER BY cs.created_at DESC
           ) FILTER (WHERE cs.id IS NOT NULL),
           '[]'
         ) AS settlements
       FROM credits c
       LEFT JOIN credit_settlements cs ON cs.credit_id = c.id
-      GROUP BY c.id
+      LEFT JOIN cashier_queue cq ON cq.id = c.cashier_queue_id
+      LEFT JOIN orders o ON o.id = c.order_id
+      GROUP BY c.id, cq.requested_by, cq.staff_id, o.staff_name, o.staff_id
       ORDER BY c.created_at DESC
     `);
     res.json(result.rows);
@@ -533,13 +548,14 @@ router.patch('/:id/approve', async (req, res) => {
       description: `Approved credit sale · ${credit.client_name || credit.table_name || credit.id}`,
       sourceTransaction: `credit:${credit.id}`,
       postedBy: approved_by || 'Manager',
+      entryDate: req.businessDate,
     });
     if (credit.cashier_queue_id) {
       await pool.query(
         `UPDATE cashier_queue
-         SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW()
-         WHERE id = $2 AND status IN ('Pending', 'PendingManagerApproval')`,
-        [approved_by || 'Manager', credit.cashier_queue_id]
+         SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW(), business_date = $2::date
+         WHERE id = $3 AND status IN ('Pending', 'PendingManagerApproval')`,
+        [approved_by || 'Manager', req.businessDate, credit.cashier_queue_id]
       );
     }
     // Mark items in the order as credit requested
@@ -697,16 +713,17 @@ router.patch('/:id/settle', async (req, res) => {
     // 1. Insert settlement ledger entry
     const settlementRes = await client.query(`
       INSERT INTO credit_settlements
-        (credit_id, amount_paid, method, transaction_id, notes, settled_by, created_at)
-      VALUES ($1,$2,$3,$4,$5,$6,NOW())
+        (credit_id, amount_paid, method, transaction_id, notes, settled_by, created_at, business_date)
+      VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7::date)
       RETURNING *
-    `, [id, payment, method || 'Cash', transaction_id || null, notes || null, settled_by || 'Cashier']);
+    `, [id, payment, method || 'Cash', transaction_id || null, notes || null, settled_by || 'Cashier', req.businessDate]);
 
     await createReceivableSettlementJournalEntry({
       amount: payment,
       paymentMethod: method || 'Cash',
       sourceTransaction: `credit_settlement:${settlementRes.rows[0].id}`,
       postedBy: settled_by || 'Cashier',
+      entryDate: req.businessDate,
       queryable: client,
     });
 
@@ -723,7 +740,7 @@ router.patch('/:id/settle', async (req, res) => {
     // 3. Update orders status and individual items
     if (credit.order_id) {
       // Record credit settlement in the authoritative daily_summary table.
-      await updateDailySummary({ amount: payment, method, orderCount: 0 });
+      await updateDailySummary({ amount: payment, method, orderCount: 0, date: req.businessDate });
       
       // Update individual items - ONLY mark credit-requested items as paid
       const creditItemTarget = await getCreditItemTarget(client, credit);
@@ -740,7 +757,21 @@ router.patch('/:id/settle', async (req, res) => {
         
         if (Array.isArray(items)) {
           let updatedCreditItemCount = 0;
+          const unitTargetIndex = creditItemTarget?._unitIndex !== undefined
+            && creditItemTarget?._unitIndex !== null
+            ? Number(creditItemTarget._unitIndex)
+            : null;
           const updatedItems = items.map((item, index) => {
+            if (unitTargetIndex !== null && matchesCreditItem(item, index, creditItemTarget)) {
+              const settlement = applyUnitCreditSettlement(item, unitTargetIndex, {
+                amountPaid: newPaid,
+                balance: newBalance,
+                status: newStatus,
+                method,
+              });
+              if (settlement.changed) updatedCreditItemCount += 1;
+              return settlement.item;
+            }
             // Only update items that were requested as credit
             if (item.creditRequested === true && matchesCreditItem(item, index, creditItemTarget)) {
               updatedCreditItemCount += 1;
@@ -780,11 +811,13 @@ router.patch('/:id/settle', async (req, res) => {
             item.voidProcessed !== true &&
             getOrderItemPayableAmount(item) > 0
           );
-          const allItemsSettled = payableItems.length > 0 && payableItems.every(item =>
-            item._rowPaid === true ||
-            Boolean(item.paid_at) ||
-            item.status === 'Paid'
-          );
+          const allItemsSettled = payableItems.length > 0 && payableItems.every(item => {
+            if (Array.isArray(item.unitStates)) {
+              const activeUnits = item.unitStates.filter(state => state?.voidProcessed !== true);
+              return activeUnits.length === 0 || activeUnits.every(state => state?.paid === true);
+            }
+            return item._rowPaid === true || Boolean(item.paid_at) || item.status === 'Paid';
+          });
           await client.query(
             `UPDATE orders
              SET items = $1,

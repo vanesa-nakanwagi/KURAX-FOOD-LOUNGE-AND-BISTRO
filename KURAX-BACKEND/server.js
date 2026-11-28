@@ -37,6 +37,8 @@ import publicOrderRoutes from './routes/publicOrderRoutes.js';
 import productionRoutes, { initProductionTables } from './routes/productionRoutes.js';
 import smtpRoutes from './routes/smtpRoutes.js';
 import { ensureSmtpSettingsTable } from './helpers/smtp.js';
+import systemBusinessDateRoutes from './routes/systemBusinessDateRoutes.js';
+import { getSystemBusinessContext } from './helpers/systemBusinessDate.js';
 
 if (!isValidShishaPinEncryptionKey()) {
   console.warn('Shisha PIN encryption is disabled: configure SHISHA_PIN_ENCRYPTION_KEY as 64 hexadecimal characters.');
@@ -95,6 +97,85 @@ app.use(helmet({
 // 3. BODY PARSER
 app.use(express.json());
 
+const dateAwareApiPrefixes = [
+  '/accountant',
+  '/barman',
+  '/barista',
+  '/cashier-ops',
+  '/day-closure',
+  '/departments',
+  '/delivery',
+  '/history',
+  '/kitchen',
+  '/manager',
+  '/overview',
+  '/orders',
+  '/summaries',
+  '/waiter',
+];
+
+app.use('/api', async (req, res, next) => {
+  if (
+    req.path === '/health'
+    || req.path === '/shisha'
+    || req.path.startsWith('/shisha/')
+    || req.path === '/system/business-date'
+    || req.path.startsWith('/system/business-date/')
+  ) {
+    return next();
+  }
+
+  try {
+    const { businessDate, mode } = await getSystemBusinessContext();
+    req.businessDate = businessDate;
+    const isWriteRequest = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+    if (
+      mode === 'HISTORICAL'
+      && isWriteRequest
+      && req.path !== '/day-closure/reopen-day'
+    ) {
+      const closureResult = await pool.query(
+        'SELECT day_closed FROM public.daily_summary WHERE summary_date = $1',
+        [businessDate]
+      );
+      if (closureResult.rows[0]?.day_closed) {
+        return res.status(409).json({
+          error: `Business date ${businessDate} is closed. Reopen it before making further changes.`,
+        });
+      }
+    }
+
+    const isDateAwareApi = dateAwareApiPrefixes.some((prefix) => (
+      req.path === prefix || req.path.startsWith(`${prefix}/`)
+    ));
+    const preserveLiveDefault = mode === 'LIVE'
+      && req.method === 'GET'
+      && ['/history', '/orders'].includes(req.path)
+      && !req.query.date;
+    if (isDateAwareApi && !preserveLiveDefault && !req.query.date) {
+      const queryIndex = req.url.indexOf('?');
+      const requestPath = queryIndex < 0 ? req.url : req.url.slice(0, queryIndex);
+      const query = new URLSearchParams(queryIndex < 0 ? '' : req.url.slice(queryIndex + 1));
+      query.set('date', businessDate);
+      req.url = `${requestPath}?${query.toString()}`;
+    }
+    if (
+      (req.path === '/inventory' || req.path.startsWith('/inventory/'))
+      && ['POST', 'PUT', 'PATCH'].includes(req.method)
+      && req.body
+      && typeof req.body === 'object'
+      && !Array.isArray(req.body)
+    ) {
+      req.body.business_date = businessDate;
+    }
+    res.setHeader('X-Kurax-Business-Date', businessDate);
+    return next();
+  } catch (error) {
+    console.error('System business-date middleware failed:', error.message);
+    return res.status(503).json({ error: 'Could not resolve the system business date.' });
+  }
+});
+
 // 4. STATIC FILES
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -132,6 +213,7 @@ app.use('/api/combos', comboRoutes);
 app.use('/api/public-orders', publicOrderRoutes);
 app.use('/api/production', productionRoutes);
 app.use('/api/settings/smtp', smtpRoutes);
+app.use('/api/system/business-date', systemBusinessDateRoutes);
 
 // 6. HEALTH CHECK
 app.get('/api/health', (req, res) => {

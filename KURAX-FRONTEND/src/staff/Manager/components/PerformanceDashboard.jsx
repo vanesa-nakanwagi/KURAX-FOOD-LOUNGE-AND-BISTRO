@@ -10,6 +10,8 @@ import {
   Coffee, Sunset, Moon, Sun, Zap, Heart, Smile, ThumbsUp
 } from "lucide-react";
 import API_URL from "../../../config/api";
+import { useData } from "../../../customer/components/context/DataContext";
+import { buildCreditChartData, filterCreditsForStaff, summarizeCredits } from "../../../utils/creditSummary";
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function getTodayLocal() {
@@ -133,14 +135,13 @@ const MOTIVATIONAL_MESSAGES = [
 ];
 
 // Function to get daily motivation based on date (consistent for same date across years)
-function getDailyMotivation() {
-  const today = new Date();
-  const dateStr = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+function getDailyMotivation(dateStr) {
+  const dateKey = dateStr || getTodayLocal();
   
   // Create a deterministic hash from the date string
   let hash = 0;
-  for (let i = 0; i < dateStr.length; i++) {
-    hash = ((hash << 5) - hash) + dateStr.charCodeAt(i);
+  for (let i = 0; i < dateKey.length; i++) {
+    hash = ((hash << 5) - hash) + dateKey.charCodeAt(i);
     hash = hash & hash;
   }
   
@@ -252,6 +253,9 @@ function MobileOrderRow({ item }) {
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function PerformanceDashboard({ theme = "light" }) {
+  const { businessDate, businessDateMode, globalResetKey, refreshData, currentUser } = useData();
+  const selectedBusinessDate = businessDate || getTodayLocal();
+  const isViewingHistoricalDate = businessDateMode === "HISTORICAL" || selectedBusinessDate < getTodayLocal();
   const [staffTargets, setStaffTargets] = useState({ daily_order_target: null, monthly_income_target: null });
   const [confirmedQueue, setConfirmedQueue] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -260,36 +264,21 @@ export default function PerformanceDashboard({ theme = "light" }) {
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [dayClosed, setDayClosed] = useState(false);
-  const [currentDayDate, setCurrentDayDate] = useState(getTodayLocal());
-  const [activeDay, setActiveDay] = useState(null);
   const [dailyMotivation, setDailyMotivation] = useState(null);
 
-  // Load daily motivation when component mounts
   useEffect(() => {
-    setDailyMotivation(getDailyMotivation());
-  }, []);
+    setDailyMotivation(getDailyMotivation(selectedBusinessDate));
+  }, [selectedBusinessDate]);
 
   const savedUser = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("kurax_user") || "{}"); }
     catch { return {}; }
   }, []);
 
-  const currentStaffId = savedUser?.id;
-  const currentStaffName = savedUser?.name || "Staff Member";
+  const currentStaffId = currentUser?.id || savedUser?.id;
+  const currentStaffName = currentUser?.name || savedUser?.name || "Staff Member";
   const staffRole = savedUser?.role || "STAFF";
   const staffInitial = (currentStaffName?.split(" ")[0] || "S")[0].toUpperCase();
-
-  const fetchActiveDay = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/day-closure/active-day`);
-      if (res.ok) {
-        const data = await res.json();
-        setActiveDay(data);
-        if (data.date) setCurrentDayDate(data.date);
-      }
-    } catch (err) { console.error("Failed to fetch active day:", err); }
-  }, []);
 
   const loadTargets = useCallback(async () => {
     if (!currentStaffId) return;
@@ -308,6 +297,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
     try {
       let url = `${API_URL}/api/summaries/staff-monthly-income?`;
       url += currentStaffId ? `staffId=${currentStaffId}` : `staffName=${encodeURIComponent(currentStaffName)}`;
+      url += `&month=${encodeURIComponent(selectedBusinessDate.slice(0, 7))}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -315,170 +305,130 @@ export default function PerformanceDashboard({ theme = "light" }) {
         if (data.monthly_target) setStaffTargets(prev => ({ ...prev, monthly_income_target: data.monthly_target }));
       }
     } catch (err) { console.error("Failed to fetch monthly income:", err); }
-  }, [currentStaffId, currentStaffName]);
+  }, [currentStaffId, currentStaffName, selectedBusinessDate]);
 
   const fetchOrders = useCallback(async () => {
     try {
-      const url = activeDay?.date ? `${API_URL}/api/orders?date=${activeDay.date}` : `${API_URL}/api/orders`;
+      const url = `${API_URL}/api/orders?date=${encodeURIComponent(selectedBusinessDate)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const allOrders = await res.json();
       setOrders(allOrders.filter(order => {
-        if (order.shift_cleared || order.day_cleared || order.is_archived) return false;
+        if (!isViewingHistoricalDate && (order.shift_cleared || order.day_cleared || order.is_archived)) return false;
         const matchName = order.staff_name?.trim().toUpperCase() === currentStaffName?.trim().toUpperCase();
         const matchId = Number(order.staff_id) === Number(currentStaffId);
         return matchName || matchId;
       }));
       setFetchError(null);
     } catch (err) { setFetchError(err.message); }
-  }, [currentStaffId, currentStaffName, activeDay]);
+  }, [currentStaffId, currentStaffName, selectedBusinessDate, isViewingHistoricalDate]);
 
   const fetchConfirmedQueue = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/orders/cashier-history?date=${encodeURIComponent(currentDayDate)}`);
+      const res = await fetch(`${API_URL}/api/orders/cashier-history?date=${encodeURIComponent(selectedBusinessDate)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const allQueue = await res.json();
       setConfirmedQueue(allQueue.filter(item => {
         const matchStaff = String(item.staff_id) === String(currentStaffId) ||
           item.requested_by?.toLowerCase() === currentStaffName?.toLowerCase();
-        const itemDate = formatOrderDate(item.confirmed_at || item.created_at);
-        return matchStaff && itemDate === currentDayDate;
+        const itemDate = formatOrderDate(item.business_date || item.confirmed_at || item.created_at);
+        return matchStaff && itemDate === selectedBusinessDate;
       }));
     } catch (err) { console.error("Queue fetch failed:", err); }
-  }, [currentStaffId, currentStaffName, currentDayDate]);
+  }, [currentStaffId, currentStaffName, selectedBusinessDate]);
 
   const fetchCredits = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/credits`);
       if (res.ok) {
         const allCredits = await res.json();
-        setCredits(allCredits.filter(credit => {
-          const matchWaiter = credit.waiter_name?.toLowerCase() === currentStaffName?.toLowerCase();
-          const creditDate = formatOrderDate(credit.created_at);
-          return matchWaiter && creditDate === currentDayDate;
-        }));
+        setCredits(filterCreditsForStaff(allCredits, currentStaffName, currentStaffId));
       }
     } catch (err) { console.error("Credits fetch failed:", err); }
-  }, [currentStaffName, currentDayDate]);
-
-  const checkDayClosure = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/day-closure/day-status`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.is_closed && !dayClosed) {
-          setDayClosed(true);
-          setConfirmedQueue([]); setOrders([]); setCredits([]); setMonthlyIncomeData(null);
-          await fetchActiveDay();
-          await Promise.all([loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits()]);
-          setLastRefresh(new Date());
-        } else if (!data.is_closed && dayClosed) {
-          setDayClosed(false);
-          await fetchActiveDay();
-          await handleRefreshData();
-        }
-      }
-    } catch (err) { console.error("Check day closure error:", err); }
-  }, [dayClosed, fetchActiveDay, loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits]);
+  }, [currentStaffId, currentStaffName]);
 
   useEffect(() => {
-    const initialize = async () => {
-      await fetchActiveDay();
-      await Promise.all([loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits()]);
-    };
-    initialize();
-    const closureInterval = setInterval(checkDayClosure, 30000);
+    loadTargets();
+    fetchMonthlyIncome();
+    fetchOrders();
+    fetchConfirmedQueue();
+    fetchCredits();
     const interval = setInterval(() => {
-      if (!dayClosed) { fetchMonthlyIncome(); fetchOrders(); fetchConfirmedQueue(); fetchCredits(); }
+      fetchMonthlyIncome();
+      fetchOrders();
+      fetchConfirmedQueue();
+      fetchCredits();
     }, 30000);
-    return () => { clearInterval(interval); clearInterval(closureInterval); };
-  }, []);
+    return () => clearInterval(interval);
+  }, [loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits]);
 
-  const handleRefreshData = async () => {
+  const handleRefreshData = useCallback(async () => {
     setIsLoading(true);
     setFetchError(null);
-    await Promise.all([loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits(), fetchActiveDay()]);
+    await Promise.all([refreshData(), loadTargets(), fetchMonthlyIncome(), fetchOrders(), fetchConfirmedQueue(), fetchCredits()]);
     setLastRefresh(new Date());
     setIsLoading(false);
-  };
+  }, [refreshData, loadTargets, fetchMonthlyIncome, fetchOrders, fetchConfirmedQueue, fetchCredits]);
+
+  useEffect(() => {
+    if (globalResetKey > 0) handleRefreshData();
+  }, [globalResetKey, handleRefreshData]);
 
   // ─── COMPUTED ──────────────────────────────────────────────────────────────
   const dailyStaffItemsCount = useMemo(() => {
     let count = 0;
     orders.forEach(order => {
-      if (formatOrderDate(order.created_at || order.timestamp) === currentDayDate)
+      if (formatOrderDate(order.business_date || order.created_at || order.timestamp) === selectedBusinessDate)
         count += getItemCount(order.items);
     });
     return count;
-  }, [orders, currentDayDate]);
+  }, [orders, selectedBusinessDate]);
   const dailyStaffOrdersCount = useMemo(() => orders.filter(order =>
-    formatOrderDate(order.created_at || order.timestamp) === currentDayDate &&
+    formatOrderDate(order.business_date || order.created_at || order.timestamp) === selectedBusinessDate &&
     getItemCount(order.items) > 0
-  ).length, [orders, currentDayDate]);
+  ).length, [orders, selectedBusinessDate]);
 
   const monthlyRevenue = monthlyIncomeData?.monthly_income || 0;
   const revenueTarget = staffTargets.monthly_income_target || monthlyIncomeData?.monthly_target || 0;
 
   const grossToday = useMemo(() => confirmedQueue.reduce((sum, row) => {
     if (row.status !== "Confirmed") return sum;
-    if (formatOrderDate(row.confirmed_at || row.created_at) !== currentDayDate) return sum;
+    if (formatOrderDate(row.business_date || row.confirmed_at || row.created_at) !== selectedBusinessDate) return sum;
     return sum + (Number(row.amount) || 0);
-  }, 0), [confirmedQueue, currentDayDate]);
+  }, 0), [confirmedQueue, selectedBusinessDate]);
 
-  const creditStats = useMemo(() => {
-    const settled = credits.filter(c => c.status === "FullySettled");
-    const partial = credits.filter(c => c.status === "PartiallySettled");
-    const approved = credits.filter(c => c.status === "Approved");
-    const rejected = credits.filter(c => c.status === "Rejected");
-    return {
-      settled: { count: settled.length + partial.length, amount: settled.reduce((s, c) => s + Number(c.amount_paid || c.amount || 0), 0) + partial.reduce((s, c) => s + Number(c.amount_paid || 0), 0) },
-      outstanding: { count: approved.length + partial.length, amount: approved.reduce((s, c) => s + Number(c.amount || 0), 0) + partial.reduce((s, c) => s + Number(c.balance || c.amount || 0), 0) },
-      rejected: { count: rejected.length, amount: rejected.reduce((s, c) => s + Number(c.amount || 0), 0) },
-      total: credits.length,
-      totalAmount: credits.reduce((s, c) => s + Number(c.amount || 0), 0),
-    };
-  }, [credits]);
+  const creditsForSelectedDate = useMemo(() => credits.filter(credit =>
+    (credit.business_date || formatOrderDate(credit.created_at)) === selectedBusinessDate
+  ), [credits, selectedBusinessDate]);
+
+  const creditStats = useMemo(() => summarizeCredits(credits), [credits]);
 
   const recentOrderItems = useMemo(() => {
     const allItems = [];
     orders.forEach(order => {
-      if (formatOrderDate(order.created_at || order.timestamp) === currentDayDate)
-        allItems.push(...getIndividualItems(order, credits));
+      if (formatOrderDate(order.business_date || order.created_at || order.timestamp) === selectedBusinessDate)
+        allItems.push(...getIndividualItems(order, creditsForSelectedDate));
     });
     return allItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20);
-  }, [orders, credits, currentDayDate]);
+  }, [orders, creditsForSelectedDate, selectedBusinessDate]);
 
-  const creditChartData = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(); d.setDate(d.getDate() - (6 - i));
-      const dateStr = formatOrderDate(d);
-      const label = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-      let Settled = 0, Approved = 0, Rejected = 0, Outstanding = 0;
-      credits.forEach(credit => {
-        if (formatOrderDate(credit.created_at) !== dateStr) return;
-        const amount = Number(credit.amount || 0);
-        const s = credit.status;
-        if (s === "FullySettled") { Settled += amount; }
-        else if (s === "PartiallySettled") { Settled += Number(credit.amount_paid || 0); Outstanding += Number(credit.balance || amount); }
-        else if (s === "Approved") { Approved += amount; Outstanding += amount; }
-        else if (s === "Rejected") { Rejected += amount; }
-        else { Outstanding += amount; }
-      });
-      return { date: label, Settled, Approved, Rejected, Outstanding };
-    });
-  }, [credits]);
+  const creditChartData = useMemo(
+    () => buildCreditChartData(credits, selectedBusinessDate),
+    [credits, selectedBusinessDate]
+  );
 
   const orderTarget = staffTargets.daily_order_target || 0;
   const orderProgress = orderTarget > 0 ? Math.min((dailyStaffOrdersCount / orderTarget) * 100, 100) : 0;
   const revenueProgress = revenueTarget > 0 ? Math.min((monthlyRevenue / revenueTarget) * 100, 100) : 0;
-  const currentMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
-
-  // Get today's date for display
-  const todayDisplay = new Date().toLocaleDateString("en-GB", { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
+  const selectedDateObject = new Date(`${selectedBusinessDate}T12:00:00Z`);
+  const currentMonth = selectedDateObject.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  const todayDisplay = selectedDateObject.toLocaleDateString("en-GB", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "Africa/Kampala",
   });
+  const selectedDayBadge = selectedBusinessDate === getTodayLocal() ? "Today" : todayDisplay;
 
   return (
     <div className="min-h-screen bg-zinc-50 font-[Outfit]">
@@ -491,7 +441,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
             
             <div className="min-w-0">
               <p className="text-[10px] sm:text-[19px] text-yellow-900 font-medium uppercase tracking-wider flex items-center gap-2">
-                <Sparkles size={14} /> Today's Motivation <Sparkles size={14} />
+                <Sparkles size={14} /> {selectedDayBadge} Motivation <Sparkles size={14} />
               </p>
               <p className="text-xs sm:text-sm font-medium text-zinc-700 leading-tight mt-0.5">
                 {dailyMotivation?.text || "You're amazing! Keep serving with excellence!"}
@@ -561,7 +511,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
           <StatCard
             icon={<ClipboardList size={16} />}
             iconBg="bg-orange-500/10" iconColor="text-orange-500"
-            badge="Today" label="Daily Performance"
+            badge={selectedDayBadge} label="Daily Performance"
             progress={orderProgress}
             progressColor={getProgressColor(orderProgress)}
           >
@@ -575,7 +525,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
           <StatCard
             icon={<TrendingUp size={16} />}
             iconBg="bg-yellow-500/10" iconColor="text-yellow-500"
-            badge="Today" label="Revenue"
+            badge={selectedDayBadge} label="Revenue"
             value={fmtLargeNumber(grossToday)}
             sub={revenueTarget > 0 ? `${Math.round((grossToday / revenueTarget) * 100)}% of monthly` : ""}
           />
@@ -597,7 +547,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
           {/* Credits */}
           <StatCard
             icon={<BookOpen size={16} />}
-            badge="Today"
+            badge="ALL TIME"
             label="Credit Summary"
             accent="bg-gradient-to-br from-purple-500 to-purple-600"
           >
@@ -605,7 +555,6 @@ export default function PerformanceDashboard({ theme = "light" }) {
               {[
                 { k: "Settled", v: creditStats.settled.amount },
                 { k: "Outstanding", v: creditStats.outstanding.amount },
-                { k: "Rejected", v: creditStats.rejected.amount },
               ].map(({ k, v }) => (
                 <div key={k} className="flex items-center justify-between gap-1">
                   <span className="text-[9px] text-white/60">{k}</span>
@@ -659,7 +608,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
         <div className="rounded-2xl bg-white p-4 sm:p-6 border border-zinc-100 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <div className="p-2 rounded-xl bg-blue-500/10"><Activity size={15} className="text-blue-500" /></div>
-            <h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">Today's Orders</h3>
+            <h3 className="text-[16px] font-medium uppercase tracking-tight text-yellow-900">{selectedDayBadge}'s Orders</h3>
             <span className="ml-auto text-[9px] text-zinc-900">Last 20</span>
           </div>
 
@@ -707,7 +656,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
                 }) : (
                   <tr>
                     <td colSpan="7" className="py-10 text-center text-[10px] text-zinc-400">
-                      No order items for today
+                      No order items for {selectedDayBadge.toLowerCase()}
                     </td>
                   </tr>
                 )}
@@ -719,7 +668,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
           <div className="sm:hidden">
             {recentOrderItems.length > 0
               ? recentOrderItems.map((item, idx) => <MobileOrderRow key={idx} item={item} />)
-              : <p className="py-8 text-center text-[11px] text-zinc-400">No order items for today</p>
+              : <p className="py-8 text-center text-[11px] text-zinc-400">No order items for {selectedDayBadge.toLowerCase()}</p>
             }
           </div>
         </div>
@@ -738,7 +687,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
                 text: dailyStaffOrdersCount >= orderTarget && orderTarget > 0
                   ? "Daily order target achieved!"
                   : orderTarget > 0
-                    ? `${orderTarget - dailyStaffOrdersCount} more order${orderTarget - dailyStaffOrdersCount !== 1 ? "s" : ""} to reach today's target`
+                    ? `${orderTarget - dailyStaffOrdersCount} more order${orderTarget - dailyStaffOrdersCount !== 1 ? "s" : ""} to reach the selected day's target`
                     : "No daily target set",
               },
               {
@@ -762,7 +711,7 @@ export default function PerformanceDashboard({ theme = "light" }) {
                 label: "Credit Summary", color: "text-purple-600", bg: "bg-purple-50",
                 text: creditStats.total > 0
                   ? `${creditStats.settled.count} settled · ${creditStats.outstanding.count} outstanding`
-                  : "No credit records for today",
+                  : "No credit records for this staff member",
               },
             ].map(({ icon, label, color, bg, text }) => (
               <div key={label} className={`p-3 sm:p-4 rounded-xl ${bg}`}>

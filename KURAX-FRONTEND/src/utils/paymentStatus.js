@@ -1,3 +1,12 @@
+import { getOrderItemOriginalAmount, getOrderItemUnitCount } from "./orderItemAmounts.js";
+
+export function isManagerCreatedOrder(order) {
+  const role = String(order?.staff_role || order?.staff_role_name || order?.role || "")
+    .trim()
+    .toUpperCase();
+  return role === "MANAGER";
+}
+
 export function isItemFullyPaid(item) {
   if (!item) return false;
 
@@ -5,7 +14,19 @@ export function isItemFullyPaid(item) {
     return item._rowPaid === true && item.is_partially_paid !== true;
   }
 
+  if (Array.isArray(item.unitStates)) {
+    const activeStates = item.unitStates.filter(state => state?.voidProcessed !== true);
+    return activeStates.length > 0 && activeStates.every(state => state?.paid === true);
+  }
   return item._rowPaid === true || item.status === "Paid" || Boolean(item.paid_at);
+}
+
+export function getActiveOrderItems(items = []) {
+  return (Array.isArray(items) ? items : []).filter(item => {
+    if (!item || item.status === "VOIDED" || item.voidProcessed === true) return false;
+    if (isItemFullyPaid(item)) return false;
+    return item.creditRequested !== true || item.creditRejected === true;
+  });
 }
 
 export function isItemReadyForService(item) {
@@ -48,7 +69,32 @@ export function getPaidOrderItems(orders = []) {
     }
     if (!Array.isArray(orderItems)) return;
     orderItems.forEach((item, itemIndex) => {
-      if (isItemFullyPaid(item)) paidItems.push({ order, item, itemIndex });
+      if (Array.isArray(item.unitStates)) {
+        const unitCount = getOrderItemUnitCount(item);
+        const originalUnitAmount = getOrderItemOriginalAmount(item) / unitCount;
+        item.unitStates.forEach((state, unitIndex) => {
+          if (state?.paid !== true || state?.voidProcessed === true) return;
+          const paidAmount = Number(state.paidAmount);
+          paidItems.push({
+            order,
+            item: {
+              ...item,
+              quantity: 1,
+              price: originalUnitAmount,
+              originalUnitPrice: originalUnitAmount,
+              originalLineAmount: originalUnitAmount,
+              payableAmount: Number.isFinite(paidAmount) ? paidAmount : originalUnitAmount,
+              paidAmount: Number.isFinite(paidAmount) ? paidAmount : originalUnitAmount,
+              unitStates: undefined,
+              _rowPaid: true,
+              _unitIndex: unitIndex,
+              _unitCount: unitCount,
+            },
+            itemIndex,
+            unitIndex,
+          });
+        });
+      } else if (isItemFullyPaid(item)) paidItems.push({ order, item, itemIndex });
     });
   });
   return paidItems;
@@ -64,5 +110,9 @@ export function hasOutstandingCreditItems(order) {
     }
   }
   return Array.isArray(items) &&
-    items.some(item => item?.creditRequested === true && !isItemFullyPaid(item));
+    items.some(item => Array.isArray(item?.unitStates)
+      ? item.unitStates.some(state =>
+        state?.creditRequested === true && state?.paid !== true && state?.voidProcessed !== true
+      )
+      : item?.creditRequested === true && !isItemFullyPaid(item));
 }

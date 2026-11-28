@@ -85,9 +85,9 @@ router.post('/payment-requests', async (req, res) => {
     const queueResult = await client.query(
       `INSERT INTO public.cashier_queue
          (order_ids, table_name, label, amount, method, status, requested_by,
-          is_item, item, order_type, public_order_ref, created_at, updated_at)
+          is_item, item, order_type, public_order_ref, created_at, updated_at, business_date)
        VALUES ('[]'::jsonb, 'PUBLIC-WEB', $1, $2, $3, 'Pending', $4,
-               false, $5::jsonb, $6, $7, NOW(), NOW())
+               false, $5::jsonb, $6, $7, NOW(), NOW(), $8::date)
        RETURNING id`,
       [
         `Website order ${reference}`,
@@ -97,6 +97,7 @@ router.post('/payment-requests', async (req, res) => {
         JSON.stringify({ public_order_ref: reference, items }),
         customer.deliveryType === 'Home' ? 'Online Delivery' : 'Online Pickup',
         reference,
+        req.businessDate,
       ]
     );
     const queueId = queueResult.rows[0].id;
@@ -278,9 +279,9 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
            (table_name, staff_name, items, total, status, payment_method, is_paid,
             payment_confirmed, paid_at, transaction_id, public_order_ref, client_name,
             client_phone, order_type, delivery_address, delivery_note, timestamp,
-            created_at, updated_at)
+            created_at, updated_at, date, business_date)
          VALUES ('PUBLIC-WEB', 'Public Website', $1::jsonb, $2, 'Pending', $3, true,
-                 true, $4, $5, $6, $7, $8, $9, $10, $11, $4, NOW(), NOW())
+                 true, $4, $5, $6, $7, $8, $9, $10, $11, $4, NOW(), NOW(), $12::date, $12::date)
          RETURNING id`,
         [
           JSON.stringify(paidItems),
@@ -294,6 +295,7 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
           paymentRequest.delivery_type === 'Home' ? 'Online Delivery' : 'Online Pickup',
           deliveryAddress,
           paymentRequest.location_desc,
+          req.businessDate,
         ]
       );
       committedOrderId = orderResult.rows[0].id;
@@ -327,9 +329,9 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
     await client.query(
       `UPDATE public.cashier_queue
        SET status = 'Confirmed', confirmed_by = $1, confirmed_at = NOW(),
-           transaction_id = $2, updated_at = NOW()
-       WHERE id = $3`,
-      [req.cashier.name, transactionId, queueId]
+           transaction_id = $2, updated_at = NOW(), business_date = $3::date
+       WHERE id = $4`,
+      [req.cashier.name, transactionId, req.businessDate, queueId]
     );
     await client.query(
       `UPDATE public.public_payment_requests
@@ -347,6 +349,7 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
       description: `Public website order ${paymentRequest.public_order_ref}`,
       sourceTransaction: `public_payment_request:${paymentRequest.id}`,
       postedBy: req.cashier.name,
+      entryDate: req.businessDate,
       queryable: client,
     });
 
@@ -354,7 +357,7 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
       `INSERT INTO public.daily_summary
          (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel,
           total_credit, total_mixed, total_settled_credits, order_count, updated_at)
-       VALUES ((NOW() AT TIME ZONE 'Africa/Kampala')::date, $1, 0, 0, $2, $3,
+       VALUES ($4::date, $1, 0, 0, $2, $3,
                0, 0, 0, 1, NOW())
        ON CONFLICT (summary_date) DO UPDATE SET
          total_gross = public.daily_summary.total_gross + EXCLUDED.total_gross,
@@ -366,6 +369,7 @@ router.patch('/payment-requests/:id/confirm', requireCashier, async (req, res) =
         paymentRequest.total,
         paymentMethod === 'Momo-MTN' ? paymentRequest.total : 0,
         paymentMethod === 'Momo-Airtel' ? paymentRequest.total : 0,
+        req.businessDate,
       ]
     );
 

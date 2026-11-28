@@ -28,6 +28,7 @@ test('monthly sales include paid public website orders even while fulfillment is
       if (sql.includes('AS credit_settlements')) {
         return { rows: [{ credit_settlements: '0', cash: '0', card: '0', mtn: '0', airtel: '0', settlement_count: '0' }] };
       }
+      if (sql.includes('AS credit_balance')) return { rows: [{ credit_balance: '30000' }] };
       if (sql.includes('AS total')) return { rows: [{ total: '0' }] };
       if (sql.includes('monthly_expenses')) return { rows: [] };
       return { rows: [{ total: '0' }] };
@@ -40,6 +41,9 @@ test('monthly sales include paid public website orders even while fulfillment is
   assert.equal(financials.grossSales, 24000);
   assert.equal(financials.totalCollected, 24000);
   assert.equal(financials.salesBreakdown.mtn, 24000);
+  assert.equal(financials.creditBalance, 30000);
+  assert.match(queries.find(query => query.includes('AS credit_balance')), /month_settlement\.created_at/);
+  assert.match(queries.find(query => query.includes('AS credit_balance')), /PARTIALLYSETTLED/);
   assert.equal(financials.orderCount, 1);
 });
 

@@ -5,7 +5,7 @@ import API_URL from "../../../config/api";
 import MonthlyFinancialBreakdown from "../../components/MonthlyFinancialBreakdown";
 import { 
   Target,
-  Calendar, FileText, Lock, CheckCircle2, Loader2,
+  FileText, Loader2,
   Printer,
   Activity, ArrowUpCircle, AlertCircle, RefreshCw, Save,
 } from "lucide-react";
@@ -544,13 +544,6 @@ export default function TargetSettings() {
   const cardClass = isDark ? "bg-zinc-900/40 border-white/5 shadow-2xl" : "bg-white border-black/5 shadow-xl";
   const mutedClass = isDark ? "text-zinc-500" : "text-zinc-400";
 
-  const getProgressColor = (percentage) => {
-    if (percentage >= 75) return "text-emerald-500";
-    if (percentage >= 50) return "text-yellow-500";
-    if (percentage >= 25) return "text-orange-500";
-    return "text-red-500";
-  };
-
   const monthlyProgressPercent = Number(targetProgress.percentage) || 0;
 
   return (
@@ -620,44 +613,7 @@ export default function TargetSettings() {
         </div>
 
         {/* TWO COLUMN LAYOUT */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Monthly target ring */}
-          <div className={`p-6 rounded-2xl border relative overflow-hidden ${cardClass}`}>
-            <Lock className="absolute -right-4 -top-4 text-white/5 w-24 h-24 rotate-12" />
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <p className={`text-[10px] font-black uppercase tracking-widest ${mutedClass}`}>Monthly Target</p>
-                <h3 className="text-2xl font-black tracking-tighter italic">{loadingTarget ? <Loader2 size={18} className="animate-spin text-yellow-500" /> : fmtUGX(targetProgress.target)}</h3>
-              </div>
-              <div className="flex items-center gap-2"><Calendar size={14} className={mutedClass} /><span className="text-[9px] font-black">{targetMonth}</span></div>
-            </div>
-            <div className="flex items-center gap-6 mb-6">
-              <div className="relative flex-shrink-0" style={{ width: 140, height: 140 }}>
-                <svg width="140" height="140" viewBox="0 0 140 140" style={{ transform: "rotate(-90deg)" }}>
-                  <defs><linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#EAB308" /><stop offset="60%" stopColor="#CA8A04" /><stop offset="100%" stopColor={isDark ? "#3f3f46" : "#27272a"} /></linearGradient></defs>
-                  <circle cx="70" cy="70" r="54" fill="none" stroke={isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="11" />
-                  <circle cx="70" cy="70" r="54" fill="none" stroke="url(#ringGrad)" strokeWidth="11" strokeLinecap="round" strokeDasharray={`${2 * Math.PI * 54}`} strokeDashoffset={`${2 * Math.PI * 54 * (1 - Math.min(monthlyProgressPercent, 100) / 100)}`} style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.34,1.56,0.64,1)" }} />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-                  <span className={`text-2xl font-black italic ${getProgressColor(monthlyProgressPercent)}`}>{monthlyProgressPercent.toFixed(1)}%</span>
-                  <span className={`text-[8px] font-black uppercase tracking-widest ${mutedClass}`}>done</span>
-                </div>
-              </div>
-              <div className="flex-1 flex flex-col gap-2">
-                <div className="p-3 rounded-xl border-l-2 border-emerald-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Gross Sales</p><p className="text-sm font-black italic text-emerald-500">{fmtUGX(targetProgress.grossSales)}</p></div>
-                <div className="p-3 rounded-xl border-l-2 border-cyan-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Complimentary Paid</p><p className="text-sm font-black italic text-cyan-500">{fmtUGX(targetProgress.complimentaryPaid)}</p></div>
-                <div className="p-3 rounded-xl border-l-2 border-orange-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Complimentary Waived</p><p className="text-sm font-black italic text-orange-500">{fmtUGX(targetProgress.complimentaryWaived)}</p></div>
-                <div className="p-3 rounded-xl border-l-2 border-purple-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Credit Settlements</p><p className="text-sm font-black italic text-purple-500">{fmtUGX(targetProgress.creditSettlements)}</p></div>
-                <div className="p-3 rounded-xl border-l-2 border-rose-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Expenses</p><p className="text-sm font-black italic text-rose-500">{fmtUGX(targetProgress.expenses)}</p></div>
-                <div className="p-3 rounded-xl border-l-2 border-yellow-500 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Current Cash</p><p className="text-sm font-black italic text-yellow-500">{fmtUGX(targetProgress.currentCash)}</p></div>
-                <div className="p-3 rounded-xl border-l-2 border-white/20 bg-white/5"><p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Remaining</p><p className="text-sm font-black italic text-zinc-500">{fmtUGX(targetProgress.remaining)}</p></div>
-              </div>
-            </div>
-            <div className="flex gap-2 pt-4 border-t border-white/10">
-              {monthlyProgressPercent >= 100 && <div className="flex-1 flex items-center justify-center gap-1 bg-emerald-500/10 rounded-xl p-2"><CheckCircle2 size={10} className="text-emerald-500" /><span className="text-[8px] font-black uppercase tracking-widest text-emerald-500">Goal Met</span></div>}
-            </div>
-          </div>
-
+        <div className="grid grid-cols-1 gap-6">
           <MonthlyFinancialBreakdown
             month={targetMonth}
             target={targetProgress.target}

@@ -9,14 +9,19 @@ import {
 } from "lucide-react";
 import API_URL from "../../../config/api";
 import {
+  getActiveOrderItems,
   getPaidOrderItems,
   hasOutstandingCreditItems,
   hasReadyForServiceItems,
+  isManagerCreatedOrder,
   isItemFullyPaid,
   isItemReadyForService,
 } from "../../../utils/paymentStatus";
 import ComplimentaryItemControl from "../../components/ComplimentaryItemControl";
-import { getOrderItemPayableAmount } from "../../../utils/orderItemAmounts";
+import {
+  expandOrderItemUnits,
+  getOrderItemPayableAmount,
+} from "../../../utils/orderItemAmounts";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function toLocalDateStr(date) {
@@ -25,6 +30,10 @@ function toLocalDateStr(date) {
     .toISOString().split("T")[0];
 }
 function getTodayLocal() { return toLocalDateStr(new Date()); }
+function getBusinessDate(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return value ? toLocalDateStr(new Date(value)) : null;
+}
 
 function fmtUGX(n) {
   return `UGX ${Number(n || 0).toLocaleString()}`;
@@ -49,22 +58,23 @@ function getCreditStatusDisplay(credit) {
 }
 
 // ─── SUPERVISOR ORDER CARD (read‑only) ─────────────────────────────────────
-function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplimentaryUpdated }) {
+function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplimentaryUpdated, readOnlyDate }) {
   const [expanded, setExpanded] = useState(false);
   const isDark = theme === "dark";
 
   if (!order) return null;
 
-  const nonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
-  const allItemsPaid = nonVoidedItems.length > 0 && nonVoidedItems.every(item => item._rowPaid === true);
-  const hasAnyPaidItems = nonVoidedItems.some(item => item._rowPaid === true);
+  const allNonVoidedItems = (order.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
+  const nonVoidedItems = getActiveOrderItems(order.items || []);
+  const remainingTotal = nonVoidedItems.reduce((sum, item) => sum + getOrderItemPayableAmount(item), 0);
+  const allItemsPaid = allNonVoidedItems.length > 0 && allNonVoidedItems.every(item => item._rowPaid === true);
   const allItemsServed = nonVoidedItems.length > 0 && nonVoidedItems.every(item =>
     item.served === true || isItemFullyPaid(item)
   );
   const hasServedItems = nonVoidedItems.some(item => item.served === true);
   const hasReadyItems = nonVoidedItems.some(item => item.readyForService && !item.served);
-  const hasPendingVoid = (order.items || []).some(item => item.voidRequested === true && item.voidProcessed !== true);
-  const hasPendingPayment = (order.items || []).some(item => item.paymentRequested === true && !item._rowPaid);
+  const hasPendingVoid = allNonVoidedItems.some(item => item.voidRequested === true && item.voidProcessed !== true);
+  const hasPendingPayment = allNonVoidedItems.some(item => item.paymentRequested === true && !item._rowPaid);
 
   // Status display
   let displayStatus = order.status;
@@ -114,7 +124,7 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
               {order.tableName}
             </span>
             <p className="text-[9px] sm:text-[10px] font-bold text-zinc-500">
-              {nonVoidedItems.length} items · {fmtUGX(order.total || 0)}
+              {nonVoidedItems.length} items · {fmtUGX(remainingTotal)}
               {order.waiterName && <span className="ml-2 text-zinc-400">· {order.waiterName}</span>}
             </p>
           </div>
@@ -129,7 +139,7 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
             ${isDark ? "bg-white/5 text-zinc-400" : "bg-zinc-50 text-yellow-900"}`}>
           <Utensils size={10} /> {expanded ? "Hide Items" : "View Items"} {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
         </button>
-        {onAddItems && (
+        {onAddItems && !readOnlyDate && (
           <button
             onClick={() => onAddItems(order)}
             className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-lg sm:rounded-xl bg-yellow-500 text-black text-[8px] sm:text-[9px] font-black uppercase tracking-widest transition-all hover:bg-yellow-400"
@@ -144,7 +154,8 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
           {nonVoidedItems.map((item, i) => {
             const isPaid = isItemFullyPaid(item);
             const isPendingPayment = item.paymentRequested === true && !isPaid;
-            const isCreditRequested = item.creditRequested === true;
+            const isCreditRejected = item.creditRejected === true;
+            const isCreditRequested = item.creditRequested === true && !isCreditRejected;
             const isVoidRequested = item.voidRequested && !item.voidProcessed;
             return (
               <div key={i} className={`p-2 sm:p-3 rounded-lg sm:rounded-xl ${isDark ? "bg-white/5" : "bg-zinc-50"}`}>
@@ -152,7 +163,7 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-semibold text-yellow-900 text-[10px] sm:text-[12px] break-words">
-                        {item.name}
+                        {item.name}{item._unitCount > 1 ? ` · Unit ${item._unitIndex + 1}` : ""}
                         {isPaid && (
                           <span className="ml-2 inline-flex items-center gap-1 text-[7px] sm:text-[8px] text-emerald-400 font-black uppercase bg-emerald-500/10 px-1.5 py-0.5 rounded-full">
                             <CheckCircle2 size={8} /> Paid
@@ -160,7 +171,7 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
                         )}
                         {isVoidRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-orange-400 font-black uppercase">(void pending)</span>}
                         {isPendingPayment && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-yellow-400 font-black uppercase">(payment pending)</span>}
-                        {isCreditRequested && <span className="ml-1 sm:ml-2 text-[7px] sm:text-[8px] text-purple-400 font-black uppercase">{item.creditApproved ? "(credit approved · balance due)" : "(credit pending)"}</span>}
+                        {(isCreditRequested || isCreditRejected) && <span className={`ml-1 sm:ml-2 text-[7px] sm:text-[8px] font-black uppercase ${isCreditRejected ? "text-red-400" : "text-purple-400"}`}>{isCreditRejected ? "(credit rejected · payment due)" : item.is_partially_paid ? "(partially paid · balance due)" : item.creditApproved ? "(credit approved · balance due)" : "(credit pending)"}</span>}
                       </p>
                       <p className="text-[8px] sm:text-[9px] font-bold text-zinc-600">
                         ×{item.quantity || 1} · {fmtUGX(item.price || 0)}
@@ -173,7 +184,7 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {item.served && <span className="px-2 py-1 bg-blue-500/10 text-blue-500 rounded-lg text-[8px] font-black uppercase">Served</span>}
-                    {item.readyForService && !item.served && !isPaid && !isVoidRequested && item.status !== "VOIDED" && !item.voidProcessed && (
+                    {!readOnlyDate && item.readyForService && !item.served && !isPaid && !isVoidRequested && item.status !== "VOIDED" && !item.voidProcessed && (
                       <button onClick={() => onServeItem && onServeItem(item)}
                         className="px-2 py-1 bg-emerald-500/10 text-emerald-600 rounded-lg hover:bg-emerald-500/20 text-[8px] font-black uppercase" title="Serve this ready item">
                         Serve
@@ -181,12 +192,14 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
                     )}
                   </div>
                 </div>
-                <ComplimentaryItemControl
-                  order={order}
-                  item={item}
-                  onUpdated={onComplimentaryUpdated}
-                  presentation="modal"
-                />
+                {!readOnlyDate && (
+                  <ComplimentaryItemControl
+                    order={order}
+                    item={item}
+                    onUpdated={onComplimentaryUpdated}
+                    presentation="modal"
+                  />
+                )}
               </div>
             );
           })}
@@ -214,7 +227,7 @@ function SupervisorOrderCard({ order, theme, onServeItem, onAddItems, onComplime
 }
 
 // ─── PENDING VOIDS PANEL (with approve/reject) ─────────────────────────────
-function PendingVoidsPanel({ pendingVoids, onApprove, onReject, theme }) {
+function PendingVoidsPanel({ pendingVoids, onApprove, onReject, theme, readOnlyDate }) {
   const isDark = theme === "dark";
   if (!pendingVoids || pendingVoids.length === 0) {
     return (
@@ -243,7 +256,7 @@ function PendingVoidsPanel({ pendingVoids, onApprove, onReject, theme }) {
               <p className="text-xs text-gray-400">Reason: {req.reason}</p>
               <p className="text-xs text-gray-400">Requested by: {req.requested_by}</p>
             </div>
-            <div className="flex gap-2 self-start">
+            {!readOnlyDate && <div className="flex gap-2 self-start">
               <button
                 onClick={() => onApprove('void', req.id)}
                 className="flex items-center gap-1 px-4 py-2 rounded-lg bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition"
@@ -256,7 +269,7 @@ function PendingVoidsPanel({ pendingVoids, onApprove, onReject, theme }) {
               >
                 <XCircle size={14} /> Reject
               </button>
-            </div>
+            </div>}
           </div>
         </div>
       ))}
@@ -265,7 +278,7 @@ function PendingVoidsPanel({ pendingVoids, onApprove, onReject, theme }) {
 }
 
 // ─── PENDING CREDITS PANEL (with approve/reject) ───────────────────────────
-function PendingCreditsPanel({ pendingCredits, onApprove, onReject, theme }) {
+function PendingCreditsPanel({ pendingCredits, onApprove, onReject, theme, readOnlyDate }) {
   const isDark = theme === "dark";
   if (!pendingCredits || pendingCredits.length === 0) {
     return (
@@ -299,7 +312,7 @@ function PendingCreditsPanel({ pendingCredits, onApprove, onReject, theme }) {
                   {sd.icon} <span className={`text-xs font-bold ${sd.color}`}>{sd.label}</span>
                 </div>
               </div>
-              <div className="flex gap-2 self-start">
+              {!readOnlyDate && <div className="flex gap-2 self-start">
                 <button
                   onClick={() => onApprove('credit', req.id)}
                   className="flex items-center gap-1 px-4 py-2 rounded-lg bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition"
@@ -312,7 +325,7 @@ function PendingCreditsPanel({ pendingCredits, onApprove, onReject, theme }) {
                 >
                   <XCircle size={14} /> Reject
                 </button>
-              </div>
+              </div>}
             </div>
           </div>
         );
@@ -322,14 +335,16 @@ function PendingCreditsPanel({ pendingCredits, onApprove, onReject, theme }) {
 }
 
 // ─── RECENTLY PAID ITEMS PANEL (unchanged) ─────────────────────────────────
-function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
+function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated, readOnlyDate }) {
   const isDark = theme === "dark";
   const paidItems = useMemo(() => {
     const items = getPaidOrderItems(orders).map(({ order, item, itemIndex }) => ({
-      id: `${order.id}_${item.name}`,
+      id: `${order.id}_${item.name}_${item._unitIndex ?? itemIndex}`,
       order_id: order.id,
       table_name: order.table_name,
       name: item.name,
+      unitIndex: item._unitIndex,
+      unitCount: item._unitCount,
       quantity: item.quantity || 1,
       price: item.price || 0,
       total: getOrderItemPayableAmount(item),
@@ -373,7 +388,9 @@ function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className={`text-[10px] sm:text-[11px] font-medium break-words ${isDark ? "text-white" : "text-yellow-900"}`}>{item.name}</p>
+                    <p className={`text-[10px] sm:text-[11px] font-medium break-words ${isDark ? "text-white" : "text-yellow-900"}`}>
+                      {item.name}{item.unitCount > 1 ? ` · Unit ${item.unitIndex + 1}` : ""}
+                    </p>
                     <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 text-[6px] sm:text-[7px] font-black uppercase">Paid</span>
                   </div>
                   <p className={`text-[8px] sm:text-[9px] font-bold uppercase mt-1 ${isDark ? "text-zinc-900" : "text-zinc-600"}`}>
@@ -389,12 +406,14 @@ function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
                   <p className="text-[7px] sm:text-[8px] text-zinc-500 mt-1">{dateStr}</p>
                 </div>
               </div>
-              <ComplimentaryItemControl
-                order={item.order}
-                item={item.orderItem}
-                onUpdated={onComplimentaryUpdated}
-                presentation="modal"
-              />
+              {!readOnlyDate && (
+                <ComplimentaryItemControl
+                  order={item.order}
+                  item={item.orderItem}
+                  onUpdated={onComplimentaryUpdated}
+                  presentation="modal"
+                />
+              )}
             </div>
           );
         })}
@@ -405,7 +424,7 @@ function RecentlyPaidItemsPanel({ orders, theme, onComplimentaryUpdated }) {
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function SupervisorDashboard({ onAddItems }) {
-  const { orders = [], refreshData, currentUser } = useData() || {};
+  const { orders = [], allOrders = [], refreshData, currentUser, businessDate, businessDateMode } = useData() || {};
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const savedUser = useMemo(() => {
@@ -417,7 +436,9 @@ export default function SupervisorDashboard({ onAddItems }) {
   ) || null;
   const currentStaffId = staffUser?.id;
   const currentStaffName = staffUser?.name || "Supervisor";
-  const today = getTodayLocal();
+  const selectedBusinessDate = businessDate || getTodayLocal();
+  const isReadOnlyDate = businessDateMode !== "LIVE" || selectedBusinessDate !== getTodayLocal();
+  const sourceOrders = isReadOnlyDate ? allOrders : orders;
 
   const [activeTab, setActiveTab] = useState("Live");
   const [searchQuery, setSearchQuery] = useState("");
@@ -511,18 +532,19 @@ export default function SupervisorDashboard({ onAddItems }) {
     }
   };
 
-  const staffOrders = useMemo(() => (orders || []).filter(order => {
-    const timestamp = order.timestamp || order.created_at;
+  const staffOrders = useMemo(() => (sourceOrders || []).filter(order => {
+    const isSelectedDate = getBusinessDate(order.business_date || order.timestamp || order.created_at) === selectedBusinessDate;
+    if (!isSelectedDate) return false;
     const orderStaffId = order.staff_id ?? order.staffId;
     const idMatch = currentStaffId != null && orderStaffId != null && String(orderStaffId) === String(currentStaffId);
     const nameMatch = currentStaffId == null && currentStaffName !== "Supervisor" &&
       String(order.staff_name || order.waiterName || order.staffName || "").trim().toLowerCase() === currentStaffName.trim().toLowerCase();
-    const isToday = timestamp && toLocalDateStr(new Date(timestamp)) === today;
     const hasReadyItems = hasReadyForServiceItems(order);
     const belongsToStaff = currentStaffId != null ? idMatch : nameMatch;
-    return (belongsToStaff || hasReadyItems) &&
-    (!order.sent_to_cashier || hasOutstandingCreditItems(order) || isToday || hasReadyItems);
-  }), [orders, currentStaffId, currentStaffName, today]);
+    return !isManagerCreatedOrder(order) &&
+    (belongsToStaff || hasReadyItems) &&
+    (!order.sent_to_cashier || hasOutstandingCreditItems(order) || isSelectedDate || hasReadyItems);
+  }), [sourceOrders, currentStaffId, currentStaffName, selectedBusinessDate]);
 
   // ── Group this supervisor's orders by table ──
   const groupedTableOrders = useMemo(() => {
@@ -544,18 +566,20 @@ export default function SupervisorDashboard({ onAddItems }) {
       g.total += Number(order.total) || 0;
       g.orderIds.push(order.id);
       g._rows.push({ id: order.id, paid: order.status === "Paid" || order.is_paid });
-      (order.items || []).forEach(item => {
-        g.items.push({
+      (order.items || []).forEach((item, orderItemIndex) => {
+        const row = {
           ...item,
+          _rowPaid: isItemFullyPaid(item)
+            || ((order.status === "Paid" || order.is_paid) && item.creditRequested !== true),
+        };
+        expandOrderItemUnits(row, {
           _orderId: order.id,
-          _rowPaid: isItemFullyPaid(item) || ((order.status === "Paid" || order.is_paid) && item.creditRequested !== true),
-          voidRequested: item.voidRequested || false,
-          voidProcessed: item.voidProcessed || false,
-          paymentRequested: item.paymentRequested || false,
-          creditRequested: item.creditRequested || false,
+          _orderItemIndex: item._orderItemIndex ?? orderItemIndex,
           voidReason: item.voidReason || null,
           voidedAt: item.voidedAt || null,
           tableName: key,
+        }).forEach((unit) => {
+          g.items.push(unit);
         });
       });
       const rank = { Paid: 7, Served: 6, Ready: 5, Delayed: 4, Preparing: 3, Pending: 2 };
@@ -577,18 +601,15 @@ export default function SupervisorDashboard({ onAddItems }) {
     const allGroups = Object.values(groupedTableOrders);
     return allGroups.filter(g => {
       const matchSearch = g.tableName.toLowerCase().includes(searchQuery.toLowerCase());
-      const nonVoided = (g.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
-      const allPaid = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
-      const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
-      const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
-      const hasReadyItems = nonVoided.some(isItemReadyForService);
-      const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
+      const activeItems = getActiveOrderItems(g.items || []);
+      const hasReadyItems = activeItems.some(isItemReadyForService);
+      const isServed = activeItems.length > 0 && activeItems.every(item =>
         item.served === true || isItemFullyPaid(item)
       );
-      const isLive = hasReadyItems || (!hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed);
+      const isLive = hasReadyItems || (activeItems.length > 0 && !isServed);
       let matchTab = false;
       switch (activeTab) {
-        case "Live": matchTab = isLive && nonVoided.length > 0; break;
+        case "Live": matchTab = isLive; break;
         case "Served": matchTab = isServed; break;
         default: matchTab = false;
       }
@@ -605,16 +626,13 @@ export default function SupervisorDashboard({ onAddItems }) {
     const acc = { Live: 0, Served: 0, Paid: totalPaidItems, Credits: pendingCredits.length, Voided: pendingVoids.length };
     const allGroups = Object.values(groupedTableOrders);
     allGroups.forEach(g => {
-      const nonVoided = (g.items || []).filter(i => i.status !== "VOIDED" && !i.voidProcessed);
-      const allPaid = nonVoided.length > 0 && nonVoided.every(i => i._rowPaid === true);
-      const hasAnyPaid = nonVoided.some(i => i._rowPaid === true);
-      const hasCreditItems = nonVoided.some(i => i.creditRequested === true);
-      const hasReadyItems = nonVoided.some(isItemReadyForService);
-      const isServed = nonVoided.length > 0 && !allPaid && nonVoided.every(item =>
+      const activeItems = getActiveOrderItems(g.items || []);
+      const hasReadyItems = activeItems.some(isItemReadyForService);
+      const isServed = activeItems.length > 0 && activeItems.every(item =>
         item.served === true || isItemFullyPaid(item)
       );
-      const isLive = hasReadyItems || (!hasAnyPaid && !hasCreditItems && nonVoided.length > 0 && !isServed);
-      if (isLive && nonVoided.length > 0) acc.Live++;
+      const isLive = hasReadyItems || (activeItems.length > 0 && !isServed);
+      if (isLive) acc.Live++;
       if (isServed) acc.Served++;
     });
     return acc;
@@ -635,7 +653,7 @@ export default function SupervisorDashboard({ onAddItems }) {
               Supervisor Dashboard
             </h1>
             <p className="text-[8px] sm:text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-              {getTodayLocal()}
+              {selectedBusinessDate}
             </p>
           </div>
         </div>
@@ -648,6 +666,11 @@ export default function SupervisorDashboard({ onAddItems }) {
       </div>
 
       <div className="px-4 sm:px-6 pt-6">
+        {isReadOnlyDate && (
+          <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs font-semibold text-amber-700">
+            Historical business date selected. This panel is read-only.
+          </div>
+        )}
         {/* Tabs */}
         <div className="flex flex-wrap gap-1 p-1 bg-white/5 rounded-xl sm:rounded-2xl border border-white/5 w-fit mb-4">
           {["Live", "Served", "Paid", "Credits", "Voided"].map(tab => {
@@ -696,6 +719,7 @@ export default function SupervisorDashboard({ onAddItems }) {
                 onApprove={handleApprove}
                 onReject={handleReject}
                 theme={theme}
+                readOnlyDate={isReadOnlyDate}
               />
             )}
             {activeTab === "Credits" && (
@@ -704,10 +728,11 @@ export default function SupervisorDashboard({ onAddItems }) {
                 onApprove={handleApprove}
                 onReject={handleReject}
                 theme={theme}
+                readOnlyDate={isReadOnlyDate}
               />
             )}
             {activeTab === "Paid" && (
-              <RecentlyPaidItemsPanel orders={staffOrders} theme={theme} onComplimentaryUpdated={refreshData} />
+              <RecentlyPaidItemsPanel orders={staffOrders} theme={theme} onComplimentaryUpdated={refreshData} readOnlyDate={isReadOnlyDate} />
             )}
             {(activeTab === "Live" || activeTab === "Served") && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
@@ -719,6 +744,7 @@ export default function SupervisorDashboard({ onAddItems }) {
                     onServeItem={handleServeItem}
                     onAddItems={onAddItems}
                     onComplimentaryUpdated={refreshData}
+                    readOnlyDate={isReadOnlyDate}
                   />
                 ))}
                 {filteredOrders.length === 0 && (

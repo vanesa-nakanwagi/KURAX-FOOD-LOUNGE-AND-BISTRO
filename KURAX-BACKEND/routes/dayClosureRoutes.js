@@ -3,22 +3,35 @@ import express from 'express';
 import pool from '../db.js';
 import { getCounterCash } from '../helpers/pettyCash.js';
 import logActivity from '../utils/logsActivity.js';
+import { hasValidRetrospectiveCounts } from '../helpers/dayClosureValidation.js';
+import { getLiveBusinessDate } from '../helpers/businessDateFormat.js';
 
 const router = express.Router();
 
 // ── Kampala date helper ───────────────────────────────────────────────────────
 function kampalaDate() {
-  return new Date(
-    new Date().toLocaleString('en-US', { timeZone: 'Africa/Nairobi' })
-  ).toISOString().split('T')[0];
+  return getLiveBusinessDate();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. CLOSE DAY - Archive all data and reset for fresh start
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/close-day', async (req, res) => {
-  const { closed_by, final_cash, final_card, final_mtn, final_airtel, final_gross, notes } = req.body;
-  const closingDate = kampalaDate();
+  const { closing_date, closed_by, final_cash, final_card, final_mtn, final_airtel, final_gross, notes } = req.body;
+  const liveDate = kampalaDate();
+  const closingDate = req.businessDate || liveDate;
+  if (closing_date && closing_date !== closingDate) {
+    return res.status(409).json({ error: 'The system business date changed. Refresh before closing a business date.' });
+  }
+  const isHistoricalClose = closingDate < liveDate;
+  if (closingDate > liveDate) {
+    return res.status(400).json({ error: 'A future business date cannot be closed.' });
+  }
+  if (isHistoricalClose && !hasValidRetrospectiveCounts({ final_cash, final_card, final_mtn, final_airtel, notes })) {
+    return res.status(400).json({
+      error: 'Historical closure requires cash, card, MTN, Airtel retrospective counts and an explanatory note.',
+    });
+  }
   const actor = closed_by || 'System';
 
   const client = await pool.connect();
@@ -26,48 +39,78 @@ router.post('/close-day', async (req, res) => {
   try {
     await client.query('BEGIN');
     await client.query(
-      'LOCK TABLE public.orders, public.tables, public.kitchen_tickets, public.barman_tickets, public.barista_tickets IN SHARE ROW EXCLUSIVE MODE'
+      'LOCK TABLE public.orders, public.tables, public.kitchen_tickets, public.barman_tickets, public.barista_tickets, public.cashier_queue, public.daily_summary IN SHARE ROW EXCLUSIVE MODE'
     );
 
+    const alreadyClosedResult = await client.query(
+      'SELECT day_closed FROM public.daily_summary WHERE summary_date = $1 FOR UPDATE',
+      [closingDate]
+    );
+    if (alreadyClosedResult.rows[0]?.day_closed) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Business date ${closingDate} is already closed.` });
+    }
+
+    const orderBusinessDate = "COALESCE(o.business_date, (o.date AT TIME ZONE 'Africa/Kampala')::date, (COALESCE(o.created_at, o.timestamp) AT TIME ZONE 'Africa/Kampala')::date)";
     const openWorkResult = await client.query(`
       SELECT
         (
-          SELECT COUNT(*)
-          FROM public.tables t
-          WHERE LOWER(COALESCE(t.status, '')) = 'occupied'
-            AND (
-              NOT EXISTS (
-                SELECT 1
-                FROM public.orders o
-                WHERE UPPER(o.table_name) = UPPER(t.name)
-                  AND COALESCE(o.day_cleared, false) = false
-                  AND COALESCE(o.is_archived, false) = false
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM public.orders o
-                WHERE UPPER(o.table_name) = UPPER(t.name)
-                  AND COALESCE(o.day_cleared, false) = false
-                  AND COALESCE(o.is_archived, false) = false
-                  AND (
-                    LOWER(COALESCE(o.status, '')) NOT IN ('paid', 'closed', 'voided', 'cancelled')
-                    OR (
-                      LOWER(COALESCE(o.status, '')) <> 'closed'
-                      AND EXISTS (
-                        SELECT 1
-                        FROM public.credits c
-                        WHERE c.order_id = o.id
-                          AND c.status <> 'FullySettled'
-                      )
+          SELECT CASE WHEN $2::boolean THEN
+            (
+              SELECT COUNT(DISTINCT UPPER(TRIM(o.table_name)))
+              FROM public.orders o
+              WHERE ${orderBusinessDate} = $1::date
+                AND o.table_name IS NOT NULL
+                AND UPPER(TRIM(o.table_name)) <> 'WALK-IN'
+                AND COALESCE(o.day_cleared, false) = false
+                AND COALESCE(o.is_archived, false) = false
+                AND (
+                  LOWER(COALESCE(o.status, '')) NOT IN ('paid', 'closed', 'voided', 'cancelled')
+                  OR (
+                    LOWER(COALESCE(o.status, '')) <> 'closed'
+                    AND EXISTS (
+                      SELECT 1 FROM public.credits c
+                      WHERE c.order_id = o.id AND c.status <> 'FullySettled'
                     )
                   )
-              )
+                )
             )
+          ELSE
+            (
+              SELECT COUNT(*)
+              FROM public.tables t
+              WHERE LOWER(COALESCE(t.status, '')) = 'occupied'
+                AND (
+                  NOT EXISTS (
+                    SELECT 1 FROM public.orders o
+                    WHERE UPPER(o.table_name) = UPPER(t.name)
+                  )
+                  OR EXISTS (
+                  SELECT 1 FROM public.orders o
+                  WHERE UPPER(o.table_name) = UPPER(t.name)
+                    AND ${orderBusinessDate} = $1::date
+                    AND COALESCE(o.day_cleared, false) = false
+                    AND COALESCE(o.is_archived, false) = false
+                    AND (
+                      LOWER(COALESCE(o.status, '')) NOT IN ('paid', 'closed', 'voided', 'cancelled')
+                      OR (
+                        LOWER(COALESCE(o.status, '')) <> 'closed'
+                        AND EXISTS (
+                          SELECT 1 FROM public.credits c
+                          WHERE c.order_id = o.id AND c.status <> 'FullySettled'
+                        )
+                      )
+                      )
+                    )
+                )
+            )
+          END
         ) AS open_table_count,
         (
           SELECT COUNT(*)
           FROM public.orders o
-          WHERE COALESCE(o.day_cleared, false) = false
+          WHERE ${orderBusinessDate} = $1::date
+            AND COALESCE(o.day_cleared, false) = false
             AND COALESCE(o.is_archived, false) = false
             AND (
               LOWER(COALESCE(o.status, '')) NOT IN ('paid', 'closed', 'voided', 'cancelled')
@@ -89,27 +132,44 @@ router.post('/close-day', async (req, res) => {
             WHERE status IN ('Pending', 'Preparing', 'Ready')
               AND COALESCE(cleared_by_kitchen, false) = false
               AND cleared_at IS NULL
+              AND ticket_date = $1::date
             UNION ALL
             SELECT id FROM public.barman_tickets
             WHERE status IN ('Pending', 'Preparing', 'Ready')
               AND cleared_at IS NULL
+              AND ticket_date = $1::date
             UNION ALL
             SELECT id FROM public.barista_tickets
             WHERE status IN ('Pending', 'Preparing', 'Ready')
               AND cleared_at IS NULL
+              AND ticket_date = $1::date
           ) AS station_tickets
-        ) AS open_station_ticket_count
-    `);
+        ) AS open_station_ticket_count,
+        (
+          SELECT COUNT(*)
+          FROM public.cashier_queue cq
+          WHERE COALESCE(cq.business_date, (cq.created_at AT TIME ZONE 'Africa/Kampala')::date) = $1::date
+            AND (
+              cq.status IN ('Pending', 'PendingManagerApproval')
+              OR EXISTS (
+                SELECT 1 FROM public.public_payment_requests p
+                WHERE p.cashier_queue_id = cq.id AND p.status = 'Rejected'
+              )
+            )
+        ) AS open_cashier_count
+    `, [closingDate, isHistoricalClose]);
     const openTableCount = Number(openWorkResult.rows[0].open_table_count) || 0;
     const openOrderCount = Number(openWorkResult.rows[0].open_order_count) || 0;
     const openStationTicketCount = Number(openWorkResult.rows[0].open_station_ticket_count) || 0;
-    if (openTableCount > 0 || openOrderCount > 0 || openStationTicketCount > 0) {
+    const openCashierCount = Number(openWorkResult.rows[0].open_cashier_count) || 0;
+    if (openTableCount > 0 || openOrderCount > 0 || openStationTicketCount > 0 || openCashierCount > 0) {
       await client.query('ROLLBACK');
       return res.status(409).json({
-        error: `Day cannot be closed while there are ${openTableCount} open table(s), ${openOrderCount} open order(s), and ${openStationTicketCount} active kitchen/bar/barista ticket(s). Finish or clear all station tickets and close all open orders first; unsettled credited orders may remain only when marked Closed.`,
+        error: `Day cannot be closed while there are ${openTableCount} open table(s), ${openOrderCount} open order(s), ${openCashierCount} pending cashier item(s), and ${openStationTicketCount} active kitchen/bar/barista ticket(s). Finish or cancel all work for this business date first; unsettled credited orders may remain only when marked Closed.`,
         open_tables: openTableCount,
         open_orders: openOrderCount,
         open_station_tickets: openStationTicketCount,
+        open_cashier_items: openCashierCount,
       });
     }
 
@@ -119,14 +179,17 @@ router.post('/close-day', async (req, res) => {
         closing_date, recorded_by, gross, cash, mtn, airtel, card, credit, order_count, 
         final_cash, final_card, final_mtn, final_airtel, final_gross, notes, closed_at
       )
-      SELECT 
+      VALUES (
         $1, $2,
-        COALESCE(total_gross, 0), COALESCE(total_cash, 0), 
-        COALESCE(total_mtn, 0), COALESCE(total_airtel, 0), 
-        COALESCE(total_card, 0), COALESCE(total_credit, 0), COALESCE(order_count, 0),
+        COALESCE((SELECT total_gross FROM daily_summary WHERE summary_date = $1), 0),
+        COALESCE((SELECT total_cash FROM daily_summary WHERE summary_date = $1), 0),
+        COALESCE((SELECT total_mtn FROM daily_summary WHERE summary_date = $1), 0),
+        COALESCE((SELECT total_airtel FROM daily_summary WHERE summary_date = $1), 0),
+        COALESCE((SELECT total_card FROM daily_summary WHERE summary_date = $1), 0),
+        COALESCE((SELECT total_credit FROM daily_summary WHERE summary_date = $1), 0),
+        COALESCE((SELECT order_count FROM daily_summary WHERE summary_date = $1), 0),
         $3, $4, $5, $6, $7, $8, NOW()
-      FROM daily_summary
-      WHERE summary_date = $1
+      )
       ON CONFLICT (closing_date) DO UPDATE SET
         recorded_by = EXCLUDED.recorded_by,
         gross = EXCLUDED.gross,
@@ -143,43 +206,55 @@ router.post('/close-day', async (req, res) => {
         final_gross = EXCLUDED.final_gross,
         notes = EXCLUDED.notes,
         closed_at = NOW()
-    `, [closingDate, actor, final_cash || 0, final_card || 0, final_mtn || 0, final_airtel || 0, final_gross || 0, notes || '']);
+      RETURNING *
+    `, [closingDate, actor, final_cash ?? 0, final_card ?? 0, final_mtn ?? 0, final_airtel ?? 0, final_gross ?? 0, notes || '']);
 
-    // Reset daily summary for this date (zero totals, mark as closed)
-    await client.query(`
-      INSERT INTO daily_summary (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, total_credit, total_mixed, order_count, day_closed, closed_by, closed_at, created_at, updated_at)
-      VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, true, $2, NOW(), NOW(), NOW())
-      ON CONFLICT (summary_date) DO UPDATE SET
-        total_gross = 0,
-        total_cash = 0,
-        total_card = 0,
-        total_mtn = 0,
-        total_airtel = 0,
-        total_credit = 0,
-        total_mixed = 0,
-        order_count = 0,
-        day_closed = true,
-        closed_by = $2,
-        closed_at = NOW(),
-        updated_at = NOW()
-    `, [closingDate, actor]);
+    if (isHistoricalClose) {
+      await client.query(`
+        INSERT INTO daily_summary (summary_date, day_closed, closed_by, closed_at, created_at, updated_at)
+        VALUES ($1, true, $2, NOW(), NOW(), NOW())
+        ON CONFLICT (summary_date) DO UPDATE SET
+          day_closed = true,
+          closed_by = $2,
+          closed_at = NOW(),
+          updated_at = NOW()
+      `, [closingDate, actor]);
+    } else {
+      await client.query(`
+        INSERT INTO daily_summary (summary_date, total_gross, total_cash, total_card, total_mtn, total_airtel, total_credit, total_mixed, order_count, day_closed, closed_by, closed_at, created_at, updated_at)
+        VALUES ($1, 0, 0, 0, 0, 0, 0, 0, 0, true, $2, NOW(), NOW(), NOW())
+        ON CONFLICT (summary_date) DO UPDATE SET
+          total_gross = 0,
+          total_cash = 0,
+          total_card = 0,
+          total_mtn = 0,
+          total_airtel = 0,
+          total_credit = 0,
+          total_mixed = 0,
+          order_count = 0,
+          day_closed = true,
+          closed_by = $2,
+          closed_at = NOW(),
+          updated_at = NOW()
+      `, [closingDate, actor]);
+    }
 
     // Archive orders: set both day_cleared AND is_archived = true
     const ordersResult = await client.query(`
-      UPDATE orders
+      UPDATE public.orders AS o
       SET day_cleared = true,
           is_archived = true,
           updated_at = NOW()
-      WHERE day_cleared = false
-        AND COALESCE(sent_to_cashier, false) = true
+      WHERE COALESCE(o.day_cleared, false) = false
+        AND ${orderBusinessDate} = $1::date
+        AND LOWER(COALESCE(o.status, '')) IN ('paid', 'closed', 'voided', 'cancelled')
         AND NOT EXISTS (
           SELECT 1
           FROM public.credits c
-          WHERE c.order_id = orders.id
+          WHERE c.order_id = o.id
             AND c.status <> 'FullySettled'
         )
-        AND DATE(timestamp AT TIME ZONE 'Africa/Nairobi') <= $1
-      RETURNING id
+      RETURNING o.id
     `, [closingDate]);
     const clearedOrdersCount = ordersResult.rowCount;
 
@@ -189,41 +264,48 @@ router.post('/close-day', async (req, res) => {
           cleared_by = $1,
           cleared_at = NOW(),
           updated_at = NOW()
-      WHERE cleared_by_kitchen = false
-        AND ticket_date <= $2
+      WHERE COALESCE(cleared_by_kitchen, false) = false
+        AND ticket_date = $2::date
       RETURNING id
     `, [actor, closingDate]);
-    const clearedTicketsCount = ticketsResult.rowCount;
 
-    await client.query(`
+    const baristaTicketsResult = await client.query(`
       UPDATE barista_tickets
       SET cleared_by_kitchen = true,
           cleared_by = $1,
           cleared_at = NOW(),
           updated_at = NOW()
-      WHERE cleared_by_kitchen = false
-        AND ticket_date <= $2
+      WHERE COALESCE(cleared_by_kitchen, false) = false
+        AND ticket_date = $2::date
+      RETURNING id
     `, [actor, closingDate]);
 
-    await client.query(`
+    const barmanTicketsResult = await client.query(`
       UPDATE barman_tickets
       SET cleared_by_kitchen = true,
           cleared_by = $1,
           cleared_at = NOW(),
           updated_at = NOW()
-      WHERE cleared_by_kitchen = false
-        AND ticket_date <= $2
-    `, [actor, closingDate]);
-
-    const shishaOrdersResult = await client.query(`
-      UPDATE public.shisha_orders
-      SET day_cleared = true,
-          updated_at = NOW()
-      WHERE day_cleared = false
-        AND DATE(created_at AT TIME ZONE 'Africa/Kampala') <= $1
+      WHERE COALESCE(cleared_by_kitchen, false) = false
+        AND ticket_date = $2::date
       RETURNING id
-    `, [closingDate]);
-    const clearedShishaOrdersCount = shishaOrdersResult.rowCount;
+    `, [actor, closingDate]);
+    const clearedTicketsCount = ticketsResult.rowCount
+      + baristaTicketsResult.rowCount
+      + barmanTicketsResult.rowCount;
+
+    let clearedShishaOrdersCount = 0;
+    if (!isHistoricalClose) {
+      const shishaOrdersResult = await client.query(`
+        UPDATE public.shisha_orders
+        SET day_cleared = true,
+            updated_at = NOW()
+        WHERE day_cleared = false
+          AND DATE(created_at AT TIME ZONE 'Africa/Kampala') <= $1
+        RETURNING id
+      `, [closingDate]);
+      clearedShishaOrdersCount = shishaOrdersResult.rowCount;
+    }
 
     // Clear cashier queue (shift cleared)
     await client.query(`
@@ -231,43 +313,44 @@ router.post('/close-day', async (req, res) => {
       SET shift_cleared = true,
           updated_at = NOW()
       WHERE shift_cleared = false
-        AND DATE(created_at AT TIME ZONE 'Africa/Nairobi') <= $1
+        AND COALESCE(business_date, (created_at AT TIME ZONE 'Africa/Kampala')::date) = $1::date
     `, [closingDate]);
 
-    // Expire pending void requests
-    await client.query(`
-      UPDATE void_requests
-      SET status = 'Expired',
-          resolved_by = $1,
-          resolved_at = NOW()
-      WHERE status = 'Pending'
-        AND DATE(created_at AT TIME ZONE 'Africa/Nairobi') <= $2
-    `, [actor, closingDate]);
+    if (!isHistoricalClose) {
+      await client.query(`
+        UPDATE void_requests
+        SET status = 'Expired',
+            resolved_by = $1,
+            resolved_at = NOW()
+        WHERE status = 'Pending'
+          AND DATE(created_at AT TIME ZONE 'Africa/Kampala') <= $2
+      `, [actor, closingDate]);
 
-    // Reset all tables to Available
-    await client.query(`
-      UPDATE tables
-      SET status = 'Available',
-          last_order_id = NULL,
-          updated_at = NOW()
-      WHERE status = 'Occupied'
-    `);
+      // Only a live close may reset the live table state.
+      await client.query(`
+        UPDATE tables
+        SET status = 'Available',
+            last_order_id = NULL,
+            updated_at = NOW()
+        WHERE status = 'Occupied'
+      `);
 
-    await client.query(`DELETE FROM physical_counts WHERE count_date = $1`, [closingDate]);
-    await client.query(`DELETE FROM daily_reconciliations WHERE recon_date = $1`, [closingDate]);
-    await client.query(`
-      UPDATE daily_summaries
-      SET total_gross = 0,
-          total_cash = 0,
-          total_card = 0,
-          total_mtn = 0,
-          total_airtel = 0,
-          total_credit = 0,
-          total_mixed = 0,
-          order_count = 0,
-          updated_at = NOW()
-      WHERE summary_date = $1
-    `, [closingDate]);
+      await client.query(`DELETE FROM physical_counts WHERE count_date = $1`, [closingDate]);
+      await client.query(`DELETE FROM daily_reconciliations WHERE recon_date = $1`, [closingDate]);
+      await client.query(`
+        UPDATE daily_summaries
+        SET total_gross = 0,
+            total_cash = 0,
+            total_card = 0,
+            total_mtn = 0,
+            total_airtel = 0,
+            total_credit = 0,
+            total_mixed = 0,
+            order_count = 0,
+            updated_at = NOW()
+        WHERE summary_date = $1
+      `, [closingDate]);
+    }
 
     await logActivity(pool, {
       type: 'DAY_CLOSED',
@@ -279,6 +362,8 @@ router.post('/close-day', async (req, res) => {
         cleared_orders: clearedOrdersCount,
         cleared_tickets: clearedTicketsCount,
         cleared_shisha_orders: clearedShishaOrdersCount,
+        historical_close: isHistoricalClose,
+        retrospective_count: isHistoricalClose,
         final_cash: final_cash || 0,
         final_card: final_card || 0,
         final_mtn: final_mtn || 0,
@@ -296,6 +381,7 @@ router.post('/close-day', async (req, res) => {
       cleared_orders: clearedOrdersCount,
       cleared_tickets: clearedTicketsCount,
       cleared_shisha_orders: clearedShishaOrdersCount,
+      historical_close: isHistoricalClose,
       archived_summary: archiveResult.rows[0] || null
     });
 

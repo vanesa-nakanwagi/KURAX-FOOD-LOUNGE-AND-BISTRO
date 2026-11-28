@@ -56,14 +56,14 @@ function CreditStatusBadge({ status }) {
 
 const NAV = [
   { icon: <LayoutDashboard size={18} />, label: "Dashboard",  tab: "TARGETS"  },
-  { icon: <BarChart3 size={18} />, label: "Menu Profitability", tab: "MENU_PROFITABILITY" },
-  { icon: <CircleDollarSign size={18} />, label: "Discount Controls", tab: "DISCOUNTS" },
   { icon: <Wallet size={18} />,       label: "Reconciliation", tab: "RECONCILIATION" },
+  { icon: <BarChart3 size={18} />, label: "Menu Profitability", tab: "MENU_PROFITABILITY" },
   { icon: <CreditCard size={18} />,      label: "Finance & Credits",  tab: "FINANCES"  },
   { icon: <BarChart3 size={18} />,       label: "Staff Performance",   tab: "PERFORMANCE" },
   { icon: <CircleDollarSign size={18} />, label: "Department Reports", tab: "DEPARTMENT_REPORTS" },
   { icon: <Flame size={18} />, label: "Shisha Sales", tab: "SHISHA_SALES" },
   { icon: <Users size={18} />,           label: "Staff",      tab: "STAFF"     },
+  { icon: <CircleDollarSign size={18} />, label: "Discount Controls", tab: "DISCOUNTS" },
   { icon: <Bike size={18} />,            label: "Riders",     tab: "RIDERS"    },
   { icon: <ClipboardList size={18} />, label: "Audit Trail", tab: "AUDIT_TRAIL" },
   { icon: <History size={18} />,         label: "History",    tab: "HISTORY"   },

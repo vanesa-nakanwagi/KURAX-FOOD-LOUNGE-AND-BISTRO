@@ -12,12 +12,6 @@ import {
 
 import API_URL from "../../config/api";
 
-// ─── KAMPALA DATE ─────────────────────────────────────────────────────────────
-function kampalaDateStr(d = new Date()) {
-  return new Date(d.toLocaleString("en-US", { timeZone: "Africa/Nairobi" }))
-    .toISOString().split("T")[0];
-}
-
 function formatMoney(value) {
   return `UGX ${Number(value || 0).toLocaleString()}`;
 }
@@ -336,7 +330,7 @@ export default function KitchenDisplay() {
   const handleShiftReset = async () => {
     let chefs = [];
     try {
-      const res = await fetch(`${API_URL}/api/kitchen/tickets/summary?date=${kampalaDateStr()}`);
+      const res = await fetch(`${API_URL}/api/kitchen/tickets/summary`);
       if (res.ok) { const d = await res.json(); chefs = d.chefs || []; }
     } catch {}
     const itemCount = filteredOrders.reduce((s, o) => s + o.items.length, 0);

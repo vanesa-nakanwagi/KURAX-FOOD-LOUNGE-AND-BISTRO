@@ -123,7 +123,7 @@ router.get('/summary', async (req, res) => {
          COALESCE(SUM(total), 0)                             AS total_revenue,
          COUNT(CASE WHEN is_archived = false THEN 1 END)     AS active_tables
        FROM orders
-       WHERE (timestamp AT TIME ZONE 'Africa/Nairobi')::date = $1`,
+       WHERE COALESCE(business_date, (timestamp AT TIME ZONE 'Africa/Nairobi')::date) = $1::date`,
       [date]
     );
     res.json(result.rows[0]);
@@ -196,7 +196,7 @@ router.get('/today', async (req, res) => {
 
 // ─── 2a. CREATE TODAY'S SUMMARY IF NOT EXISTS ────────────────────────────────
 router.post('/ensure-today', async (req, res) => {
-  const today = kampalaDate();
+  const today = req.businessDate || kampalaDate();
   try {
     const result = await pool.query(
       `INSERT INTO daily_summary 
@@ -217,7 +217,7 @@ router.post('/ensure-today', async (req, res) => {
 // ─── 3. MONTHLY CREDIT SUMMARY ────────────────────────────────────────────────
 router.get('/credit-summary-monthly', async (req, res) => {
   const { month } = req.query;
-  const targetMonth = month || new Date().toISOString().slice(0, 7);
+  const targetMonth = month || req.businessDate.slice(0, 7);
   console.log(`🔵 /credit-summary-monthly called for month: ${targetMonth}`);
 
   try {
@@ -231,7 +231,7 @@ router.get('/credit-summary-monthly', async (req, res) => {
          FROM credit_settlements
          GROUP BY credit_id
        ) cs ON cs.credit_id = c.id
-       WHERE DATE_TRUNC('month', c.created_at AT TIME ZONE 'Africa/Nairobi')
+       WHERE DATE_TRUNC('month', COALESCE(c.business_date, (c.created_at AT TIME ZONE 'Africa/Nairobi')::date)::timestamp)
            = DATE_TRUNC('month', ($1 || '-01')::date)
        ORDER BY c.created_at DESC`,
       [targetMonth]
@@ -318,12 +318,12 @@ router.get('/weekly-revenue', async (req, res) => {
   try {
     const result = await pool.query(`
       WITH day_series AS (
-        SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Nairobi')::date - n AS day
+        SELECT $1::date - n AS day
         FROM generate_series(0, 6) AS gs(n)
       ),
       sales AS (
         SELECT
-          (confirmed_at AT TIME ZONE 'Africa/Nairobi')::date AS day,
+          COALESCE(cashier_queue.business_date, (confirmed_at AT TIME ZONE 'Africa/Nairobi')::date) AS day,
           COALESCE(SUM(amount), 0) AS gross,
           COALESCE(SUM(CASE WHEN method = 'Cash'                      THEN amount ELSE 0 END), 0) AS cash,
           COALESCE(SUM(CASE WHEN method = 'Card'                      THEN amount ELSE 0 END), 0) AS card,
@@ -332,17 +332,17 @@ router.get('/weekly-revenue', async (req, res) => {
         WHERE status = 'Confirmed'
           AND method != 'Credit'
           AND confirmed_at IS NOT NULL
-          AND (confirmed_at AT TIME ZONE 'Africa/Nairobi')::date
-              >= (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Nairobi')::date - 6
+          AND COALESCE(cashier_queue.business_date, (confirmed_at AT TIME ZONE 'Africa/Nairobi')::date)
+              BETWEEN $1::date - 6 AND $1::date
         GROUP BY 1
       ),
       settled AS (
         SELECT
-          (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date AS day,
+          COALESCE(cs.business_date, (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date) AS day,
           COALESCE(SUM(cs.amount_paid), 0) AS credit_settled
         FROM credit_settlements cs
-        WHERE (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date
-              >= (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Nairobi')::date - 6
+        WHERE COALESCE(cs.business_date, (cs.created_at AT TIME ZONE 'Africa/Nairobi')::date)
+              BETWEEN $1::date - 6 AND $1::date
         GROUP BY 1
       ),
       expenses AS (
@@ -350,7 +350,7 @@ router.get('/weekly-revenue', async (req, res) => {
           entry_date AS day,
           COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE 0 END), 0) AS petty
         FROM petty_cash
-        WHERE entry_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Nairobi')::date - 6
+        WHERE entry_date BETWEEN $1::date - 6 AND $1::date
         GROUP BY 1
       )
       SELECT
@@ -369,7 +369,7 @@ router.get('/weekly-revenue', async (req, res) => {
       LEFT JOIN settled  st ON st.day = ds.day
       LEFT JOIN expenses e  ON e.day  = ds.day
       ORDER BY ds.day ASC
-    `);
+    `, [req.businessDate || kampalaDate()]);
     res.json(result.rows);
   } catch (err) {
     console.error(' Weekly Revenue Error:', err.message);
@@ -402,7 +402,7 @@ router.get('/shifts', async (req, res) => {
 
 // ─── 8. PETTY CASH — GET today's entries ─────────────────────────────────────
 router.get('/petty-cash', async (req, res) => {
-  const today = kampalaDate();
+  const today = req.businessDate || kampalaDate();
   console.log(`/petty-cash GET called for ${today}`);
   try {
     const result = await pool.query(
@@ -439,7 +439,7 @@ router.post('/petty-cash', async (req, res) => {
     return res.status(400).json({ error: 'Petty cash entries must be expenses' });
   }
 
-  const today = kampalaDate();
+  const today = req.businessDate || kampalaDate();
   try {
     const saved = await createPettyExpense(pool, {
       amount: expenseAmount,
@@ -497,7 +497,7 @@ router.delete('/petty-cash/:id', async (req, res) => {
 
 // ─── 11. DIRECTOR DAILY SUMMARY (combined endpoint) ──────────────────────────
 router.get('/director/daily-summary', async (req, res) => {
-  const today = kampalaDate();
+  const today = req.businessDate || kampalaDate();
   try {
     const dailyRes = await pool.query(
       `SELECT
@@ -530,9 +530,10 @@ router.get('/director/daily-summary', async (req, res) => {
          FROM credit_settlements
          GROUP BY credit_id
        ) cs ON cs.credit_id = c.id
-       WHERE DATE_TRUNC('month', c.created_at AT TIME ZONE 'Africa/Nairobi')
-           = DATE_TRUNC('month', CURRENT_DATE)
-       ORDER BY c.created_at DESC`
+       WHERE DATE_TRUNC('month', COALESCE(c.business_date, (c.created_at AT TIME ZONE 'Africa/Nairobi')::date)::timestamp)
+           = DATE_TRUNC('month', ($1 || '-01')::date)
+       ORDER BY c.created_at DESC`,
+      [today.slice(0, 7)]
     );
 
     let totalSettledMonthly = 0, totalOutstandingMonthly = 0;
@@ -682,7 +683,7 @@ router.post('/purchases', async (req, res) => {
     await pool.query(
       `INSERT INTO purchases (purchase_date, supplier, total_amount, invoice_number, notes, created_by)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [purchase_date, supplier || null, total_amount, invoice_number || null, notes || null, user]
+      [req.businessDate || purchase_date, supplier || null, total_amount, invoice_number || null, notes || null, user]
     );
     res.status(201).json({ success: true });
   } catch (err) {
@@ -720,7 +721,7 @@ router.post('/inventory-snapshots', async (req, res) => {
     await pool.query(
       `INSERT INTO inventory_snapshots (snapshot_date, total_value, notes, created_by)
        VALUES ($1, $2, $3, $4)`,
-      [snapshot_date, total_value, notes || null, user]
+      [req.businessDate || snapshot_date, total_value, notes || null, user]
     );
     res.status(201).json({ success: true });
   } catch (err) {
@@ -936,7 +937,7 @@ router.get('/accounting/cashbook/audit-trail', async (req, res) => {
 
 router.get('/accounting/overview', async (req, res) => {
   try {
-    const today = kampalaDate();
+    const today = req.businessDate || kampalaDate();
     const [trial, income, cashFlow, accounts] = await Promise.all([
       getTrialBalance(today, today),
       getIncomeStatement('2000-01-01', today),

@@ -35,6 +35,16 @@ test('partial waiver records payable and preserves actual paid amount', () => {
   assert.equal(getOrderItemPaidAmount(item), 3000);
 });
 
+test('partially waived item adds only its payable amount to daily gross revenue', () => {
+  const item = applyComplimentaryTerms(
+    { name: 'Meal', price: 30000, quantity: 1 },
+    { complimentary: true, waivedAmount: 10000, actorId: 4, actorName: 'Manager' }
+  );
+
+  assert.equal(getOrderItemOriginalAmount(item), 30000);
+  assert.equal(getOrderPayableTotal([item]), 20000);
+});
+
 test('a UGX 50000 waiver on a UGX 150000 item preserves gross and leaves UGX 100000 payable', () => {
   const item = applyComplimentaryTerms(
     { name: 'Dinner', price: 150000, quantity: 1 },

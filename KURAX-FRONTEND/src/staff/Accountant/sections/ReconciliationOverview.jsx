@@ -1,12 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, Banknote, BookOpen, CalendarDays,
+  AlertTriangle, ArrowRight, Banknote, BookOpen,
   CheckCircle2, CircleAlert, Clock3, CreditCard, DollarSign,
   ExternalLink, Flag, Loader2, RefreshCw, ShieldCheck, Smartphone,
-  UserRound, WalletCards, XCircle
+  WalletCards, XCircle
 } from "lucide-react";
 import { fmt, kampalaDate } from "../utils/helpers";
 import { RevenueChart } from "../../Director/charts";
+import MonthlyFinancialBreakdown from "../../components/MonthlyFinancialBreakdown";
+import API_URL from "../../../config/api";
 
 const MAROON = "#651b32";
 const TODAY = kampalaDate();
@@ -115,15 +117,42 @@ export default function ReconciliationOverview({
   setSelectedMonth,
   userName,
   summaryAvailable,
-  refreshDashboard,
   setActiveSection,
   handleDayClosure,
   isFinalizing,
-  error,
 }) {
-  const [lastRefresh, setLastRefresh] = useState(new Date());
   const [methodFilter, setMethodFilter] = useState("All methods");
   const [statusFilter, setStatusFilter] = useState("All statuses");
+  const [monthlySummary, setMonthlySummary] = useState(null);
+  const [monthlySummaryLoading, setMonthlySummaryLoading] = useState(false);
+  const [monthlySummaryError, setMonthlySummaryError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const loadMonthlySummary = async () => {
+      setMonthlySummary(null);
+      setMonthlySummaryError("");
+      setMonthlySummaryLoading(true);
+      try {
+        const response = await fetch(
+          `${API_URL}/api/manager/target-progress?month=${encodeURIComponent(selectedMonth)}`
+        );
+        if (!response.ok) throw new Error(`Monthly financial summary request failed (${response.status}).`);
+        const data = await response.json();
+        if (active) setMonthlySummary(data);
+      } catch (requestError) {
+        console.error("Failed to load accountant monthly financial chart:", requestError);
+        if (active) setMonthlySummaryError("Unable to load the monthly financial chart.");
+      } finally {
+        if (active) setMonthlySummaryLoading(false);
+      }
+    };
+
+    loadMonthlySummary();
+    return () => {
+      active = false;
+    };
+  }, [selectedMonth]);
 
   const physicalAvailable = hasPhysicalCount && !dayClosed;
   const creditRows = useMemo(() => {
@@ -165,11 +194,6 @@ export default function ReconciliationOverview({
     }).length,
   };
 
-  const refresh = async () => {
-    setLastRefresh(new Date());
-    if (refreshDashboard) await refreshDashboard();
-  };
-
   const physicalRows = [
     { label: "Cash", icon: <Banknote size={15} className="text-emerald-600" />, expected: sys.cash, counted: physCash, variance: varCash },
     { label: "MTN", icon: <Smartphone size={15} className="text-yellow-600" />, expected: sys.mtn, counted: physMomoMTN, variance: varMTN },
@@ -185,8 +209,6 @@ export default function ReconciliationOverview({
     !dayClosed ? { key: "shift", level: "medium", title: "Day is not closed", detail: "The reconciliation gate is still open.", owner: userName, action: "END_OF_SHIFT", actionLabel: "Review close" } : null,
   ].filter(Boolean);
 
-  const dayStatus = dayClosed ? "Closed" : exceptions.length ? "Reconciliation Required" : "Open";
-  const dayStatusClass = dayClosed ? "bg-emerald-50 text-emerald-700 border-emerald-200" : exceptions.length ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200";
   const netCollected = summaryAvailable ? Number(sys.gross || 0) + Number(sys.credit_settlements || 0) : 0;
   const hasMonthlyProfit = Boolean(profitData?.sales || profitData?.costs);
   const monthlyRevenue = Number(profitData?.sales?.total_gross ?? 0) > 0
@@ -206,35 +228,29 @@ export default function ReconciliationOverview({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <header className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 sm:p-6">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
-          <div className="flex items-start gap-3">
-            <div className="w-1.5 h-14 rounded-full bg-yellow-500 shrink-0" />
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.22em] text-yellow-600">Kurax Food Lounge & Bistro</p>
-              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mt-1">Accountant Reconciliation</h1>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                <span className="flex items-center gap-1.5"><CalendarDays size={13} className="text-yellow-600" /> Business Date: {TODAY}</span>
-                <span className="flex items-center gap-1.5"><UserRound size={13} className="text-yellow-600" /> {userName || "Not available"}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <span className={`px-3 py-2 rounded-xl border text-[9px] font-black uppercase tracking-wider ${dayStatusClass}`}>{dayStatus}</span>
-            <span className="px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-[9px] font-bold text-gray-500">Refreshed {lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-            <button onClick={refresh} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-500 text-black text-[9px] font-black uppercase hover:bg-yellow-600 transition-colors">
-              <RefreshCw size={13} className={creditsLoading ? "animate-spin" : ""} /> Refresh
-            </button>
-          </div>
+      {monthlySummaryLoading ? (
+        <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center text-sm font-bold text-gray-500">
+          Loading monthly financial chart...
         </div>
-        <div className="flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-gray-100">
-          <span className="text-[9px] font-black uppercase tracking-wider text-gray-500">Exceptions</span>
-          <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase ${exceptions.length ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
-            {exceptions.length ? `${exceptions.length} require attention` : "No known exceptions"}
-          </span>
-          {error && <span className="text-[9px] font-bold text-red-600">Data source error.</span>}
+      ) : monthlySummaryError ? (
+        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+          {monthlySummaryError}
         </div>
-      </header>
+      ) : monthlySummary ? (
+        <MonthlyFinancialBreakdown
+          month={selectedMonth}
+          target={monthlySummary.target}
+          grossSales={monthlySummary.grossSales}
+          complimentaryPaid={monthlySummary.complimentaryPaid}
+          complimentaryWaived={monthlySummary.complimentaryWaived}
+          creditSettlements={monthlySummary.creditSettlements}
+          creditBalance={monthlySummary.creditBalance}
+          expenses={monthlySummary.expenses}
+          currentCash={monthlySummary.currentCash}
+          remaining={monthlySummary.remaining}
+          percentage={monthlySummary.percentage}
+        />
+      ) : null}
 
       <Panel className="p-5 sm:p-6">
         <SectionHeader eyebrow="Revenue flow" title="Revenue flow" detail="Paid orders plus all collected credit payments, including partial and full settlements." />

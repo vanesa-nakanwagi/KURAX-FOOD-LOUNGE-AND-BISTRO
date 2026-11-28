@@ -122,11 +122,11 @@ function TableCard({ table }) {
   const statusColor = statusClass(status);
 
   return (
-    <article className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-all hover:shadow-md">
-      <div className="mb-3 flex items-start justify-between gap-2 border-b border-zinc-200/70 pb-2">
+    <article className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+      <div className="mb-3 flex items-start justify-between gap-2 border-b border-gray-200/20 pb-2">
         <div className="flex min-w-0 items-center gap-2">
           <Crown size={16} className="shrink-0 text-yellow-500" />
-          <h2 className="truncate text-base font-black uppercase text-yellow-600">{table.name}</h2>
+          <h2 className="truncate text-base font-black uppercase text-yellow-500">{table.name}</h2>
         </div>
         <span className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[8px] font-black uppercase ${statusColor}`}>
           {status === "Closed" || status === "Paid" ? <CheckCircle2 size={9} /> : <Clock3 size={9} />}
@@ -134,39 +134,39 @@ function TableCard({ table }) {
         </span>
       </div>
 
-      <div className="mb-3 flex items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-1 text-zinc-500"><User size={12} /><span>Waiter:</span></div>
-        <span className="max-w-[65%] truncate text-right font-medium text-zinc-800">
+      <div className="mb-3 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-1 text-gray-500"><User size={12} /><span>Waiter:</span></div>
+        <span className="max-w-[150px] truncate text-right font-medium text-gray-800">
           {table.staffNames.length ? table.staffNames.join(", ") : "Staff assignment unavailable"}
         </span>
       </div>
 
-      <div className="mb-3 rounded-lg bg-zinc-100/70 p-2">
+      <div className="mb-3 rounded-lg bg-gray-100/10 p-2">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-xs font-bold uppercase text-zinc-500">Payment Summary</span>
-          <span className="text-[11px] text-zinc-500">
+          <span className="text-xs font-bold uppercase text-gray-500">Payment Summary</span>
+          <span className="text-[11px] text-gray-500">
             Items: {table.orders.reduce((count, order) => count + order.items.length, 0)}
             <span className="mx-1">|</span>
-            Paid: <span className="font-bold text-yellow-600">{formatAmount(summary.paid)}</span>
+            Paid: <span className="font-bold text-yellow-500">{formatAmount(summary.paid)}</span>
           </span>
         </div>
         <div className="grid grid-cols-2 gap-1 text-[11px]">
-          <FinancialValue label="Order total" value={summary.total} />
-          <FinancialValue label="Unpaid" value={summary.unpaid} accent={summary.unpaid > 0 ? "text-orange-600" : ""} />
-          <FinancialValue label="Credit balance" value={summary.outstandingCredits} accent={summary.outstandingCredits > 0 ? "text-purple-600" : ""} />
-          <FinancialValue label="Paid" value={summary.paid} accent="text-green-600" />
+          <div className="text-gray-600">Total: <span className="font-bold text-gray-800">{formatAmount(summary.total)}</span></div>
+          <div className={summary.unpaid > 0 ? "text-orange-600" : "text-gray-600"}>Unpaid: <span className="font-bold">{formatAmount(summary.unpaid)}</span></div>
+          <div className={summary.outstandingCredits > 0 ? "text-purple-600" : "text-gray-600"}>Credit: <span className="font-bold">{formatAmount(summary.outstandingCredits)}</span></div>
+          <div className="text-green-600">Paid: <span className="font-bold">{formatAmount(summary.paid)}</span></div>
         </div>
       </div>
 
       <div className="space-y-3">
         {table.orders.map(order => (
-          <section key={order.id} className="rounded-xl border border-zinc-200/70 bg-zinc-50/80 p-3">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200/70 pb-2">
+          <section key={order.id} className="rounded-xl border border-gray-200/70 bg-gray-50/80 p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-gray-200/70 pb-2">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase text-zinc-700">Order #{order.id}</span>
-                {order.staff_role && <span className="text-[9px] font-bold uppercase text-zinc-400">{order.staff_role}</span>}
+                <span className="text-[10px] font-black uppercase text-gray-700">Order #{order.id}</span>
+                {order.staff_role && <span className="text-[9px] font-bold uppercase text-gray-400">{order.staff_role}</span>}
               </div>
-              <span className="text-[9px] font-medium text-zinc-500">
+              <span className="text-[9px] font-medium text-gray-500">
                 {order.created_at || order.timestamp ? new Date(order.created_at || order.timestamp).toLocaleString() : "Date unavailable"}
               </span>
             </div>
@@ -175,22 +175,22 @@ function TableCard({ table }) {
                 {order.items.map((item, index) => {
                   const itemStatus = itemPaymentLabel(item, order);
                   return (
-                    <div key={`${order.id}-${index}`} className={`flex items-start justify-between gap-3 rounded px-1.5 py-1.5 ${isVoided(item) ? "bg-gray-500/5" : itemStatus === "Paid" ? "bg-green-500/5" : "bg-orange-500/5"}`}>
+                    <div key={`${order.id}-${index}`} className={`flex items-start justify-between gap-3 rounded px-1.5 py-1.5 ${isVoided(item) ? "bg-gray-500/5" : itemStatus === "Paid" ? "bg-green-500/5" : itemStatus === "Credited" ? "bg-purple-500/5" : "bg-orange-500/5"}`}>
                       <div className="min-w-0">
-                        <p className={`truncate text-xs font-bold ${isVoided(item) ? "text-zinc-400 line-through" : "text-zinc-800"}`}>
-                          {item.name || "Item"} <span className="font-medium text-zinc-500">× {item.quantity || 1}</span>
+                        <p className={`truncate text-xs font-bold ${isVoided(item) ? "text-gray-400 line-through" : "text-gray-800"}`}>
+                          {item.name || "Item"} <span className="font-medium text-gray-500">× {item.quantity || 1}</span>
                         </p>
                         <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[8px] font-black uppercase ${statusClass(itemStatus)}`}>
                           {itemStatus}
                         </span>
                       </div>
-                      <span className="shrink-0 text-[10px] font-black text-zinc-700">{formatAmount(itemTotal(item))}</span>
+                      <span className="shrink-0 text-[10px] font-black text-gray-700">{formatAmount(itemTotal(item))}</span>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <p className="text-xs text-zinc-500">No item details recorded · {formatAmount(order.total)}</p>
+              <p className="text-xs text-gray-500">No item details recorded · {formatAmount(order.total)}</p>
             )}
           </section>
         ))}
@@ -209,19 +209,10 @@ function TableCard({ table }) {
         ))}
 
         {isClosed && !table.orders.length && (
-          <p className="text-xs text-zinc-500">No order history is available for this table.</p>
+          <p className="text-xs text-gray-500">No order history is available for this table.</p>
         )}
       </div>
     </article>
-  );
-}
-
-function FinancialValue({ label, value, accent = "" }) {
-  return (
-    <div className="min-w-0 rounded-xl bg-zinc-50 px-3 py-2">
-      <p className="text-[8px] font-black uppercase tracking-wide text-zinc-400">{label}</p>
-      <p className={`mt-1 break-words text-[11px] font-black text-zinc-800 ${accent}`}>{formatAmount(value)}</p>
-    </div>
   );
 }
 
@@ -357,31 +348,39 @@ export default function CashierTablesPanel() {
         </div>
       )}
 
-      <div className="flex flex-col gap-3 md:flex-row">
-        <div className="flex flex-wrap gap-1 rounded-xl border border-zinc-200 bg-white p-1">
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
           {TABLE_FILTERS.map(tab => (
             <button
               type="button"
               key={tab}
               onClick={() => setFilter(tab)}
-              className={`rounded-lg px-3 py-2 text-[9px] font-black uppercase tracking-wide transition-colors ${
-                filter === tab ? "bg-yellow-500 text-black" : "text-zinc-500 hover:bg-zinc-100"
+              className={`flex min-h-[30px] shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-black uppercase transition-all ${
+                filter === tab ? "bg-yellow-500 text-black shadow-sm" : "bg-white text-gray-700 border border-gray-200"
               }`}
             >
-              {tab} <span className="ml-1 opacity-70">{counts[tab]}</span>
+              {tab === "All" && <Table2 size={11} />}
+              {tab === "Open" && <Clock3 size={11} />}
+              {tab === "Closed" && <CheckCircle2 size={11} />}
+              {tab === "Credits" && <BookOpen size={11} />}
+              {tab === "Voided" && <XCircle size={11} />}
+              <span>{tab}</span>
+              <span className={`ml-0.5 rounded-full px-1.5 py-px text-[9px] ${filter === tab ? "bg-black/20" : "bg-gray-100"}`}>
+                {counts[tab]}
+              </span>
             </button>
           ))}
         </div>
-        <label className="relative min-w-0 flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="search"
             value={search}
             onChange={event => setSearch(event.target.value)}
             placeholder="Search table or staff member"
-            className="w-full rounded-xl border border-zinc-200 bg-white py-2.5 pl-9 pr-3 text-xs outline-none focus:border-yellow-500"
+            className="w-full rounded-xl border border-gray-200 bg-white py-2 pl-8 pr-3 text-[13px] font-medium outline-none transition-all focus:border-yellow-500"
           />
-        </label>
+        </div>
       </div>
 
       {loading ? (
@@ -389,11 +388,11 @@ export default function CashierTablesPanel() {
           <RefreshCw size={16} className="animate-spin" /> Loading latest table data…
         </div>
       ) : filteredTables.length ? (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredTables.map(table => <TableCard key={table.id} table={table} />)}
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-zinc-300 bg-white py-16 text-center">
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-16 text-center">
           {filter === "Voided" ? <XCircle size={28} className="mx-auto text-red-400" /> : filter === "Open" ? <Clock3 size={28} className="mx-auto text-amber-500" /> : <CheckCircle2 size={28} className="mx-auto text-zinc-400" />}
           <p className="mt-3 text-xs font-black uppercase tracking-widest text-zinc-500">No matching tables</p>
           <p className="mt-1 text-[10px] text-zinc-400">Try another status filter or search term.</p>

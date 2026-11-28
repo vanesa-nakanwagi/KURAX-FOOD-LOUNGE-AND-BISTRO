@@ -260,6 +260,145 @@ async function departmentVoidedTotals(department, from, to) {
   };
 }
 
+async function departmentVoidedCostReport(department, from, to) {
+  const ticketItemFilter = department.paidItemFilter.replaceAll('item->>', 'ticket_items.item->>');
+  const transactionStationFilter = department.station === 'KITCHEN'
+    ? "UPPER(COALESCE(NULLIF(it.station,''), NULLIF(ii.station,''), 'KITCHEN')) NOT IN ('BARMAN','BAR','BARISTA','SHISHA')"
+    : department.station === 'BARMAN'
+      ? "UPPER(COALESCE(NULLIF(it.station,''), NULLIF(ii.station,''), '')) IN ('BARMAN','BAR')"
+      : "UPPER(COALESCE(NULLIF(it.station,''), NULLIF(ii.station,''), '')) = 'BARISTA'";
+  const result = await pool.query(
+    `WITH approved_voids AS (
+       SELECT id, order_id, item_name, resolved_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY order_id, LOWER(BTRIM(item_name))
+                ORDER BY resolved_at, id
+              ) AS void_sequence
+       FROM public.void_requests
+       WHERE status = 'Approved'
+     ),
+     voided_order_items AS (
+       SELECT o.id AS order_id,
+              (order_items.ordinality - 1)::int AS item_index,
+              order_items.item,
+              NULL::jsonb AS unit_state,
+              order_items.item->>'name' AS menu_item,
+              ROW_NUMBER() OVER (
+                PARTITION BY o.id, LOWER(BTRIM(COALESCE(order_items.item->>'name','')))
+                ORDER BY order_items.ordinality
+              ) AS item_sequence
+       FROM public.orders o
+       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items,'[]'::jsonb))
+         WITH ORDINALITY AS order_items(item, ordinality)
+       WHERE COALESCE(jsonb_typeof(order_items.item->'unitStates'),'') <> 'array'
+         AND (COALESCE(order_items.item->>'voidProcessed','false') = 'true'
+          OR UPPER(COALESCE(order_items.item->>'status','')) = 'VOIDED')
+       UNION ALL
+       SELECT o.id AS order_id,
+              (order_items.ordinality - 1)::int AS item_index,
+              order_items.item,
+              unit_state.value AS unit_state,
+              order_items.item->>'name' AS menu_item,
+              unit_state.ordinality::int AS item_sequence
+       FROM public.orders o
+       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.items,'[]'::jsonb))
+         WITH ORDINALITY AS order_items(item, ordinality)
+       CROSS JOIN LATERAL jsonb_array_elements(order_items.item->'unitStates')
+         WITH ORDINALITY AS unit_state(value, ordinality)
+       WHERE jsonb_typeof(order_items.item->'unitStates') = 'array'
+         AND COALESCE(unit_state.value->>'voidProcessed','false') = 'true'
+     ),
+     matched_voids AS (
+       SELECT item.order_id, item.item_index, item.menu_item, request.id AS void_request_id
+       FROM voided_order_items item
+       JOIN approved_voids request
+         ON request.order_id = item.order_id
+        AND LOWER(BTRIM(REGEXP_REPLACE(request.item_name, ' *· Unit [0-9]+$', '')))
+          = LOWER(BTRIM(item.menu_item))
+        AND (
+          CASE
+            WHEN COALESCE(COALESCE(item.unit_state->>'voidRequestId', item.item->>'voidRequestId'),'') ~ '^[0-9]+$'
+              THEN COALESCE(item.unit_state->>'voidRequestId', item.item->>'voidRequestId')::int
+            ELSE NULL
+          END = request.id
+          OR (
+            COALESCE(COALESCE(item.unit_state->>'voidRequestId', item.item->>'voidRequestId'),'') !~ '^[0-9]+$'
+            AND item.item_sequence = request.void_sequence
+          )
+        )
+       WHERE (request.resolved_at AT TIME ZONE 'Africa/Kampala')::date BETWEEN $1::date AND $2::date
+         AND EXISTS (
+           SELECT 1
+           FROM public.${department.table} t
+           JOIN public.orders o ON o.id = t.order_id
+           CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.items,'[]'::jsonb))
+             WITH ORDINALITY AS ticket_items(item, ordinality)
+           WHERE t.order_id = item.order_id
+             AND ${excludesPaymentMirror('o')}
+             AND LOWER(BTRIM(COALESCE(ticket_items.item->>'name',''))) = LOWER(BTRIM(item.menu_item))
+             AND (
+               CASE
+                 WHEN COALESCE(ticket_items.item->>'_orderItemIndex','') ~ '^[0-9]+$'
+                   THEN (ticket_items.item->>'_orderItemIndex')::int
+                 ELSE NULL
+               END = item.item_index
+               OR COALESCE(ticket_items.item->>'_orderItemIndex','') !~ '^[0-9]+$'
+             )
+             AND ${ticketItemFilter}
+         )
+     )
+     SELECT matched.menu_item,
+            COALESCE(SUM(cost.net_cost),0) AS voided_cogs,
+            COUNT(*) FILTER (
+              WHERE cost.transaction_count = 0 OR cost.has_missing_cost
+            )::int AS voided_cogs_review_count
+     FROM matched_voids matched
+     CROSS JOIN LATERAL (
+       SELECT GREATEST(COALESCE(SUM(
+                CASE WHEN it.transaction_type = 'REVERSAL'
+                  THEN -COALESCE(it.total_value,0)
+                  ELSE COALESCE(it.total_value,0)
+                END
+              ),0),0) AS net_cost,
+              COUNT(*) AS transaction_count,
+              COALESCE(BOOL_OR(COALESCE(it.unit_cost,0) <= 0),false) AS has_missing_cost
+       FROM public.inventory_transactions it
+       JOIN public.inventory_items ii ON ii.id = it.item_id
+       WHERE it.order_id = matched.order_id
+         AND ${transactionStationFilter}
+         AND (
+           (it.transaction_type = 'CONSUMPTION'
+             AND it.reference_number LIKE 'ORDER-' || matched.order_id::text || '-ITEM-' || matched.item_index::text || '-%')
+           OR (it.transaction_type = 'REVERSAL'
+             AND it.reference_number LIKE 'REV-ORDER-' || matched.order_id::text || '-ITEM-' || matched.item_index::text || '-%')
+           OR (it.transaction_type = 'WASTE'
+             AND it.reference_number LIKE 'WASTE-ORDER-' || matched.order_id::text || '-VOID-' || matched.void_request_id::text || '-ITEM-' || matched.item_index::text || '-%')
+         )
+     ) cost
+     GROUP BY matched.menu_item`,
+    [from, to]
+  );
+  return result.rows.map((row) => ({
+    menu_item: row.menu_item,
+    voided_cogs: Number(row.voided_cogs || 0),
+    voided_cogs_review_count: Number(row.voided_cogs_review_count || 0),
+  }));
+}
+
+function addVoidedCogs(menuItems, voidedCostRows) {
+  const costsByItem = new Map(
+    voidedCostRows.map((row) => [String(row.menu_item || '').trim().toLowerCase(), Number(row.voided_cogs || 0)])
+  );
+  const reviewsByItem = new Map(
+    voidedCostRows.map((row) => [String(row.menu_item || '').trim().toLowerCase(), Number(row.voided_cogs_review_count || 0)])
+  );
+  return menuItems.map((item) => ({
+    ...item,
+    voided_cogs: costsByItem.get(String(item.menu_item || '').trim().toLowerCase()) || 0,
+    voided_cogs_review_count: reviewsByItem.get(String(item.menu_item || '').trim().toLowerCase()) || 0,
+  }));
+}
+
 async function productionStaffReport(department, from, to) {
   const station = {
     kitchen_tickets: 'kitchen',
@@ -399,6 +538,14 @@ async function departmentCreditReport(department, from, to) {
 
 export function departmentPaymentJoin(department) {
   const payableItemAmount = orderItemPayableAmountSql('source_items.item');
+  const unitPaidAmount = `COALESCE((
+    SELECT SUM(COALESCE(NULLIF(unit_state.value->>'paidAmount','')::numeric,0))
+    FROM jsonb_array_elements(CASE
+      WHEN jsonb_typeof(source_items.item->'unitStates') = 'array'
+        THEN source_items.item->'unitStates'
+      ELSE '[]'::jsonb
+    END) AS unit_state(value)
+  ),0)`;
   const selectedCreditItem = `(
     (NULLIF(credit_queue.item->>'_orderItemIndex','') IS NOT NULL
       AND source_items.ordinality - 1 = NULLIF(credit_queue.item->>'_orderItemIndex','')::int)
@@ -478,6 +625,7 @@ export function departmentPaymentJoin(department) {
 
   return `LEFT JOIN LATERAL (
     SELECT COALESCE(SUM(CASE
+      WHEN jsonb_typeof(source_items.item->'unitStates') = 'array' THEN ${unitPaidAmount}
       WHEN ${hasCredit} THEN LEAST(${payableItemAmount}, ${creditPaid})
       WHEN source_items.item->>'_rowPaid'='true' THEN ${payableItemAmount}
       ELSE LEAST(${payableItemAmount}, COALESCE(
@@ -489,7 +637,9 @@ export function departmentPaymentJoin(department) {
     FROM jsonb_array_elements(COALESCE(o.items,'[]'::jsonb))
       WITH ORDINALITY AS source_items(item, ordinality)
     WHERE (source_items.item->>'_rowPaid'='true' OR source_items.item->>'is_partially_paid'='true'
-      OR source_items.item->>'creditRequested'='true' OR ${hasCredit})
+      OR source_items.item->>'creditRequested'='true'
+      OR (jsonb_typeof(source_items.item->'unitStates') = 'array' AND ${unitPaidAmount} > 0)
+      OR ${hasCredit})
       AND COALESCE(source_items.item->>'voidProcessed','false') <> 'true'
       AND UPPER(COALESCE(source_items.item->>'status','')) <> 'VOIDED'
       AND ${approvedVoidExclusion('o.id', 'source_items.item')}
@@ -876,7 +1026,7 @@ router.get('/reports/consolidated', async (req, res) => {
   const summaryOnly = req.query.summary_only === 'true';
   try {
     const reports = await Promise.all(Object.entries(DEPARTMENTS).map(async ([key, department]) => {
-      const [result, performance, menuItems, inventory, creditSummary, voidedTotals, productionPerformance] = await Promise.all([
+      const [result, performance, menuItems, inventory, creditSummary, voidedTotals, voidedCostRows, productionPerformance] = await Promise.all([
         pool.query(
         `SELECT COUNT(*)::int AS total_orders, COALESCE(SUM(sales.sales_amount),0) AS total_sales,
           COALESCE(SUM(sales.complimentary_quantity),0) AS complimentary_quantity,
@@ -921,10 +1071,14 @@ router.get('/reports/consolidated', async (req, res) => {
           : inventoryReport(department.station, range.from, range.to),
         departmentCreditReport(department, range.from, range.to),
         departmentVoidedTotals(department, range.from, range.to),
+        departmentVoidedCostReport(department, range.from, range.to),
         productionStaffReport(department, range.from, range.to),
       ]);
       const summary = result.rows[0];
       const inventoryData = inventory;
+      const menuItemsWithVoidedCogs = addVoidedCogs(menuItems, voidedCostRows);
+      const voidedCogs = voidedCostRows.reduce((total, row) => total + Number(row.voided_cogs || 0), 0);
+      const voidedCogsReviewCount = voidedCostRows.reduce((total, row) => total + Number(row.voided_cogs_review_count || 0), 0);
       const productionVoidedItems = productionPerformance.reduce((total, person) => total + person.voided_items, 0);
       const productionVoidedQuantity = productionPerformance.reduce((total, person) => total + person.voided_quantity, 0);
       const productionVoidedTotal = productionPerformance.reduce((total, person) => total + person.voided_total, 0);
@@ -943,11 +1097,13 @@ router.get('/reports/consolidated', async (req, res) => {
         ...inventoryData,
         ...creditSummary,
         ...voidedTotals,
+        voided_cogs: voidedCogs,
+        voided_cogs_review_count: voidedCogsReviewCount,
         production_voided_items: productionVoidedItems,
         production_voided_quantity: productionVoidedQuantity,
         production_voided_total: productionVoidedTotal,
         gross_profit: summaryOnly ? null : Number(summary.total_sales || 0) - inventoryData.cogs,
-        menu_items: menuItems,
+        menu_items: menuItemsWithVoidedCogs,
         staff_performance: performance.rows.map(person => ({ ...person, worker_role: department.staffRole })),
         production_performance: productionPerformance.map(person => ({ ...person, worker_role: department.staffRole })),
       };
@@ -995,6 +1151,8 @@ router.get('/reports/consolidated', async (req, res) => {
       complimentary_outstanding_amount: total.complimentary_outstanding_amount + Number(row.complimentary_outstanding_amount || 0),
       voided_total: total.voided_total + Number(row.voided_total || 0),
       voided_quantity: total.voided_quantity + Number(row.voided_quantity || 0),
+      voided_cogs: total.voided_cogs + Number(row.voided_cogs || 0),
+      voided_cogs_review_count: total.voided_cogs_review_count + Number(row.voided_cogs_review_count || 0),
       production_voided_items: total.production_voided_items + Number(row.production_voided_items || 0),
       production_voided_quantity: total.production_voided_quantity + Number(row.production_voided_quantity || 0),
       production_voided_total: total.production_voided_total + Number(row.production_voided_total || 0),
@@ -1011,7 +1169,7 @@ router.get('/reports/consolidated', async (req, res) => {
       settled_credit_amount: total.settled_credit_amount + Number(row.settled_credit_amount || 0),
       outstanding_credit_count: total.outstanding_credit_count + Number(row.outstanding_credit_count || 0),
       outstanding_credit_balance: total.outstanding_credit_balance + Number(row.outstanding_credit_balance || 0),
-    }), { total_orders: 0, total_sales: 0, complimentary_quantity: 0, fully_waived_quantity: 0, partially_waived_quantity: 0, complimentary_waived_amount: 0, complimentary_payable_amount: 0, complimentary_collected_amount: 0, complimentary_outstanding_amount: 0, voided_total: 0, voided_quantity: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, partially_paid_credit_balance: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
+    }), { total_orders: 0, total_sales: 0, complimentary_quantity: 0, fully_waived_quantity: 0, partially_waived_quantity: 0, complimentary_waived_amount: 0, complimentary_payable_amount: 0, complimentary_collected_amount: 0, complimentary_outstanding_amount: 0, voided_total: 0, voided_quantity: 0, voided_cogs: 0, voided_cogs_review_count: 0, production_voided_items: 0, production_voided_quantity: 0, production_voided_total: 0, cogs: 0, gross_profit: 0, consumption_value: 0, waste: 0, amount_collected: 0, outstanding_balance: 0, partially_paid_credit_count: 0, partially_paid_credit_amount: 0, partially_paid_credit_balance: 0, settled_credit_count: 0, settled_credit_amount: 0, outstanding_credit_count: 0, outstanding_credit_balance: 0 });
     const response = {
       ...range,
       departments: reports,
@@ -1039,7 +1197,7 @@ router.get('/:department/reports', async (req, res) => {
   if (!range) return undefined;
 
   try {
-    const [summary, performance, menuItems, inventory, creditSummary, voidedTotals, productionPerformance] = await Promise.all([
+    const [summary, performance, menuItems, inventory, creditSummary, voidedTotals, voidedCostRows, productionPerformance] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS total_orders,
           COALESCE(SUM(sales.sales_amount),0) AS total_sales,
@@ -1087,10 +1245,14 @@ router.get('/:department/reports', async (req, res) => {
       inventoryReport(department.station, range.from, range.to),
       departmentCreditReport(department, range.from, range.to),
       departmentVoidedTotals(department, range.from, range.to),
+      departmentVoidedCostReport(department, range.from, range.to),
       productionStaffReport(department, range.from, range.to),
     ]);
     const departmentSummary = summary.rows[0];
     const inventoryData = inventory;
+    const menuItemsWithVoidedCogs = addVoidedCogs(menuItems, voidedCostRows);
+    const voidedCogs = voidedCostRows.reduce((total, row) => total + Number(row.voided_cogs || 0), 0);
+    const voidedCogsReviewCount = voidedCostRows.reduce((total, row) => total + Number(row.voided_cogs_review_count || 0), 0);
     const productionVoidedItems = productionPerformance.reduce((total, person) => total + person.voided_items, 0);
     const productionVoidedQuantity = productionPerformance.reduce((total, person) => total + person.voided_quantity, 0);
     const productionVoidedTotal = productionPerformance.reduce((total, person) => total + person.voided_total, 0);
@@ -1110,12 +1272,14 @@ router.get('/:department/reports', async (req, res) => {
         ...inventoryData,
         ...creditSummary,
         ...voidedTotals,
+        voided_cogs: voidedCogs,
+        voided_cogs_review_count: voidedCogsReviewCount,
         production_voided_items: productionVoidedItems,
         production_voided_quantity: productionVoidedQuantity,
         production_voided_total: productionVoidedTotal,
         gross_profit: Number(departmentSummary.total_sales || 0) - inventoryData.cogs,
       },
-      menu_items: menuItems,
+      menu_items: menuItemsWithVoidedCogs,
       inventory_usage: inventoryData.inventory_usage,
       staff_performance: performance.rows,
       production_performance: productionPerformance,

@@ -85,7 +85,7 @@ router.post('/', async (req, res) => {
       paymentAccountCode: paymentAccounts[paymentMethod],
       sourceTransaction: `cashier_expense:${reference}`,
       postedBy: actor,
-      entryDate: kampalaDate(),
+      entryDate: req.businessDate || kampalaDate(),
     });
     await logActivity(pool, {
       type: 'ACCOUNTING_EXPENSE',
@@ -118,7 +118,7 @@ router.post('/:id/reverse', async (req, res) => {
 
     const result = await reverseJournalEntry({
       journalEntryId,
-      reversalDate: kampalaDate(),
+      reversalDate: req.businessDate || kampalaDate(),
       reason: req.body.reason,
       actor: req.cashier.name,
     });

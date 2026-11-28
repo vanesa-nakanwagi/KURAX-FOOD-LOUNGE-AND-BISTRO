@@ -84,6 +84,7 @@ export async function ensureDatabaseSchema() {
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS sent_to_cashier BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS business_date DATE;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS rider_id INTEGER;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS rider_name TEXT;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS rider_phone TEXT;`,
@@ -164,6 +165,7 @@ export async function ensureDatabaseSchema() {
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS sent_to_cashier BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;`,
+    `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS business_date DATE;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS rider_id INTEGER;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS rider_name TEXT;`,
     `ALTER TABLE IF EXISTS public.orders ADD COLUMN IF NOT EXISTS rider_phone TEXT;`,
@@ -193,6 +195,7 @@ export async function ensureDatabaseSchema() {
     `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS order_type TEXT DEFAULT 'dine-in';`,
     `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS rider_name TEXT;`,
     `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();`,
+    `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS business_date DATE;`,
 
     `ALTER TABLE IF EXISTS public.staff_shifts ADD COLUMN IF NOT EXISTS petty_cash_spent NUMERIC DEFAULT 0;`,
     `ALTER TABLE IF EXISTS public.staff_shifts ADD COLUMN IF NOT EXISTS credit_approved_amt NUMERIC DEFAULT 0;`,
@@ -374,7 +377,8 @@ export async function ensureDatabaseSchema() {
       rider_name TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
-      shift_cleared BOOLEAN DEFAULT false
+      shift_cleared BOOLEAN DEFAULT false,
+      business_date DATE
     );`,
     `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS settlement_status TEXT NOT NULL DEFAULT 'Pending';`,
     `ALTER TABLE IF EXISTS public.cashier_queue ADD COLUMN IF NOT EXISTS public_order_ref TEXT;`,
@@ -474,9 +478,11 @@ export async function ensureDatabaseSchema() {
       approved_at TIMESTAMPTZ,
       rejected_at TIMESTAMPTZ,
       paid_at TIMESTAMPTZ,
-      reject_reason TEXT
+      reject_reason TEXT,
+      business_date DATE
     );`,
     `ALTER TABLE IF EXISTS public.credits ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ;`,
+    `ALTER TABLE IF EXISTS public.credits ADD COLUMN IF NOT EXISTS business_date DATE;`,
 
     `CREATE TABLE IF NOT EXISTS public.credit_settlements (
       id SERIAL PRIMARY KEY,
@@ -486,8 +492,10 @@ export async function ensureDatabaseSchema() {
       transaction_id TEXT,
       notes TEXT,
       settled_by TEXT,
+      business_date DATE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );`,
+    `ALTER TABLE IF EXISTS public.credit_settlements ADD COLUMN IF NOT EXISTS business_date DATE;`,
 
     `CREATE TABLE IF NOT EXISTS public.staff_shifts (
       id SERIAL PRIMARY KEY,
@@ -522,6 +530,12 @@ export async function ensureDatabaseSchema() {
       order_count INTEGER DEFAULT 0,
       closed_at TIMESTAMPTZ DEFAULT NOW()
     );`,
+    `ALTER TABLE IF EXISTS public.day_closings ADD COLUMN IF NOT EXISTS final_cash NUMERIC DEFAULT 0;`,
+    `ALTER TABLE IF EXISTS public.day_closings ADD COLUMN IF NOT EXISTS final_card NUMERIC DEFAULT 0;`,
+    `ALTER TABLE IF EXISTS public.day_closings ADD COLUMN IF NOT EXISTS final_mtn NUMERIC DEFAULT 0;`,
+    `ALTER TABLE IF EXISTS public.day_closings ADD COLUMN IF NOT EXISTS final_airtel NUMERIC DEFAULT 0;`,
+    `ALTER TABLE IF EXISTS public.day_closings ADD COLUMN IF NOT EXISTS final_gross NUMERIC DEFAULT 0;`,
+    `ALTER TABLE IF EXISTS public.day_closings ADD COLUMN IF NOT EXISTS notes TEXT;`,
 
     `CREATE TABLE IF NOT EXISTS public.physical_counts (
       id SERIAL PRIMARY KEY,
@@ -998,6 +1012,90 @@ export async function ensureDatabaseSchema() {
       console.error('Schema bootstrap warning:', error.message);
     }
   }
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS public.system_business_context (
+    id SMALLINT PRIMARY KEY CHECK (id = 1),
+    business_date DATE,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await pool.query(
+    `INSERT INTO public.system_business_context (id, business_date, updated_by)
+     VALUES (1, NULL, 'System')
+     ON CONFLICT (id) DO NOTHING`
+  );
+
+  await pool.query(`CREATE OR REPLACE FUNCTION public.apply_system_business_date()
+    RETURNS trigger AS $$
+    DECLARE
+      selected_date DATE;
+    BEGIN
+      SELECT COALESCE(business_date, (NOW() AT TIME ZONE 'Africa/Kampala')::date)
+      INTO selected_date
+      FROM public.system_business_context
+      WHERE id = 1;
+      selected_date := COALESCE(selected_date, (NOW() AT TIME ZONE 'Africa/Kampala')::date);
+      NEW.business_date := selected_date;
+      IF TG_TABLE_NAME = 'orders' THEN
+        NEW.date := selected_date::timestamp AT TIME ZONE 'Africa/Kampala';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql`);
+  const businessDateTables = [
+    'orders',
+    'cashier_queue',
+    'credits',
+    'credit_settlements',
+    'inventory_transactions',
+    'inventory_transfers',
+    'purchase_receipts',
+    'inventory_consumptions',
+    'inventory_waste',
+    'stock_counts',
+    'inventory_adjustments',
+  ];
+  for (const tableName of businessDateTables) {
+    await pool.query(`DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_trigger
+          WHERE tgname = 'apply_system_business_date_trigger'
+            AND tgrelid = 'public.${tableName}'::regclass
+            AND NOT tgisinternal
+        ) THEN
+          CREATE TRIGGER apply_system_business_date_trigger
+          BEFORE INSERT ON public.${tableName}
+          FOR EACH ROW EXECUTE FUNCTION public.apply_system_business_date();
+        END IF;
+      END $$`);
+  }
+  await pool.query(`CREATE OR REPLACE FUNCTION public.apply_system_shift_date()
+    RETURNS trigger AS $$
+    DECLARE
+      selected_date DATE;
+    BEGIN
+      SELECT COALESCE(business_date, (NOW() AT TIME ZONE 'Africa/Kampala')::date)
+      INTO selected_date
+      FROM public.system_business_context
+      WHERE id = 1;
+      NEW.shift_date := COALESCE(selected_date, (NOW() AT TIME ZONE 'Africa/Kampala')::date);
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql`);
+  await pool.query(`DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'apply_system_shift_date_trigger'
+          AND tgrelid = 'public.staff_shifts'::regclass
+          AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER apply_system_shift_date_trigger
+        BEFORE INSERT ON public.staff_shifts
+        FOR EACH ROW EXECUTE FUNCTION public.apply_system_shift_date();
+      END IF;
+    END $$`);
 
   await pool.query(`ALTER TABLE public.menus
     ADD COLUMN IF NOT EXISTS website_published BOOLEAN,

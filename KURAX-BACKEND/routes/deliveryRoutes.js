@@ -262,8 +262,8 @@ router.patch('/orders/:id/delivered', async (req, res) => {
         await pool.query(
           `INSERT INTO cashier_queue
              (order_ids, table_name, label, method, amount, status,
-              confirmed_by, confirmed_at, created_at)
-           VALUES ($1::jsonb, $2, $3, $4, $5, 'Confirmed', $6, NOW(), NOW())`,
+              confirmed_by, confirmed_at, created_at, business_date)
+           VALUES ($1::jsonb, $2, $3, $4, $5, 'Confirmed', $6, NOW(), NOW(), $7::date)`,
           [
             JSON.stringify([Number(id)]),
             order.table_name || 'DELIVERY',
@@ -271,6 +271,7 @@ router.patch('/orders/:id/delivered', async (req, res) => {
             payment_method,
             Number(amount_collected || order.total || 0),
             confirmed_by,
+            req.businessDate,
           ]
         );
       } catch (qErr) {

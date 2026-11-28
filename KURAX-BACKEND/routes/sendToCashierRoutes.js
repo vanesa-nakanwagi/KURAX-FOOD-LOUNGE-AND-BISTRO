@@ -7,6 +7,10 @@ import {
   getOrderItemOriginalAmount,
   getOrderItemPaidAmount,
   getOrderItemPayableAmount,
+  getOrderItemUnitCount,
+  getOrderItemUnitPayableAmount,
+  getOrderItemUnitStates,
+  getOrderPayableTotal,
 } from '../helpers/complimentaryItems.js';
 import { applyApprovedCreditToItems } from '../helpers/approvedCreditItems.js';
 import notificationService from '../helpers/notificationService.js';
@@ -25,18 +29,24 @@ function deriveOrderStatus(items, fallback = 'Pending') {
   let voidedCount  = 0;
 
   items.forEach(item => {
-    const isVoided  = item.voidProcessed === true || item.status === 'VOIDED';
     const isCredit  = item.creditRequested === true ||
                       (item.payment_method || '').toUpperCase().includes('CREDIT');
-    const isPaid    = !isCredit && item._rowPaid === true;
-
-    if (isVoided)       voidedCount++;
-    else if (isPaid)    paidCount++;
-    else if (isCredit)  creditCount++;
-    else                pendingCount++;
+    if (Array.isArray(item.unitStates)) {
+      item.unitStates.forEach(state => {
+        if (state?.voidProcessed === true) voidedCount++;
+        else if (state?.creditRequested === true || isCredit) creditCount++;
+        else if (state?.paid === true) paidCount++;
+        else pendingCount++;
+      });
+      return;
+    }
+    if (item.voidProcessed === true || item.status === 'VOIDED') voidedCount++;
+    else if (!isCredit && item._rowPaid === true) paidCount++;
+    else if (isCredit) creditCount++;
+    else pendingCount++;
   });
 
-  const activeCount = items.length - voidedCount;
+  const activeCount = paidCount + creditCount + pendingCount;
   if (activeCount === 0)                                          return 'Voided';
   if (paidCount === activeCount)                                  return 'Paid';
   if (paidCount > 0 && (creditCount > 0 || pendingCount > 0))   return 'Partially Paid';
@@ -188,6 +198,134 @@ router.post("/send-to-cashier", async (req, res) => {
     return res.status(500).json({ error: 'Could not verify complimentary request status. Please retry.' });
   }
 
+  if (is_item && Number.isInteger(Number(item?._unitIndex))) {
+    if (!method || !item?._orderId || !Number.isInteger(Number(item?._orderItemIndex))) {
+      return res.status(400).json({ error: 'A valid item unit and payment method are required.' });
+    }
+    if (method === 'Credit' && (!credit_info?.name?.trim() || !credit_info?.phone?.trim())) {
+      return res.status(400).json({ error: 'Client name and phone number are required for credit requests.' });
+    }
+    const orderId = Number(item._orderId);
+    const itemIndex = Number(item._orderItemIndex);
+    const unitIndex = Number(item._unitIndex);
+    const client = await pool.connect();
+    let queueId;
+    let unitAmount;
+    try {
+      await client.query('BEGIN');
+      const orderResult = await client.query(
+        'SELECT items FROM public.orders WHERE id = $1 FOR UPDATE',
+        [orderId]
+      );
+      if (!orderResult.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Order not found.' });
+      }
+      const orderItems = Array.isArray(orderResult.rows[0].items)
+        ? orderResult.rows[0].items
+        : JSON.parse(orderResult.rows[0].items || '[]');
+      const orderItem = orderItems[itemIndex];
+      const unitStates = orderItem ? getOrderItemUnitStates(orderItem) : [];
+      const unitState = unitStates[unitIndex];
+      if (!orderItem || orderItem.name !== item.name || getOrderItemUnitCount(orderItem) < 2
+        || !unitState || orderItem.voidRequested === true || unitState.paid === true
+        || unitState.voidRequested === true || unitState.voidProcessed === true
+        || unitState.paymentRequested === true || unitState.creditRequested === true
+        || orderItem._rowPaid === true || Boolean(orderItem.paid_at)
+        || orderItem.creditRequested === true
+        || String(orderItem.payment_method || '').toUpperCase().includes('CREDIT')) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'The selected item unit is no longer payable.' });
+      }
+      unitAmount = getOrderItemUnitPayableAmount(orderItem, unitIndex);
+      if (unitAmount <= 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'The selected item unit has no payable balance.' });
+      }
+      const sourceIds = Array.from(new Set([...parseOrderIds(order_ids), orderId]));
+      const queueResult = await client.query(
+        `INSERT INTO cashier_queue
+           (order_ids, table_name, label, method, amount, is_item, item,
+            requested_by, staff_id, credit_name, credit_phone, credit_pay_by,
+            status, created_at, business_date)
+           VALUES ($1::jsonb, $2, $3, $4, $5, true, $6::jsonb, $7, $8, $9, $10, $11, 'Pending', NOW(), $12::date)
+         RETURNING id`,
+        [
+          JSON.stringify(sourceIds),
+          table_name || orderItem.table_name || 'WALK-IN',
+          label || `${orderItem.name} · Unit ${unitIndex + 1}`,
+          method,
+          unitAmount,
+          JSON.stringify({ ...item, quantity: 1 }),
+          requested_by || null,
+          staff_id || null,
+          method === 'Credit' ? credit_info.name.trim() : null,
+          method === 'Credit' ? credit_info.phone.trim() : null,
+          method === 'Credit' ? credit_info.pay_by?.trim() || null : null,
+          req.businessDate,
+        ]
+      );
+      queueId = Number(queueResult.rows[0].id);
+      if (method === 'Credit') {
+        await client.query(
+          `INSERT INTO credits
+             (order_id, cashier_queue_id, table_name, label, amount, amount_paid, balance,
+              client_name, client_phone, pay_by, waiter_name, status, created_at)
+           VALUES ($1, $2, $3, $4, $5, 0, $5, $6, $7, $8, $9, 'PendingCashier', NOW())`,
+          [
+            orderId,
+            queueId,
+            table_name || orderItem.table_name || 'WALK-IN',
+            label || `${orderItem.name} · Unit ${unitIndex + 1}`,
+            unitAmount,
+            credit_info.name.trim(),
+            credit_info.phone.trim(),
+            credit_info.pay_by?.trim() || null,
+            requested_by || null,
+          ]
+        );
+        unitStates[unitIndex] = {
+          ...unitState,
+          paymentRequested: false,
+          cashierQueueId: queueId,
+          creditRequested: true,
+          creditApproved: false,
+          creditRejected: false,
+          creditStatus: 'PendingCashier',
+        };
+      } else {
+        unitStates[unitIndex] = {
+          ...unitState,
+          paymentRequested: true,
+          creditRejected: false,
+          creditRejectionReason: null,
+          cashierQueueId: queueId,
+        };
+      }
+      orderItems[itemIndex] = { ...orderItem, unitStates };
+      await client.query(
+        `UPDATE public.orders SET items = $1::jsonb, sent_to_cashier = true, updated_at = NOW() WHERE id = $2`,
+        [JSON.stringify(orderItems), orderId]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+    const notification = await notificationService.sendToRoles(['CASHIER'], {
+      type: 'CASHIER_PAYMENT_REQUEST',
+      title: 'New payment request',
+      body: `${requested_by || 'A staff member'} sent ${table_name || 'WALK-IN'} a ${method} request for UGX ${Number(unitAmount).toLocaleString()}.`,
+      referenceId: queueId,
+      referenceType: 'cashier_queue',
+      link: '/cashier',
+    });
+    console.log(`[CASHIER PAYMENT REQUEST] Unit queue ID: ${queueId}; notifications sent: ${notification.sent || 0}, failed: ${notification.failed || 0}`);
+    return res.json({ success: true, queue_id: queueId });
+  }
+
   // ── Handle split payments ─────────────────────────────────────────────────
   if (split_payments && Array.isArray(split_payments) && split_payments.length > 0) {
     try {
@@ -215,10 +353,10 @@ router.post("/send-to-cashier", async (req, res) => {
           const orderResult = await client.query(
             `INSERT INTO orders
                (original_order_ids, table_name, payment_method, total, status,
-                staff_name, staff_id, payment_confirmed, paid_at, transaction_id, is_archived, created_at)
-             VALUES ($1::jsonb, $2, $3, $4, 'Paid', $5, $6, true, NOW(), $7, false, NOW())
+                staff_name, staff_id, payment_confirmed, paid_at, transaction_id, is_archived, created_at, date, business_date)
+             VALUES ($1::jsonb, $2, $3, $4, 'Paid', $5, $6, true, NOW(), $7, false, NOW(), $8::date, $8::date)
              RETURNING id`,
-            [JSON.stringify(formattedOrderIds), table_name, paymentMethod, paymentAmount, waiterName, staff_id || null, transactionId]
+            [JSON.stringify(formattedOrderIds), table_name, paymentMethod, paymentAmount, waiterName, staff_id || null, transactionId, req.businessDate]
           );
           splitOrderId = orderResult.rows[0].id;
           const revenueBreakdown = await getSaleRevenueBreakdown(formattedOrderIds, {
@@ -233,6 +371,7 @@ router.post("/send-to-cashier", async (req, res) => {
             description: `Cashier split sale · ${table_name}`,
             sourceTransaction: `cashier_split:${splitOrderId}`,
             postedBy: requested_by || 'Cashier',
+            entryDate: req.businessDate,
             queryable: client,
           });
           await client.query('COMMIT');
@@ -243,7 +382,7 @@ router.post("/send-to-cashier", async (req, res) => {
           client.release();
         }
         console.log(`✅ SPLIT: Created PAID order #${splitOrderId} for UGX ${paymentAmount} via ${paymentMethod} (waiter: ${waiterName})`);
-        await updateDailySummary({ amount: paymentAmount, method: paymentMethod });
+        await updateDailySummary({ amount: paymentAmount, method: paymentMethod, date: req.businessDate });
       }
 
       if (formattedOrderIds.length) {
@@ -259,7 +398,7 @@ router.post("/send-to-cashier", async (req, res) => {
               : item;
           });
           try {
-            await consumeSoldOrderItems({ orderId, items: paidItems, createdBy: requested_by || 'Cashier' });
+            await consumeSoldOrderItems({ orderId, items: paidItems, businessDate: req.businessDate, createdBy: requested_by || 'Cashier' });
           } catch (error) {
             console.error(`Recipe consumption failed for split-paid order #${orderId}:`, error.message);
           }
@@ -316,7 +455,10 @@ router.post("/send-to-cashier", async (req, res) => {
         let chargeableItems = selectedItems.filter(({ item: orderItem }) =>
           orderItem.status !== 'VOIDED'
           && orderItem.voidProcessed !== true
-          && orderItem._rowPaid !== true
+          && (Array.isArray(orderItem.unitStates)
+            ? orderItem.unitStates.some((state) => state?.voidProcessed !== true && state?.paid !== true
+              && state?.paymentRequested !== true && state?.voidRequested !== true && state?.creditRequested !== true)
+            : orderItem._rowPaid !== true)
           && orderItem.paymentRequested !== true
           && orderItem.creditRequested !== true
           && !String(orderItem.payment_method || '').toUpperCase().includes('CREDIT')
@@ -332,7 +474,13 @@ router.post("/send-to-cashier", async (req, res) => {
           }
         }
         amount = chargeableItems.reduce(
-          (total, entry) => total + getOrderItemPayableAmount(entry.item),
+          (total, entry) => total + (Array.isArray(entry.item.unitStates)
+            ? getOrderItemUnitStates(entry.item).reduce((unitTotal, state, unitIndex) =>
+              state?.voidProcessed === true || state?.paid === true
+                || state?.paymentRequested === true || state?.voidRequested === true || state?.creditRequested === true
+                ? unitTotal
+                : unitTotal + getOrderItemUnitPayableAmount(entry.item, unitIndex), 0)
+            : Math.max(0, getOrderItemPayableAmount(entry.item) - getOrderItemPaidAmount(entry.item))),
           0
         );
         if (Number(amount) <= 0) {
@@ -345,8 +493,8 @@ router.post("/send-to-cashier", async (req, res) => {
       `INSERT INTO cashier_queue
          (order_ids, table_name, label, method, amount, is_item, item,
           requested_by, staff_id, credit_name, credit_phone, credit_pay_by,
-          status, created_at)
-       VALUES ($1::jsonb, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, 'Pending', NOW())
+          status, created_at, business_date)
+       VALUES ($1::jsonb, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, 'Pending', NOW(), $13::date)
        RETURNING id`,
       [
         JSON.stringify(formattedOrderIds),
@@ -361,6 +509,7 @@ router.post("/send-to-cashier", async (req, res) => {
         credit_info?.name || null,
         credit_info?.phone || null,
         credit_info?.pay_by || null,
+        req.businessDate,
       ]
     );
 
@@ -466,6 +615,30 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
         return res.status(400).json({ error: "Enter a valid transaction ID for Momo payments" });
       }
     }
+    if (q.is_item === true && Number.isInteger(Number(q.item?._unitIndex))) {
+      const sourceOrderId = Number(q.item?._orderId);
+      const sourceIndex = Number(q.item?._orderItemIndex);
+      const unitIndex = Number(q.item?._unitIndex);
+      const sourceResult = await pool.query(
+        'SELECT items FROM public.orders WHERE id = $1',
+        [sourceOrderId]
+      );
+      const sourceItems = sourceResult.rows[0]
+        ? Array.isArray(sourceResult.rows[0].items)
+          ? sourceResult.rows[0].items
+          : JSON.parse(sourceResult.rows[0].items || '[]')
+        : [];
+      const sourceItem = sourceItems[sourceIndex];
+      const unitState = sourceItem ? getOrderItemUnitStates(sourceItem)[unitIndex] : null;
+      if (!unitState || sourceItem.voidRequested === true
+        || unitState.paymentRequested !== true
+        || Number(unitState.cashierQueueId) !== Number(id)
+        || unitState.paid === true || unitState.voidRequested === true
+        || unitState.voidProcessed === true
+        || getOrderItemUnitPayableAmount(sourceItem, unitIndex) <= 0) {
+        return res.status(409).json({ error: 'The selected item unit is no longer payable. Refresh the table and submit a new request.' });
+      }
+    }
 
     const revenueBreakdown = await getSaleRevenueBreakdown(parseOrderIds(q.order_ids || []), {
       item: q.item,
@@ -479,13 +652,14 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
       description: `Cashier sale · ${q.table_name || 'WALK-IN'}`,
       sourceTransaction: `cashier_queue:${id}`,
       postedBy: confirmed_by || 'Cashier',
+      entryDate: req.businessDate,
     });
 
     await pool.query(
       `UPDATE cashier_queue
-       SET status = 'Confirmed', confirmed_by = $1, confirmed_at = NOW(), transaction_id = $2
-       WHERE id = $3`,
-      [confirmed_by || "Cashier", transactionId || null, id]
+       SET status = 'Confirmed', confirmed_by = $1, confirmed_at = NOW(), transaction_id = $2, business_date = $3::date
+       WHERE id = $4`,
+      [confirmed_by || "Cashier", transactionId || null, req.businessDate, id]
     );
 
     const paymentMethod = q.method.toLowerCase();
@@ -503,11 +677,11 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
       `INSERT INTO orders
          (table_name, payment_method, total, status, is_paid, payment_confirmed,
           staff_name, staff_id, original_order_ids, transaction_id,
-          paid_at, created_at, updated_at, sent_to_cashier, is_archived)
+          paid_at, created_at, updated_at, sent_to_cashier, is_archived, date, business_date)
        VALUES ($1, $2, $3, 'Paid', true, true, $4, $5, $6::jsonb, $7,
-               NOW(), NOW(), NOW(), false, false)
+               NOW(), NOW(), NOW(), false, false, $8::date, $8::date)
        RETURNING id`,
-      [q.table_name, paymentMethod, q.amount, waiterName, q.staff_id || null, JSON.stringify(q.order_ids || []), transactionId || null]
+      [q.table_name, paymentMethod, q.amount, waiterName, q.staff_id || null, JSON.stringify(q.order_ids || []), transactionId || null, req.businessDate]
     );
     const newOrderId = newOrderRes.rows[0].id;
     console.log(`✅ Created paid order #${newOrderId} for UGX ${q.amount} via ${paymentMethod}, staff_name="${waiterName}"`);
@@ -528,14 +702,79 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
         if (!Array.isArray(items)) continue;
 
         let updated = false;
+        const unitPaidItems = [];
         const updatedItems = items.map((item, itemIndex) => {
           let newItem = { ...item };
+          let itemUpdated = false;
+          const isSelectedUnit = q.is_item === true
+            && q.item?.name === item.name
+            && Number(q.item?._orderItemIndex) === itemIndex
+            && Number(q.item?._orderId) === Number(orderId)
+            && Number.isInteger(Number(q.item?._unitIndex));
+
+          if (isSelectedUnit) {
+            const unitIndex = Number(q.item._unitIndex);
+            const unitStates = getOrderItemUnitStates(item);
+            const state = unitStates[unitIndex];
+            if (!state || state.paid === true || state.voidProcessed === true
+              || state.voidRequested === true || state.paymentRequested !== true
+              || Number(state.cashierQueueId) !== Number(id)) return newItem;
+            const paidAmount = getOrderItemUnitPayableAmount(item, unitIndex);
+            if (paidAmount <= 0) return newItem;
+            unitStates[unitIndex] = {
+              ...state,
+              paid: true,
+              paidAmount,
+              creditRequested: false,
+              creditApproved: false,
+              creditRejected: false,
+              creditRejectionReason: null,
+              paymentRequested: false,
+              cashierQueueId: null,
+              paidAt: new Date().toISOString(),
+              paymentMethod,
+              transactionId: transactionId || null,
+            };
+            const activeUnits = unitStates.filter(unit => unit?.voidProcessed !== true);
+            newItem.unitStates = unitStates;
+            newItem._rowPaid = activeUnits.length > 0 && activeUnits.every(unit => unit?.paid === true);
+            newItem.paidAmount = getOrderItemPaidAmount(newItem);
+            updated = true;
+            itemUpdated = true;
+            const unitGrossAmount = getOrderItemOriginalAmount(item) / unitStates.length;
+            const unitPaidItem = {
+              ...item,
+              quantity: 1,
+              price: unitGrossAmount,
+              originalUnitPrice: unitGrossAmount,
+              originalLineAmount: unitGrossAmount,
+              payableAmount: paidAmount,
+              paidAmount,
+              line_total: paidAmount,
+              _rowPaid: true,
+              unitStates: undefined,
+              _unitIndex: unitIndex,
+              _unitCount: unitStates.length,
+              _orderItemIndex: itemIndex,
+              _approvedUnitSale: true,
+              paid_at: new Date().toISOString(),
+              payment_confirmed: true,
+              payment_method: paymentMethod,
+              transaction_id: transactionId || null,
+              paymentRequested: false,
+            };
+            confirmedItems.push(unitPaidItem);
+            unitPaidItems.push(unitPaidItem);
+            return newItem;
+          }
 
           if (q.is_item && q.item?.name && item.name === q.item.name
+            && (q.item._orderId === undefined || Number(q.item._orderId) === Number(orderId))
             && (q.item._orderItemIndex === undefined || q.item._orderItemIndex === itemIndex)) {
             // Single-item payment: only stamp the matching item
             if (item._rowPaid !== true && getOrderItemPayableAmount(item) > 0) {
               updated = true;
+              itemUpdated = true;
               newItem._rowPaid          = true;
               newItem.paidAmount        = getOrderItemPayableAmount(item);
               newItem.paid_at           = new Date().toISOString();
@@ -545,8 +784,54 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
             }
             if (item.paymentRequested === true) {
               updated = true;
+              itemUpdated = true;
               newItem.paymentRequested = false;
             }
+          } else if (!q.is_item && Array.isArray(item.unitStates)) {
+            const unitStates = getOrderItemUnitStates(item);
+            unitStates.forEach((state, unitIndex) => {
+              if (!state || state.paid === true || state.voidProcessed === true
+                || state.voidRequested === true || state.creditRequested === true) return;
+              const paidAmount = getOrderItemUnitPayableAmount(item, unitIndex);
+              if (paidAmount <= 0) return;
+              unitStates[unitIndex] = {
+                ...state,
+                paid: true,
+                paidAmount,
+                paidAt: new Date().toISOString(),
+                paymentMethod,
+                transactionId: transactionId || null,
+              };
+              const unitGrossAmount = getOrderItemOriginalAmount(item) / unitStates.length;
+              const paidUnitItem = {
+                ...item,
+                quantity: 1,
+                price: unitGrossAmount,
+                originalUnitPrice: unitGrossAmount,
+                originalLineAmount: unitGrossAmount,
+                payableAmount: paidAmount,
+                paidAmount,
+                line_total: paidAmount,
+                _rowPaid: true,
+                unitStates: undefined,
+                _unitIndex: unitIndex,
+                _unitCount: unitStates.length,
+                _orderItemIndex: itemIndex,
+                _approvedUnitSale: true,
+                paid_at: new Date().toISOString(),
+                payment_confirmed: true,
+                payment_method: paymentMethod,
+                transaction_id: transactionId || null,
+              };
+              confirmedItems.push(paidUnitItem);
+              unitPaidItems.push(paidUnitItem);
+              updated = true;
+              itemUpdated = true;
+            });
+            const activeUnits = unitStates.filter(unit => unit?.voidProcessed !== true);
+            newItem.unitStates = unitStates;
+            newItem._rowPaid = activeUnits.length > 0 && activeUnits.every(unit => unit?.paid === true);
+            newItem.paidAmount = getOrderItemPaidAmount(newItem);
           } else if (!q.is_item) {
             // Whole-order payment: stamp every non-credit, non-voided, unpaid item
             if (
@@ -557,6 +842,7 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
               !(item.payment_method || '').toUpperCase().includes('CREDIT')
             ) {
               updated = true;
+              itemUpdated = true;
               newItem._rowPaid          = true;
               newItem.paidAmount        = getOrderItemPayableAmount(item);
               newItem.paid_at           = new Date().toISOString();
@@ -566,14 +852,17 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
             }
             if (item.paymentRequested === true) {
               updated = true;
+              itemUpdated = true;
               newItem.paymentRequested = false;
             }
           } else if (item.paymentRequested === true) {
             updated = true;
+            itemUpdated = true;
             newItem.paymentRequested = false;
           }
 
-          if (updated && newItem._rowPaid === true && item._rowPaid !== true) {
+          if (itemUpdated && !Array.isArray(item.unitStates)
+            && newItem._rowPaid === true && item._rowPaid !== true) {
             const itemPaymentAmount = Math.max(
               0,
               getOrderItemPayableAmount(item) - getOrderItemPaidAmount(item)
@@ -596,7 +885,16 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
           console.log(`✅ Updated original order #${orderId}: _rowPaid=true stamped`);
         }
         try {
-          const consumption = await consumeSoldOrderItems({ orderId, items: updatedItems, createdBy: confirmed_by || 'Cashier' });
+          const consumption = await consumeSoldOrderItems({
+            orderId,
+            items: unitPaidItems.length
+              ? unitPaidItems
+              : q.is_item === true && Number.isInteger(Number(q.item?._unitIndex))
+                ? []
+                : updatedItems,
+            businessDate: req.businessDate,
+            createdBy: confirmed_by || 'Cashier',
+          });
           for (const entry of consumption.filter((record) => !['CONSUMED', 'CONSUMED_COST_REVIEW', 'ALREADY_CONSUMED'].includes(record.status))) {
             console.warn(`Recipe consumption ${entry.status} for order #${orderId}: ${entry.order_item}`);
           }
@@ -642,13 +940,15 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
         if (!Array.isArray(items)) continue;
 
         // Any item that is not voided, not credit, and not yet paid = still outstanding
-        const activeUnpaid = items.filter(item =>
-          item.status !== 'VOIDED' &&
-          item.voidProcessed !== true &&
-          item._rowPaid !== true &&
-          item.creditRequested !== true &&
-          !(item.payment_method || '').toUpperCase().includes('CREDIT')
-        );
+        const activeUnpaid = items.filter(item => {
+          if (item.creditRequested === true || (item.payment_method || '').toUpperCase().includes('CREDIT')) return false;
+          if (Array.isArray(item.unitStates)) {
+            return item.unitStates.some(state =>
+              state?.voidProcessed !== true && state?.paid !== true && state?.creditRequested !== true
+            );
+          }
+          return item.status !== 'VOIDED' && item.voidProcessed !== true && item._rowPaid !== true;
+        });
 
         if (activeUnpaid.length === 0) {
           // Nothing left to pay — archive the original order so it won't
@@ -673,15 +973,16 @@ router.patch("/cashier-queue/:id/confirm", requireCashier, async (req, res) => {
     }
 
     const grossAmount = confirmedItems.length > 0
-      ? confirmedItems.reduce((total, item) => total + getOrderItemOriginalAmount(item), 0)
+      ? getOrderPayableTotal(confirmedItems)
       : q.is_item && q.item
-        ? getOrderItemOriginalAmount(q.item)
+        ? getOrderItemPayableAmount(q.item)
         : Number(q.amount);
     await updateDailySummary({
       amount: q.amount,
       grossAmount,
       method: paymentMethod,
       orderCount: 0,
+      date: req.businessDate,
     });
 
     await logActivity(pool, 'SALE',
@@ -718,11 +1019,15 @@ router.get("/cashier-queue", requireCashier, async (req, res) => {
        FROM public.cashier_queue cq
        LEFT JOIN public.public_payment_requests p ON p.cashier_queue_id = cq.id
        WHERE (
-          cq.status IN ('Pending', 'PendingManagerApproval')
-          AND (p.id IS NULL OR p.preparation_status IN ('NotSent', 'Ready'))
-       ) OR p.status = 'Rejected'
+          (
+            cq.status IN ('Pending', 'PendingManagerApproval')
+            AND (p.id IS NULL OR p.preparation_status IN ('NotSent', 'Ready'))
+          ) OR p.status = 'Rejected'
+       )
+         AND COALESCE(cq.business_date, (cq.created_at AT TIME ZONE 'Africa/Kampala')::date) = $1::date
        ORDER BY cq.created_at ASC
-       LIMIT 500`
+       LIMIT 500`,
+      [req.query.date || req.businessDate]
     );
     res.json(result.rows);
   } catch (err) {
@@ -848,8 +1153,8 @@ router.patch("/cashier-queue/:id/request-approval", requireCashier, async (req, 
 
     await pool.query(
       `UPDATE credits SET status = 'PendingManagerApproval'
-       WHERE UPPER(table_name) = UPPER($1) AND status = 'PendingCashier'`,
-      [tableName]
+       WHERE cashier_queue_id = $1 AND status = 'PendingCashier'`,
+      [id]
     );
 
     const managerNotification = await notificationService.sendToRoles(['MANAGER'], {
@@ -909,7 +1214,7 @@ router.patch("/cashier-queue/cancel-pending", async (req, res) => {
     if (q.method === "Credit") {
       await pool.query(
         `UPDATE credits
-         SET status = 'PendingCashier', reject_reason = NULL, updated_at = NOW()
+         SET status = 'Cancelled', reject_reason = NULL, updated_at = NOW()
          WHERE cashier_queue_id = $1
            AND status IN ('PendingCashier', 'PendingManagerApproval')`,
         [q.id]
@@ -925,8 +1230,31 @@ router.patch("/cashier-queue/cancel-pending", async (req, res) => {
         if (typeof items === "string") items = JSON.parse(items);
         if (!Array.isArray(items)) continue;
 
-        const updatedItems = items.map(item => {
+        const updatedItems = items.map((item, itemIndex) => {
           const matchesItemName = item_name && item.name && String(item.name).trim().toLowerCase() === String(item_name).trim().toLowerCase();
+          const isSelectedUnit = q.is_item === true
+            && q.item?.name === item.name
+            && Number(q.item?._orderItemIndex) === itemIndex
+            && Number(q.item?._orderId) === Number(orderId)
+            && Number.isInteger(Number(q.item?._unitIndex));
+          if (isSelectedUnit && Array.isArray(item.unitStates)) {
+            const unitIndex = Number(q.item._unitIndex);
+            const unitStates = getOrderItemUnitStates(item);
+            const state = unitStates[unitIndex];
+            if (Number(state?.cashierQueueId) === Number(q.id)) {
+              unitStates[unitIndex] = q.method === 'Credit'
+                ? {
+                  ...state,
+                  creditRequested: false,
+                  creditApproved: false,
+                  creditRejected: false,
+                  creditStatus: 'Cancelled',
+                  cashierQueueId: null,
+                }
+                : { ...state, paymentRequested: false, cashierQueueId: null };
+              return { ...item, unitStates };
+            }
+          }
           if (q.is_item && item_name && matchesItemName) {
             return {
               ...item,
@@ -976,7 +1304,7 @@ router.patch("/cashier-queue/:id/reject", requireCashier, async (req, res) => {
 
   try {
     const qRes = await pool.query(
-      `SELECT order_ids, table_name FROM cashier_queue WHERE id = $1`,
+      `SELECT order_ids, table_name, item, is_item, method FROM cashier_queue WHERE id = $1`,
       [id]
     );
     if (!qRes.rows.length) return res.status(404).json({ error: "Queue item not found" });
@@ -1007,7 +1335,21 @@ router.patch("/cashier-queue/:id/reject", requireCashier, async (req, res) => {
           let items = orderRes.rows[0].items;
           if (typeof items === 'string') items = JSON.parse(items);
           if (Array.isArray(items)) {
-            const updatedItems = items.map(item => {
+            const updatedItems = items.map((item, itemIndex) => {
+              const isSelectedUnit = q.is_item === true
+                && q.item?.name === item.name
+                && Number(q.item?._orderItemIndex) === itemIndex
+                && Number(q.item?._orderId) === Number(orderId)
+                && Number.isInteger(Number(q.item?._unitIndex));
+              if (isSelectedUnit && Array.isArray(item.unitStates)) {
+                const unitIndex = Number(q.item._unitIndex);
+                const unitStates = getOrderItemUnitStates(item);
+                const state = unitStates[unitIndex];
+                if (Number(state?.cashierQueueId) === Number(id)) {
+                  unitStates[unitIndex] = { ...state, paymentRequested: false, cashierQueueId: null };
+                  return { ...item, unitStates };
+                }
+              }
               if (item.paymentRequested === true) {
                 return { ...item, paymentRequested: false };
               }
@@ -1121,13 +1463,14 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
       description: `Approved credit sale · ${q.credit_name || tableName}`,
       sourceTransaction: creditId ? `credit:${creditId}` : `credit_queue:${id}`,
       postedBy: approved_by || 'Manager',
+      entryDate: req.businessDate,
     });
 
     await pool.query(
       `UPDATE cashier_queue
-       SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW()
-       WHERE id = $2`,
-      [approved_by || "Manager", id]
+       SET status = 'Approved', confirmed_by = $1, confirmed_at = NOW(), business_date = $2::date
+       WHERE id = $3`,
+      [approved_by || "Manager", req.businessDate, id]
     );
 
     const creditUpdateRes = await pool.query(
@@ -1197,12 +1540,36 @@ router.patch("/credit-approvals/:id/approve", async (req, res) => {
           [JSON.stringify(creditItems.items), newStatus, orderId]
         );
         try {
-          const approvedCreditItems = creditItems.items.map((item) =>
-            item.creditRequested === true || String(item.payment_method || '').toUpperCase().includes('CREDIT')
-              ? { ...item, _approvedCreditSale: true }
-              : item
-          );
-          await consumeSoldOrderItems({ orderId, items: approvedCreditItems, createdBy: approved_by || 'Manager' });
+          const unitCreditIndex = q.is_item === true
+            && creditItem?._unitIndex !== undefined
+            && creditItem?._unitIndex !== null
+            ? Number(creditItem._unitIndex)
+            : null;
+          const approvedCreditItems = creditItems.items.flatMap((item, itemIndex) => {
+            if (unitCreditIndex !== null) {
+              if (itemIndex !== Number(creditItem._orderItemIndex)
+                || item.unitStates?.[unitCreditIndex]?.creditApproved !== true) return [];
+              const unitCount = getOrderItemUnitCount(item);
+              const unitPrice = getOrderItemOriginalAmount(item) / unitCount;
+              return [{
+                ...item,
+                quantity: 1,
+                price: unitPrice,
+                originalUnitPrice: unitPrice,
+                originalLineAmount: unitPrice,
+                payableAmount: getOrderItemUnitPayableAmount(item, unitCreditIndex),
+                unitStates: undefined,
+                _unitIndex: unitCreditIndex,
+                _unitCount: unitCount,
+                _orderItemIndex: itemIndex,
+                _approvedCreditSale: true,
+              }];
+            }
+            return item.creditRequested === true || String(item.payment_method || '').toUpperCase().includes('CREDIT')
+              ? [{ ...item, _approvedCreditSale: true }]
+              : [];
+          });
+          await consumeSoldOrderItems({ orderId, items: approvedCreditItems, businessDate: req.businessDate, createdBy: approved_by || 'Manager' });
         } catch (error) {
           console.error(`Recipe consumption failed for approved credit order #${orderId}:`, error.message);
         }
@@ -1245,9 +1612,10 @@ router.get("/cashier-history", async (req, res) => {
        FROM cashier_queue cq
        WHERE cq.status IN ('Confirmed', 'Rejected')
          AND cq.method != 'Credit'
-         AND DATE(cq.created_at) = CURRENT_DATE
+         AND COALESCE(cq.business_date, (cq.created_at AT TIME ZONE 'Africa/Kampala')::date) = $1::date
        ORDER BY cq.confirmed_at DESC NULLS LAST
-       LIMIT 500`
+       LIMIT 500`,
+      [req.businessDate]
     );
     res.json(result.rows);
   } catch (err) {
@@ -1287,8 +1655,9 @@ router.get("/staff/credit-settlements", async (req, res) => {
          c.id            AS credit_id
        FROM credit_settlements cs
        JOIN credits c ON cs.credit_id = c.id
-       WHERE DATE(cs.created_at) = CURRENT_DATE
-       ORDER BY cs.created_at DESC`
+       WHERE COALESCE(cs.business_date, (cs.created_at AT TIME ZONE 'Africa/Kampala')::date) = $1::date
+       ORDER BY cs.created_at DESC`,
+      [req.businessDate]
     );
     res.json(result.rows);
   } catch (err) {
@@ -1393,7 +1762,8 @@ router.patch("/credits/:id/settle", async (req, res) => {
     await updateDailySummary({ 
       amount: paid_amount, 
       method: paymentMethod,
-      is_credit_settlement: true
+      is_credit_settlement: true,
+      date: req.businessDate,
     });
 
     res.json({ 

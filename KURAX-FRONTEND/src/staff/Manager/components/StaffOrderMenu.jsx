@@ -86,9 +86,11 @@ export default function ManagerOrderMenu({
             const originalPrice = Number(item.list_price ?? item.price);
             const currentPrice = Number(item.price);
             const promotionActive = item.promotion_active === true || item.promotion_active === "true";
-            const hasPromotion = promotionActive && Number.isFinite(originalPrice) && originalPrice > currentPrice;
             const drinkOptions = isEligibleDrink(item) ? getDrinkServingOptions(item) : [];
             const selectedServing = selectedServings[item.id] || drinkOptions[0];
+            const displayPrice = currentPrice;
+            const displayOriginalPrice = originalPrice;
+            const hasPromotion = promotionActive && Number.isFinite(displayOriginalPrice) && displayOriginalPrice > displayPrice;
             const drinkStation = getDrinkStationLabel(item);
 
             return (
@@ -180,13 +182,13 @@ export default function ManagerOrderMenu({
                     <div className="text-right">
                       {hasPromotion && (
                         <span className="mb-1 block text-sm font-semibold text-zinc-700 dark:text-zinc-300 line-through decoration-red-600 decoration-2">
-                          {originalPrice.toLocaleString()}
+                          {displayOriginalPrice.toLocaleString()}
                         </span>
                       )}
                       <span className={`block text-xl tracking-tighter leading-none ${
                         hasPromotion ? 'text-red-600 dark:text-red-400' : theme === 'dark' ? 'text-white' : 'text-zinc-900'
                       }`}>
-                        {currentPrice.toLocaleString()}
+                        {displayPrice.toLocaleString()}
                       </span>
                       <span className="text-[8px] text-yellow-600 font-bold uppercase tracking-wider leading-none">
                         UGX

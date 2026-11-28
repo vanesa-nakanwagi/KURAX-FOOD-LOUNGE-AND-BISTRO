@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { readSessionToken } from '../middleware/sessionTokens.js';
 import { getEffectiveMenuPrice, parsePromotionSettings } from '../helpers/menuPromotions.js';
+import { getMenuInventoryMatchFields } from '../helpers/menuInventoryMatch.js';
 import { removeStoredMenuImage, uploadMenuImage } from '../helpers/menuImageStorage.js';
 import logActivity from '../utils/logsActivity.js';
 
@@ -109,6 +110,19 @@ function serializeMenu(menu) {
   };
 }
 
+async function addInventoryMatchFields(menus) {
+  if (!menus.length) return [];
+  const inventoryResult = await pool.query(
+    `SELECT id, item_name, current_quantity, is_active
+     FROM public.inventory_items
+     WHERE is_active IS TRUE`
+  );
+  return menus.map((menu) => ({
+    ...menu,
+    ...getMenuInventoryMatchFields(menu, inventoryResult.rows),
+  }));
+}
+
 async function removeMenuImage(imageUrl) {
   if (!imageUrl) return;
   try {
@@ -131,17 +145,17 @@ async function removeMenuImage(imageUrl) {
 // --- GET ALL MENUS ---
 router.get('/', async (req, res) => {
   try {
-    // UPDATED: Added CASE mapping to provide the 'status' field for the frontend filter
     const query = `
-      SELECT *,
-      CASE WHEN published = true THEN 'live' ELSE 'draft' END as status 
-      FROM public.menus
-      WHERE LOWER(TRIM(COALESCE(category, ''))) <> 'shisha'
-        AND LOWER(TRIM(COALESCE(station, ''))) <> 'shisha'
-      ORDER BY updated_at DESC NULLS LAST, created_at DESC
+      SELECT menus.*,
+      CASE WHEN menus.published = true THEN 'live' ELSE 'draft' END as status
+      FROM public.menus AS menus
+      WHERE LOWER(TRIM(COALESCE(menus.category, ''))) <> 'shisha'
+        AND LOWER(TRIM(COALESCE(menus.station, ''))) <> 'shisha'
+      ORDER BY menus.updated_at DESC NULLS LAST, menus.created_at DESC
     `;
     const result = await pool.query(query);
-    res.json(result.rows.map(serializeMenu));
+    const menus = await addInventoryMatchFields(result.rows);
+    res.json(menus.map(serializeMenu));
   } catch (err) {
     console.error("❌ FETCH ERROR:", err.message);
     res.status(500).json({ error: "Failed to fetch menus" });
@@ -166,7 +180,7 @@ router.post('/', upload.single('image'), async (req, res) => {
     if (String(category).trim().toLowerCase() === 'drinks & cocktails'
       && (inventoryItemId !== null && (!Number.isInteger(inventoryItemId) || inventoryItemId <= 0)
         || bottleVolumeMl !== null && (!Number.isFinite(bottleVolumeMl) || bottleVolumeMl <= 0))) {
-      return res.status(400).json({ error: 'A valid inventory item and bottle volume in ml are required for drinks.' });
+      return res.status(400).json({ error: 'Bottle volume and inventory item must be valid when provided.' });
     }
     const basePrice = Number(price);
     if (!Number.isFinite(basePrice) || basePrice < 0) {
@@ -225,7 +239,8 @@ router.post('/', upload.single('image'), async (req, res) => {
         meta: { menu_id: result.rows[0].id, ...promotion, price: basePrice },
       });
     }
-    res.status(201).json(serializeMenu(result.rows[0]));
+    const [menu] = await addInventoryMatchFields(result.rows);
+    res.status(201).json(serializeMenu(menu));
   } catch (err) {
     await removeMenuImage(uploadedImageUrl);
     console.error("❌ SAVE ERROR:", err.message);
@@ -262,7 +277,7 @@ router.put('/:id', upload.single('image'), async (req, res) => {
       && (inventoryItemId !== null && (!Number.isInteger(inventoryItemId) || inventoryItemId <= 0)
         || bottleVolumeMl !== null && (!Number.isFinite(bottleVolumeMl) || bottleVolumeMl <= 0))) {
       await removeMenuImage(uploadedImageUrl);
-      return res.status(400).json({ error: 'A valid inventory item and bottle volume in ml are required for drinks.' });
+      return res.status(400).json({ error: 'Bottle volume and inventory item must be valid when provided.' });
     }
     const basePrice = Number(price);
     if (!Number.isFinite(basePrice) || basePrice < 0) {
@@ -327,7 +342,8 @@ router.put('/:id', upload.single('image'), async (req, res) => {
         meta: { menu_id: result.rows[0].id, ...promotion, price: basePrice },
       });
     }
-    res.json(serializeMenu(result.rows[0]));
+    const [menu] = await addInventoryMatchFields(result.rows);
+    res.json(serializeMenu(menu));
   } catch (err) {
     await removeMenuImage(uploadedImageUrl);
     console.error("❌ UPDATE ERROR:", err.message);

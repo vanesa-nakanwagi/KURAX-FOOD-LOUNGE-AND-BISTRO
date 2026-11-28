@@ -7,26 +7,33 @@ const REPORT_ROLES = ["DIRECTOR", "MANAGER", "SUPERVISOR", "ACCOUNTANT"];
 const STAFF_ROLES = ["", "MANAGER", "SUPERVISOR", "WAITER"];
 
 function dateString(date) {
-  return date.toLocaleDateString("en-CA");
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Africa/Kampala",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
-function getRange(preset) {
-  const today = new Date();
-  const todayString = dateString(today);
+function getRange(preset, baseDate) {
+  const todayString = baseDate || dateString(new Date());
+  const today = new Date(`${todayString}T12:00:00Z`);
   if (preset === "today") return { startDate: todayString, endDate: todayString };
   if (preset === "yesterday") {
     const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
+    yesterday.setUTCDate(today.getUTCDate() - 1);
     const value = dateString(yesterday);
     return { startDate: value, endDate: value };
   }
   if (preset === "week") {
     const start = new Date(today);
-    start.setDate(today.getDate() - today.getDay());
+    start.setUTCDate(today.getUTCDate() - today.getUTCDay());
     return { startDate: dateString(start), endDate: todayString };
   }
   if (preset === "month") {
-    return { startDate: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`, endDate: todayString };
+    return { startDate: `${todayString.slice(0, 7)}-01`, endDate: todayString };
   }
   return { startDate: todayString, endDate: todayString };
 }
@@ -76,12 +83,15 @@ function BarList({ title, rows, valueKey, formatter }) {
 }
 
 export default function StaffSalesPerformance({ role: roleProp, initialRange, historicalMode = false, timeRange = {}, onDateRangeChange }) {
-  const { currentUser } = useData();
+  const { currentUser, businessDate } = useData();
+  const selectedBusinessDate = businessDate || dateString(new Date());
   const role = (roleProp || currentUser?.role || JSON.parse(localStorage.getItem("kurax_user") || "{}").role || "").toUpperCase();
   const [preset, setPreset] = useState(() => initialRange ? "custom" : "today");
-  const [reportMonth, setReportMonth] = useState(() => dateString(new Date()).slice(0, 7));
-  const [customStart, setCustomStart] = useState(() => initialRange?.start || dateString(new Date()));
-  const [customEnd, setCustomEnd] = useState(() => initialRange?.end || dateString(new Date()));
+  const [reportMonth, setReportMonth] = useState(() => (businessDate || dateString(new Date())).slice(0, 7));
+  const [reportMonthEdited, setReportMonthEdited] = useState(false);
+  const [customStart, setCustomStart] = useState(() => initialRange?.start || businessDate || dateString(new Date()));
+  const [customEnd, setCustomEnd] = useState(() => initialRange?.end || businessDate || dateString(new Date()));
+  const [customRangeEdited, setCustomRangeEdited] = useState(false);
   const [staffId, setStaffId] = useState("");
   const [staffRole, setStaffRole] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("all");
@@ -95,8 +105,19 @@ export default function StaffSalesPerformance({ role: roleProp, initialRange, hi
 
   const range = useMemo(() => preset === "custom"
     ? { startDate: customStart, endDate: customEnd }
-    : preset === "month" ? getMonthRange(reportMonth) : getRange(preset),
-  [preset, customStart, customEnd, reportMonth]);
+    : preset === "month" ? getMonthRange(reportMonthEdited ? reportMonth : selectedBusinessDate.slice(0, 7)) : getRange(preset, selectedBusinessDate),
+  [preset, customStart, customEnd, reportMonth, reportMonthEdited, selectedBusinessDate]);
+
+  useEffect(() => {
+    if (!reportMonthEdited) setReportMonth(selectedBusinessDate.slice(0, 7));
+  }, [selectedBusinessDate, reportMonthEdited]);
+
+  useEffect(() => {
+    if (!initialRange && !customRangeEdited) {
+      setCustomStart(selectedBusinessDate);
+      setCustomEnd(selectedBusinessDate);
+    }
+  }, [selectedBusinessDate, initialRange, customRangeEdited]);
 
   useEffect(() => {
     if (!initialRange?.start || !initialRange?.end) return;
@@ -121,13 +142,13 @@ export default function StaffSalesPerformance({ role: roleProp, initialRange, hi
       setLoading(true);
       setError("");
       try {
-        const selectedMonthRange = getMonthRange(reportMonth);
+        const selectedMonthRange = getMonthRange(reportMonthEdited ? reportMonth : selectedBusinessDate.slice(0, 7));
         const selectedFilters = { ...range, staffId, role: staffRole, paymentStatus };
         if (timeRange.start) selectedFilters.startTime = timeRange.start;
         if (timeRange.end) selectedFilters.endTime = timeRange.end;
         const [selectedResponse, todayResponse, monthResponse] = await Promise.all([
           fetch(`${API_URL}/api/manager/staff-sales-performance?${query(selectedFilters)}`),
-          historicalMode ? Promise.resolve(null) : fetch(`${API_URL}/api/manager/staff-sales-performance?${query({ ...getRange("today"), paymentStatus })}`),
+          historicalMode ? Promise.resolve(null) : fetch(`${API_URL}/api/manager/staff-sales-performance?${query({ ...getRange("today", selectedBusinessDate), paymentStatus })}`),
           historicalMode ? Promise.resolve(null) : fetch(`${API_URL}/api/manager/staff-sales-performance?${query({ ...selectedMonthRange, paymentStatus })}`)
         ]);
         if (!selectedResponse.ok || (todayResponse && !todayResponse.ok) || (monthResponse && !monthResponse.ok)) throw new Error("Unable to load performance data");
@@ -149,14 +170,14 @@ export default function StaffSalesPerformance({ role: roleProp, initialRange, hi
     };
     load();
     return () => { cancelled = true; };
-  }, [role, range, reportMonth, staffId, staffRole, paymentStatus, historicalMode, timeRange.start, timeRange.end]);
+  }, [role, range, reportMonth, reportMonthEdited, selectedBusinessDate, staffId, staffRole, paymentStatus, historicalMode, timeRange.start, timeRange.end]);
 
   const generateStaffPerformancePDF = async () => {
     if (!monthlyReport?.staff?.length) {
       alert("No staff performance data available.");
       return;
     }
-    const monthKey = reportMonth;
+    const monthKey = reportMonthEdited ? reportMonth : selectedBusinessDate.slice(0, 7);
     setIsGeneratingStaffPDF(true);
     try {
       const response = await fetch(`${API_URL}/api/manager/export-staff-pdf?month=${monthKey}`);
@@ -196,6 +217,7 @@ export default function StaffSalesPerformance({ role: roleProp, initialRange, hi
 
   const selectedRows = report?.staff || [];
   const dailyRows = report?.daily || [];
+  const selectedDateLabel = "Selected date's";
   const dailyStaffRows = useMemo(() => {
     const totals = new Map();
     dailyRows.forEach(day => Object.entries(day.staff || {}).forEach(([name, sales]) => {
@@ -231,12 +253,12 @@ export default function StaffSalesPerformance({ role: roleProp, initialRange, hi
       {!loading && report && <>
         <section className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${historicalMode ? "lg:grid-cols-2" : "lg:grid-cols-4"}`}>
           {historicalMode ? <>
-            <MetricCard label="Orders in selected period" value={report?.summary?.total_orders || 0} accent="border-yellow-200 bg-yellow-50 text-yellow-950" />
+            <MetricCard label="Items in selected period" value={report?.summary?.total_items || 0} accent="border-yellow-200 bg-yellow-50 text-yellow-950" />
             <MetricCard label="Sales in selected period" value={formatMoney(report?.summary?.total_sales)} accent="border-emerald-200 bg-emerald-50 text-emerald-950" />
           </> : <>
-          <MetricCard label="Today's orders" value={today?.summary?.total_orders || 0} accent="border-yellow-200 bg-yellow-50 text-yellow-950" />
-          <MetricCard label="Today's sales" value={formatMoney(today?.summary?.total_sales)} accent="border-emerald-200 bg-emerald-50 text-emerald-950" />
-          <MetricCard label="Monthly orders" value={monthlyReport?.summary?.total_orders || 0} accent="border-blue-200 bg-blue-50 text-blue-950" />
+          <MetricCard label={`${selectedDateLabel} items`} value={today?.summary?.total_items || 0} accent="border-yellow-200 bg-yellow-50 text-yellow-950" />
+          <MetricCard label={`${selectedDateLabel} sales`} value={formatMoney(today?.summary?.total_sales)} accent="border-emerald-200 bg-emerald-50 text-emerald-950" />
+          <MetricCard label="Monthly items" value={monthlyReport?.summary?.total_items || 0} accent="border-blue-200 bg-blue-50 text-blue-950" />
           <MetricCard label="Monthly sales" value={formatMoney(monthlyReport?.summary?.total_sales)} accent="border-orange-200 bg-orange-50 text-orange-950" />
           </>}
         </section>
@@ -248,11 +270,11 @@ export default function StaffSalesPerformance({ role: roleProp, initialRange, hi
             </select>
           </label>
           {!historicalMode && <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Report month
-            <input type="month" value={reportMonth} onChange={event => { if (event.target.value) setReportMonth(event.target.value); }} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal outline-none focus:border-yellow-500" />
+            <input type="month" value={reportMonthEdited ? reportMonth : selectedBusinessDate.slice(0, 7)} onChange={event => { if (event.target.value) { setReportMonth(event.target.value); setReportMonthEdited(true); } }} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal outline-none focus:border-yellow-500" />
           </label>}
           {preset === "custom" && <>
-            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Start date<input type="date" max={customEnd} value={customStart} onChange={event => { setCustomStart(event.target.value); if (historicalMode) onDateRangeChange?.({ start: event.target.value, end: customEnd }); }} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm normal-case tracking-normal" /></label>
-            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">End date<input type="date" min={customStart} value={customEnd} onChange={event => { setCustomEnd(event.target.value); if (historicalMode) onDateRangeChange?.({ start: customStart, end: event.target.value }); }} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm normal-case tracking-normal" /></label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Start date<input type="date" max={customEnd} value={customStart} onChange={event => { setCustomRangeEdited(true); setCustomStart(event.target.value); if (historicalMode) onDateRangeChange?.({ start: event.target.value, end: customEnd }); }} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm normal-case tracking-normal" /></label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">End date<input type="date" min={customStart} value={customEnd} onChange={event => { setCustomRangeEdited(true); setCustomEnd(event.target.value); if (historicalMode) onDateRangeChange?.({ start: customStart, end: event.target.value }); }} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm normal-case tracking-normal" /></label>
           </>}
           <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Staff member
             <select value={staffId} onChange={event => setStaffId(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-semibold normal-case tracking-normal"><option value="">All staff</option>{staffDirectory.map(staff => <option key={staff.id} value={staff.id}>{staff.name}</option>)}</select>
@@ -268,22 +290,22 @@ export default function StaffSalesPerformance({ role: roleProp, initialRange, hi
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <BarList title="Daily sales by staff" rows={dailyStaffRows} valueKey="total_sales" formatter={formatMoney} />
           <BarList title="Monthly sales by staff" rows={monthlyReport?.staff || []} valueKey="total_sales" formatter={formatMoney} />
-          <BarList title="Orders handled by staff" rows={monthlyReport?.staff || []} valueKey="orders_count" formatter={value => Number(value || 0).toLocaleString()} />
+          <BarList title="Items handled by staff" rows={monthlyReport?.staff || []} valueKey="items_count" formatter={value => Number(value || 0).toLocaleString()} />
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-zinc-100 p-5">
-            <div><h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.14em] text-zinc-800"><Users size={16} className="text-yellow-600" /> Staff performance</h2><p className="mt-1 text-xs text-zinc-500">{range.startDate} to {range.endDate} · {report.summary.total_orders} orders · {formatMoney(report.summary.total_sales)}</p></div>
+            <div><h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.14em] text-zinc-800"><Users size={16} className="text-yellow-600" /> Staff performance</h2><p className="mt-1 text-xs text-zinc-500">{range.startDate} to {range.endDate} · {report.summary.total_items} items · {formatMoney(report.summary.total_sales)}</p></div>
             <CalendarDays size={18} className="text-zinc-400" />
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm"><thead className="bg-zinc-50 text-[10px] uppercase tracking-widest text-zinc-500"><tr><th className="px-5 py-3">Staff</th><th className="px-5 py-3">Role</th><th className="px-5 py-3">Orders</th><th className="px-5 py-3">Total sales</th><th className="px-5 py-3">Average/day</th><th className="px-5 py-3">Payment breakdown</th></tr></thead>
-              <tbody className="divide-y divide-zinc-100">{selectedRows.map(row => <tr key={row.staff_id || row.staff_name} className="hover:bg-yellow-50/40"><td className="px-5 py-4 font-bold text-zinc-800">{row.staff_name}</td><td className="px-5 py-4 text-xs font-semibold text-zinc-500">{row.role}</td><td className="px-5 py-4 font-bold">{row.orders_count}</td><td className="px-5 py-4 font-black text-yellow-700">{formatMoney(row.total_sales)}</td><td className="px-5 py-4 text-zinc-600">{formatMoney(row.average_sales_per_day)}</td><td className="px-5 py-4 text-xs text-zinc-500">{Object.entries(row.payment_breakdown).map(([method, count]) => `${method}: ${count}`).join(" · ") || "No orders"}</td></tr>)}{selectedRows.length === 0 && <tr><td colSpan="6" className="px-5 py-10 text-center text-zinc-400">No staff sales found for the selected filters.</td></tr>}</tbody>
+            <table className="min-w-full text-left text-sm"><thead className="bg-zinc-50 text-[10px] uppercase tracking-widest text-zinc-500"><tr><th className="px-5 py-3">Staff</th><th className="px-5 py-3">Role</th><th className="px-5 py-3">Items</th><th className="px-5 py-3">Total sales</th><th className="px-5 py-3">Average/day</th><th className="px-5 py-3">Payment breakdown</th></tr></thead>
+              <tbody className="divide-y divide-zinc-100">{selectedRows.map(row => <tr key={row.staff_id || row.staff_name} className="hover:bg-yellow-50/40"><td className="px-5 py-4 font-bold text-zinc-800">{row.staff_name}</td><td className="px-5 py-4 text-xs font-semibold text-zinc-500">{row.role}</td><td className="px-5 py-4 font-bold">{row.items_count}</td><td className="px-5 py-4 font-black text-yellow-700">{formatMoney(row.total_sales)}</td><td className="px-5 py-4 text-zinc-600">{formatMoney(row.average_sales_per_day)}</td><td className="px-5 py-4 text-xs text-zinc-500">{Object.entries(row.payment_breakdown).map(([method, count]) => `${method}: ${count}`).join(" · ") || "No items"}</td></tr>)}{selectedRows.length === 0 && <tr><td colSpan="6" className="px-5 py-10 text-center text-zinc-400">No staff sales found for the selected filters.</td></tr>}</tbody>
             </table>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm"><h2 className="mb-4 text-sm font-black uppercase tracking-[0.14em] text-zinc-800">Daily breakdown</h2><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">{dailyRows.map(day => <div key={day.date} className="rounded-xl bg-zinc-50 p-4"><p className="text-xs font-bold text-zinc-500">{day.date}</p><p className="mt-2 font-black text-zinc-900">{formatMoney(day.total_sales)}</p><p className="text-xs text-zinc-500">{day.orders_count} orders</p></div>)}</div></section>
+        <section className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm"><h2 className="mb-4 text-sm font-black uppercase tracking-[0.14em] text-zinc-800">Daily breakdown</h2><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">{dailyRows.map(day => <div key={day.date} className="rounded-xl bg-zinc-50 p-4"><p className="text-xs font-bold text-zinc-500">{day.date}</p><p className="mt-2 font-black text-zinc-900">{formatMoney(day.total_sales)}</p><p className="text-xs text-zinc-500">{day.items_count} items</p></div>)}</div></section>
       </>}
     </div>
   );

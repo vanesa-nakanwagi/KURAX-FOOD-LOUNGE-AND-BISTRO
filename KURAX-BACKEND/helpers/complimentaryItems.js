@@ -45,9 +45,33 @@ export function getOrderItemPayableAmount(item = {}) {
 }
 
 export function getOrderItemPaidAmount(item = {}) {
+  if (Array.isArray(item.unitStates)) {
+    return roundMoney(item.unitStates.reduce((total, state) =>
+      total + Number(state?.paidAmount || 0), 0));
+  }
   const storedPaid = Number(item.paidAmount ?? item.partial_amount_paid ?? item.amount_paid);
   if (Number.isFinite(storedPaid) && storedPaid >= 0) return roundMoney(storedPaid);
   return item._rowPaid === true ? getOrderItemPayableAmount(item) : 0;
+}
+
+export function getOrderItemUnitCount(item = {}) {
+  const quantity = Number(item.quantity || 1);
+  return Number.isFinite(quantity) && quantity > 0 ? Math.max(1, Math.floor(quantity)) : 1;
+}
+
+export function getOrderItemUnitStates(item = {}) {
+  const count = getOrderItemUnitCount(item);
+  return Array.from({ length: count }, (_, index) => item.unitStates?.[index] || {});
+}
+
+export function getOrderItemUnitPayableAmount(item = {}, unitIndex = 0) {
+  const count = getOrderItemUnitCount(item);
+  if (!Number.isInteger(unitIndex) || unitIndex < 0 || unitIndex >= count) return 0;
+  const total = getOrderItemPayableAmount(item);
+  const perUnit = roundMoney(total / count);
+  return unitIndex === count - 1
+    ? roundMoney(total - perUnit * (count - 1))
+    : perUnit;
 }
 
 export function applyComplimentaryTerms(item, {
@@ -83,6 +107,12 @@ export function applyComplimentaryTerms(item, {
 export function getOrderPayableTotal(items = []) {
   return roundMoney(items.reduce((total, item) => {
     if (item?.voidProcessed === true || String(item?.status || '').toUpperCase() === 'VOIDED') return total;
+    if (Array.isArray(item?.unitStates)) {
+      return total + getOrderItemUnitStates(item).reduce((unitTotal, state, index) =>
+        state?.voidProcessed === true
+          ? unitTotal
+          : unitTotal + getOrderItemUnitPayableAmount(item, index), 0);
+    }
     return total + getOrderItemPayableAmount(item);
   }, 0));
 }

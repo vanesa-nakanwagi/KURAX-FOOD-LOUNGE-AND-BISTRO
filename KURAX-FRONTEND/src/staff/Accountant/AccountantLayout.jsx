@@ -10,7 +10,6 @@ import PhysicalCount from "./sections/PhysicalCount";
 import EndOfShift from "./sections/EndOfShift";
 import LiveAudit from "./sections/LiveAudit";
 import Credits from "./sections/Credits";
-import MonthlyCosts from "./MonthlyCosts";
 import AccountingCenter from "./AccountingCenter";
 import ReconciliationOverview from "./sections/ReconciliationOverview";
 import DepartmentHod from "../DepartmentHod";
@@ -39,12 +38,21 @@ function getBusinessSettingsKey() {
 export default function AccountantLayout() {
   const location = useLocation();
   const isInventoryRoute = location.pathname.startsWith("/accountant/inventory");
-  const { todaySummary, orders = [], refreshData } = useData() || {};
+  const {
+    todaySummary,
+    orders = [],
+    refreshData,
+    businessDate: systemBusinessDate,
+    businessDateMode,
+    updateSystemBusinessDate,
+    returnSystemToLiveDate,
+  } = useData() || {};
   const businessSettingsKey = getBusinessSettingsKey();
 
   const [activeSection, setActiveSection] = useState(() => location.state?.activeSection || "DASHBOARD");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [error, setError] = useState(null);
+  const [businessDateError, setBusinessDateError] = useState("");
   const [dayClosed, setDayClosed] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -81,7 +89,8 @@ export default function AccountantLayout() {
   const userRole = loggedInUser?.role || "Accountant";
   const liveDate = kampalaDate(clockNow);
   const liveTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Kampala", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(clockNow);
-  const businessDate = businessSettings.mode === "LIVE" ? liveDate : businessSettings.businessDate;
+  const businessDate = systemBusinessDate || liveDate;
+  const historicalMode = businessDateMode === "HISTORICAL";
 
   useEffect(() => {
     const timer = setInterval(() => setClockNow(new Date()), 1000);
@@ -92,17 +101,47 @@ export default function AccountantLayout() {
     localStorage.setItem(businessSettingsKey, JSON.stringify(businessSettings));
   }, [businessSettingsKey, businessSettings]);
 
-  const setHistoricalBusinessDate = (date) => {
+  useEffect(() => {
+    setBusinessSettings((current) => {
+      if (current.businessDate === businessDate) return current;
+      return {
+        ...current,
+        businessDate,
+        dateRange: historicalMode ? { start: businessDate, end: businessDate } : current.dateRange,
+      };
+    });
+  }, [businessDate, historicalMode]);
+
+  useEffect(() => {
+    setRetrospectiveCounts({ cash: "", card: "", mtn: "", airtel: "" });
+    setRetrospectiveNote("");
+    setError(null);
+  }, [businessDate]);
+
+  const setHistoricalBusinessDate = async (date) => {
     if (!date) return;
-    setBusinessSettings((current) => ({ ...current, mode: date < liveDate ? "HISTORICAL" : "LIVE", businessDate: date, dateRange: { start: date, end: date } }));
+    setBusinessDateError("");
+    try {
+      await updateSystemBusinessDate(date);
+      setBusinessSettings((current) => ({ ...current, businessDate: date, dateRange: { start: date, end: date } }));
+    } catch (dateError) {
+      setBusinessDateError(dateError.message || "Could not update the system business date.");
+    }
   };
 
   const setReportingRange = (dateRange) => {
-    setBusinessSettings((current) => ({ ...current, dateRange, businessDate: dateRange.end || current.businessDate, mode: dateRange.end && dateRange.end < liveDate ? "HISTORICAL" : "LIVE" }));
+    setBusinessSettings((current) => ({ ...current, dateRange }));
   };
 
-  const returnToLive = () => {
-    setBusinessSettings((current) => ({ ...current, mode: "LIVE", businessDate: liveDate, businessTime: "", dateRange: { start: `${liveDate.slice(0, 7)}-01`, end: liveDate }, timeRange: { start: "", end: "" } }));
+  const returnToLive = async () => {
+    setBusinessDateError("");
+    try {
+      const context = await returnSystemToLiveDate();
+      const currentLiveDate = context.liveDate || liveDate;
+      setBusinessSettings((current) => ({ ...current, businessDate: currentLiveDate, businessTime: "", dateRange: { start: `${currentLiveDate.slice(0, 7)}-01`, end: currentLiveDate }, timeRange: { start: "", end: "" } }));
+    } catch (dateError) {
+      setBusinessDateError(dateError.message || "Could not return the system to the live date.");
+    }
   };
 
   // ── Reopen Day State ────────────────────────────────────────────────────────
@@ -128,6 +167,8 @@ export default function AccountantLayout() {
   const [physSaved, setPhysSaved] = useState(false);
   const [physLoading, setPhysLoading] = useState(false);
   const [hasPhysicalCount, setHasPhysicalCount] = useState(false);
+  const [retrospectiveCounts, setRetrospectiveCounts] = useState({ cash: "", card: "", mtn: "", airtel: "" });
+  const [retrospectiveNote, setRetrospectiveNote] = useState("");
 
   // ── Credit summary state (for PhysicalCount) ───────────────────────────────
   const [creditSettledToday, setCreditSettledToday] = useState(0);
@@ -175,7 +216,7 @@ export default function AccountantLayout() {
   }, [fetchLiveSummary]);
 
   const fetchPettyCashToday = useCallback(async () => {
-    if (dayClosed && businessSettings.mode !== "HISTORICAL") {
+    if (dayClosed && !historicalMode) {
       setPettyCashToday({ total_out: 0 });
       return;
     }
@@ -183,7 +224,7 @@ export default function AccountantLayout() {
       const res = await fetch(`${API_URL}/api/accountant/petty-cash?date=${encodeURIComponent(businessDate)}`);
       if (res.ok) setPettyCashToday(await res.json());
     } catch (e) { console.error("petty cash today:", e); }
-  }, [businessDate, businessSettings.mode, dayClosed]);
+  }, [businessDate, historicalMode, dayClosed]);
 
   useEffect(() => {
     fetchPettyCashToday();
@@ -442,7 +483,7 @@ export default function AccountantLayout() {
 
   // ─── SAVE PHYSICAL COUNT + CREDIT SUMMARY ─────────────────────────────────
   const savePhysicalCount = async () => {
-    if (businessSettings.mode === "HISTORICAL") return;
+    if (historicalMode) return;
     setPhysSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("kurax_user") || "{}");
@@ -575,30 +616,25 @@ export default function AccountantLayout() {
   };
 
   const handleDayClosure = async () => {
-    if (businessSettings.mode === "HISTORICAL") {
-      setError("Return to live mode before closing the current business day.");
-      return;
-    }
-    if (!hasPhysicalCount) {
+    if (historicalMode) {
+      const countValues = Object.values(retrospectiveCounts);
+      if (countValues.some((value) => value === "" || !Number.isFinite(Number(value)) || Number(value) < 0)) {
+        setError("Enter a valid retrospective count for cash, card, MTN, and Airtel.");
+        return;
+      }
+      if (!retrospectiveNote.trim()) {
+        setError("Add a note explaining this retrospective count.");
+        return;
+      }
+    } else if (!hasPhysicalCount) {
       alert("⚠️ Please enter the physical count first before closing the day!\n\nGo to PHYSICAL COUNT section and enter all cash, mobile money, and card totals.");
       setActiveSection("PHYSICAL_COUNT");
       return;
     }
 
-    const confirmed = window.confirm(
-      "⚠️ CLOSE DAY - THIS ACTION CANNOT BE UNDONE! ⚠️\n\n" +
-      "This will:\n" +
-      "• Archive all today's orders\n" +
-      "• Clear kitchen, barista & bar ticket boards\n" +
-      "• Reset all revenue totals to zero\n" +
-      "• Reset all physical count entries to zero\n" +
-      "• Reset variance analysis to zero\n" +
-      "• Expire any pending void requests\n" +
-      "• Save a permanent audit record of today's close\n\n" +
-      "Credit ledger will persist for the entire month.\n\n" +
-      "The page will automatically refresh to show zero totals.\n\n" +
-      "Are you absolutely sure you want to close the day?"
-    );
+    const confirmed = window.confirm(historicalMode
+      ? `Close business date ${businessDate}?\n\nThis will archive only completed/cancelled orders and cleared station tickets for this date. Any open waiter orders, cashier items, or active station tickets will block closure. Live tables, today's totals, and Shisha will not be changed.\n\nThe counts you entered will be saved as retrospective counts, with your note, not as a physical count taken on that date.`
+      : "⚠️ CLOSE DAY - THIS ACTION CANNOT BE UNDONE! ⚠️\n\nThis will archive today's orders, clear station ticket boards, reset today's revenue and physical-count totals, expire pending void requests, and save a permanent audit record. Credit ledger will persist for the month.\n\nAre you absolutely sure you want to close the day?");
     if (!confirmed) return;
 
     setIsFinalizing(true);
@@ -614,13 +650,16 @@ export default function AccountantLayout() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          closing_date: businessDate,
           closed_by: actor,
-          final_cash: physCash,
-          final_card: physCard,
-          final_mtn: physMomoMTN,
-          final_airtel: physMomoAirtel,
+          final_cash: historicalMode ? Number(retrospectiveCounts.cash) : physCash,
+          final_card: historicalMode ? Number(retrospectiveCounts.card) : physCard,
+          final_mtn: historicalMode ? Number(retrospectiveCounts.mtn) : physMomoMTN,
+          final_airtel: historicalMode ? Number(retrospectiveCounts.airtel) : physMomoAirtel,
           final_gross: sys.gross,
-          notes: `Day closed by ${actor}. Physical count: Cash=${physCash}, Card=${physCard}, MTN=${physMomoMTN}, Airtel=${physMomoAirtel}`
+          notes: historicalMode
+            ? `RETROSPECTIVE COUNT for ${businessDate}. Cash=${retrospectiveCounts.cash}, Card=${retrospectiveCounts.card}, MTN=${retrospectiveCounts.mtn}, Airtel=${retrospectiveCounts.airtel}. Accountant note: ${retrospectiveNote.trim()}`
+            : `Day closed by ${actor}. Physical count: Cash=${physCash}, Card=${physCard}, MTN=${physMomoMTN}, Airtel=${physMomoAirtel}`
         }),
       });
 
@@ -631,29 +670,30 @@ export default function AccountantLayout() {
         return; 
       }
 
-      alert(`✅ Day closed successfully!\n\nOrders Archived: ${data.cleared_orders}\nTickets Cleared: ${data.cleared_tickets}\n\nThe page will now refresh to show zero totals.`);
-      
+      alert(historicalMode
+        ? `✅ Business date ${businessDate} closed successfully.\n\nOrders archived: ${data.cleared_orders}\nTickets cleared: ${data.cleared_tickets}\n\nToday's live tables and totals were left unchanged.`
+        : `✅ Day closed successfully!\n\nOrders Archived: ${data.cleared_orders}\nTickets Cleared: ${data.cleared_tickets}\n\nThe page will now refresh to show zero totals.`);
       setDayClosed(true);
-      
-      setLiveSummary({ total_cash: 0, total_card: 0, total_mtn: 0, total_airtel: 0, total_gross: 0, order_count: 0, pending_credit_requests_amount: 0, credit_settlements_today: 0 });
-      setVoidRequests([]);
-      setVoidHistory([]);
-      setProfitData(null);
-      
-      setPhysCash(0);
-      setPhysMomoMTN(0);
-      setPhysMomoAirtel(0);
-      setPhysCard(0);
-      setPhysNotes("");
-      setHasPhysicalCount(false);
-      setPettyCashToday({ total_out: 0 });
-      
-      window.dispatchEvent(new CustomEvent('dayClosed', { detail: data }));
-      window.dispatchEvent(new Event('refresh'));
-      
-      setTimeout(() => {
-        forceHardRefresh();
-      }, 1500);
+      if (historicalMode) {
+        setIsFinalizing(false);
+        refreshData?.();
+        fetchLiveSummary();
+      } else {
+        setLiveSummary({ total_cash: 0, total_card: 0, total_mtn: 0, total_airtel: 0, total_gross: 0, order_count: 0, pending_credit_requests_amount: 0, credit_settlements_today: 0 });
+        setVoidRequests([]);
+        setVoidHistory([]);
+        setProfitData(null);
+        setPhysCash(0);
+        setPhysMomoMTN(0);
+        setPhysMomoAirtel(0);
+        setPhysCard(0);
+        setPhysNotes("");
+        setHasPhysicalCount(false);
+        setPettyCashToday({ total_out: 0 });
+        window.dispatchEvent(new CustomEvent('dayClosed', { detail: data }));
+        window.dispatchEvent(new Event('refresh'));
+        setTimeout(() => forceHardRefresh(), 1500);
+      }
       
     } catch (e) {
       console.error("Day closure error:", e);
@@ -707,14 +747,17 @@ export default function AccountantLayout() {
   }, [refreshData, fetchLiveSummary, loadPhysicalCount, fetchPettyCashToday]);
 
   useEffect(() => {
+    let active = true;
+    setDayClosed(false);
     const checkIfDayClosed = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/day-closure/day-status`);
+        const res = await fetch(`${API_URL}/api/day-closure/day-status?date=${encodeURIComponent(businessDate)}`);
         if (res.ok) {
           const data = await res.json();
-          if (data.is_closed) {
+          if (!active) return;
+          setDayClosed(Boolean(data.is_closed));
+          if (data.is_closed && !historicalMode) {
             console.log("Day is already closed, resetting display");
-            setDayClosed(true);
             setLiveSummary({ total_cash: 0, total_card: 0, total_mtn: 0, total_airtel: 0, total_gross: 0, order_count: 0, pending_credit_requests_amount: 0, credit_settlements_today: 0 });
             setPhysCash(0);
             setPhysMomoMTN(0);
@@ -730,7 +773,8 @@ export default function AccountantLayout() {
     };
     
     checkIfDayClosed();
-  }, []);
+    return () => { active = false; };
+  }, [businessDate, historicalMode]);
 
   return (
     <div className={`flex h-dvh min-h-0 flex-row overflow-hidden ${bgClass} font-[Outfit] transition-colors duration-300`}>
@@ -744,14 +788,14 @@ export default function AccountantLayout() {
           isDark={false}
           voidCount={voidRequests.length}
           creditCount={creditCount}
-          historicalMode={businessSettings.mode === "HISTORICAL"}
+          historicalMode={historicalMode}
         />
       </div>
 
       {/* Main content area - This scrolls */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
         <main className="p-4 md:p-10 space-y-8 flex-1 min-h-0 min-w-0 overflow-auto">
-          {businessSettings.mode === "HISTORICAL" && (
+          {historicalMode && (
             <div role="alert" className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-l-4 border-amber-600 bg-amber-100 px-4 py-3 text-sm font-black text-amber-950 shadow-sm">
               <AlertTriangle size={17} /> HISTORICAL BUSINESS DATE: {businessDate}
             </div>
@@ -784,7 +828,7 @@ export default function AccountantLayout() {
           </div>
 
           {isInventoryRoute ? <InventoryManagement /> : <>
-          {dayClosed && businessSettings.mode !== "HISTORICAL" && (
+          {dayClosed && !historicalMode && (
             <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-center animate-in fade-in duration-500">
               <div className="flex items-center justify-center gap-2">
                 <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">
@@ -794,16 +838,80 @@ export default function AccountantLayout() {
             </div>
           )}
 
-          {activeSection === "DASHBOARD" && businessSettings.mode === "HISTORICAL" && (
-            <HistoricalBusinessOverview
-              API_URL={API_URL}
-              dateRange={businessSettings.dateRange}
-              timeRange={businessSettings.timeRange}
-              onOpenReports={() => setActiveSection("REPORTS")}
-            />
+          {activeSection === "DASHBOARD" && historicalMode && (
+            <>
+              <HistoricalBusinessOverview
+                API_URL={API_URL}
+                dateRange={businessSettings.dateRange}
+                timeRange={businessSettings.timeRange}
+                onOpenReports={() => setActiveSection("REPORTS")}
+              />
+              <section className="space-y-4 rounded-2xl border border-amber-300 bg-white p-5 shadow-sm">
+                <div>
+                  <h2 className="text-lg font-black text-gray-900">Close missed business date: {businessDate}</h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    First finish or cancel all waiter orders, cashier items, and active station tickets for this date. Current live tables, today's totals, and Shisha are not changed.
+                  </p>
+                </div>
+                {dayClosed ? (
+                  <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+                    This business date is closed. Its recorded activity and totals have been preserved.
+                  </p>
+                ) : (
+                  <>
+                    <p className="rounded-lg border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-xs text-amber-950">
+                      Enter the retrospective cash count for the selected date and add a note. These values are recorded as retrospective counts, not as a physical count taken that day.
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      {[
+                        ["cash", "Cash"],
+                        ["card", "Card"],
+                        ["mtn", "MTN mobile money"],
+                        ["airtel", "Airtel mobile money"],
+                      ].map(([key, label]) => (
+                        <label key={key} className="space-y-1 text-xs font-bold text-gray-700">
+                          <span>{label} (UGX)</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={retrospectiveCounts[key]}
+                            onChange={(event) => setRetrospectiveCounts((current) => ({ ...current, [key]: event.target.value }))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            disabled={isFinalizing}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <label className="block space-y-1 text-xs font-bold text-gray-700">
+                      <span>Retrospective count note (required)</span>
+                      <textarea
+                        value={retrospectiveNote}
+                        onChange={(event) => setRetrospectiveNote(event.target.value)}
+                        rows={3}
+                        maxLength={1000}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        placeholder="Explain how these past-date figures were established."
+                        disabled={isFinalizing}
+                      />
+                    </label>
+                    {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+                    <button
+                      type="button"
+                      onClick={handleDayClosure}
+                      disabled={isFinalizing}
+                      className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-3 text-sm font-black text-black transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isFinalizing ? <RefreshCw size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+                      {isFinalizing ? "Closing selected date..." : "Close selected business date"}
+                    </button>
+                  </>
+                )}
+              </section>
+            </>
           )}
 
-          {activeSection === "DASHBOARD" && businessSettings.mode !== "HISTORICAL" && (
+          {activeSection === "DASHBOARD" && !historicalMode && (
             <ReconciliationOverview
               dayClosed={dayClosed}
               sys={counterSys}
@@ -828,23 +936,13 @@ export default function AccountantLayout() {
               setSelectedMonth={setSelectedMonth}
               userName={userName}
               summaryAvailable={Boolean(liveSummary || todaySummary)}
-              refreshDashboard={async () => {
-                await Promise.all([
-                  refreshData?.(),
-                  fetchLiveSummary(),
-                  fetchPettyCashToday(),
-                  loadPhysicalCount(),
-                  loadVoidRequests(),
-                ]);
-              }}
               setActiveSection={setActiveSection}
               handleDayClosure={handleDayClosure}
               isFinalizing={isFinalizing}
-              error={error}
             />
           )}
 
-          {activeSection === "PHYSICAL_COUNT" && businessSettings.mode === "LIVE" && (
+          {activeSection === "PHYSICAL_COUNT" && !historicalMode && (
             <PhysicalCount
               dayClosed={dayClosed}
               physLoading={physLoading}
@@ -877,7 +975,7 @@ export default function AccountantLayout() {
             />
           )}
 
-          {activeSection === "END_OF_SHIFT" && businessSettings.mode === "LIVE" && (
+          {activeSection === "END_OF_SHIFT" && !historicalMode && (
             <EndOfShift
               dayClosed={dayClosed}
               hasPhysicalCount={hasPhysicalCount}
@@ -928,22 +1026,8 @@ export default function AccountantLayout() {
             />
           )}
 
-          {activeSection === "MONTHLY_COSTS" && (
-            <MonthlyCosts
-              month={selectedMonth}
-              monthLabel={new Date().toLocaleString("en-US", { month: "long", year: "numeric" })}
-              fixedItems={profitData?.costs?.fixed_items || []}
-              profitLoad={profitLoad}
-              onRefresh={fetchMonthlyData}
-              dark={false}
-              API_URL={API_URL}
-              historicalMode={businessSettings.mode === "HISTORICAL"}
-            />
-          )}
-
           {activeSection === "REPORTS" && (
             <AccountingCenter
-              setActiveSection={setActiveSection}
               initialDateRange={businessSettings.dateRange}
               timeRange={businessSettings.timeRange}
               onDateRangeChange={setReportingRange}
@@ -955,7 +1039,7 @@ export default function AccountantLayout() {
               role="ACCOUNTANT"
               initialRange={businessSettings.dateRange}
               timeRange={businessSettings.timeRange}
-              historicalMode={businessSettings.mode === "HISTORICAL"}
+              historicalMode={historicalMode}
               onDateRangeChange={setReportingRange}
             />
           )}
@@ -969,9 +1053,10 @@ export default function AccountantLayout() {
               userName={userName}
               liveDate={liveDate}
               liveTime={liveTime}
-              mode={businessSettings.mode}
+              mode={businessDateMode}
               businessDate={businessDate}
               onBusinessDateChange={setHistoricalBusinessDate}
+              businessDateError={businessDateError}
               businessTime={businessSettings.businessTime}
               onBusinessTimeChange={(businessTime) => setBusinessSettings((current) => ({ ...current, businessTime }))}
               dateRange={businessSettings.dateRange}

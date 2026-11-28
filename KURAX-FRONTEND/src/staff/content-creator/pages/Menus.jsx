@@ -9,6 +9,22 @@ import { useTheme } from "../../../customer/components/context/ThemeContext";
 const formatUGX = (amount) =>
   `UGX ${Number(amount || 0).toLocaleString('en-UG')}`
 
+function getInventoryReviewMessage(item) {
+  const isDrink = String(item.category || '').trim().toLowerCase() === 'drinks & cocktails'
+    || ['bar', 'barman', 'barista'].includes(String(item.station || '').trim().toLowerCase());
+  if (!isDrink) return '';
+  if (item.inventory_match_status === 'AMBIGUOUS') {
+    return `${item.inventory_match_count} inventory items match; review the product names and bottle sizes.`;
+  }
+  if (item.inventory_match_status === 'VOLUME_MISMATCH') {
+    return 'The inventory bottle size differs from the menu item name.';
+  }
+  if (item.inventory_match_status === 'MISSING') {
+    return 'No matching active inventory item was found.';
+  }
+  return '';
+}
+
 function dateTimeLocalValue(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -47,7 +63,6 @@ export default function Menus() {
   const [imagePreview, setImagePreview] = useState('')
   const [previewOpen, setPreviewOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [inventoryItems, setInventoryItems] = useState([])
   const { theme } = useTheme();
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const menuItems = (menus || []).filter(item => {
@@ -73,8 +88,6 @@ export default function Menus() {
     website_extra_fee: '0',
     category: 'Fast Foods',
     station: 'Kitchen',
-    bottle_volume_ml: '',
-    inventory_item_id: '',
     image_file: null,
     published: false,
     website_published: false
@@ -94,13 +107,6 @@ export default function Menus() {
       }))
     }
   }
-
-  useEffect(() => {
-    fetch(`${API_URL}/api/inventory/items`)
-      .then(response => response.ok ? response.json() : [])
-      .then(items => setInventoryItems(Array.isArray(items) ? items : []))
-      .catch(() => setInventoryItems([]));
-  }, []);
 
   useEffect(() => {
     if (!formData.image_file) {
@@ -157,8 +163,6 @@ export default function Menus() {
     data.append('website_extra_fee', Number(formData.website_extra_fee || 0));
     data.append('category', formData.category);
     data.append('station', formData.station);
-    data.append('bottle_volume_ml', formData.bottle_volume_ml);
-    data.append('inventory_item_id', formData.inventory_item_id);
     data.append('published', formData.published);
     data.append('website_published', formData.website_published);
     data.append('image_url', formData.current_image_url || '');
@@ -217,8 +221,6 @@ export default function Menus() {
       website_extra_fee: String(menu.website_extra_fee || 0),
       category: menu.category,
       station: menu.station,
-      bottle_volume_ml: menu.bottle_volume_ml ?? '',
-      inventory_item_id: menu.inventory_item_id ?? '',
       published: menu.published,
       image_file: null,
       current_image_url: menu.image_url,
@@ -329,42 +331,12 @@ export default function Menus() {
                       required
                       className="w-full bg-white border border-gray-300 p-3 rounded-xl focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/30 outline-none text-sm text-gray-900"
                     />
+                    {formData.category === 'Drinks & Cocktails' && (
+                      <p className="text-xs text-gray-500">
+                        Use the same product name as inventory. Include the bottle size when it distinguishes stock variants.
+                      </p>
+                    )}
                   </div>
-
-                  {formData.category === 'Drinks & Cocktails' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Full Bottle Volume (ml)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          name="bottle_volume_ml"
-                          value={formData.bottle_volume_ml}
-                          onChange={handleChange}
-                          required
-                          className="w-full bg-white border border-gray-300 p-3 rounded-xl outline-none text-sm"
-                          placeholder="e.g. 1000"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Original Inventory Item</label>
-                        <select
-                          name="inventory_item_id"
-                          value={formData.inventory_item_id}
-                          onChange={handleChange}
-                          required
-                          className="w-full bg-white border border-gray-300 p-3 rounded-xl outline-none text-sm"
-                        >
-                          <option value="">Select inventory bottle</option>
-                          {inventoryItems
-                            .filter(item => ['bar', 'barman', 'barista'].includes(String(item.station || '').trim().toLowerCase()))
-                            .map(item => (
-                              <option key={item.id} value={item.id}>{item.item_name} ({item.unit})</option>
-                            ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
 
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Category</label>
@@ -588,6 +560,7 @@ export default function Menus() {
               </p>
             ) : menuItems.map((item) => {
               const isNew = item.created_at && (new Date() - new Date(item.created_at)) / (1000 * 60 * 60) <= 48;
+              const inventoryReviewMessage = getInventoryReviewMessage(item);
               return (
                 <div
                   key={item.id}
@@ -621,6 +594,14 @@ export default function Menus() {
                         <div className="bg-yellow-500 text-black text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1 uppercase tracking-widest border border-white/10">
                           <Sparkles size={8} fill="black" /> NEW
                         </div>
+                      )}
+                      {inventoryReviewMessage && (
+                        <span
+                          title={inventoryReviewMessage}
+                          className="flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-amber-800"
+                        >
+                          <AlertCircle size={10} /> Review Inventory
+                        </span>
                       )}
                     </div>
 

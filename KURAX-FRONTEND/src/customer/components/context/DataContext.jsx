@@ -69,6 +69,8 @@ export const DataProvider = ({ children }) => {
     const saved = localStorage.getItem('kurax_user');
     return saved ? JSON.parse(saved) : null;
   });
+  const [businessDate, setBusinessDate] = useState(kampalaDateStr());
+  const [businessDateMode, setBusinessDateMode] = useState('LIVE');
 
   // ─── Day closure state ────────────────────────────────────────────────────
   const [dayClosed, setDayClosed]           = useState(false);
@@ -105,6 +107,85 @@ export const DataProvider = ({ children }) => {
     } catch (err) { console.error("fetchTodaySummary error:", err); }
   }, []);
 
+  const refreshBusinessDate = useCallback(async () => {
+    const response = await fetch(`${API_URL}/api/system/business-date`, { cache: 'no-store' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Could not load the system business date.');
+    setBusinessDate(data.businessDate);
+    setBusinessDateMode(data.mode || 'LIVE');
+    return data;
+  }, []);
+
+  const updateSystemBusinessDate = useCallback(async (date) => {
+    let user = currentUser;
+    if (!user?.token) {
+      try { user = JSON.parse(localStorage.getItem('kurax_user') || 'null'); }
+      catch { user = null; }
+    }
+    if (!user?.token) throw new Error('Sign in with an accountant or director account to change the system date.');
+
+    const response = await fetch(`${API_URL}/api/system/business-date`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${user.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ business_date: date }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Could not update the system business date.');
+    setBusinessDate(data.businessDate);
+    setBusinessDateMode(data.mode || 'LIVE');
+    window.dispatchEvent(new CustomEvent('kurax:business-date-changed', { detail: data }));
+    return data;
+  }, [currentUser]);
+
+  const returnSystemToLiveDate = useCallback(async () => {
+    let user = currentUser;
+    if (!user?.token) {
+      try { user = JSON.parse(localStorage.getItem('kurax_user') || 'null'); }
+      catch { user = null; }
+    }
+    if (!user?.token) throw new Error('Sign in with an accountant or director account to change the system date.');
+
+    const response = await fetch(`${API_URL}/api/system/business-date`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${user.token}` },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Could not return the system to the live date.');
+    setBusinessDate(data.businessDate);
+    setBusinessDateMode(data.mode || 'LIVE');
+    window.dispatchEvent(new CustomEvent('kurax:business-date-changed', { detail: data }));
+    return data;
+  }, [currentUser]);
+
+  useEffect(() => {
+    let active = true;
+    const loadBusinessDate = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/system/business-date`, { cache: 'no-store' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Could not load the system business date.');
+        if (active) {
+          setBusinessDate(data.businessDate);
+          setBusinessDateMode(data.mode || 'LIVE');
+        }
+      } catch (err) {
+        console.error('System business-date refresh failed:', err);
+      }
+    };
+    const onBusinessDateChanged = () => loadBusinessDate();
+    loadBusinessDate();
+    const interval = window.setInterval(loadBusinessDate, 15000);
+    window.addEventListener('kurax:business-date-changed', onBusinessDateChanged);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('kurax:business-date-changed', onBusinessDateChanged);
+    };
+  }, []);
+
   const fetchWeeklyRevenue = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/overview/weekly-revenue?t=${Date.now()}`);
@@ -120,20 +201,20 @@ export const DataProvider = ({ children }) => {
   }, []);
 
   const fetchMonthlySummary = useCallback(async (month) => {
-    const targetMonth = month || new Date().toISOString().substring(0, 7);
+    const targetMonth = month || businessDate.substring(0, 7);
     try {
       const res = await fetch(`${API_URL}/api/accountant/monthly-profit?month=${targetMonth}&t=${Date.now()}`);
       if (res.ok) setMonthlySummary(await res.json());
     } catch (err) { console.error("fetchMonthlySummary error:", err); }
-  }, []);
+  }, [businessDate]);
 
   const fetchPettyCash = useCallback(async (date) => {
-    const d = date || kampalaDateStr();
+    const d = date || businessDate;
     try {
       const res = await fetch(`${API_URL}/api/summaries/petty-cash?date=${d}`);
       if (res.ok) setPettyCash(await res.json());
     } catch (err) { console.error("fetchPettyCash error:", err); }
-  }, []);
+  }, [businessDate]);
 
   const fetchTargets = useCallback(async () => {
     try {
@@ -341,9 +422,11 @@ export const DataProvider = ({ children }) => {
 
   // ─── STAFF STATS (helper) ─────────────────────────────────────────────────
   const getStaffStats = useCallback((staffId, targetDate) => {
-    const date = targetDate || kampalaDateStr();
+    const date = targetDate || businessDate;
     const staffOrders = orders.filter(o => {
-      const oDate = kampalaDateStr(new Date(o.timestamp || o.created_at));
+      const oDate = o.business_date
+        || (o.date && kampalaDateStr(new Date(o.date)))
+        || kampalaDateStr(new Date(o.timestamp || o.created_at));
       return Number(o.staff_id) === Number(staffId) && oDate === date;
     });
     return staffOrders.reduce((acc, o) => {
@@ -363,7 +446,7 @@ export const DataProvider = ({ children }) => {
       else if (norm === 'cash')   acc.CASH   += amt;
       return acc;
     }, { totalOrders: 0, totalRevenue: 0, CASH: 0, MTN: 0, AIRTEL: 0, CARD: 0 });
-  }, [orders]);
+  }, [orders, businessDate]);
 
   // ─── INITIAL BOOTSTRAP ────────────────────────────────────────────────────
   useEffect(() => {
@@ -397,6 +480,11 @@ export const DataProvider = ({ children }) => {
     // Auth
     currentUser, setCurrentUser,
     isGranted,
+    businessDate,
+    businessDateMode,
+    refreshBusinessDate,
+    updateSystemBusinessDate,
+    returnSystemToLiveDate,
 
     // Financials
     todaySummary,
